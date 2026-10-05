@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>주가 모니터</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23002060'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%231973B9'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="band">
+    <div class="band-inner">
+      <nav class="topbar" aria-label="주 메뉴">
+        <a class="brand" href="#/">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="16" cy="16" r="3.4" fill="#5FA8E8"/></svg>
+          <span class="brand-text"><strong>STOCK</strong> 주가 모니터</span>
+        </a>
+        <div class="tabs" role="tablist">
+          <a href="#/" data-route="dash">대시보드</a>
+          <a href="#/events" data-route="events">이벤트 기록</a>
+          <a href="#/pr" data-route="pr">기사 영향 분석</a>
+        </div>
+        <div class="engine" id="engine" aria-live="polite">
+          <span class="dot"></span><span class="engine-label">확인 중</span>
+        </div>
+        <button class="share-btn local-only" id="share-btn" type="button" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span id="share-btn-label">어디서나 보기</span></button>
+      </nav>
+      <div class="shared-banner shared-only">공유 링크로 보는 중입니다. 보기만 할 수 있습니다.</div>
+      <div class="alert" id="alert" hidden></div>
+      <section class="hero" id="hero" hidden>
+        <div class="hero-head">
+          <div class="quote">
+            <div class="quote-name"><span id="q-name">이 종목</span><span class="quote-code" id="q-code"></span></div>
+            <div class="quote-price"><span id="q-price">-</span><span class="won">원</span></div>
+            <div class="quote-change" id="q-change"></div>
+          </div>
+          <dl class="hero-stats">
+            <div><dt>KOSDAQ</dt><dd id="q-kosdaq">-</dd></div>
+            <div><dt>거래량</dt><dd id="q-volume">-</dd></div>
+            <div><dt id="q-events-label">오늘 이상변동</dt><dd id="q-events">-</dd></div>
+          </dl>
+        </div>
+        <div class="session">
+          <div class="session-legend" id="hero-legend"></div>
+          <div class="session-chart" id="hero-chart"></div>
+          <div class="session-foot">
+            <span id="session-date"></span>
+            <span class="key"><i class="k-up"></i>급등 <i class="k-down"></i>급락</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1"></main>
+
+  <footer class="foot">
+    <div class="wrap" id="foot"></div>
+  </footer>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-scrim" data-close></div>
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <button class="drawer-close" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div id="drawer-body"></div>
+    </div>
+  </aside>
+
+  <div class="modal" id="share-modal" hidden>
+    <div class="modal-scrim" data-mclose></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="share-title">
+      <button class="drawer-close" data-mclose aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <h2 id="share-title">공유 링크</h2>
+      <div id="share-body"></div>
+    </div>
+  </div>
+
+  <script src="vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

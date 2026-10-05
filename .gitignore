@@ -1,0 +1,12 @@
+data/
+logs/
+run/
+tools/
+.venv/
+__pycache__/
+*.pyc
+state/
+restore/
+backup/
+_site/
+private_settings.json

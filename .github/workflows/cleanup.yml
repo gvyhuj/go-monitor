@@ -1,0 +1,33 @@
+name: 정리
+on:
+  push:
+    paths: [".github/workflows/cleanup.yml"]
+  workflow_dispatch:
+permissions:
+  deployments: write
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 지난 사이트 배포 기록 지우기 (가장 최근 1건만 남김)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          keep=$(gh api "repos/$GITHUB_REPOSITORY/deployments?per_page=1" --jq '.[0].id')
+          n=0
+          for id in $(gh api --paginate "repos/$GITHUB_REPOSITORY/deployments?per_page=100" --jq '.[].id'); do
+            [ "$id" = "$keep" ] && continue
+            gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=inactive >/dev/null 2>&1 || true
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/deployments/$id" >/dev/null 2>&1 && n=$((n+1))
+          done
+          echo "::notice::배포 기록 $n건 삭제"
+      - name: 끝난 실행 기록 지우기 (지금 실행 제외)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=0
+          for id in $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" --jq '.workflow_runs[] | select(.status=="completed") | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id" >/dev/null 2>&1 && n=$((n+1))
+          done
+          echo "::notice::실행 기록 $n건 삭제"

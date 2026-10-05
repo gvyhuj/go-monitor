@@ -1,0 +1,155 @@
+# 주가 감시 - 자동 실행 + 웹사이트 (GitHub Actions + GitHub Pages, 모두 무료)
+#
+# - 평일 장중(KST 09:00~15:55) 5분마다, 장 외에는 하루 6번 실행합니다.
+#   (GitHub 시각은 UTC 기준: KST = UTC + 9시간. GitHub 사정으로 몇 분 늦게 시작될 수 있습니다)
+# - 공개 저장소는 GitHub Actions 사용 시간이 무제한 무료입니다.
+# - 사이트 주소: https://<계정>.github.io/<저장소>/  (분석 자료는 SITE_PASSWORD로 암호화되어 있어 비밀번호 없이는 못 봅니다)
+# - 필요한 비밀값(Settings → Secrets and variables → Actions):
+#     SITE_PASSWORD  사이트 비밀번호 (8자 이상)
+#     DATA_KEY       기록 백업용 열쇠 (선택. 없으면 SITE_PASSWORD 사용. 한 번 정하면 바꾸지 마세요)
+#     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET  네이버 검색 API (선택. 국제·정치 이슈 기사 수집용, 무료)
+# - 기록(SQLite)은 암호화해서 실행 사이에 넘기고(Actions 캐시), 1시간마다 data 브랜치에도 백업합니다.
+# - 사이트에서 '기사 직접 등록'·'목록에서 빼기'를 누르면 GitHub 이슈가 만들어지고, 저장소 주인이 만든 이슈만 반영합니다.
+
+name: 주가 감시
+
+on:
+  schedule:
+    - cron: "*/5 0-6 * * 1-5"             # KST 09:00 ~ 15:55, 5분마다 (평일)
+    - cron: "23 7,9,12,15,21,23 * * *"    # KST 16:23 18:23 21:23 00:23 06:23 08:23
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "알림 시험 보내기"
+        type: boolean
+        default: false
+  push:
+    branches: [main]                    # 코드를 고치면 바로 한 번 실행
+  issues:
+    types: [opened]
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: write     # data 브랜치 백업
+  pages: write        # 사이트 올리기
+  id-token: write     # 사이트 올리기
+  issues: write       # 사이트 요청(이슈) 처리
+  actions: write      # 오래된 캐시 정리
+
+jobs:
+  monitor:
+    if: github.event_name != 'issues' || github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      TZ: Asia/Seoul
+      PYTHONUNBUFFERED: "1"
+      GO_STATIC_SITE: "1"
+      GO_SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+      GO_DATA_KEY: ${{ secrets.DATA_KEY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}          # 선택: 국제·정치 이슈 기사 검색 (없으면 건너뜀)
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      GO_INTERVAL_MIN: "5"
+      GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: 지난 기록 가져오기 (직전 실행)
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: db-
+
+      - name: 지난 기록 가져오기 (백업 - 직전 실행 기록이 없을 때만)
+        run: |
+          if ls state/*.db.enc >/dev/null 2>&1; then echo "직전 실행 기록이 있습니다."; exit 0; fi
+          if git fetch -q --depth=1 origin data 2>/dev/null; then
+            mkdir -p restore
+            f=$(git ls-tree --name-only origin/data | grep '\.db\.enc$' | head -1)
+            [ -n "$f" ] && git show "origin/data:$f" > "restore/$f" && echo "data 브랜치 백업에서 이어 씁니다."
+          else
+            echo "백업이 없습니다 (첫 실행)."
+          fi
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 수집 · 분석 · 사이트 만들기
+        run: python cloud_job.py
+
+      - name: 기록 넘기기 (다음 실행용, 암호화)
+        if: always() && hashFiles('state/*.db.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: db-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: 사이트 파일 묶기
+        if: always() && hashFiles('_site/index.html') != ''
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: 사이트 올리기
+        id: deploy
+        if: always() && hashFiles('_site/index.html') != ''
+        uses: actions/deploy-pages@v4
+
+      - name: 백업 (data 브랜치, 1시간마다)
+        if: always() && hashFiles('backup/*.db.enc') != ''
+        run: |
+          tmp=$(mktemp -d)
+          cp backup/*.db.enc "$tmp/"
+          printf '이 브랜치에는 감시 기록의 암호화된 백업만 있습니다. 자동으로 덮어씁니다.\n' > "$tmp/README.txt"
+          cd "$tmp"
+          git init -q -b data
+          git config user.name "stock-monitor"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "백업 $(date '+%Y-%m-%d %H:%M')"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+          echo "data 브랜치에 백업했습니다."
+
+      - name: 오래된 기록 캐시 정리
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key db- --sort created_at --order desc --limit 100 --json id --jq '.[4:][].id' \
+            | xargs -r -n1 gh cache delete -R "$GITHUB_REPOSITORY" || true
+
+      - name: 다음 실행 이어 붙이기 (장중에는 약 5분 간격 유지)
+        # GitHub의 정해진 시각 실행(schedule)은 바쁠 때 자주 건너뛰어지므로,
+        # 장중에는 실행이 끝날 때마다 다음 실행을 직접 예약합니다. (다른 실행이 대기·진행 중이면 예약하지 않음)
+        if: always() && github.event_name != 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now=$(TZ=Asia/Seoul date +%H%M); dow=$(TZ=Asia/Seoul date +%u)
+          if [ "$dow" -le 5 ] && [ "$now" -ge 0845 ] && [ "$now" -lt 1600 ]; then
+            others=$(gh run list -R "$GITHUB_REPOSITORY" --workflow monitor.yml --limit 20 --json databaseId,status \
+              --jq "[.[] | select(.status != \"completed\" and .databaseId != ${GITHUB_RUN_ID})] | length")
+            if [ "$others" = "0" ]; then
+              sleep 150
+              gh workflow run monitor.yml -R "$GITHUB_REPOSITORY" --ref main && echo "다음 실행을 예약했습니다."
+            else
+              echo "다른 실행이 이미 대기 중이라 예약하지 않습니다."
+            fi
+          else
+            echo "장중이 아니라 다음 실행은 정해진 시각에 합니다."
+          fi

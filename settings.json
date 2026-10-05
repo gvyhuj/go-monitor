@@ -1,0 +1,22 @@
+{
+  "monitor_poll_seconds": 20,
+  "baseline_days": 20,
+  "ui_port": 8501,
+  "data_source": "naver",
+  "skip_detection_from": "15:20",
+  "keep_bars_days": 120,
+  "extra_peers": [],
+  "event_move_pct": 5.0,
+  "event_big_pct": 10.0,
+  "event_window_minutes": 30,
+  "event_hold_minutes": 5,
+  "event_min_value_won": 50000000,
+  "daily_event_lookback_days": 90,
+  "symbol": "",
+  "display_name": "이 종목",
+  "calendar": [],
+  "peer_groups": {},
+  "peer_group_links": {},
+  "factor_etfs": [],
+  "_private_note": "종목코드·비교 종목·회사 일정은 비공개 설정(GitHub 비밀값 GO_PRIVATE_CONFIG 또는 private_settings.json)에서 읽습니다."
+}
