@@ -253,7 +253,11 @@ def main(argv) -> int:
     if static:
         from core import ghinbox
         try:
-            inbox_n = ghinbox.process(lambda item: apply_inbox(item, log), log.info)
+            from core import sitebuild as _sb
+            _pw = _site_password()
+            _ikey = _sb.derive_key(_pw, site_salt(_pw))
+            inbox_n = ghinbox.process(lambda item: apply_inbox(item, log), log.info,
+                                      unseal=lambda b: json.loads(_sb.decrypt(_ikey, base64.b64decode(b))))
         except Exception as e:
             log.warning("사이트 요청(GitHub 이슈) 확인 실패(계속 진행): %s", e)
     elif cloud.env_mode():

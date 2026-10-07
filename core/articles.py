@@ -476,6 +476,19 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
             "SELECT * FROM articles WHERE symbol=? " + ("" if include_hidden else "AND hidden=0 ") + "ORDER BY ts DESC",
             (symbol,))]
         prs = [dict(r) for r in conn.execute("SELECT * FROM pr_events ORDER BY published_ts DESC")]
+    import re as _re
+
+    def _key_url(u):
+        m = _re.search(r"/article/(\d+)/(\d+)", u or "")
+        return m.group(1) + m.group(2) if m else (u or "").split("?")[0].rstrip("/")
+
+    def _key_title(t):
+        return _re.sub(r"[^0-9A-Za-z가-힣]", "", t or "")[:40]
+    for p in prs:                                    # 직접 등록한 기사와 같은 기사(주소·제목 같음)는 하나로 묶음
+        ku, kt = _key_url(p.get("url")), _key_title(p["title"])
+        for a in arts:
+            if (ku and _key_url(a.get("url")) == ku) or (kt and _key_title(a["title"]) == kt):
+                a["story"] = f"pr{p['id']}"
     for p in prs:
         arts.append({"id": f"pr{p['id']}", "symbol": symbol, "ts": p["published_ts"], "office": "직접 등록",
                      "title": p["title"], "body": "", "url": p.get("url") or "", "outlets": 1, "category": "회사 발표",
@@ -488,7 +501,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         by_story.setdefault(a.get("story") or a["id"], []).append(a)
     out = []
     for sid, group in by_story.items():
-        group.sort(key=lambda a: a["ts"])
+        group.sort(key=lambda a: (not a.get("manual"), a["ts"]))      # 직접 등록한 기사가 있으면 그것이 대표
         lead = dict(group[0])
         # 묶음의 성격은 가장 '원천'에 가까운 기사 기준 (회사 발표 > 리서치 > 언론 분석 > …)
         best = min(group, key=lambda g: CATEGORIES.index(g["category"]) if g["category"] in CATEGORIES else 9)

@@ -7,6 +7,7 @@
   "keep_bars_days": 120,
   "extra_peers": [],
   "event_move_pct": 5.0,
+  "event_watch_pct": 3.0,
   "event_big_pct": 10.0,
   "event_window_minutes": 30,
   "event_hold_minutes": 5,

@@ -301,7 +301,7 @@ def api_events_csv(q):
 
     for e in rows:
         w.writerow([e["id"], e["start_ts"][:10], e["start_ts"][11:16], e["last_ts"][11:16], e["kind"], e.get("scope"),
-                    "대형" if e.get("tier") == "대형" else "", p(e["peak_return_5m"]), p(e["kosdaq_change"]),
+                    e.get("tier") if e.get("tier") in ("대형", "관찰") else "", p(e["peak_return_5m"]), p(e["kosdaq_change"]),
                     e.get("cause_headline") or "", e.get("cause_confidence") or "", e.get("cause_summary") or "",
                     e.get("cause_stage") or "", e["rule"]])
     return ("﻿" + buf.getvalue()).encode("utf-8")

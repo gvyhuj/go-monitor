@@ -1267,7 +1267,7 @@ def upgrade_reanalysis(symbol: str, now: datetime, log=None):
         log.info("분석 방식 업데이트: 이상변동 %d건을 다시 분석합니다", n)
 
 
-def refresh_pending(symbol: str, now: datetime, fetch=None, log=None) -> int:
+def refresh_pending(symbol: str, now: datetime, fetch=None, log=None, max_n: int = 8) -> int:
     """기록 단계 관리.
     1차    : 감지 직후
     준최종 : 움직임이 끝나고 15분 뒤 (추가 기사·공시·업종 흐름 반영)
@@ -1276,9 +1276,11 @@ def refresh_pending(symbol: str, now: datetime, fetch=None, log=None) -> int:
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT id, start_ts, last_ts, status, cause_stage FROM events WHERE symbol=? "
-            "AND (cause_stage IS NULL OR cause_stage != '최종') ORDER BY start_ts", (symbol,))]
+            "AND (cause_stage IS NULL OR cause_stage != '최종') ORDER BY start_ts DESC", (symbol,))]
     n = 0
     for r in rows:
+        if n >= max_n:                     # 한 번 실행에 너무 오래 걸리지 않게 (최근 것부터, 나머지는 다음 실행)
+            break
         last = _dt(r["last_ts"])
         day_final = datetime.combine(last.date(), datetime.min.time()) + timedelta(hours=18)
         want = None

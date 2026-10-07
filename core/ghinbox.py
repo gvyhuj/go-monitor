@@ -28,9 +28,23 @@ def _req(method: str, path: str, body=None):
     return json.loads(raw) if raw else None
 
 
-def parse(issue: dict) -> dict | None:
-    """이슈 하나 → 요청 dict. 형식이 아니면 None."""
+def parse(issue: dict, unseal=None) -> dict | None:
+    """이슈 하나 → 요청 dict. 형식이 아니면 None.
+    새 형식: 제목 '[요청] …', 본문의 ```enc 블록에 사이트 열쇠로 암호화한 요청 (공개 저장소에서 내용이 안 보임)."""
     title = str(issue.get("title") or "").strip()
+    if title.startswith("[요청]"):
+        e = re.search(r"```enc\s*([A-Za-z0-9+/=\s]+?)\s*```", str(issue.get("body") or ""), re.S)
+        if not e or unseal is None:
+            raise ValueError("암호화된 요청을 찾지 못했습니다.")
+        try:
+            item = unseal(re.sub(r"\s", "", e.group(1)))
+        except Exception:
+            raise ValueError("요청을 풀지 못했습니다 (사이트 비밀번호가 바뀐 뒤 만든 요청일 수 있습니다).")
+        if not isinstance(item, dict) or item.get("type") not in ("pr", "hide", "show", "delete_pr"):
+            raise ValueError("알 수 없는 요청입니다.")
+        if item["type"] == "pr" and (not item.get("title") or not item.get("published_ts")):
+            raise ValueError("기사 제목과 발표 시각이 필요합니다.")
+        return item
     m = re.match(r"^\[(등록|빼기|다시표시|삭제)\]\s*(.*)$", title)
     if not m:
         return None
@@ -65,7 +79,7 @@ def parse(issue: dict) -> dict | None:
     return item
 
 
-def process(apply, log=None) -> int:
+def process(apply, log=None, unseal=None) -> int:
     repo = os.environ.get("GITHUB_REPOSITORY")
     owner = os.environ.get("GITHUB_REPOSITORY_OWNER")
     if not repo or not owner or not (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
@@ -76,7 +90,7 @@ def process(apply, log=None) -> int:
         if it.get("pull_request") or (it.get("user") or {}).get("login") != owner:
             continue
         try:
-            item = parse(it)
+            item = parse(it, unseal)
         except ValueError as e:
             _req("POST", f"/repos/{repo}/issues/{it['number']}/comments", {"body": f"반영하지 못했습니다: {e}"})
             _req("PATCH", f"/repos/{repo}/issues/{it['number']}", {"state": "closed", "state_reason": "not_planned"})

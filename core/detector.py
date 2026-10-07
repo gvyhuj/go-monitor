@@ -135,13 +135,20 @@ def _feature_rows(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True) if out else df
 
 
-DETECTOR_VERSION = "2"   # 기준이 바뀌면 올림 → 예전 기록을 지우고 새 기준으로 다시 찾음
+DETECTOR_VERSION = "3"   # 기준이 바뀌면 올림 → 새 기준으로 다시 찾음 (2→3: 관찰 단계 추가, 기존 기록은 유지)
 
 
 def _ensure_version(symbol: str, log=None):
     st = get_state("detector_version")
     if st and st.get("value") == DETECTOR_VERSION:
         return False
+    if st and st.get("value") == "2" and DETECTOR_VERSION == "3":
+        with connect() as conn:                 # 기존 급등·급락은 그대로 두고, 받아 둔 기간을 다시 훑어 '관찰'만 더함
+            conn.execute("DELETE FROM system_state WHERE key=?", (_state_key(symbol),))
+        set_state("detector_version", DETECTOR_VERSION)
+        if log:
+            log("관찰 단계(3~5%) 추가: 받아 둔 기간을 다시 훑습니다")
+        return True
     with connect() as conn:
         n = conn.execute("DELETE FROM events WHERE symbol=?", (symbol,)).rowcount
         conn.execute("DELETE FROM system_state WHERE key=?", (_state_key(symbol),))
@@ -216,7 +223,8 @@ def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> l
     - 체결 한두 건으로 튄 가격(얇은 호가)을 거르기 위해 3분 중앙값 가격을 씀
     - 장 시작 직후 움직임도 잡도록 전일 종가를 09시 직전 값으로 넣음
     """
-    th = float(s.get("event_move_pct", 5.0)) / 100
+    main_th = float(s.get("event_move_pct", 5.0)) / 100
+    th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)   # 관찰 단계부터 찾음
     big = float(s.get("event_big_pct", 10.0)) / 100
     win = int(s.get("event_window_minutes", 30))
     hold = int(s.get("event_hold_minutes", 5))
@@ -289,14 +297,20 @@ def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> l
             "event_type": "intraday", "direction": d,
             "start_ts": st.isoformat(timespec="minutes")[:16], "last_ts": ts[e].isoformat(timespec="minutes")[:16],
             "peak_ts": ts[k].isoformat(timespec="minutes")[:16], "peak_return_5m": move, "return_5m": move,
-            "trade_value": val, "tier": "대형" if abs(move) >= big else "일반",
+            "trade_value": val, "tier": _tier(move, main_th, big),
             "detection_rule": rule, "status": "closed" if (day_over or e < n - 15) else "open",
         })
     return out
 
 
+def _tier(move: float, main_th: float, big: float) -> str:
+    """대형(±10% 이상) / 일반(±5% 이상, 급등·급락) / 관찰(±3~5%, 기록만 하고 알림은 보내지 않음)."""
+    return "대형" if abs(move) >= big else "일반" if abs(move) >= main_th else "관찰"
+
+
 def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
-    th = float(s.get("event_move_pct", 5.0)) / 100
+    main_th = float(s.get("event_move_pct", 5.0)) / 100
+    th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
     big = float(s.get("event_big_pct", 10.0)) / 100
     pc = _prev_close(symbol, day)
     with connect() as conn:
@@ -323,7 +337,7 @@ def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
         (float(dr["close"]) * float(dr["volume"] or 0) if dr else 0.0)
     return {"event_type": "daily", "direction": d, "start_ts": f"{day}T09:00", "last_ts": f"{day}T15:30",
             "peak_ts": peak_ts, "peak_return_5m": ret, "return_5m": ext, "trade_value": val,
-            "tier": "대형" if abs(ret) >= big else "일반", "detection_rule": rule, "status": "closed"}
+            "tier": _tier(ret, main_th, big), "detection_rule": rule, "status": "closed"}
 
 
 def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: datetime | None = None, log=None) -> int:
@@ -331,7 +345,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
 
     - 장중: 30분 안에 ±5% 이상 움직이고 유지된 구간 (거래대금 기준 이상)
     - 하루: 종가가 전일보다 ±5% 이상 (장 마감 뒤 기록)
-    - ±10% 이상은 '대형'
+    - ±10% 이상은 '대형', ±3~5%는 '관찰'(사이트 기록만, 알림 없음)
     처음 실행하거나 기준이 바뀌면 받아 둔 기간 전체를 다시 훑음. 이후에는 오늘(과 어제)만.
     Returns: 새로 생긴 이벤트 수
     """

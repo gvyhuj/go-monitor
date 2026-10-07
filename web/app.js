@@ -6,10 +6,11 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const main = $("#main");
   const KIND = { up: "급등", down: "급락", flat: "거래량만 급증" };
+  const kindOf = (e) => (e.tier === "관찰" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
   const CONF_CLS = { "높음": "hi", "중간": "mid", "낮음": "lo" };
   const confTag = (c) => (c ? `<span class="conf ${CONF_CLS[c] || ""}">신뢰도 ${c}</span>` : "");
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
-  const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>` : "");
+  const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>` : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>` : "");
   const isDaily = (e) => e.scope === "하루" || e.event_type === "daily";
   const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -70,7 +71,7 @@
     const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: b64d(STATIC.salt), iterations: STATIC.iter }, base, 256);
     return new Uint8Array(bits);
   }
-  const aesKey = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const aesKey = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   const fileName = (k) => k.replace(/[:/]/g, "_") + ".bin";
   async function fetchBin(key, bust) {
     const res = await fetch(`d/${fileName(key)}?v=${encodeURIComponent(bust)}`, { cache: "no-store" });
@@ -141,21 +142,23 @@
   });
 
   // ---- 기사 등록·빼기 요청: Cloudflare 사이트는 보관함으로, GitHub 사이트는 GitHub 이슈로 보냄
-  const INBOX_TITLE = { pr: "등록", hide: "빼기", show: "다시표시", delete_pr: "삭제" };
-  function sendInbox(item) {
+  async function sealInbox(item) {          // 요청 내용을 사이트 열쇠로 암호화 (공개 저장소에는 알아볼 수 없는 글자만 남음)
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, SKEY, new TextEncoder().encode(JSON.stringify(item))));
+    const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+    return b64e(out);
+  }
+  async function sendInbox(item) {
     if (!STATIC) {
       return rawApi("/api/inbox", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item) })
         .then(() => "요청을 보냈습니다. 다음 자동 수집 때 반영됩니다.");
     }
-    const label = INBOX_TITLE[item.type];
-    const title = `[${label}] ${item.type === "pr" ? item.title : item.id}`.slice(0, 180);
-    const human = item.type === "pr"
-      ? `기사 제목: ${item.title}\n발표 시각: ${String(item.published_ts).replace("T", " ")}\n주소: ${item.url || "-"}`
-      : `대상 기사: ${item.title || item.id}`;
-    const body = `${human}\n\n아래 [Submit new issue] (또는 [Create]) 버튼을 누르면 몇 분 안에 사이트에 반영됩니다. 내용은 고치지 마세요.\n\n\`\`\`json\n${JSON.stringify(item)}\n\`\`\`\n`;
+    const sealed = await sealInbox(item);
+    const title = `[요청] 사이트 반영 ${new Date().toISOString().slice(5, 16).replace("T", " ")}`;
+    const body = `아래 [Create] 버튼을 누르면 몇 분 안에 사이트에 반영됩니다. 내용은 고치지 마세요.\n\n\`\`\`enc\n${sealed}\n\`\`\`\n`;
     const url = `https://github.com/${STATIC.repo}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
     window.open(url, "_blank", "noopener");
-    return Promise.resolve("GitHub 화면이 새 창으로 열렸습니다. 거기서 초록색 [Create] 버튼을 누르면 몇 분 안에 반영됩니다 (GitHub 로그인 필요).");
+    return "GitHub 화면이 새 창으로 열렸습니다. 거기서 초록색 [Create] 버튼을 누르면 몇 분 안에 반영됩니다 (내용은 암호화되어 있어 다른 사람은 알아볼 수 없습니다).";
   }
 
   // ---- 클라우드 모드: 올라온 묶음(live)과 개별 자료(kv)를 PC 화면과 같은 형식으로 돌려줌
@@ -495,7 +498,7 @@
       $("#timeline").innerHTML = `<ul class="timeline">${d.events.slice().reverse().map((e) => `
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${isDaily(e) ? "하루" : hhmm(e.start_ts)}</span>
-          <span><span class="chip ${e.direction}">${KIND[e.direction]}</span>${tierTag(e)}</span>
+          <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
           <span class="tl-rule">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : esc(compareLine(e))}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${isDaily(e) ? "종가 기준" : "구간 최대"}</small></span>
         </button></li>`).join("")}</ul>`;
@@ -538,7 +541,7 @@
     try { d = await api("/api/articles?limit=4"); } catch (_) { $("#recent-arts").innerHTML = ""; return; }
     if (!d.items.length) { $("#recent-arts").innerHTML = `<p class="muted">기사가 모이면 표시됩니다.</p>`; return; }
     $("#recent-arts").innerHTML = `<ul class="mini-arts">${d.items.map((a) => `<li><a href="#/pr/${esc(a.id)}">
-      <span class="al-meta">${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${parseT(a.ts).m}/${parseT(a.ts).d}</span></span>
+      <span class="al-meta">${a.manual ? '<span class="tier watch">직접 등록</span>' : ""}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${parseT(a.ts).m}/${parseT(a.ts).d}</span></span>
       <span class="t">${esc(a.title)}</span>
       <span class="al-foot">${verdictTag(a.effect)}${a.effect && a.effect.measure ? `<span class="num ${sgnCls(a.effect.measure.value)}">${pct(a.effect.measure.value)}</span>` : ""}</span></a></li>`).join("")}</ul>
       <p class="note">초과 반응(업종·KOSDAQ 대비) 기준입니다. 전체는 <a href="#/pr">기사 영향 분석</a>에서 볼 수 있습니다.</p>`;
@@ -556,7 +559,7 @@
   }
 
   // ---------------------------------------------------------------- events page
-  const evState = { range: "1m", kind: "all", day: null };
+  const evState = { range: "1m", kind: "all", tier: "all", day: null };
 
   async function pageEvents() {
     main.innerHTML = `<div class="wrap">
@@ -566,7 +569,10 @@
           <button type="button" data-v="1w">1주</button><button type="button" data-v="1m">1개월</button><button type="button" data-v="3m">3개월</button><button type="button" data-v="all">전체</button>
         </div>
         <div class="seg" id="ev-kind" aria-label="구분">
-          <button type="button" data-v="all">전체</button><button type="button" data-v="up">급등</button><button type="button" data-v="down">급락</button>
+          <button type="button" data-v="all">전체</button><button type="button" data-v="up">오름</button><button type="button" data-v="down">내림</button>
+        </div>
+        <div class="seg" id="ev-tier" aria-label="크기">
+          <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% (기록만)">관찰만</button>
         </div>
         <span class="day-filter" id="ev-day" hidden></span>
         <span class="spacer"></span>
@@ -584,6 +590,7 @@
     };
     bindSeg("#ev-range", "range");
     bindSeg("#ev-kind", "kind");
+    bindSeg("#ev-tier", "tier");
     await loadEvents();
   }
 
@@ -607,13 +614,15 @@
     all.forEach((e) => counts[e.direction]++);
     const since = d.trading_days[0];
     $("#ev-sub").textContent = all.length
-      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등 ${counts.up}건, 급락 ${counts.down}건입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
+      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
       : "이 기간에는 급등·급락이 없었습니다.";
 
     loadCalendar();
 
     let list = all;
     if (evState.kind !== "all") list = list.filter((e) => e.direction === evState.kind);
+    if (evState.tier === "main") list = list.filter((e) => e.tier !== "관찰");
+    else if (evState.tier === "watch") list = list.filter((e) => e.tier === "관찰");
     if (evState.day) list = list.filter((e) => e.start_ts.startsWith(evState.day));
 
     const dayEl = $("#ev-day");
@@ -637,7 +646,7 @@
         <th>일시</th><th>구분</th><th class="r">움직임</th><th class="r">KOSDAQ 같은 기간</th><th>가장 유력한 원인</th></tr></thead><tbody>
       ${list.map((e) => `<tr data-id="${e.id}" tabindex="0">
         <td class="when num">${dayLabel(e.start_ts)}<small>${isDaily(e) ? "하루 (전일 종가 → 종가)" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`}</small></td>
-        <td><span class="chip ${e.direction}">${KIND[e.direction]}</span>${scopeTag(e)}${tierTag(e)}</td>
+        <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
         <td class="r num">${e.kosdaq_change == null ? '<span class="muted">없음</span>' : pct(e.kosdaq_change)}</td>
         <td class="rule" title="${esc(e.cause_summary || e.rule)}">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : '<span class="muted">분석 대기</span>'}</td></tr>`).join("")}
@@ -954,7 +963,7 @@
     const span = e.last_ts !== e.start_ts ? `${hhmm(e.start_ts)}부터 ${hhmm(e.last_ts)}까지` : `${hhmm(e.start_ts)}`;
     const daily = isDaily(e);
     $("#drawer-body").innerHTML = `
-      <span class="chip ${e.direction}">${KIND[e.direction]}</span>${scopeTag(e)}${tierTag(e)}
+      <span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}
       <h2 class="d-title" id="drawer-title">${dayLabel(e.start_ts)}${daily ? "" : ` ${hhmm(e.start_ts)}`} <span class="${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}</span></h2>
       <p class="d-sub">${daily ? "전일 종가 대비 종가 기준 움직임입니다." : `${span} 사이 움직임입니다.`}</p>
       <dl class="facts">
@@ -1071,18 +1080,21 @@
         <div class="sc-sub">뚜렷한 반응 ${x.strong}건</div></div>`).join("")}</div>
       <p class="note" style="margin:-6px 0 18px">초과 반응 = 이 종목 변동률 − 같은 업종 평균(없으면 KOSDAQ). 분봉 기록이 있으면 공개 후 60분, 없으면 반응일 하루 기준입니다. ${d.daily_since ? `일봉은 ${esc(d.daily_since)}부터 있습니다.` : ""}</p>` : "";
 
-    const cats = [["main", "주요 기사"], ...d.categories.map((c) => [c, c])];
+    const nManual = items.filter((a) => a.manual).length;
+    const cats = [["main", "주요 기사"], ...(nManual ? [["manual", "직접 등록"]] : []), ...d.categories.map((c) => [c, c])];
+    counts.manual = nManual;
     const seg = $("#art-cat");
     seg.innerHTML = cats.map(([v, l]) => `<button type="button" data-v="${esc(v)}" aria-pressed="${artState.cat === v}">${esc(l)}${v !== "main" && counts[v] ? ` <small>${counts[v]}</small>` : ""}</button>`).join("");
     seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); };
 
     function renderList() {
       seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat)));
-      const list = items.filter((a) => artState.cat === "main" ? a.category !== "단순 언급" : a.category === artState.cat);
+      const list = items.filter((a) => artState.cat === "main" ? a.category !== "단순 언급"
+        : artState.cat === "manual" ? a.manual : a.category === artState.cat);
       const ul = $("#art-list");
       if (!list.length) { ul.innerHTML = `<li class="empty"><strong>이 유형의 기사가 없습니다.</strong></li>`; return; }
       ul.innerHTML = list.map((a) => `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
-        <span class="al-meta">${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span></span>
+        <span class="al-meta">${a.manual ? '<span class="tier watch">직접 등록</span>' : ""}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span></span>
         <span class="t">${esc(a.title)}</span>
         <span class="al-foot">${verdictTag(a.effect)}${a.effect && a.effect.measure ? `<span class="num ${sgnCls(a.effect.measure.value)}">${pct(a.effect.measure.value)}</span>` : ""}<span class="muted">${esc(a.office)}${a.outlets_total > 1 ? ` 외 ${a.outlets_total - 1}곳` : ""}</span></span>
       </button></li>`).join("");

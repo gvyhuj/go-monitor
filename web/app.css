@@ -651,3 +651,5 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 .causal-more { margin: 8px 0 4px; }
 .causal-more summary { cursor: pointer; font-size: 13px; color: var(--ink-2); font-weight: 600; }
 @media (max-width: 560px) { .checks li, .desk li { grid-template-columns: 18px 1fr; } .checks li span:last-child, .desk li span:last-child { grid-column: 2; } }
+
+.tier.watch { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }

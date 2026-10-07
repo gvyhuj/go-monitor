@@ -133,23 +133,27 @@ jobs:
           gh cache list -R "$GITHUB_REPOSITORY" --key db- --sort created_at --order desc --limit 100 --json id --jq '.[4:][].id' \
             | xargs -r -n1 gh cache delete -R "$GITHUB_REPOSITORY" || true
 
-      - name: 다음 실행 이어 붙이기 (장중에는 약 5분 간격 유지)
-        # GitHub의 정해진 시각 실행(schedule)은 바쁠 때 자주 건너뛰어지므로,
-        # 장중에는 실행이 끝날 때마다 다음 실행을 직접 예약합니다. (다른 실행이 대기·진행 중이면 예약하지 않음)
-        if: always() && github.event_name != 'issues'
+  chain:
+    # GitHub의 정해진 시각 실행(schedule)은 자주 건너뛰어져서(특히 아침 장 시작 전), 실행이 끝날 때마다
+    # 다음 실행을 직접 예약해 하루 종일 이어 감: 장중(평일 08:45~16:00)은 약 3분 뒤, 그 밖에는 약 15분 뒤.
+    needs: monitor
+    if: always() && github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 다음 실행 예약
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           now=$(TZ=Asia/Seoul date +%H%M); dow=$(TZ=Asia/Seoul date +%u)
-          if [ "$dow" -le 5 ] && [ "$now" -ge 0845 ] && [ "$now" -lt 1600 ]; then
-            others=$(gh run list -R "$GITHUB_REPOSITORY" --workflow monitor.yml --limit 20 --json databaseId,status \
-              --jq "[.[] | select(.status != \"completed\" and .databaseId != ${GITHUB_RUN_ID})] | length")
-            if [ "$others" = "0" ]; then
-              sleep 150
-              gh workflow run monitor.yml -R "$GITHUB_REPOSITORY" --ref main && echo "다음 실행을 예약했습니다."
-            else
-              echo "다른 실행이 이미 대기 중이라 예약하지 않습니다."
-            fi
+          if [ "$dow" -le 5 ] && [ "$now" -ge 0845 ] && [ "$now" -lt 1600 ]; then wait=120
+          elif [ "$dow" -le 5 ] && [ "$now" -ge 0815 ] && [ "$now" -lt 0845 ]; then wait=60
+          else wait=840; fi
+          sleep $wait
+          others=$(gh run list -R "$GITHUB_REPOSITORY" --workflow monitor.yml --limit 20 --json databaseId,status \
+            --jq "[.[] | select(.status != \"completed\" and .databaseId != ${GITHUB_RUN_ID})] | length")
+          if [ "$others" = "0" ]; then
+            gh workflow run monitor.yml -R "$GITHUB_REPOSITORY" --ref main && echo "다음 실행을 예약했습니다 (${wait}초 대기 후)."
           else
-            echo "장중이 아니라 다음 실행은 정해진 시각에 합니다."
+            echo "다른 실행이 이미 대기 중이라 예약하지 않습니다."
           fi
