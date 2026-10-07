@@ -58,9 +58,12 @@ def build(out: Path, password: str, salt: bytes, items: list[tuple[str, str, boo
         dst.parent.mkdir(parents=True, exist_ok=True)
         if rel == "index.html":
             html = src.read_text(encoding="utf-8")
+            # 화면 파일이 바뀌면 브라우저가 예전 것을 쓰지 않도록 주소 끝에 판 번호를 붙임
+            ver = hashlib.sha256(b"".join((WEB / f).read_bytes() for f in ("app.js", "app.css") if (WEB / f).exists())).hexdigest()[:10]
+            html = html.replace('href="app.css"', f'href="app.css?v={ver}"').replace('<script src="app.js"></script>', f'<script src="app.js?v={ver}"></script>')
             cfg = json.dumps({"repo": repo, "salt": base64.b64encode(salt).decode(), "iter": ITER})
-            html = html.replace('<script src="app.js"></script>',
-                                f'<script>window.GO_STATIC={cfg}</script>\n  <script src="app.js"></script>')
+            html = html.replace(f'<script src="app.js?v={ver}"></script>',
+                                f'<script>window.GO_STATIC={cfg}</script>\n  <script src="app.js?v={ver}"></script>')
             html = html.replace("<head>", '<head>\n  <meta name="robots" content="noindex, nofollow">', 1)
             dst.write_text(html, encoding="utf-8")
         else:

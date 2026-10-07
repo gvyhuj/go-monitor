@@ -996,6 +996,11 @@
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       <section class="d-block">${causeBlock(c, e.id)}</section>
+      <section class="d-block ask-block"><h3 class="d-sec">추가 질문</h3>
+        <p class="note" style="margin-top:0">이 분석 내용을 바탕으로 Claude에게 더 물어볼 수 있습니다. 분석 요약과 질문이 함께 Claude 새 대화로 넘어갑니다 (회원님 Claude 계정에서만 보이고 공개되지 않습니다).</p>
+        <textarea id="ask-q" rows="3" placeholder="예: 이날 외국계가 방산주를 산 이유를 더 찾아줘 / 이 기사 말고 다른 원인은 없을까?"></textarea>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-claude">Claude에게 묻기</button><span class="form-msg" id="ask-claude-msg"></span></div>
+      </section>
       ${articleBlock(c)}
       <section class="d-block">${flowBlock(c)}</section>
       ${c && c.buyer ? `<section class="d-block">${buyerBlock(c, d.followups)}</section>` : ""}
@@ -1008,6 +1013,15 @@
       <section class="d-block">${relatedBlock(c, e.own_change)}</section>
       <section class="d-block">${newsBlock(c)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
+    $("#ask-claude").onclick = async () => {
+      const q = $("#ask-q").value.trim(), msg = $("#ask-claude-msg");
+      if (!q) { msg.className = "form-msg err"; msg.textContent = "질문을 적어 주세요."; return; }
+      const text = eventContext(d, q);
+      try { await navigator.clipboard.writeText(text); } catch (_) {}
+      window.open(`https://claude.ai/new?q=${encodeURIComponent(text)}`, "_blank", "noopener");
+      msg.className = "form-msg";
+      msg.textContent = "Claude 새 창을 열었습니다. 내용이 비어 있으면 입력창에 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요.";
+    };
     const ch = priceVolumeChart($("#d-chart"), $("#d-legend"), d.bars, { events: daily ? [] : [e] });
     drawerCharts.push(ch);
     const btn = $("#re-analyze");
@@ -1020,6 +1034,29 @@
         renderEventDrawer(await api(`/api/events/${e.id}`));
       } catch (err) { btn.disabled = false; btn.textContent = "다시 분석"; alertInline(btn, err.message); }
     };
+  }
+
+  // 추가 질문용: 화면에 보이는 분석 내용을 Claude에게 넘길 글로 정리 (너무 길면 줄임)
+  function eventContext(d, question) {
+    const e = d.event, c = d.cause || {};
+    const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
+    const L = [];
+    L.push(`아래는 내가 운영하는 주가 감시 사이트의 '${name}' 주가 이상변동 분석 자료야. 이 자료를 바탕으로 질문에 답해줘.`);
+    L.push("필요하면 웹 검색으로 사실을 확인하고, 확인된 사실과 추정을 구분해서 한국어 존댓말로 답해줘.", "");
+    L.push(`[움직임] ${e.start_ts.replace("T", " ")}${isDaily(e) ? " (하루, 전일 종가→종가)" : `~${hhmm(e.last_ts)}`} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}`);
+    if (c.headline) L.push(`[사이트 판단] ${c.headline} (신뢰도 ${c.confidence || "-"})`, c.summary_line || "");
+    (c.candidates || []).slice(0, 4).forEach((x, i) => {
+      L.push(`[원인 후보 ${i + 1}] ${x.title} (신뢰도 ${x.confidence || "-"})`);
+      (x.checks || []).forEach((k) => L.push(`  ${k.step} ${k.ok ? "확인" : "없음"}: ${k.text}`));
+    });
+    ((c.buyer && c.buyer.lines) || []).slice(0, 6).forEach((l) => L.push(`[수급] ${l.text}`));
+    const dr = c.drivers && c.drivers.top;
+    if (dr) (dr.items || []).slice(0, 3).forEach((i) => L.push(`[배경 기사] ${i.ts.replace("T", " ")} ${i.office} 「${i.title}」 ${i.url || ""}`));
+    (c.news || []).slice(-8).forEach((n) => L.push(`[관련 기사] ${n.ts.replace("T", " ")} ${n.office} 「${n.title}」 (${n.timing === "선행" ? "움직임 전" : "움직임 후"}) ${n.url || ""}`));
+    (c.notes || []).slice(0, 4).forEach((n) => L.push(`[참고] ${n}`));
+    let text = L.filter((x) => x !== undefined).join("\n");
+    if (text.length > 5500) text = text.slice(0, 5500) + "\n…(일부 생략)";
+    return `${text}\n\n[질문] ${question}`;
   }
 
   function alertInline(el, msg) {
