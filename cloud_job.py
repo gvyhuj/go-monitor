@@ -90,6 +90,10 @@ def apply_inbox(item: dict, log):
             if pid.isdigit():
                 conn.execute("DELETE FROM pr_events WHERE id=?", (int(pid),))
                 log.info("사이트에서 직접 등록 기사 삭제: %s", pid)
+        try:                                   # 기사 목록을 바로 다시 만들게 (장중 30분 기다리지 않음)
+            conn.execute("DELETE FROM site_items WHERE key IN ('articles', 'article_details')")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def checkpoint():
