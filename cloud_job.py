@@ -432,6 +432,15 @@ def main(argv) -> int:
                     chk.append(f"업종ETF{i_f} 직접 받기 {len(got)}일")
                 except Exception as e:  # noqa: BLE001
                     chk.append(f"업종ETF{i_f} 직접 받기 실패: {type(e).__name__}")
+        try:                               # 직접 등록 기사가 사이트 목록에 들어갔는지 (건수만)
+            import webserver as _ws
+            with connect() as conn:
+                n_pr = conn.execute("SELECT COUNT(*) FROM pr_events").fetchone()[0]
+                cached_list = conn.execute("SELECT value, built_at FROM site_items WHERE key='articles'").fetchone()
+            in_site = cached_list[0].count('"id": "pr') + cached_list[0].count('"id":"pr') if cached_list else -1
+            chk.append(f"직접 등록 {n_pr}건 / 사이트 목록에 {in_site}건 (목록 갱신 {cached_list[1][5:16] if cached_list else '-'})")
+        except Exception as e:  # noqa: BLE001
+            chk.append(f"직접 등록 확인 실패: {type(e).__name__}")
         bu = macro.basket_universe()
         with connect() as conn:
             tops = conn.execute("SELECT office, COUNT(*) FROM macro_news WHERE id LIKE 'g%' AND ts>=? GROUP BY office "
