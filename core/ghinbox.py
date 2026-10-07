@@ -40,10 +40,12 @@ def parse(issue: dict, unseal=None) -> dict | None:
             item = unseal(re.sub(r"\s", "", e.group(1)))
         except Exception:
             raise ValueError("요청을 풀지 못했습니다 (사이트 비밀번호가 바뀐 뒤 만든 요청일 수 있습니다).")
-        if not isinstance(item, dict) or item.get("type") not in ("pr", "hide", "show", "delete_pr"):
+        if not isinstance(item, dict) or item.get("type") not in ("pr", "hide", "show", "delete_pr", "analyze"):
             raise ValueError("알 수 없는 요청입니다.")
         if item["type"] == "pr" and (not item.get("title") or not item.get("published_ts")):
             raise ValueError("기사 제목과 발표 시각이 필요합니다.")
+        if item["type"] == "analyze" and not item.get("date"):
+            raise ValueError("분석할 날짜가 필요합니다.")
         return item
     m = re.match(r"^\[(등록|빼기|다시표시|삭제)\]\s*(.*)$", title)
     if not m:

@@ -340,6 +340,56 @@ def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
             "tier": _tier(ret, main_th, big), "detection_rule": rule, "status": "closed"}
 
 
+def requested_event(symbol: str, day: str, t_from: str | None = None, t_to: str | None = None) -> dict:
+    """사용자가 사이트에서 '이 날(이 시간대) 왜 움직였나' 분석을 요청했을 때 만드는 기록 (단계: 요청).
+
+    시간대가 없으면 하루 기준(전일 종가 → 그날 종가, 장중이면 지금 가격), 있으면 그 시간대의 움직임.
+    """
+    pc = _prev_close(symbol, day)
+    with connect() as conn:
+        dr = conn.execute("SELECT close, volume FROM daily_bars WHERE symbol=? AND date=?", (symbol, day)).fetchone()
+        mins = [dict(r) for r in conn.execute(
+            "SELECT ts, close, volume FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts", (symbol, day))]
+    if t_from or t_to:
+        if not mins:
+            raise ValueError(f"{day} 분봉 기록이 없어 시간대 분석을 할 수 없습니다 (분봉은 최근 약 4개월만 보관). 시간대를 비우면 하루 기준으로 분석합니다.")
+        a = f"{day}T{t_from or '09:00'}"
+        b = f"{day}T{t_to or '15:30'}"
+        before = [m for m in mins if m["ts"] <= a]
+        inside = [m for m in mins if a < m["ts"] <= b]
+        if not inside:
+            raise ValueError("그 시간대에는 거래 기록이 없습니다.")
+        base = before[-1]["close"] if before else (pc if (t_from or "09:00") <= "09:00" else inside[0]["close"])
+        end = inside[-1]["close"]
+        move = end / base - 1 if base else 0.0
+        val = sum((m["close"] or 0) * (m["volume"] or 0) for m in inside)
+        st = inside[0]["ts"][:16] if not before else a
+        ev = {"event_type": "intraday", "start_ts": st, "last_ts": inside[-1]["ts"][:16],
+              "detection_rule": f"직접 분석 요청: {t_from or '09:00'}~{t_to or '15:30'} {move*100:+.2f}% ({base:,.0f}원 → {end:,.0f}원)"}
+    else:
+        close = float(dr["close"]) if dr else (float(mins[-1]["close"]) if mins else None)
+        if not pc or not close:
+            raise ValueError(f"{day}에는 거래 기록이 없습니다 (휴장일이거나 기록 기간 밖입니다).")
+        move = close / pc - 1
+        val = float(close * (dr["volume"] or 0)) if dr else sum((m["close"] or 0) * (m["volume"] or 0) for m in mins)
+        ev = {"event_type": "daily", "start_ts": f"{day}T09:00", "last_ts": f"{day}T15:30",
+              "detection_rule": f"직접 분석 요청: 하루 {move*100:+.2f}% (전일 {pc:,.0f}원 → {close:,.0f}원)"}
+    ev.update({"direction": "up" if move >= 0 else "down", "peak_ts": ev["last_ts"], "peak_return_5m": move,
+               "return_5m": move, "trade_value": val, "tier": "요청", "status": "closed"})
+    with connect() as conn:
+        same = conn.execute("SELECT id FROM events WHERE symbol=? AND event_type=? AND substr(start_ts,1,10)=? "
+                            "AND start_ts<=? AND last_ts>=?", (symbol, ev["event_type"], day, ev["last_ts"], ev["start_ts"])).fetchone()
+        if same:                           # 이미 기록된 움직임이면 그 기록을 다시 분석
+            conn.execute("UPDATE events SET cause_stage=NULL WHERE id=?", (same["id"],))
+            return {"id": same["id"], "existing": True, **ev}
+        cur = conn.execute(
+            "INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, return_5m, peak_return_5m, peak_ts, "
+            "status, detection_rule, trade_value, tier) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (symbol, ev["start_ts"], ev["last_ts"], ev["event_type"], ev["direction"], ev["return_5m"],
+             ev["peak_return_5m"], ev["peak_ts"], ev["status"], ev["detection_rule"], ev["trade_value"], ev["tier"]))
+        return {"id": cur.lastrowid, "existing": False, **ev}
+
+
 def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: datetime | None = None, log=None) -> int:
     """급등·급락 찾기 (하루 단위로 다시 계산해서 기록을 맞춤).
 

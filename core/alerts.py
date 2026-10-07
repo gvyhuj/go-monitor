@@ -87,7 +87,7 @@ def send_new(symbol: str, log=None) -> int:
     n = 0
     for e in rows:
         tier = e.get("tier") or "일반"
-        if tier == "관찰":                      # 3~5% 관찰 단계는 사이트 기록만
+        if tier in ("관찰", "요청"):            # 관찰(3~5%)·직접 요청한 분석은 사이트 기록만
             continue
         key = f"{e['start_ts'][:10]}:{e['direction']}:{tier}"
         if key in sent:

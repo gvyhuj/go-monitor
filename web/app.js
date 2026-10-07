@@ -6,11 +6,13 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const main = $("#main");
   const KIND = { up: "급등", down: "급락", flat: "거래량만 급증" };
-  const kindOf = (e) => (e.tier === "관찰" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
+  const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
   const CONF_CLS = { "높음": "hi", "중간": "mid", "낮음": "lo" };
   const confTag = (c) => (c ? `<span class="conf ${CONF_CLS[c] || ""}">신뢰도 ${c}</span>` : "");
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
-  const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>` : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>` : "");
+  const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>`
+    : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>`
+    : e.tier === "요청" ? `<span class="tier watch" title="직접 분석을 요청한 움직임">요청</span>` : "");
   const isDaily = (e) => e.scope === "하루" || e.event_type === "daily";
   const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -572,13 +574,24 @@
           <button type="button" data-v="all">전체</button><button type="button" data-v="up">오름</button><button type="button" data-v="down">내림</button>
         </div>
         <div class="seg" id="ev-tier" aria-label="크기">
-          <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% (기록만)">관찰만</button>
+          <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% 관찰 + 직접 요청한 분석">관찰·요청</button>
         </div>
         <span class="day-filter" id="ev-day" hidden></span>
         <span class="spacer"></span>
+        <button class="btn editable" type="button" id="ask-toggle" title="기준에 안 걸린 날도 원인을 분석해 기록에 올립니다">분석 요청</button>
         <a class="btn" id="ev-csv" href="#">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>엑셀로 내려받기</a>
       </div>
+      <form class="panel form pr-form editable" id="ask-form" autocomplete="off" hidden>
+        <p class="hint">기준(±3%)에 안 걸려 기록되지 않은 움직임도 원인이 궁금하면 여기서 요청하세요. 시간대를 비우면 하루(전일 종가 → 종가) 기준, 시간을 넣으면 그 시간대만 분석합니다. 장중 약 3분, 그 밖에는 15분 안에 이 목록에 '요청'으로 올라오고 원인 분석이 이어집니다.</p>
+        <div class="pr-form-grid">
+          <label class="field"><span>날짜</span><input type="date" name="date" value="${isoDate(new Date())}" required></label>
+          <label class="field"><span>시작 시각 (선택)</span><input type="time" name="from" min="09:00" max="15:30"></label>
+          <label class="field"><span>끝 시각 (선택)</span><input type="time" name="to" min="09:00" max="15:30"></label>
+          <button class="btn primary" type="submit">분석 요청하기</button>
+        </div>
+        <div class="form-msg" id="ask-msg" role="status"></div>
+      </form>
       <div class="panel cal-wrap" id="cal"></div>
       <div class="panel table-panel"><div class="table-wrap" id="ev-table"><p class="loading" style="padding:20px">불러오는 중…</p></div></div>
     </div>`;
@@ -591,6 +604,17 @@
     bindSeg("#ev-range", "range");
     bindSeg("#ev-kind", "kind");
     bindSeg("#ev-tier", "tier");
+    $("#ask-toggle").onclick = () => { const f = $("#ask-form"); f.hidden = !f.hidden; };
+    $("#ask-form").onsubmit = async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.target), msg = $("#ask-msg");
+      msg.className = "form-msg"; msg.textContent = "요청하는 중…";
+      try {
+        const item = { type: "analyze", date: f.get("date"), from: f.get("from") || null, to: f.get("to") || null };
+        if (item.from && item.to && item.from >= item.to) throw new Error("끝 시각이 시작 시각보다 늦어야 합니다.");
+        msg.textContent = CLOUD ? await sendInbox(item) : "PC 화면에서는 '다시 분석' 버튼을 이용해 주세요.";
+      } catch (e) { msg.className = "form-msg err"; msg.textContent = e.message; }
+    };
     await loadEvents();
   }
 
@@ -614,15 +638,15 @@
     all.forEach((e) => counts[e.direction]++);
     const since = d.trading_days[0];
     $("#ev-sub").textContent = all.length
-      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
+      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰" && e.tier !== "요청").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건${all.some((e) => e.tier === "요청") ? `, 직접 요청 ${all.filter((e) => e.tier === "요청").length}건` : ""}입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
       : "이 기간에는 급등·급락이 없었습니다.";
 
     loadCalendar();
 
     let list = all;
     if (evState.kind !== "all") list = list.filter((e) => e.direction === evState.kind);
-    if (evState.tier === "main") list = list.filter((e) => e.tier !== "관찰");
-    else if (evState.tier === "watch") list = list.filter((e) => e.tier === "관찰");
+    if (evState.tier === "main") list = list.filter((e) => e.tier !== "관찰" && e.tier !== "요청");
+    else if (evState.tier === "watch") list = list.filter((e) => e.tier === "관찰" || e.tier === "요청");
     if (evState.day) list = list.filter((e) => e.start_ts.startsWith(evState.day));
 
     const dayEl = $("#ev-day");

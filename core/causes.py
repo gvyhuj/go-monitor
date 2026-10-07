@@ -1276,7 +1276,8 @@ def refresh_pending(symbol: str, now: datetime, fetch=None, log=None, max_n: int
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT id, start_ts, last_ts, status, cause_stage FROM events WHERE symbol=? "
-            "AND (cause_stage IS NULL OR cause_stage != '최종') ORDER BY start_ts DESC", (symbol,))]
+            "AND (cause_stage IS NULL OR cause_stage != '최종') ORDER BY (tier='요청' AND cause_stage IS NULL) DESC, start_ts DESC",
+            (symbol,))]
     n = 0
     for r in rows:
         if n >= max_n:                     # 한 번 실행에 너무 오래 걸리지 않게 (최근 것부터, 나머지는 다음 실행)

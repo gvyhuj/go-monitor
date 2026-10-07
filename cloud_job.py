@@ -85,6 +85,14 @@ def apply_inbox(item: dict, log):
             aid = str(item.get("id") or "")
             conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if t == "hide" else 0, aid, aid))
             log.info("사이트에서 기사 %s: %s", "빼기" if t == "hide" else "다시 표시", aid)
+        elif t == "analyze":
+            from core.detector import requested_event
+            day = str(item.get("date") or "")[:10]
+            date.fromisoformat(day)               # 형식 확인
+            hhmm = lambda v: (str(v)[:5] if v and len(str(v)) >= 4 else None)
+            r = requested_event(load_settings()["symbol"], day, hhmm(item.get("from")), hhmm(item.get("to")))
+            log.info("사이트에서 분석 요청: %s %s~%s (%s)", day, item.get("from") or "", item.get("to") or "",
+                     "기존 기록 다시 분석" if r["existing"] else "새 기록")
         elif t == "delete_pr":
             pid = str(item.get("id") or "").replace("pr", "")
             if pid.isdigit():
