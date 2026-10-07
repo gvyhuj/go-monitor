@@ -997,9 +997,9 @@
       </dl>
       <section class="d-block">${causeBlock(c, e.id)}</section>
       <section class="d-block ask-block"><h3 class="d-sec">추가 질문</h3>
-        <p class="note" style="margin-top:0">이 분석 내용을 바탕으로 Claude에게 더 물어볼 수 있습니다. 분석 요약과 질문이 함께 Claude 새 대화로 넘어갑니다 (회원님 Claude 계정에서만 보이고 공개되지 않습니다).</p>
+        <p class="note" style="margin-top:0">이 분석 내용을 바탕으로 ChatGPT나 Claude에게 더 물어볼 수 있습니다. 분석 요약과 질문이 함께 새 대화로 넘어갑니다 (회원님 계정에서만 보이고 공개되지 않으며, 각 구독 사용량 안에서 처리됩니다). 질문을 비워 두면 "원인을 다시 분석해 줘"로 보냅니다.</p>
         <textarea id="ask-q" rows="3" placeholder="예: 이날 외국계가 방산주를 산 이유를 더 찾아줘 / 이 기사 말고 다른 원인은 없을까?"></textarea>
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-claude">Claude에게 묻기</button><span class="form-msg" id="ask-claude-msg"></span></div>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="ChatGPT 웹 검색을 켠 채로 엽니다. 모델은 ChatGPT 화면에서 고릅니다">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button><span class="form-msg" id="ask-claude-msg"></span></div>
       </section>
       ${articleBlock(c)}
       <section class="d-block">${flowBlock(c)}</section>
@@ -1013,15 +1013,20 @@
       <section class="d-block">${relatedBlock(c, e.own_change)}</section>
       <section class="d-block">${newsBlock(c)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
-    $("#ask-claude").onclick = async () => {
-      const q = $("#ask-q").value.trim(), msg = $("#ask-claude-msg");
-      if (!q) { msg.className = "form-msg err"; msg.textContent = "질문을 적어 주세요."; return; }
+    const askWith = async (where) => {
+      const q = $("#ask-q").value.trim() || "이 움직임의 원인을 자료와 최신 뉴스를 바탕으로 다시 분석해 줘. 사이트 판단이 맞는지도 검토해 줘.";
+      const msg = $("#ask-claude-msg");
       const text = eventContext(d, q);
       try { await navigator.clipboard.writeText(text); } catch (_) {}
-      window.open(`https://claude.ai/new?q=${encodeURIComponent(text)}`, "_blank", "noopener");
+      const url = where === "gpt"
+        ? `https://chatgpt.com/?hints=search&q=${encodeURIComponent(text)}`
+        : `https://claude.ai/new?q=${encodeURIComponent(text)}`;
+      window.open(url, "_blank", "noopener");
       msg.className = "form-msg";
-      msg.textContent = "Claude 새 창을 열었습니다. 내용이 비어 있으면 입력창에 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요.";
+      msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 보내기 버튼을 누르면 됩니다. 입력칸이 비어 있으면 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요.`;
     };
+    $("#ask-gpt").onclick = () => askWith("gpt");
+    $("#ask-claude").onclick = () => askWith("claude");
     const ch = priceVolumeChart($("#d-chart"), $("#d-legend"), d.bars, { events: daily ? [] : [e] });
     drawerCharts.push(ch);
     const btn = $("#re-analyze");
