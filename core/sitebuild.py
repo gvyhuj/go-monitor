@@ -152,6 +152,10 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
         except Exception as e:            # noqa: BLE001 - 한 항목이 실패해도 나머지는 올림
             if log:
                 log(f"사이트 자료 {key} 만들기 실패: {e}")
+            import traceback
+            tb = traceback.format_exc().strip().splitlines()
+            where = next((ln.strip() for ln in reversed(tb) if ln.strip().startswith("File ")), "")
+            print(f"::warning title=사이트 자료::{key} 만들기 실패: {type(e).__name__}: {str(e)[:150]} @ {where[-120:]}", flush=True)
             return
         cached[key] = {"key": key, "value": v, "b64": 0, "built_at": stamp}
         fresh.add(key)
