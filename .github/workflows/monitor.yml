@@ -9,7 +9,8 @@
 #     DATA_KEY       기록 백업용 열쇠 (선택. 없으면 SITE_PASSWORD 사용. 한 번 정하면 바꾸지 마세요)
 #     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET  네이버 검색 API (선택. 국제·정치 이슈 기사 수집용, 무료)
 # - 기록(SQLite)은 암호화해서 실행 사이에 넘기고(Actions 캐시), 1시간마다 data 브랜치에도 백업합니다.
-# - 사이트에서 '기사 직접 등록'·'목록에서 빼기'를 누르면 GitHub 이슈가 만들어지고, 저장소 주인이 만든 이슈만 반영합니다.
+# - 사이트에서 '기사 직접 등록'·'목록에서 빼기'를 누르면 GitHub 이슈(내용 암호화)가 만들어지고, 다음 정기 실행 때 저장소 주인이 만든 이슈만 반영합니다.
+#   (이슈로 바로 시작된 실행은 GitHub이 기록 저장을 막아서, 이슈로는 실행하지 않음)
 
 name: 주가 감시
 
@@ -25,8 +26,6 @@ on:
         default: false
   push:
     branches: [main]                    # 코드를 고치면 바로 한 번 실행
-  issues:
-    types: [opened]
 
 concurrency:
   group: monitor
