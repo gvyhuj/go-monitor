@@ -7,6 +7,8 @@ GitHub 휴대폰 앱이 '언급' 알림을 푸시로 보내 줍니다. 글은 �
 원인 분석은 비밀번호가 걸린 사이트에서만 보게 합니다.
 
 같은 날 같은 방향은 한 번만, 그 뒤 ±10% 이상('대형')으로 커지면 한 번 더 보냅니다.
+장중에 ±3% 안으로 회복했다가 다시 기준을 넘으면 한 번 더 보냅니다.
+여러 날 누적(5거래일 ±10%)과 장중 수집 공백(20분 이상)도 알립니다.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .db import connect, get_state, set_state
 
@@ -85,12 +87,18 @@ def send_new(symbol: str, log=None) -> int:
         rows = [dict(r) for r in conn.execute(
             "SELECT id, event_type, start_ts, last_ts, direction, peak_return_5m, tier, status, detection_rule FROM events "
             "WHERE symbol=? AND substr(start_ts,1,10) >= ? ORDER BY start_ts", (symbol, today))]
+    from .detector import recover_key
+    rec = get_state(recover_key(symbol, today))
+    since = rec["value"] if rec and rec.get("value") else None   # 오늘 회복한 시각 (그 뒤 다시 넘으면 새 알림)
+    sfx = f"@{since}" if since else ""
     n = 0
     for e in rows:
         tier = e.get("tier") or "일반"
         if tier in ("관찰", "요청"):            # 관찰(3~5%)·직접 요청한 분석은 사이트 기록만
             continue
-        key = f"{e['start_ts'][:10]}:{e['direction']}:{tier}"
+        if since and e["event_type"] == "intraday" and e["start_ts"][11:16] <= since:
+            continue                        # 회복 전 움직임은 이미 알림이 나간 일
+        key = f"{e['start_ts'][:10]}:{e['direction']}:{tier}{sfx}"
         if key in sent:
             continue
         word = "급등" if e["direction"] == "up" else "급락"
@@ -110,7 +118,44 @@ def send_new(symbol: str, log=None) -> int:
                                       f"{mv*100:+.1f}% 움직였습니다."))
             sent.add(key)
             if tier == "대형":
-                sent.add(f"{e['start_ts'][:10]}:{e['direction']}:일반")
+                sent.add(f"{e['start_ts'][:10]}:{e['direction']}:일반{sfx}")
+            n += 1
+            if log:
+                log(f"알림 보냄: {title}")
+        except (urllib.error.URLError, KeyError, ValueError) as ex:
+            if log:
+                log(f"알림 실패: {ex}")
+            break
+    _save(sent)
+    return n + send_multiday(symbol, log)
+
+
+def send_multiday(symbol: str, log=None) -> int:
+    """여러 날 누적 급등·급락 알림 (장 마감 뒤 확정 종가 기준, 최근 3일 안의 기록만)."""
+    from .detector import multiday_key
+    st = get_state(multiday_key(symbol))
+    try:
+        items = json.loads(st["value"]) if st else []
+    except (ValueError, TypeError):
+        return 0
+    sent = _sent()
+    keys = {f"multi:{m['date']}:{m['direction']}": m for m in items}
+    if not get_state("alerts:multiday_init"):     # 처음 켤 때 지난 기록으로 알림이 쏟아지지 않게
+        _save(sent | set(keys))
+        set_state("alerts:multiday_init", datetime.now().isoformat(timespec="minutes"))
+        return 0
+    recent = (datetime.now() - timedelta(days=3)).date().isoformat()
+    n = 0
+    for key, m in keys.items():
+        if key in sent or m["date"] < recent:
+            continue
+        word = "상승" if m["direction"] == "up" else "하락"
+        md = lambda d: d[5:10].replace("-", "/")
+        title = f"{m['days']}일 누적 {word} {m['return']*100:+.1f}% ({md(m['from'])} 종가 → {md(m['date'])} 종가)"
+        try:
+            _post_issue(title, _body(f"주가가 {m['days']}거래일 동안 {m['return']*100:+.1f}% 움직였습니다 "
+                                      "(하루하루는 기준 밑이어도 쌓이면 알립니다)."))
+            sent.add(key)
             n += 1
             if log:
                 log(f"알림 보냄: {title}")
@@ -120,6 +165,40 @@ def send_new(symbol: str, log=None) -> int:
             break
     _save(sent)
     return n
+
+
+def check_gap(symbol: str, now: datetime, log=None, limit_min: int = 20) -> bool:
+    """정규장 중 수집이 limit_min분 이상 끊겼으면 (다음 실행이 돌아왔을 때) 공백 알림. 보냈으면 True.
+
+    실행이 아예 멈추면 스스로 알릴 수 없으므로, 다시 돌아온 첫 실행이 사후에 알립니다.
+    """
+    prev = get_state("alerts:last_run_at")
+    set_state("alerts:last_run_at", now.isoformat(timespec="minutes"))
+    st = get_state(f"quote:{symbol}")
+    try:
+        q = json.loads(st["value"]) if st else {}
+    except (ValueError, TypeError):
+        q = {}
+    day = now.date().isoformat()
+    if not prev or str(q.get("traded_at") or "")[:10] != day:    # 처음이거나 오늘 장이 없음(휴장)
+        return False
+    p = datetime.fromisoformat(prev["value"])
+    a = max(p, now.replace(hour=9, minute=0, second=0, microsecond=0))
+    b = min(now, now.replace(hour=15, minute=30, second=0, microsecond=0))
+    if (b - a) < timedelta(minutes=limit_min):
+        return False
+    mins = int((b - a).total_seconds() // 60)
+    title = f"[수집 공백] {a:%m/%d %H:%M}~{b:%H:%M} ({mins}분)"
+    try:
+        _post_issue(title, _body(f"장중 {mins}분 동안 감시 실행이 없었습니다. 이 사이에 급등·급락이 있었다면 "
+                                  "알림이 늦었을 수 있습니다. 지금은 다시 돌고 있습니다."))
+        if log:
+            log(f"알림 보냄: {title}")
+        return True
+    except (urllib.error.URLError, KeyError, ValueError) as ex:
+        if log:
+            log(f"공백 알림 실패: {ex}")
+        return False
 
 
 def send_test(log=None) -> bool:

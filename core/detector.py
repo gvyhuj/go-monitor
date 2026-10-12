@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .db import connect, get_state, set_state
+from .db import connect, get_state, now_iso, set_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -166,8 +166,24 @@ def _state_key(symbol: str) -> str:
     return f"detector_day:{symbol}"
 
 
+def _naver_base(symbol: str, day: str):
+    """그날 네이버 현재가가 있으면 네이버 기준가(현재가 − 전일 대비). 배당락·권리락 날에는 전일 종가와 다름."""
+    st = get_state(f"quote:{symbol}")
+    try:
+        q = json.loads(st["value"]) if st else None
+    except (ValueError, TypeError):
+        return None
+    if not q or q.get("price") is None or q.get("change") is None:
+        return None
+    at = str(q.get("traded_at") or q.get("fetched_at") or "")[:10]
+    return float(q["price"]) - float(q["change"]) if at == day else None
+
+
 def _prev_close(symbol: str, day: str):
-    """전 거래일 종가: 일봉 → 없으면 분봉 마지막 값."""
+    """전 거래일 종가: 그날 네이버 기준가 → 일봉 → 없으면 분봉 마지막 값."""
+    base = _naver_base(symbol, day)
+    if base:
+        return base
     with connect() as conn:
         r = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                          (symbol, day)).fetchone()
@@ -390,6 +406,55 @@ def running_daily_event(day: pd.DataFrame, prev_close, s: dict) -> dict | None:
             "tier": _tier(held, main_th, big), "detection_rule": rule, "status": "open"}
 
 
+def recover_key(symbol: str, day: str) -> str:
+    return f"detector_recover:{symbol}:{day}"
+
+
+def recovered_at(day: pd.DataFrame, prev_close, s: dict) -> str | None:
+    """최근 hold분 내내 전일 종가 대비 ±관찰 기준(3%) 안이면 그 마지막 시각(HH:MM), 아니면 None."""
+    if not prev_close or day is None or day.empty:
+        return None
+    th = min(float(s.get("event_move_pct", 5.0)), float(s.get("event_watch_pct", 5.0))) / 100
+    hold = int(s.get("event_hold_minutes", 5))
+    real = day.sort_values("ts").drop_duplicates("ts")
+    real = real[real["volume"] > 0].copy()
+    if real.empty:
+        return None
+    real["robust"] = real["close"].astype(float).rolling(3, center=True, min_periods=1).median()
+    g = _fill_minute_grid(day).merge(real[["ts", "robust"]], on="ts", how="left")
+    g["robust"] = g["robust"].ffill().bfill()
+    if len(g) < hold:
+        return None
+    last = (g["robust"].astype(float).iloc[-hold:] / float(prev_close) - 1).tolist()
+    return f"{g['ts'].iloc[-1]:%H:%M}" if all(abs(r) < th for r in last) else None
+
+
+def multiday_events(symbol: str, s: dict, until: str) -> list[dict]:
+    """여러 날에 걸친 누적 등락: N거래일 전 종가 → 그날 종가가 ±M% 이상인 날 (장 마감 뒤 확정 종가 기준).
+
+    하루 -3%씩 사흘처럼 날마다는 기준 밑이라 놓치는 흐름을 잡음. 같은 방향은 누적이 ±절반(5%) 안으로
+    돌아오기 전까지 한 번만 기록합니다.
+    """
+    n = int(s.get("multiday_days", 5))
+    th = float(s.get("multiday_pct", 10.0)) / 100
+    rearm = th / 2
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT date, close FROM daily_bars WHERE symbol=? AND date<=? AND close>0 ORDER BY date", (symbol, until))]
+    out, armed = [], {"up": True, "down": True}
+    for i in range(n, len(rows)):
+        a, b = rows[i - n], rows[i]
+        r = b["close"] / a["close"] - 1
+        if abs(r) < rearm:
+            armed = {"up": True, "down": True}
+        d = "up" if r > 0 else "down"
+        if abs(r) >= th and armed[d]:
+            armed[d] = False
+            out.append({"date": b["date"], "from": a["date"], "direction": d, "return": r, "days": n,
+                        "from_close": a["close"], "close": b["close"]})
+    return out
+
+
 def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
     main_th = float(s.get("event_move_pct", 5.0)) / 100
     th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
@@ -523,8 +588,24 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
                 rv = running_daily_event(bars, _prev_close(symbol, day), s)
                 if rv:
                     evs.append(rv)
+                else:
+                    at = recovered_at(bars, _prev_close(symbol, day), s)
+                    if at and conn.execute("DELETE FROM events WHERE symbol=? AND event_type='daily' AND status='open' "
+                                           "AND substr(start_ts,1,10)=?", (symbol, day)).rowcount:
+                        conn.execute(                      # 회복: 다시 기준을 넘으면 알림을 한 번 더 보냄
+                            "INSERT INTO system_state(key, value, updated_at) VALUES (?,?,?) "
+                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                            (recover_key(symbol, day), at, now_iso()))
             for ev in evs:
                 new += _upsert(conn, symbol, ev)
     if days:
         set_state(_state_key(symbol), days[-1])
+    # 여러 날 누적 (확정 종가만: 장 마감 전에는 어제까지)
+    over = now.time() >= datetime.strptime("15:35", "%H:%M").time()
+    until = today if over else (now - timedelta(days=1)).date().isoformat()
+    set_state(multiday_key(symbol), json.dumps(multiday_events(symbol, s, until)[-30:]))
     return new
+
+
+def multiday_key(symbol: str) -> str:
+    return f"detector_multiday:{symbol}"

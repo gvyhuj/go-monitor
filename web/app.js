@@ -253,7 +253,7 @@
   const kindColor = (k, dark) => (dark ? { up: "#FF6B7D", down: "#7FA6FF", flat: "#F2BE4B" } : { up: css("--up"), down: css("--down"), flat: css("--vol") })[k];
 
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
-  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true } = {}) {
+  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true, onEvent = null } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
     const lineColor = dark ? "#FFFFFF" : (matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2"));
     const price = chart.addSeries(LW.LineSeries, {
@@ -291,6 +291,7 @@
     }
     if (events.length) {
       const markers = events.map((e) => ({
+        id: String(e.id),
         time: toTime(e.start_ts),
         position: e.direction === "down" ? "aboveBar" : e.direction === "up" ? "belowBar" : "aboveBar",
         shape: e.direction === "up" ? "arrowUp" : e.direction === "down" ? "arrowDown" : "circle",
@@ -299,6 +300,8 @@
         size: 1,
       })).sort((a, b) => a.time - b.time);
       LW.createSeriesMarkers(price, markers);
+      // 차트의 급등·급락 표시를 누르면 목록과 같은 원인 분석 창을 엶
+      if (onEvent) chart.subscribeClick((p) => { if (p.hoveredObjectId) onEvent(+p.hoveredObjectId); });
     }
     if (extendTo) {
       // 장 끝까지 빈 칸이 보이도록 가장자리 고정을 풀고 범위를 직접 지정
@@ -492,7 +495,7 @@
     $("#hero-chart").innerHTML = "";
     const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
     heroChart = priceVolumeChart($("#hero-chart"), $("#hero-legend"), d.bars, {
-      dark: true, events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false,
+      dark: true, events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
       extendTo: closed ? null : `${d.date}T15:30`,
     });
     $("#session-date").textContent = `${dayLabel(d.date)} 장중 1분봉${isLatest && !closed ? ", 진행 중" : ""}`;

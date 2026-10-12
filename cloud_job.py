@@ -372,6 +372,8 @@ def main(argv) -> int:
             from core import alerts
             if alerts.send_test(log.warning):
                 annotate("notice", "알림 시험 글을 보냈습니다")
+            if alerts.check_gap(code, feed.kst_now(), log=log.info):
+                annotate("warning", "장중 수집 공백이 있어 알림을 보냈습니다")
             n_alert = alerts.send_new(code, log=log.info)
             if n_alert:
                 annotate("notice", f"급등·급락 알림 {n_alert}건 보냄")
