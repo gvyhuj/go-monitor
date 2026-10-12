@@ -413,6 +413,13 @@
     el.innerHTML = html; el.hidden = false;
   }
 
+  // 오늘 '지금 등락'은 한 곳(네이버 현재가)에서만 가져와 화면 어디서나 같은 숫자를 씀
+  function liveFor(date) {
+    const q = STATUS && STATUS.quote;
+    if (!q || q.price == null || q.change_pct == null || !q.traded_at || q.traded_at.slice(0, 10) !== date) return null;
+    return { price: q.price, chg: q.change_pct / 100, at: q.traded_at.slice(11, 16), open: q.market_status === "OPEN" };
+  }
+
   function renderQuote() {
     if (!STATUS) return;
     const q = STATUS.quote, k = STATUS.kosdaq;
@@ -503,7 +510,10 @@
     let dayTotal = "";
     if (d.prev_close && d.bars.length) {
       const lastBar = d.bars[d.bars.length - 1];
-      const chg = lastBar.c / d.prev_close - 1;
+      const live = liveFor(d.date);
+      const nowPx = live ? live.price : lastBar.c;
+      const nowAt = live ? live.at : hhmm(lastBar.t);
+      const chg = live ? live.chg : lastBar.c / d.prev_close - 1;
       const lowR = Math.min(...d.bars.map((b) => b.l ?? b.c)) / d.prev_close - 1;
       const highR = Math.max(...d.bars.map((b) => b.h ?? b.c)) / d.prev_close - 1;
       const won = (v) => `${Math.round(v).toLocaleString("ko-KR")}원`;
@@ -514,8 +524,8 @@
         ? `<span class="day-total-cause">${confTag(dailyEv.cause_confidence)}${esc(dailyEv.cause_headline)}</span>` : "";
       const inner = `
         <div class="day-total-main">
-          <span class="day-total-label">${closed ? "하루 전체 (종가)" : `하루 전체 (${hhmm(lastBar.t)} 현재)`}${head}</span>
-          <span class="day-total-sub">전일 종가 ${won(d.prev_close)} → ${won(lastBar.c)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
+          <span class="day-total-label">${closed && !(live && live.open) ? "하루 전체 (종가)" : `하루 전체 (${nowAt} 현재)`}${head}</span>
+          <span class="day-total-sub">전일 종가 ${won(d.prev_close)} → ${won(nowPx)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
           ${cause}
         </div>
         <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>`;
@@ -1017,12 +1027,17 @@
     const e = d.event, c = d.cause;
     const span = e.last_ts !== e.start_ts ? `${hhmm(e.start_ts)}부터 ${hhmm(e.last_ts)}까지` : `${hhmm(e.start_ts)}`;
     const daily = isDaily(e);
+    const running = daily && e.status === "open";           // 장 마감 전 하루 기록
+    const live = running ? liveFor(e.start_ts.slice(0, 10)) : null;
+    const mv = live ? live.chg : e.peak_return_5m;          // 오늘은 대시보드 맨 위 현재가와 같은 숫자
     $("#drawer-body").innerHTML = `
       <span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}
-      <h2 class="d-title" id="drawer-title">${dayLabel(e.start_ts)}${daily ? "" : ` ${hhmm(e.start_ts)}`} <span class="${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}</span></h2>
-      <p class="d-sub">${daily ? "전일 종가 대비 종가 기준 움직임입니다." : `${span} 사이 움직임입니다.`}</p>
+      <h2 class="d-title" id="drawer-title">${dayLabel(e.start_ts)}${daily ? "" : ` ${hhmm(e.start_ts)}`} <span class="${sgnCls(mv)}">${pct(mv)}</span></h2>
+      <p class="d-sub">${running
+        ? `전일 종가 대비 ${live ? live.at + " 현재" : "지금까지"} 움직임입니다. 장 마감 뒤 종가로 확정되며, 아래 원인 분석의 숫자는 분석한 시각 기준이라 조금 다를 수 있습니다.`
+        : daily ? "전일 종가 대비 종가 기준 움직임입니다." : `${span} 사이 움직임입니다.`}</p>
       <dl class="facts">
-        <div><dt>${daily ? "종가 등락" : "구간 최대 움직임"}</dt><dd class="num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${daily ? "" : hhmm(e.peak_ts)}</small></dd></div>
+        <div><dt>${running ? "지금 등락 (전일 대비)" : daily ? "종가 등락" : "구간 최대 움직임"}</dt><dd class="num ${sgnCls(mv)}">${pct(mv)}<small>${running ? (live ? live.at : "") : daily ? "" : hhmm(e.peak_ts)}</small></dd></div>
         <div><dt>KOSDAQ 같은 기간</dt><dd class="num">${e.kosdaq_change == null ? '<small style="margin:0">데이터 없음</small>' : pct(e.kosdaq_change)}</dd></div>
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
