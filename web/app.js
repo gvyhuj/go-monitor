@@ -910,11 +910,10 @@
     const m = e.manual;
     const daily = isDaily(e);
     const own = m && !m.inherited;
-    const when = m ? `${esc((m.updated_at || "").slice(5, 16).replace("T", " ").replace("-", "/"))} 입력` : "";
     const view = m ? `<div class="manual-cause">
         ${m.headline ? `<div class="mc-head">${esc(m.headline)}</div>` : ""}
         <div class="mc-body">${mdRender(m.body || "")}</div>
-        <p class="note" style="margin:8px 0 0">${when}${m.inherited ? " · 그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다." : ""}</p></div>`
+        ${m.inherited ? `<p class="note" style="margin:8px 0 0">그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다.</p>` : ""}</div>`
       : `<div class="empty"><strong>원인 미입력</strong>아래 'ChatGPT에게 묻기'로 원인을 물어본 뒤, 받은 답을 '원인 붙여넣기'로 넣으세요.</div>`;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
       ${view}
