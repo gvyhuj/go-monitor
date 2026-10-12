@@ -8,7 +8,7 @@ GitHub 휴대폰 앱이 '언급' 알림을 푸시로 보내 줍니다. 글은 �
 
 같은 날 같은 방향은 한 번만, 그 뒤 ±10% 이상('대형')으로 커지면 한 번 더 보냅니다.
 장중에 ±3% 안으로 회복했다가 다시 기준을 넘으면 한 번 더 보냅니다.
-여러 날 누적(5거래일 ±10%)과 장중 수집 공백(20분 이상)도 알립니다.
+여러 날 누적(5거래일 ±10%)도 알립니다.
 """
 from __future__ import annotations
 
@@ -165,40 +165,6 @@ def send_multiday(symbol: str, log=None) -> int:
             break
     _save(sent)
     return n
-
-
-def check_gap(symbol: str, now: datetime, log=None, limit_min: int = 20) -> bool:
-    """정규장 중 수집이 limit_min분 이상 끊겼으면 (다음 실행이 돌아왔을 때) 공백 알림. 보냈으면 True.
-
-    실행이 아예 멈추면 스스로 알릴 수 없으므로, 다시 돌아온 첫 실행이 사후에 알립니다.
-    """
-    prev = get_state("alerts:last_run_at")
-    set_state("alerts:last_run_at", now.isoformat(timespec="minutes"))
-    st = get_state(f"quote:{symbol}")
-    try:
-        q = json.loads(st["value"]) if st else {}
-    except (ValueError, TypeError):
-        q = {}
-    day = now.date().isoformat()
-    if not prev or str(q.get("traded_at") or "")[:10] != day:    # 처음이거나 오늘 장이 없음(휴장)
-        return False
-    p = datetime.fromisoformat(prev["value"])
-    a = max(p, now.replace(hour=9, minute=0, second=0, microsecond=0))
-    b = min(now, now.replace(hour=15, minute=30, second=0, microsecond=0))
-    if (b - a) < timedelta(minutes=limit_min):
-        return False
-    mins = int((b - a).total_seconds() // 60)
-    title = f"[수집 공백] {a:%m/%d %H:%M}~{b:%H:%M} ({mins}분)"
-    try:
-        _post_issue(title, _body(f"장중 {mins}분 동안 감시 실행이 없었습니다. 이 사이에 급등·급락이 있었다면 "
-                                  "알림이 늦었을 수 있습니다. 지금은 다시 돌고 있습니다."))
-        if log:
-            log(f"알림 보냄: {title}")
-        return True
-    except (urllib.error.URLError, KeyError, ValueError) as ex:
-        if log:
-            log(f"공백 알림 실패: {ex}")
-        return False
 
 
 def send_test(log=None) -> bool:

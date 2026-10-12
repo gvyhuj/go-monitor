@@ -170,23 +170,3 @@ def test_multiday_alert_not_flooded_on_first_run(tmpdb):
     assert alerts.send_multiday(SYM) == 1
     assert "5일 누적 하락" in tmpdb[-1]
     assert alerts.send_multiday(SYM) == 0
-
-
-def test_gap_alert(tmpdb):
-    day = "2026-10-12"
-    db.set_state(f"quote:{SYM}", json.dumps({"price": 1, "change": 0, "traded_at": f"{day}T10:41:00+09:00"}))
-    t = lambda hm: datetime.fromisoformat(f"{day}T{hm}")
-    assert not alerts.check_gap(SYM, t("10:00"))          # 처음
-    assert not alerts.check_gap(SYM, t("10:05"))          # 5분: 정상
-    assert alerts.check_gap(SYM, t("10:41"))              # 36분 공백
-    assert "10:05~10:41" in tmpdb[-1]
-    assert not alerts.check_gap(SYM, t("10:44"))
-    # 전날 장 마감 뒤 → 오늘 09:03 첫 실행은 공백 아님
-    db.set_state("alerts:last_run_at", "2026-10-11T16:23")
-    assert not alerts.check_gap(SYM, t("09:03"))
-
-
-def test_gap_alert_skips_holiday(tmpdb):
-    db.set_state(f"quote:{SYM}", json.dumps({"price": 1, "change": 0, "traded_at": "2026-10-08T15:30:00+09:00"}))
-    db.set_state("alerts:last_run_at", "2026-10-09T09:00")
-    assert not alerts.check_gap(SYM, datetime.fromisoformat("2026-10-09T11:00"))
