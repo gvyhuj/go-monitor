@@ -308,6 +308,53 @@ def _tier(move: float, main_th: float, big: float) -> str:
     return "대형" if abs(move) >= big else "일반" if abs(move) >= main_th else "관찰"
 
 
+def running_daily_event(day: pd.DataFrame, prev_close, s: dict) -> dict | None:
+    """장중 '전일 종가 대비' 누적 등락 (장 마감 전 임시 하루 기록).
+
+    30분 기준은 천천히 오래 빠지는(오르는) 날을 놓칩니다. 예: 2시간에 걸쳐 -7%가 됐지만
+    30분 단위로는 -3~4%씩이라 '관찰'에 그친 경우. 그래서 장중에도 전일 종가 대비 등락을 보고,
+    그 수준이 몇 분 이상 유지되면 하루 기록을 미리 만듭니다. 장 마감 뒤 확정 종가로 갱신됩니다.
+    """
+    if not prev_close or day is None or day.empty:
+        return None
+    main_th = float(s.get("event_move_pct", 5.0)) / 100
+    th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
+    big = float(s.get("event_big_pct", 10.0)) / 100
+    hold = int(s.get("event_hold_minutes", 5))
+    real = day.sort_values("ts").drop_duplicates("ts")
+    real = real[real["volume"] > 0].copy()
+    if real.empty:
+        return None
+    real["robust"] = real["close"].astype(float).rolling(3, center=True, min_periods=1).median()
+    g = _fill_minute_grid(day).merge(real[["ts", "robust"]], on="ts", how="left")
+    g["robust"] = g["robust"].ffill().bfill()
+    if len(g) < hold:
+        return None
+    pc = float(prev_close)
+    rets = (g["robust"].astype(float) / pc - 1).tolist()
+    last = rets[-hold:]                       # 최근 hold분 내내 같은 방향으로 기준 이상이어야 함
+    if all(r <= -th for r in last):
+        d, held = "down", max(last)           # 유지된 수준 중 가장 약한 값 (순간 튄 값 제외)
+    elif all(r >= th for r in last):
+        d, held = "up", min(last)
+    else:
+        return None
+    k = (min if d == "down" else max)(range(len(rets)), key=lambda i: rets[i])
+    ext = rets[k]
+    val = float((g["close"].astype(float) * g["volume"].astype(float)).sum())
+    if val < float(s.get("event_min_value_won", 5e7)):
+        return None
+    now_ts = g["ts"].iloc[-1]
+    now_px = float(g["robust"].iloc[-1])
+    rule = (f"장중 전일 대비 {rets[-1]*100:+.2f}% (전일 {pc:,.0f}원 → {now_ts:%H:%M} {now_px:,.0f}원), "
+            f"{hold}분 이상 유지, 장중 {'최고' if d == 'up' else '최저'} {ext*100:+.2f}% · 장 마감 뒤 종가로 확정")
+    return {"event_type": "daily", "direction": d, "start_ts": f"{now_ts:%Y-%m-%d}T09:00",
+            "last_ts": g["ts"].iloc[k].isoformat(timespec="minutes")[:16],
+            "peak_ts": g["ts"].iloc[k].isoformat(timespec="minutes")[:16],
+            "peak_return_5m": held, "return_5m": ext, "trade_value": val,
+            "tier": _tier(held, main_th, big), "detection_rule": rule, "status": "open"}
+
+
 def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
     main_th = float(s.get("event_move_pct", 5.0)) / 100
     th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
@@ -432,6 +479,15 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
                 dv = daily_event(symbol, day, s, bars)
                 if dv:
                     evs.append(dv)
+                    conn.execute("DELETE FROM events WHERE symbol=? AND event_type='daily' AND status='open' "
+                                 "AND direction!=? AND substr(start_ts,1,10)=?", (symbol, dv["direction"], day))
+                else:                       # 장중 임시 기록이 있었는데 종가가 기준 안으로 돌아왔으면 지움
+                    conn.execute("DELETE FROM events WHERE symbol=? AND event_type='daily' AND status='open' "
+                                 "AND substr(start_ts,1,10)=?", (symbol, day))
+            elif bars is not None:          # 장중: 전일 종가 대비 누적 등락 (천천히 오래 움직이는 날)
+                rv = running_daily_event(bars, _prev_close(symbol, day), s)
+                if rv:
+                    evs.append(rv)
             for ev in evs:
                 new += _upsert(conn, symbol, ev)
     if days:

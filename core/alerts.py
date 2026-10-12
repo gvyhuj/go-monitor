@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -82,7 +83,7 @@ def send_new(symbol: str, log=None) -> int:
     today = datetime.now().date().isoformat()
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
-            "SELECT id, event_type, start_ts, last_ts, direction, peak_return_5m, tier FROM events "
+            "SELECT id, event_type, start_ts, last_ts, direction, peak_return_5m, tier, status, detection_rule FROM events "
             "WHERE symbol=? AND substr(start_ts,1,10) >= ? ORDER BY start_ts", (symbol, today))]
     n = 0
     for e in rows:
@@ -94,11 +95,18 @@ def send_new(symbol: str, log=None) -> int:
             continue
         word = "급등" if e["direction"] == "up" else "급락"
         mv = e.get("peak_return_5m") or 0
-        when = (f"{e['start_ts'][5:10].replace('-', '/')} 종가 기준" if e["event_type"] == "daily"
-                else f"{e['start_ts'][5:10].replace('-', '/')} {e['start_ts'][11:16]}~{e['last_ts'][11:16]}")
+        running = e["event_type"] == "daily" and e.get("status") == "open"   # 장중 전일 대비 누적
+        md = e['start_ts'][5:10].replace('-', '/')
+        if running:
+            m = re.search(r"→ (\d\d:\d\d)", e.get("detection_rule") or "")
+            when = f"{md} {m.group(1) if m else datetime.now().strftime('%H:%M')} 전일 대비"
+        elif e["event_type"] == "daily":
+            when = f"{md} 종가 기준"
+        else:
+            when = f"{md} {e['start_ts'][11:16]}~{e['last_ts'][11:16]}"
         title = f"{word} {mv*100:+.1f}% ({when})" + (" · 대형" if tier == "대형" else "")
         try:
-            _post_issue(title, _body(f"주가가 {'30분 안에' if e['event_type'] != 'daily' else '하루 동안'} "
+            _post_issue(title, _body(f"주가가 {'장중 전일 종가 대비' if running else '30분 안에' if e['event_type'] != 'daily' else '하루 동안'} "
                                       f"{mv*100:+.1f}% 움직였습니다."))
             sent.add(key)
             if tier == "대형":
