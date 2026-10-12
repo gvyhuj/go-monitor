@@ -386,7 +386,7 @@ def running_daily_event(day: pd.DataFrame, prev_close, s: dict) -> dict | None:
     return {"event_type": "daily", "direction": d, "start_ts": f"{now_ts:%Y-%m-%d}T09:00",
             "last_ts": g["ts"].iloc[k].isoformat(timespec="minutes")[:16],
             "peak_ts": g["ts"].iloc[k].isoformat(timespec="minutes")[:16],
-            "peak_return_5m": held, "return_5m": ext, "trade_value": val,
+            "peak_return_5m": rets[-1], "return_5m": ext, "trade_value": val,   # 표시는 지금 등락, 단계 판단은 유지된 수준
             "tier": _tier(held, main_th, big), "detection_rule": rule, "status": "open"}
 
 
