@@ -494,15 +494,29 @@
 
     // 타임라인
     $("#tl-title").textContent = isLatest ? "오늘 급등·급락" : `${dayLabel(d.date)} 급등·급락`;
+    // 하루 전체 등락 (전일 종가 대비): 아래 목록의 '구간' 등락과 헷갈리지 않게 맨 위에 따로 보여 줌
+    let dayTotal = "";
+    if (d.prev_close && d.bars.length) {
+      const lastBar = d.bars[d.bars.length - 1];
+      const chg = lastBar.c / d.prev_close - 1;
+      const lowR = Math.min(...d.bars.map((b) => b.l ?? b.c)) / d.prev_close - 1;
+      const highR = Math.max(...d.bars.map((b) => b.h ?? b.c)) / d.prev_close - 1;
+      const won = (v) => `${Math.round(v).toLocaleString("ko-KR")}원`;
+      dayTotal = `<div class="day-total">
+        <div><span class="day-total-label">${closed ? "하루 전체 (종가)" : `하루 전체 (${hhmm(lastBar.t)} 현재)`}</span>
+          <span class="day-total-sub">전일 종가 ${won(d.prev_close)} → ${won(lastBar.c)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span></div>
+        <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>
+      </div>`;
+    }
     if (!d.events.length) {
-      $("#timeline").innerHTML = `<div class="empty"><strong>${isLatest ? "오늘은 아직 급등·급락이 없습니다." : "이날은 급등·급락이 없었습니다."}</strong>오른쪽 '이렇게 감지합니다'의 기준을 넘으면 이곳과 차트에 표시됩니다.</div>`;
+      $("#timeline").innerHTML = dayTotal + `<div class="empty"><strong>${isLatest ? "오늘은 아직 급등·급락이 없습니다." : "이날은 급등·급락이 없었습니다."}</strong>오른쪽 '이렇게 감지합니다'의 기준을 넘으면 이곳과 차트에 표시됩니다.</div>`;
     } else {
-      $("#timeline").innerHTML = `<ul class="timeline">${d.events.slice().reverse().map((e) => `
+      $("#timeline").innerHTML = dayTotal + `<ul class="timeline">${d.events.slice().reverse().map((e) => `
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${isDaily(e) ? "하루" : hhmm(e.start_ts)}</span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
           <span class="tl-rule">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : esc(compareLine(e))}</span>
-          <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${isDaily(e) ? "종가 기준" : "구간 최대"}</small></span>
+          <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${isDaily(e) ? (e.status === "open" ? "전일 대비 (장중)" : "종가 기준") : "이 구간 안에서"}</small></span>
         </button></li>`).join("")}</ul>`;
       $("#timeline").onclick = (ev) => { const b = ev.target.closest("[data-id]"); if (b) openEvent(+b.dataset.id); };
     }
