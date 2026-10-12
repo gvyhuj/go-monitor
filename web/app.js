@@ -504,9 +504,9 @@
     // 같은 방향의 장중 조각(09:00 -4%, 09:55 -3% 등)은 이 안에 포함되므로 따로 나열하지 않음.
     const dailyEv = d.events.filter(isDaily).slice(-1)[0] || null;
     const rest = d.events
-      .filter((e) => !isDaily(e) && !(dailyEv && e.direction === dailyEv.direction))
+      .filter((e) => !isDaily(e))      // 장중 급등·급락 순간은 그때 기록 그대로 모두 남김
       .sort((x, y) => (x.start_ts < y.start_ts ? -1 : 1));          // 시간 순
-    $("#q-events").innerHTML = `${(dailyEv ? 1 : 0) + rest.length}<small>건</small>`;
+    $("#q-events").innerHTML = `${rest.length || (dailyEv ? 1 : 0)}<small>건</small>`;
     let dayTotal = "";
     if (d.prev_close && d.bars.length) {
       const lastBar = d.bars[d.bars.length - 1];
@@ -535,16 +535,16 @@
     }
     const row = (e) => `
         <li><button class="tl-row" type="button" data-id="${e.id}">
-          <span class="tl-time num">${hhmm(e.start_ts)}</span>
+          <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
           <span class="tl-rule">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : esc(compareLine(e))}</span>
-          <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)}</small></span>
+          <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)} 동안</small></span>
         </button></li>`;
     if (!dailyEv && !rest.length) {
       $("#timeline").innerHTML = dayTotal + `<div class="empty"><strong>${isLatest ? "오늘은 아직 급등·급락이 없습니다." : "이날은 급등·급락이 없었습니다."}</strong>오른쪽 '이렇게 감지합니다'의 기준을 넘으면 이곳과 차트에 표시됩니다.</div>`;
     } else {
       $("#timeline").innerHTML = dayTotal + (rest.length
-        ? `${dailyEv ? `<p class="tl-sub">그 밖의 장중 움직임</p>` : ""}<ul class="timeline">${rest.map(row).join("")}</ul>` : "");
+        ? `<p class="tl-sub">급등·급락 순간 (그때 움직인 폭 그대로 기록, 이후 가격이 바뀌어도 그대로)</p><ul class="timeline">${rest.map(row).join("")}</ul>` : "");
     }
     $("#timeline").onclick = (ev) => { const b = ev.target.closest("[data-id]"); if (b) openEvent(+b.dataset.id); };
     if (!silent) renderQuote();
