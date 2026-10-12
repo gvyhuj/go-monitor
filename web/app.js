@@ -9,6 +9,8 @@
   const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
   const CONF_CLS = { "높음": "hi", "중간": "mid", "낮음": "lo" };
   const confTag = (c) => (c ? `<span class="conf ${CONF_CLS[c] || ""}">신뢰도 ${c}</span>` : "");
+  const srcTag = (e) => (e.cause_source ? `<span class="conf src">${esc(e.cause_source)}</span>` : "");
+  const NO_CAUSE = '<span class="muted">원인 미입력</span>';
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
   const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>`
     : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>`
@@ -54,7 +56,7 @@
   let SKEY = null;
   const KEY_NAME = STATIC ? `go_key_${STATIC.salt}` : "";
   const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-  const b64e = (u8) => btoa(String.fromCharCode(...u8));
+  const b64e = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
   const store = (kind) => { try { return window[kind]; } catch (_) { return null; } };
   function savedKey() {
     for (const k of ["localStorage", "sessionStorage"]) { try { const v = store(k) && store(k).getItem(KEY_NAME); if (v) return v; } catch (_) {} }
@@ -146,7 +148,11 @@
   // ---- 기사 등록·빼기 요청: Cloudflare 사이트는 보관함으로, GitHub 사이트는 GitHub 이슈로 보냄
   async function sealInbox(item) {          // 요청 내용을 사이트 열쇠로 암호화 (공개 저장소에는 알아볼 수 없는 글자만 남음)
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, SKEY, new TextEncoder().encode(JSON.stringify(item))));
+    let plain = new TextEncoder().encode(JSON.stringify(item));
+    if (plain.length > 1500 && typeof CompressionStream !== "undefined") {   // 붙여넣은 원인 글처럼 긴 요청은 줄여서 보냄
+      plain = new Uint8Array(await new Response(new Blob([plain]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+    }
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, SKEY, plain));
     const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
     return b64e(out);
   }
@@ -159,6 +165,13 @@
     const title = `[요청] 사이트 반영 ${new Date().toISOString().slice(5, 16).replace("T", " ")}`;
     const body = `아래 [Create] 버튼을 누르면 몇 분 안에 사이트에 반영됩니다. 내용은 고치지 마세요.\n\n\`\`\`enc\n${sealed}\n\`\`\`\n`;
     const url = `https://github.com/${STATIC.repo}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    if (url.length > 7000) {                 // 너무 긴 주소는 GitHub이 받지 않을 수 있음 → 본문을 복사해 두고 직접 붙여넣기
+      let copied = false;
+      try { await navigator.clipboard.writeText(body); copied = true; } catch (_) {}
+      if (!copied) throw new Error("내용이 길어 복사가 필요한데, 이 브라우저에서 복사가 막혔습니다. 내용을 줄이거나 다른 브라우저로 해 보세요.");
+      window.open(`https://github.com/${STATIC.repo}/issues/new?title=${encodeURIComponent(title)}`, "_blank", "noopener");
+      return "내용이 길어 복사해 두었습니다. 새 창의 GitHub 화면에서 본문 칸(Add a description)에 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 한 뒤 초록색 [Create]를 누르면 몇 분 안에 반영됩니다.";
+    }
     window.open(url, "_blank", "noopener");
     return "GitHub 화면이 새 창으로 열렸습니다. 거기서 초록색 [Create] 버튼을 누르면 몇 분 안에 반영됩니다 (내용은 암호화되어 있어 다른 사람은 알아볼 수 없습니다).";
   }
@@ -523,8 +536,8 @@
       const head = dailyEv
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
-      const cause = dailyEv && dailyEv.cause_headline
-        ? `<span class="day-total-cause">${confTag(dailyEv.cause_confidence)}${esc(dailyEv.cause_headline)}</span>` : "";
+      const cause = dailyEv
+        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${srcTag(dailyEv)}${esc(dailyEv.cause_headline)}` : NO_CAUSE}</span>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${closed && !(live && live.open) ? "하루 전체 (종가)" : `하루 전체 (${nowAt} 현재)`}${head}</span>
@@ -540,7 +553,7 @@
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : esc(compareLine(e))}</span>
+          <span class="tl-rule">${e.cause_headline ? `${srcTag(e)}${esc(e.cause_headline)}` : `${NO_CAUSE} · ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)} 동안</small></span>
         </button></li>`;
     if (!dailyEv && !rest.length) {
@@ -711,13 +724,13 @@
       return;
     }
     $("#ev-table").innerHTML = `<table class="data"><thead><tr>
-        <th>일시</th><th>구분</th><th class="r">움직임</th><th class="r">KOSDAQ 같은 기간</th><th>가장 유력한 원인</th></tr></thead><tbody>
+        <th>일시</th><th>구분</th><th class="r">움직임</th><th class="r">KOSDAQ 같은 기간</th><th>원인</th></tr></thead><tbody>
       ${list.map((e) => `<tr data-id="${e.id}" tabindex="0">
         <td class="when num">${dayLabel(e.start_ts)}<small>${isDaily(e) ? "하루 (전일 종가 → 종가)" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`}</small></td>
         <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
         <td class="r num">${e.kosdaq_change == null ? '<span class="muted">없음</span>' : pct(e.kosdaq_change)}</td>
-        <td class="rule" title="${esc(e.cause_summary || e.rule)}">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : '<span class="muted">분석 대기</span>'}</td></tr>`).join("")}
+        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${srcTag(e)}${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`).join("")}
       </tbody></table>`;
     const tb = $("#ev-table tbody");
     tb.onclick = (ev) => { const r = ev.target.closest("tr"); if (r) openEvent(+r.dataset.id); };
@@ -854,32 +867,44 @@
       <p class="note">p값은 '우연히 이만큼 나올 확률'입니다. 0.05보다 작으면 우연으로 보기 어렵다고 판단합니다.</p></details>`;
   }
 
-  function causeBlock(c, eventId) {
-    const stageNote = c ? `${esc(c.stage)} 분석, ${esc((c.analyzed_at || "").slice(5, 16).replace("T", " "))} 기준` : "아직 분석 전";
-    const head = `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3>
-      <span class="stage">${stageNote}</span>
-      <button class="btn small local-only" type="button" id="re-analyze" data-id="${eventId}">다시 분석</button></div>`;
-    if (!c) return head + `<div class="empty"><strong>원인 분석이 아직 없습니다.</strong>다음 자동 수집 때 분석됩니다.</div>`;
-    const cands = c.candidates || [];
-    const ST = { yes: ["●", "확인"], part: ["◐", "일부"], no: ["○", "없음"], ref: ["·", "참고"] };
-    const desk = (c.desk || []).length ? `<div class="desk"><div class="desk-h">한눈에 점검 <small>① 몫 나누기 → ② 기사 직후 검증 → ③ 수급</small></div><ul>${c.desk.map((d) => `<li class="ds-${d.state}"><span class="ds-mark" title="${ST[d.state][1]}">${ST[d.state][0]}</span><b>${esc(d.k)}</b><span>${esc(d.text)}</span></li>`).join("")}</ul></div>` : "";
-    const verdict = c.summary_line ? `<div class="verdict-box ${CONF_CLS[c.confidence] || ""}"><div class="vb-head">${confTag(c.confidence)}<b>${esc(c.headline || "")}</b></div><p>${esc(c.summary_line)}</p></div>` : "";
-    const body = cands.length ? `<h4 class="d-sub-h">① 몫 나누기 · 시장 몫 + 업종 몫 + 이 종목 고유 몫</h4>${splitBlock(c.split) || '<p class="note">시장·업종 비교 자료가 없어 나누지 못했습니다.</p>'}
-      ${causalBlock(c.causal, c.move)}
-      <h4 class="d-sub-h">원인 후보 · ①②③ 근거가 많이 맞는 순서</h4>
-      <ol class="causes">${cands.map((x, i) => `
-        <li class="cause">
-          <div class="cause-meta"><span class="rank">${i + 1}</span><span class="tag t-${x.type}">${esc(x.label)}</span>${confTag(x.confidence)}
-            ${x.timing ? `<span class="timing ${TIMING_CLS[x.timing] || ""}">${esc(x.timing === "선행" ? "움직임 전" : x.timing === "후행" ? "움직임 후" : x.timing === "동시" ? "같은 시간" : x.timing)}</span>` : ""}</div>
-          <div class="cause-title">${esc(x.title)}</div>
-          <p>${esc(x.summary)}</p>
-          ${(x.checks || []).length ? `<ul class="checks">${x.checks.map((k) => `<li class="${k.ok ? "ok" : "no"}"><span class="ck">${k.ok ? "✓" : "–"}</span><b>${esc(k.step)} ${k.step === "①" ? "몫 나누기" : k.step === "②" ? "기사 직후 검증" : "수급"}</b><span>${esc(k.text)}</span></li>`).join("")}</ul>` : ""}
-          ${(x.evidence || []).filter(Boolean).length ? `<ul class="evidence">${x.evidence.filter(Boolean).map((v) => `<li>${esc(v)}</li>`).join("")}</ul>` : ""}
-          ${(x.links || []).filter((l) => l.url).map((l) => `<a class="ext" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a>`).join("")}
-        </li>`).join("")}</ol>` : `<div class="cause none"><div class="cause-title">원인 후보 없음</div></div>`;
-    const notes = c.notes || [];
-    return head + verdict + desk + body + (notes.length ? `<ul class="notes">${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "")
-      + `<p class="note">신뢰도: 후보마다 핵심 근거(시장·업종 흐름은 ①, 기사는 ②, 수급은 ①)가 맞아야 '중간' 이상이고, 세 근거 중 2개 이상 맞으면 '높음'입니다. 수급은 '누가' 샀는지만 알 뿐 '왜'는 모르므로 최대 '중간'입니다. 어느 후보도 핵심 근거가 맞지 않으면 '원인 미확인'으로 표시합니다. 실제 주문 이유는 공개되지 않으므로 확정이 아닌 추정입니다.</p>`;
+  // 숫자로 본 움직임 (자동 기록). 원인 결론·후보는 싣지 않음 — 원인은 직접 붙여넣은 글로
+  function factsBlock(c) {
+    const head = `<div class="sec-head"><h3 class="d-sec">숫자로 본 움직임</h3>
+      <span class="stage">${c ? `자동 기록, ${esc((c.analyzed_at || "").slice(5, 16).replace("T", " "))} 기준` : "아직 계산 전"}</span></div>`;
+    if (!c) return head + `<div class="empty"><strong>아직 계산 전입니다.</strong>다음 자동 수집 때 채워집니다.</div>`;
+    return head + `<h4 class="d-sub-h">몫 나누기 · 시장 몫 + 업종 몫 + 이 종목 고유 몫</h4>${splitBlock(c.split) || '<p class="note">시장·업종 비교 자료가 없어 나누지 못했습니다.</p>'}
+      ${causalBlock(c.causal, c.move)}`;
+  }
+
+  // 원인: ChatGPT 등에서 받은 답을 붙여넣은 글
+  function linkify(t) {
+    return esc(t).replace(/https?:\/\/[^\s<)\]]+/g, (u) => `<a class="ext" href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  }
+  function manualBlock(e) {
+    const m = e.manual;
+    const daily = isDaily(e);
+    const own = m && !m.inherited;
+    const when = m ? `${esc(m.source || "직접 입력")} · ${esc((m.updated_at || "").slice(5, 16).replace("T", " ").replace("-", "/"))} 입력` : "";
+    const view = m ? `<div class="manual-cause">
+        ${m.headline ? `<div class="mc-head">${esc(m.headline)}</div>` : ""}
+        <div class="mc-body">${linkify(m.body || "")}</div>
+        <p class="note" style="margin:8px 0 0">${when}${m.inherited ? " · 그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다." : ""}</p></div>`
+      : `<div class="empty"><strong>원인 미입력</strong>아래 'ChatGPT에게 묻기'로 원인을 물어본 뒤, 받은 답을 '원인 붙여넣기'로 넣으세요.</div>`;
+    return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
+      ${view}
+      <div class="ask-block">
+        <textarea id="ask-q" rows="2" placeholder="(선택) 따로 묻고 싶은 것. 비워 두면 '원인을 찾아 달라'로 보냅니다."></textarea>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료가 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button>
+          <button class="btn" type="button" id="mc-open">${own ? "원인 고치기" : "원인 붙여넣기"}</button>${own ? '<button class="btn" type="button" id="mc-del">원인 삭제</button>' : ""}</div>
+        <span class="form-msg" id="ask-claude-msg"></span>
+        <form class="mc-form" id="mc-form" hidden>
+          <label>한 줄 요약 <small class="muted">(목록에 보임. 비우면 본문 첫 줄)</small><input id="mc-head" type="text" maxlength="200" value="${own ? esc(m.headline || "") : ""}" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피 (신뢰도 중간)"></label>
+          <label>원인 본문<textarea id="mc-body" rows="10" placeholder="ChatGPT 답을 그대로 붙여넣으세요.">${own ? esc(m.body || "") : ""}</textarea></label>
+          <label>출처<select id="mc-src">${["ChatGPT", "Claude", "직접 작성"].map((x) => `<option${(own ? m.source : "ChatGPT") === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>
+          <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다. 같은 날 같은 방향 장중 순간에도 함께 보입니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장하면 암호화된 요청이 GitHub에 올라가고, 다음 자동 실행(장중 약 3~5분) 때 반영됩니다.</p>
+          <div class="ask-row"><button class="btn primary" type="submit">저장</button><button class="btn" type="button" id="mc-cancel">취소</button></div>
+        </form>
+      </div>`;
   }
 
   function boardBlock(c) {
@@ -969,7 +994,7 @@
         <a class="al-title" href="#/pr/${esc(a.id)}">${esc(a.title)}</a>
         <div class="al-foot">${verdictTag(a)}${a.measure ? `<span class="muted">${measureTxt(a.measure)}</span>` : ""}<span class="muted">${esc(a.office || "")}${a.outlets_total > 1 ? ` 외 ${a.outlets_total - 1}곳` : ""}</span></div></li>`).join("")}</ul>`;
     } else {
-      body = `<p class="flow-sum">이 움직임 전 3일 안에 나온 이 종목 기사는 없습니다.${ac.last_before ? ` 가장 최근 기사는 ${dayLabel(ac.last_before.ts)} 「${esc(ac.last_before.title)}」(${esc(ac.last_before.category)})입니다.` : ""} 기사보다는 업종·수급 쪽을 먼저 보세요.</p>`;
+      body = `<p class="flow-sum">이 움직임 전 3일 안에 나온 이 종목 기사는 없습니다.${ac.last_before ? ` 가장 최근 기사는 ${dayLabel(ac.last_before.ts)} 「${esc(ac.last_before.title)}」(${esc(ac.last_before.category)})입니다.` : ""}</p>`;
     }
     const late = (ac.late || []).length ? `<p class="note" style="margin-top:8px">움직임 뒤에 나온 기사: ${ac.late.map((a) => `<a href="#/pr/${esc(a.id)}">${esc(a.title)}</a> (${hhmm(a.ts)}, ${esc(a.category)})`).join(", ")}</p>` : "";
     return `<section class="d-block art-first"><h3 class="d-sec">직전 이 종목 기사와 그 반응</h3>${body}${late}
@@ -1044,12 +1069,8 @@
         <div><dt>KOSDAQ 같은 기간</dt><dd class="num">${e.kosdaq_change == null ? '<small style="margin:0">데이터 없음</small>' : pct(e.kosdaq_change)}</dd></div>
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
-      <section class="d-block">${causeBlock(c, e.id)}</section>
-      <section class="d-block ask-block"><h3 class="d-sec">추가 질문</h3>
-        <p class="note" style="margin-top:0">이 분석 내용을 바탕으로 ChatGPT나 Claude에게 더 물어볼 수 있습니다. 분석 요약과 질문이 채워진 새 대화가 열리고, 보내기 전에 그 화면에서 모델과 노력 강도를 고르면 됩니다 (회원님 계정에서만 보이고, 각 구독 사용량 안에서 처리됩니다). 질문을 비워 두면 "원인을 다시 분석해 줘"로 보냅니다.</p>
-        <textarea id="ask-q" rows="3" placeholder="예: 이날 외국계가 방산주를 산 이유를 더 찾아줘 / 이 기사 말고 다른 원인은 없을까?"></textarea>
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="질문이 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button><span class="form-msg" id="ask-claude-msg"></span></div>
-      </section>
+      <section class="d-block">${manualBlock(e)}</section>
+      <section class="d-block">${factsBlock(c)}</section>
       ${articleBlock(c)}
       <section class="d-block">${flowBlock(c)}</section>
       ${c && c.buyer ? `<section class="d-block">${buyerBlock(c, d.followups)}</section>` : ""}
@@ -1063,7 +1084,7 @@
       <section class="d-block">${newsBlock(c)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
     const askWith = async (where) => {
-      const q = $("#ask-q").value.trim() || "이 움직임의 원인을 자료와 최신 뉴스를 바탕으로 다시 분석해 줘. 사이트 판단이 맞는지도 검토해 줘.";
+      const q = $("#ask-q").value.trim() || "이 움직임의 원인을 찾아 줘.";
       const msg = $("#ask-claude-msg");
       const text = eventContext(d, q);
       try { await navigator.clipboard.writeText(text); } catch (_) {}
@@ -1076,6 +1097,29 @@
     };
     $("#ask-gpt").onclick = () => askWith("gpt");
     $("#ask-claude").onclick = () => askWith("claude");
+    // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
+    const form = $("#mc-form"), msg = $("#ask-claude-msg");
+    const target = isDaily(e)
+      ? { date: e.start_ts.slice(0, 10), direction: e.direction, scope: "day" }
+      : { date: e.start_ts.slice(0, 10), direction: e.direction, scope: "intraday", start_ts: e.start_ts, last_ts: e.last_ts };
+    const sendReq = async (item) => {
+      msg.className = "form-msg";
+      try { msg.textContent = await sendInbox(item); } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    };
+    $("#mc-open").onclick = () => { form.hidden = false; $("#mc-body").focus(); };
+    $("#mc-cancel").onclick = () => { form.hidden = true; };
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      const body = $("#mc-body").value.trim();
+      if (!body) { msg.className = "form-msg err"; msg.textContent = "원인 본문을 붙여넣어 주세요."; return; }
+      sendReq({ type: "cause", ...target, headline: $("#mc-head").value.trim(), body, source: $("#mc-src").value });
+    };
+    const del = $("#mc-del");
+    if (del) del.onclick = () => {
+      if (!confirm("붙여넣은 원인을 삭제할까요?")) return;
+      const m = e.manual;
+      sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts });
+    };
     const ch = priceVolumeChart($("#d-chart"), $("#d-legend"), d.bars, { events: daily ? [] : [e] });
     drawerCharts.push(ch);
     const btn = $("#re-analyze");
@@ -1090,24 +1134,41 @@
     };
   }
 
-  // 추가 질문용: 화면에 보이는 분석 내용을 Claude에게 넘길 글로 정리 (너무 길면 줄임)
+  // 원인 질문용: 숫자·사실 자료만 정리 (사이트의 자동 추정 결론은 넣지 않음 — 답이 그 결론에 끌려가지 않게)
   function eventContext(d, question) {
     const e = d.event, c = d.cause || {};
     const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
     const L = [];
-    L.push(`아래는 내가 운영하는 주가 감시 사이트의 '${name}' 주가 이상변동 분석 자료야. 이 자료를 바탕으로 질문에 답해줘.`);
-    L.push("필요하면 웹 검색으로 사실을 확인하고, 확인된 사실과 추정을 구분해서 한국어 존댓말로 답해줘.", "");
+    L.push(`아래는 '${name}' 주가 움직임에 대해 내 사이트가 자동으로 모은 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
+    L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
+    L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
     L.push(`[움직임] ${e.start_ts.replace("T", " ")}${isDaily(e) ? " (하루, 전일 종가→종가)" : `~${hhmm(e.last_ts)}`} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}`);
-    if (c.headline) L.push(`[사이트 판단] ${c.headline} (신뢰도 ${c.confidence || "-"})`, c.summary_line || "");
-    (c.candidates || []).slice(0, 4).forEach((x, i) => {
-      L.push(`[원인 후보 ${i + 1}] ${x.title} (신뢰도 ${x.confidence || "-"})`);
-      (x.checks || []).forEach((k) => L.push(`  ${k.step} ${k.ok ? "확인" : "없음"}: ${k.text}`));
-    });
-    ((c.buyer && c.buyer.lines) || []).slice(0, 6).forEach((l) => L.push(`[수급] ${l.text}`));
-    const dr = c.drivers && c.drivers.top;
-    if (dr) (dr.items || []).slice(0, 3).forEach((i) => L.push(`[배경 기사] ${i.ts.replace("T", " ")} ${i.office} 「${i.title}」 ${i.url || ""}`));
-    (c.news || []).slice(-8).forEach((n) => L.push(`[관련 기사] ${n.ts.replace("T", " ")} ${n.office} 「${n.title}」 (${n.timing === "선행" ? "움직임 전" : "움직임 후"}) ${n.url || ""}`));
-    (c.notes || []).slice(0, 4).forEach((n) => L.push(`[참고] ${n}`));
+    const sp = c.split;
+    if (sp && sp.own != null) L.push(`[몫 나누기] 실제 ${pct(sp.own)} = 시장 ${pct(sp.market)} + 업종 ${pct(sp.sector)} + 이 종목 고유 ${pct(sp.specific)}`);
+    const f = c.flows;
+    if (f) {
+      const r = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${x.net >= 0 ? "+" : ""}${int(x.net)}주`;
+      L.push(`[창구] 순매수 상위: ${(f.top_buyers || []).map(r).join(", ") || "-"} / 순매도 상위: ${(f.top_sellers || []).map(r).join(", ") || "-"} / 외국계 합계 ${int(f.foreign_net || 0)}주`);
+    }
+    const inv = c.investor_day;
+    if (inv) L.push(`[투자자별 확정치] 외국인 ${int(inv.foreign_net || 0)}주, 기관 ${int(inv.organ_net || 0)}주, 개인 ${int(inv.individual_net || 0)}주`);
+    const b = c.buyer;
+    if (b) {
+      (b.lines || []).forEach((l) => L.push(`[${l.kind}] ${l.text}`));
+      const peers = (b.peers || []).filter((p) => p.listed && p.net);
+      if (peers.length) L.push(`[같은 날 ${b.broker} 창구의 비교 종목 매매] ${peers.map((p) => `${p.name} ${p.net >= 0 ? "+" : ""}${int(p.net)}주`).join(", ")}`);
+    }
+    const rel = (c.related || []).filter((x) => x.change != null);
+    if (rel.length) {
+      const g = {};
+      rel.forEach((x) => { (g[x.source || "비교 종목"] = g[x.source || "비교 종목"] || []).push(x); });
+      Object.entries(g).forEach(([k, ms]) => L.push(`[비교 종목: ${k}] 평균 ${pct(ms.reduce((a, x) => a + x.change, 0) / ms.length)} — ${ms.sort((a, x) => a.change - x.change).slice(0, 6).map((x) => `${x.name} ${pct(x.change)}`).join(", ")}`));
+    }
+    ((c.macro && c.macro.lines) || []).forEach((l) => L.push(`[${l.kind}] ${l.text}`));
+    const ac = c.articles;
+    if (ac) (ac.lead || []).slice(0, 5).forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」`));
+    (c.disclosures || []).slice(0, 5).forEach((x) => L.push(`[공시] ${x.date} ${x.title}`));
     let text = L.filter((x) => x !== undefined).join("\n");
     if (text.length > 5500) text = text.slice(0, 5500) + "\n…(일부 생략)";
     return `${text}\n\n[질문] ${question}`;

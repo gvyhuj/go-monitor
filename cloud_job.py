@@ -22,6 +22,7 @@ import os
 import sys
 import secrets
 import base64
+import gzip
 import hashlib
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -70,6 +71,11 @@ def save_flags(c):
     set_state("job:flags", json.dumps({k: _enc(getattr(c, k, None)) for k in FLAG_FIELDS}))
 
 
+def _unzip(raw: bytes) -> bytes:
+    """사이트가 긴 요청(붙여넣은 원인 글)은 gzip으로 줄여 보냄."""
+    return gzip.decompress(raw) if raw[:2] == b'\x1f\x8b' else raw
+
+
 def apply_inbox(item: dict, log):
     """사이트에서 보낸 요청 하나를 기록에 반영."""
     t = item.get("type")
@@ -93,6 +99,9 @@ def apply_inbox(item: dict, log):
             r = requested_event(load_settings()["symbol"], day, hhmm(item.get("from")), hhmm(item.get("to")))
             log.info("사이트에서 분석 요청: %s %s~%s (%s)", day, item.get("from") or "", item.get("to") or "",
                      "기존 기록 다시 분석" if r["existing"] else "새 기록")
+        elif t in ("cause", "cause_delete"):
+            from core import manual
+            log.info("사이트에서 원인 %s", manual.save(item, feed.kst_now()))
         elif t == "delete_pr":
             pid = str(item.get("id") or "").replace("pr", "")
             if pid.isdigit():
@@ -269,7 +278,7 @@ def main(argv) -> int:
             _pw = _site_password()
             _ikey = _sb.derive_key(_pw, site_salt(_pw))
             inbox_n = ghinbox.process(lambda item: apply_inbox(item, log), log.info,
-                                      unseal=lambda b: json.loads(_sb.decrypt(_ikey, base64.b64decode(b))))
+                                      unseal=lambda b: json.loads(_unzip(_sb.decrypt(_ikey, base64.b64decode(b)))))
         except Exception as e:
             log.warning("사이트 요청(GitHub 이슈) 확인 실패(계속 진행): %s", e)
     elif cloud.env_mode():

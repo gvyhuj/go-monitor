@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
-from core import analysis, articles, causes, cloud, feed, macro, naver, share
+from core import analysis, articles, causes, cloud, feed, macro, manual, naver, share
 from core.db import connect, get_state, init_db
 from core.detector import load_settings
 
@@ -106,6 +106,8 @@ def event_rows(symbol: str, d_from: str | None, d_to: str | None, kind: str | No
     q += " ORDER BY start_ts DESC"
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(q, params)]
+        for r in rows:
+            r["_manual"] = manual.find(conn, r)
     if not rows:
         return []
     t_min = datetime.fromisoformat(min(r["start_ts"] for r in rows)) - timedelta(days=4)
@@ -116,19 +118,15 @@ def event_rows(symbol: str, d_from: str | None, d_to: str | None, kind: str | No
     for r in rows:
         t0 = datetime.fromisoformat(r["start_ts"]) - timedelta(minutes=5)
         t1 = datetime.fromisoformat(r["last_ts"])
-        cj = None
-        if r.get("cause_json"):
-            try:
-                cj = json.loads(r["cause_json"])
-            except ValueError:
-                cj = None
-        top = (cj or {}).get("candidates") or []
+        mc = r.get("_manual")              # 원인은 직접 붙여넣은 글만 (자동 추정 결론은 쓰지 않음)
         daily = r["event_type"] == "daily"
         out.append({
-            "cause_headline": (cj or {}).get("headline"),
-            "cause_label": top[0].get("label") if top else ("원인 미확인" if cj else None),
-            "cause_confidence": (cj or {}).get("confidence") or (top[0].get("confidence") if top else None),
-            "cause_summary": (cj or {}).get("summary_line"),
+            "cause_headline": manual.summary(mc),
+            "cause_label": None,
+            "cause_confidence": None,
+            "cause_summary": None,
+            "cause_source": (mc or {}).get("source"),
+            "manual": {k: v for k, v in mc.items() if k != "body"} if mc else None,   # 본문은 상세 화면에서만
             "cause_stage": r.get("cause_stage"),
             "tier": r.get("tier") or "일반", "trade_value": r.get("trade_value"),
             "scope": "하루" if daily else "장중",
@@ -239,11 +237,14 @@ def api_event_detail(q, eid):
         raise LookupError("해당 이상변동을 찾을 수 없습니다.")
     day = r["start_ts"][:10]
     ev = next((e for e in event_rows(sym, day, day, None) if e["id"] == eid), None)
+    if ev:
+        with connect() as conn:
+            ev["manual"] = manual.find(conn, dict(r))
     t0, t1 = datetime.fromisoformat(r["start_ts"]), datetime.fromisoformat(r["last_ts"])
     own = analysis.load_range(sym, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
     kq = analysis.load_range(KOSDAQ, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
     rel = []
-    cause = causes.stored(eid)
+    cause = manual.facts_only(causes.stored(eid))
     if cause:
         for x in cause.get("related") or []:
             df = analysis.load_range(x["code"], t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))

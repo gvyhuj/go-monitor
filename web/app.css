@@ -668,3 +668,12 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 
 .ask-block textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
 .ask-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+/* 직접 붙여넣은 원인 */
+.conf.src { background: var(--surface); color: var(--ink-2, var(--ink)); border-color: var(--line-2); font-weight: 600; }
+.manual-cause { border: 1px solid var(--line); border-left: 4px solid var(--line-2); border-radius: var(--r-md, 10px); padding: 14px 16px; background: var(--surface); margin-bottom: 12px; }
+.manual-cause .mc-head { font-size: 17px; font-weight: 740; letter-spacing: -.01em; margin-bottom: 8px; }
+.manual-cause .mc-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font-size: 14.5px; }
+.mc-form { display: grid; gap: 10px; margin-top: 12px; }
+.mc-form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.mc-form input, .mc-form select { width: 100%; box-sizing: border-box; font: inherit; font-weight: 400; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.mc-form[hidden] { display: none; }

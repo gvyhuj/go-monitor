@@ -198,6 +198,19 @@ CREATE INDEX IF NOT EXISTS idx_bars_symbol_ts ON minute_bars(symbol, ts);
 CREATE INDEX IF NOT EXISTS idx_news_ts ON news(symbol, ts);
 CREATE INDEX IF NOT EXISTS idx_trader_ts ON trader_snapshots(symbol, ts);
 CREATE INDEX IF NOT EXISTS idx_events_symbol_ts ON events(symbol, start_ts);
+-- 사이트에서 직접 붙여넣은 원인 (ChatGPT 등). 이벤트 기록은 다시 계산되며 지워질 수 있어 날짜·방향·구간으로 연결
+CREATE TABLE IF NOT EXISTS manual_causes (
+    date TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    scope TEXT NOT NULL,              -- day | intraday
+    start_ts TEXT NOT NULL DEFAULT '',
+    last_ts TEXT NOT NULL DEFAULT '',
+    headline TEXT,
+    body TEXT NOT NULL,
+    source TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(date, direction, scope, start_ts)
+);
 """
 
 # Columns added after the first MVP; older DB files get them via ALTER TABLE.
