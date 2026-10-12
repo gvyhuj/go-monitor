@@ -669,11 +669,17 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 .ask-block textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
 .ask-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 /* 직접 붙여넣은 원인 */
-.conf.src { background: var(--surface); color: var(--ink-2, var(--ink)); border-color: var(--line-2); font-weight: 600; }
 .manual-cause { border: 1px solid var(--line); border-left: 4px solid var(--line-2); border-radius: var(--r-md, 10px); padding: 14px 16px; background: var(--surface); margin-bottom: 12px; }
 .manual-cause .mc-head { font-size: 17px; font-weight: 740; letter-spacing: -.01em; margin-bottom: 8px; }
-.manual-cause .mc-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font-size: 14.5px; }
+.manual-cause .mc-body { overflow-wrap: anywhere; line-height: 1.65; font-size: 14.5px; }
+.manual-cause .mc-body p { margin: 0 0 8px; }
+.manual-cause .mc-body .mc-h { font-size: 15.5px; font-weight: 740; margin: 16px 0 6px; color: var(--ink); }
+.manual-cause .mc-body .mc-h:first-child { margin-top: 0; }
+.manual-cause .mc-body ul, .manual-cause .mc-body ol { margin: 0 0 8px; padding-left: 20px; }
+.manual-cause .mc-body li { margin: 3px 0; }
+.manual-cause .mc-body li.sub { margin-left: 18px; }
+.manual-cause .mc-body hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .mc-form { display: grid; gap: 10px; margin-top: 12px; }
 .mc-form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
-.mc-form input, .mc-form select { width: 100%; box-sizing: border-box; font: inherit; font-weight: 400; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.mc-form input { width: 100%; box-sizing: border-box; font: inherit; font-weight: 400; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .mc-form[hidden] { display: none; }

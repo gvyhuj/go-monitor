@@ -41,13 +41,16 @@ def find(conn, ev: dict) -> dict | None:
 
 
 def summary(m: dict | None) -> str | None:
-    """목록에 보일 한 줄: 입력한 요약 → 없으면 본문 첫 줄(앞뒤 기호 정리, 80자)."""
+    """목록에 보일 한 줄: 입력한 요약 → 없으면 본문에서 제목(#)이 아닌 첫 줄(마크다운 기호 정리, 80자)."""
     if not m:
         return None
     if (m.get("headline") or "").strip():
         return m["headline"].strip()[:120]
     for ln in (m.get("body") or "").splitlines():
-        t = re.sub(r"^[#>*\-\s\d.)]+", "", ln).strip()
+        if re.match(r"^\s*#", ln):
+            continue
+        t = re.sub(r"^[>*\-•\s\d.)]+", "", ln)
+        t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t).replace("**", "").strip()
         if t:
             return t[:80] + ("…" if len(t) > 80 else "")
     return None
@@ -79,7 +82,7 @@ def save(item: dict, now: datetime) -> str:
                 "last_ts=excluded.last_ts, headline=excluded.headline, body=excluded.body, source=excluded.source, "
                 "updated_at=excluded.updated_at",
                 (day, d, scope, st, lt, str(item.get("headline") or "").strip()[:200] or None, body[:20000],
-                 str(item.get("source") or "ChatGPT")[:40], now.isoformat(timespec="minutes")))
+                 (str(item.get("source") or "")[:40] or None), now.isoformat(timespec="minutes")))
             what = "저장"
         # 사이트 자료를 다시 만들게: 그날 이벤트 상세와 지난 날짜 장중 화면
         conn.execute("UPDATE events SET cause_updated_at=? WHERE substr(start_ts,1,10)=? AND direction=?",

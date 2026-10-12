@@ -125,7 +125,6 @@ def event_rows(symbol: str, d_from: str | None, d_to: str | None, kind: str | No
             "cause_label": None,
             "cause_confidence": None,
             "cause_summary": None,
-            "cause_source": (mc or {}).get("source"),
             "manual": {k: v for k, v in mc.items() if k != "body"} if mc else None,   # 본문은 상세 화면에서만
             "cause_stage": r.get("cause_stage"),
             "tier": r.get("tier") or "일반", "trade_value": r.get("trade_value"),

@@ -68,7 +68,9 @@ def test_save_marks_events_for_rebuild(tmpdb):
 
 
 def test_summary_falls_back_to_first_line():
-    assert manual.summary({"headline": "", "body": "\n## 1. 외국인 매도가 가장 유력\n본문"}) == "외국인 매도가 가장 유력"
+    assert manual.summary({"headline": "", "body": "\n## 1. 외국인 매도가 가장 유력\n본문"}) == "본문"   # 제목 줄은 건너뜀
+    gpt = "### 1. 종합판단\n- 이 종목 급락은 **시장 전체 급락과 업종 동반 약세**가 주된 원인 ([기사](https://a.b/c))"
+    assert manual.summary({"body": gpt}) == "이 종목 급락은 시장 전체 급락과 업종 동반 약세가 주된 원인 (기사)"
     assert manual.summary(None) is None
 
 

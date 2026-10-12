@@ -9,7 +9,6 @@
   const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
   const CONF_CLS = { "높음": "hi", "중간": "mid", "낮음": "lo" };
   const confTag = (c) => (c ? `<span class="conf ${CONF_CLS[c] || ""}">신뢰도 ${c}</span>` : "");
-  const srcTag = (e) => (e.cause_source ? `<span class="conf src">${esc(e.cause_source)}</span>` : "");
   const NO_CAUSE = '<span class="muted">원인 미입력</span>';
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
   const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>`
@@ -537,7 +536,7 @@
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
       const cause = dailyEv
-        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${srcTag(dailyEv)}${esc(dailyEv.cause_headline)}` : NO_CAUSE}</span>` : "";
+        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${esc(dailyEv.cause_headline)}` : NO_CAUSE}</span>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${closed && !(live && live.open) ? "하루 전체 (종가)" : `하루 전체 (${nowAt} 현재)`}${head}</span>
@@ -553,7 +552,7 @@
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? `${srcTag(e)}${esc(e.cause_headline)}` : `${NO_CAUSE} · ${esc(compareLine(e))}`}</span>
+          <span class="tl-rule">${e.cause_headline ? `${esc(e.cause_headline)}` : `${NO_CAUSE} · ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)} 동안</small></span>
         </button></li>`;
     if (!dailyEv && !rest.length) {
@@ -730,7 +729,7 @@
         <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
         <td class="r num">${e.kosdaq_change == null ? '<span class="muted">없음</span>' : pct(e.kosdaq_change)}</td>
-        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${srcTag(e)}${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`).join("")}
+        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`).join("")}
       </tbody></table>`;
     const tb = $("#ev-table tbody");
     tb.onclick = (ev) => { const r = ev.target.closest("tr"); if (r) openEvent(+r.dataset.id); };
@@ -877,17 +876,44 @@
   }
 
   // 원인: ChatGPT 등에서 받은 답을 붙여넣은 글
-  function linkify(t) {
-    return esc(t).replace(/https?:\/\/[^\s<)\]]+/g, (u) => `<a class="ext" href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  // 붙여넣은 답의 마크다운(### 제목, **굵게**, - 목록, 1. 번호, [글](주소), 주소)을 화면 형식으로
+  function mdInline(t) {
+    return esc(t)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<)\]]+)/g, (_, txt, url, bare) =>
+        `<a class="ext" href="${url || bare}" target="_blank" rel="noopener">${txt || bare}</a>`)
+      .replace(/\*\*([^*]+?)\*\*/g, "<b>$1</b>")
+      .replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, "$1<i>$2</i>");
+  }
+  function mdRender(src) {
+    const out = [];
+    let list = null;                    // "ul" | "ol"
+    const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+    for (const raw of String(src).split(/\r?\n/)) {
+      const ln = raw.trimEnd();
+      let m;
+      if (!ln.trim()) { close(); continue; }
+      if ((m = ln.match(/^\s*#{1,6}\s+(.*)$/))) { close(); out.push(`<h4 class="mc-h">${mdInline(m[1])}</h4>`); continue; }
+      if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(ln)) { close(); out.push("<hr>"); continue; }
+      if ((m = ln.match(/^(\s*)[-*•]\s+(.*)$/)) || (m = ln.match(/^(\s*)\d+[.)]\s+(.*)$/))) {
+        const kind = /^\s*\d/.test(ln) ? "ol" : "ul";
+        if (list !== kind) { close(); out.push(`<${kind}>`); list = kind; }
+        out.push(`<li${m[1].length >= 2 ? ' class="sub"' : ""}>${mdInline(m[2])}</li>`);
+        continue;
+      }
+      close();
+      out.push(`<p>${mdInline(ln.replace(/^>\s?/, ""))}</p>`);
+    }
+    close();
+    return out.join("");
   }
   function manualBlock(e) {
     const m = e.manual;
     const daily = isDaily(e);
     const own = m && !m.inherited;
-    const when = m ? `${esc(m.source || "직접 입력")} · ${esc((m.updated_at || "").slice(5, 16).replace("T", " ").replace("-", "/"))} 입력` : "";
+    const when = m ? `${esc((m.updated_at || "").slice(5, 16).replace("T", " ").replace("-", "/"))} 입력` : "";
     const view = m ? `<div class="manual-cause">
         ${m.headline ? `<div class="mc-head">${esc(m.headline)}</div>` : ""}
-        <div class="mc-body">${linkify(m.body || "")}</div>
+        <div class="mc-body">${mdRender(m.body || "")}</div>
         <p class="note" style="margin:8px 0 0">${when}${m.inherited ? " · 그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다." : ""}</p></div>`
       : `<div class="empty"><strong>원인 미입력</strong>아래 'ChatGPT에게 묻기'로 원인을 물어본 뒤, 받은 답을 '원인 붙여넣기'로 넣으세요.</div>`;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
@@ -900,7 +926,6 @@
         <form class="mc-form" id="mc-form" hidden>
           <label>한 줄 요약 <small class="muted">(목록에 보임. 비우면 본문 첫 줄)</small><input id="mc-head" type="text" maxlength="200" value="${own ? esc(m.headline || "") : ""}" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피 (신뢰도 중간)"></label>
           <label>원인 본문<textarea id="mc-body" rows="10" placeholder="ChatGPT 답을 그대로 붙여넣으세요.">${own ? esc(m.body || "") : ""}</textarea></label>
-          <label>출처<select id="mc-src">${["ChatGPT", "Claude", "직접 작성"].map((x) => `<option${(own ? m.source : "ChatGPT") === x ? " selected" : ""}>${x}</option>`).join("")}</select></label>
           <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다. 같은 날 같은 방향 장중 순간에도 함께 보입니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장하면 암호화된 요청이 GitHub에 올라가고, 다음 자동 실행(장중 약 3~5분) 때 반영됩니다.</p>
           <div class="ask-row"><button class="btn primary" type="submit">저장</button><button class="btn" type="button" id="mc-cancel">취소</button></div>
         </form>
@@ -1083,7 +1108,7 @@
       ev.preventDefault();
       const body = $("#mc-body").value.trim();
       if (!body) { msg.className = "form-msg err"; msg.textContent = "원인 본문을 붙여넣어 주세요."; return; }
-      sendReq({ type: "cause", ...target, headline: $("#mc-head").value.trim(), body, source: $("#mc-src").value });
+      sendReq({ type: "cause", ...target, headline: $("#mc-head").value.trim(), body });
     };
     const del = $("#mc-del");
     if (del) del.onclick = () => {
