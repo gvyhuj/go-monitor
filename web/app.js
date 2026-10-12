@@ -907,15 +907,6 @@
       </div>`;
   }
 
-  function boardBlock(c) {
-    const b = c && c.board;
-    if (!b) return "";
-    return `<h3 class="d-sec">종목토론방</h3>
-      <p class="flow-sum">움직임 전 2시간 글 ${b.before}건 (평소 2시간 평균 ${b.baseline_2h}건), 움직임 뒤 1시간까지 ${b.after}건.</p>
-      ${(b.top || []).length ? `<ul class="news">${b.top.map((x) => `<li><span class="when">${esc(x.ts.slice(5, 16).replace("T", " "))}</span><span class="timing ${x.lead ? "lead" : "late"}">${x.lead ? "움직임 전" : "움직임 후"}</span><span class="tt">${esc(x.title)}<small>조회 ${int(x.views)}</small></span></li>`).join("")}</ul>` : ""}
-      <p class="note">토론방 글은 사실 확인이 안 된 개인 의견입니다. 공식 소식이 없을 때 어떤 이야기가 돌았는지 보는 참고 자료입니다. <a class="ext" href="${esc(b.url)}" target="_blank" rel="noopener">토론방 열기</a></p>`;
-  }
-
   const STATE_TXT = { top5: "", out: "5위 밖·멈춤", none: "미집계", unknown: "" };
 
   function flowBlock(c) {
@@ -971,17 +962,14 @@
     return `<details class="verify"><summary>이 숫자는 얼마나 정확한가요?</summary><ul>${rows.join("")}</ul></details>`;
   }
 
-  function buyerBlock(c, followups) {
+  function peersBlock(c, followups) {
     const b = c && c.buyer;
     if (!b) return "";
     const fu = (followups || []).length ? `<div class="followup"><b>후속 공시</b> ${followups.map((x) => `${esc(x.date)} ${esc(x.title)}`).join(", ")} — 실제 보유자와 보유 목적이 이 공시에 나옵니다.</div>` : "";
     const peers = (b.peers || []).filter((p) => p.listed || p.net);
-    return `<h3 class="d-sec">${esc(b.broker)} 창구는 왜 ${b.side}했을까</h3>
-      <p class="flow-sum">${esc(b.broker)}${b.foreign ? "(외국계)" : ""} 창구가 ${b.qty_is_min ? "최소 " : ""}${int(b.qty)}주${b.amount ? `(약 ${eok(b.amount)})` : ""}를 순${b.side}했습니다. 주문한 고객이 누구인지, 왜 주문했는지는 공개되지 않아서 아래는 공개 자료로 모은 단서입니다.</p>
-      ${fu}
-      <ul class="clues">${b.lines.map((l) => `<li class="${l.strong ? "strong" : ""}"><span class="ck">${esc(l.kind)}</span><span>${esc(l.text)}${l.url ? ` <a class="ext" href="${esc(l.url)}" target="_blank" rel="noopener">보기</a>` : ""}</span></li>`).join("")}</ul>
-      ${peers.length ? `<h4 class="sub">같은 날 ${esc(b.broker)} 창구의 같은 업종 거래</h4><ul class="rel">${peers.map((p) => `<li><span class="nm">${esc(p.name)}</span><span class="muted">${p.listed ? `${p.net >= 0 ? "+" : "−"}${int(Math.abs(p.net))}주` : "상위 거래원에 없음"}</span><span class="num v ${sgnCls(p.net)}">${p.amount != null ? eok(p.amount) : "-"}</span></li>`).join("")}</ul>
-        <p class="note">같은 업종 종목의 거래원도 상위 5개사 기준 추정치입니다. 금액은 그날 마지막 가격으로 계산한 대략치입니다.</p>` : ""}`;
+    if (!peers.length && !fu) return "";
+    return `${fu}${peers.length ? `<h4 class="sub">같은 날 ${esc(b.broker)} 창구의 같은 업종 거래 <small class="muted">(이 종목 순${esc(b.side)} ${b.qty_is_min ? "최소 " : ""}${int(b.qty)}주)</small></h4><ul class="rel">${peers.map((p) => `<li><span class="nm">${esc(p.name)}</span><span class="muted">${p.listed ? `${p.net >= 0 ? "+" : "−"}${int(Math.abs(p.net))}주` : "상위 거래원에 없음"}</span><span class="num v ${sgnCls(p.net)}">${p.amount != null ? eok(p.amount) : "-"}</span></li>`).join("")}</ul>
+      <p class="note">같은 업종 종목의 거래원도 상위 5개사 기준 추정치입니다. 금액은 그날 마지막 가격으로 계산한 대략치입니다.</p>` : ""}`;
   }
 
   function articleBlock(c) {
@@ -999,16 +987,6 @@
     const late = (ac.late || []).length ? `<p class="note" style="margin-top:8px">움직임 뒤에 나온 기사: ${ac.late.map((a) => `<a href="#/pr/${esc(a.id)}">${esc(a.title)}</a> (${hhmm(a.ts)}, ${esc(a.category)})`).join(", ")}</p>` : "";
     return `<section class="d-block art-first"><h3 class="d-sec">직전 이 종목 기사와 그 반응</h3>${body}${late}
       <p class="note" style="margin-top:6px">회사 발표뿐 아니라 언론 분석·리서치·테마 기사도 포함합니다. 기사를 누르면 기사 영향 분석에서 자세히 볼 수 있습니다.</p></section>`;
-  }
-
-  function macroBlock(c) {
-    const mc = c.macro;
-    const names = (mc.theme_names || []).join(", ");
-    return `<h3 class="d-sec">업종·테마·거시 배경</h3>
-      ${mc.verdict ? `<div class="followup">${esc(mc.verdict)}</div>` : ""}
-      <ul class="clues">${mc.lines.map((l) => `<li class="${l.strong ? "strong" : ""}"><span class="ck">${esc(l.kind)}</span><span>${esc(l.text)}${l.url ? ` <a class="ext" href="${esc(l.url)}" target="_blank" rel="noopener">보기</a>` : ""}</span></li>`).join("")}
-        ${(mc.sector_news || []).length ? `<li class="strong"><span class="ck">업종 시황 기사</span><span>${mc.sector_news.slice(0, 4).map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a> <small class="muted">${esc(x.office)} ${esc(x.ts.slice(5, 16).replace("T", " "))}</small>`).join("<br>")}</span></li>` : ""}</ul>
-      <p class="note">${names ? `이 종목 테마(네이버 분류): ${esc(names)}. ` : ""}시장 뉴스는 네이버 증권 주요뉴스·실시간 속보를 주제별로 분류한 것입니다. 같은 시기에 있었던 일을 모은 배경 정보이며, 실제 주문 이유를 확정하지는 않습니다.</p>`;
   }
 
   function eok(v) {
@@ -1072,14 +1050,7 @@
       <section class="d-block">${manualBlock(e)}</section>
       <section class="d-block">${factsBlock(c)}</section>
       ${articleBlock(c)}
-      <section class="d-block">${flowBlock(c)}</section>
-      ${c && c.buyer ? `<section class="d-block">${buyerBlock(c, d.followups)}</section>` : ""}
-      ${c && c.macro ? `<section class="d-block">${macroBlock(c)}</section>` : ""}
-      ${boardBlock(c) ? `<section class="d-block">${boardBlock(c)}</section>` : ""}
-      <section class="d-block"><h3 class="d-sec">차트</h3>
-        <div class="chart-legend" id="d-legend"></div>
-        <div class="chart-box" id="d-chart"></div>
-        <p class="note" style="margin-top:0">${daily ? "그날 장중 1분봉입니다." : "전 30분부터 후 60분까지. 색칠된 거래량 막대가 급등·급락 구간입니다."}</p></section>
+      <section class="d-block">${flowBlock(c)}${peersBlock(c, d.followups)}</section>
       <section class="d-block">${relatedBlock(c, e.own_change)}</section>
       <section class="d-block">${newsBlock(c)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
@@ -1120,8 +1091,6 @@
       const m = e.manual;
       sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts });
     };
-    const ch = priceVolumeChart($("#d-chart"), $("#d-legend"), d.bars, { events: daily ? [] : [e] });
-    drawerCharts.push(ch);
     const btn = $("#re-analyze");
     if (btn) btn.onclick = async () => {
       btn.disabled = true; btn.textContent = "분석하는 중…";
@@ -1155,7 +1124,8 @@
     if (inv) L.push(`[투자자별 확정치] 외국인 ${int(inv.foreign_net || 0)}주, 기관 ${int(inv.organ_net || 0)}주, 개인 ${int(inv.individual_net || 0)}주`);
     const b = c.buyer;
     if (b) {
-      (b.lines || []).forEach((l) => L.push(`[${l.kind}] ${l.text}`));
+      (b.lines || []).filter((l) => ["업종 묶음", "개별 관심", "업종 일부", "연속성", "외국인 확정치"].includes(l.kind))
+        .forEach((l) => L.push(`[${l.kind}] ${l.text}`));
       const peers = (b.peers || []).filter((p) => p.listed && p.net);
       if (peers.length) L.push(`[같은 날 ${b.broker} 창구의 비교 종목 매매] ${peers.map((p) => `${p.name} ${p.net >= 0 ? "+" : ""}${int(p.net)}주`).join(", ")}`);
     }
@@ -1165,7 +1135,6 @@
       rel.forEach((x) => { (g[x.source || "비교 종목"] = g[x.source || "비교 종목"] || []).push(x); });
       Object.entries(g).forEach(([k, ms]) => L.push(`[비교 종목: ${k}] 평균 ${pct(ms.reduce((a, x) => a + x.change, 0) / ms.length)} — ${ms.sort((a, x) => a.change - x.change).slice(0, 6).map((x) => `${x.name} ${pct(x.change)}`).join(", ")}`));
     }
-    ((c.macro && c.macro.lines) || []).forEach((l) => L.push(`[${l.kind}] ${l.text}`));
     const ac = c.articles;
     if (ac) (ac.lead || []).slice(0, 5).forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」`));
     (c.disclosures || []).slice(0, 5).forEach((x) => L.push(`[공시] ${x.date} ${x.title}`));
