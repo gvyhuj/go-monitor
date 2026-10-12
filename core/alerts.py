@@ -106,7 +106,7 @@ def send_new(symbol: str, log=None) -> int:
             when = f"{md} {e['start_ts'][11:16]}~{e['last_ts'][11:16]}"
         title = f"{word} {mv*100:+.1f}% ({when})" + (" · 대형" if tier == "대형" else "")
         try:
-            _post_issue(title, _body(f"주가가 {'장중 전일 종가 대비' if running else '30분 안에' if e['event_type'] != 'daily' else '하루 동안'} "
+            _post_issue(title, _body(f"주가가 {'장중 전일 종가 대비' if running else e['start_ts'][11:16] + '부터' if e['event_type'] != 'daily' else '하루 동안'} "
                                       f"{mv*100:+.1f}% 움직였습니다."))
             sent.add(key)
             if tier == "대형":

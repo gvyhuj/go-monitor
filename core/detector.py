@@ -208,13 +208,24 @@ def _upsert(conn, symbol, ev) -> bool:
             # 구간이 길어졌으면 원인을 다시 분석
             if hit["last_ts"] != ev["last_ts"] or hit["start_ts"] != ev["start_ts"]:
                 conn.execute("UPDATE events SET cause_stage=NULL WHERE id=? AND cause_stage!='최종'", (hit["id"],))
+        if ev["event_type"] == "intraday":
+            _drop_pieces(conn, symbol, ev, keep_id=hit["id"])
         return False
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, return_5m, peak_return_5m, peak_ts, "
         "status, detection_rule, trade_value, tier) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (symbol, ev["start_ts"], ev["last_ts"], ev["event_type"], ev["direction"], ev["return_5m"],
          ev["peak_return_5m"], ev["peak_ts"], ev["status"], ev["detection_rule"], ev["trade_value"], ev["tier"]))
+    if ev["event_type"] == "intraday":
+        _drop_pieces(conn, symbol, ev, keep_id=cur.lastrowid)
     return True
+
+
+def _drop_pieces(conn, symbol, ev, keep_id):
+    """하나로 묶인 움직임 안에 들어가는 예전 조각 기록(같은 날·같은 방향)을 지움. 직접 요청한 분석은 남김."""
+    conn.execute("DELETE FROM events WHERE symbol=? AND event_type='intraday' AND direction=? AND id!=? "
+                 "AND COALESCE(tier,'')!='요청' AND start_ts>=? AND start_ts<=?",
+                 (symbol, ev["direction"], keep_id, ev["start_ts"], ev["last_ts"]))
 
 
 def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> list[dict]:
@@ -271,28 +282,52 @@ def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> l
             g0["start"] = min(g0["start"], j)
         else:
             groups.append({"dir": d, "start": j, "first": i, "end": i})
-    out = []
+    # 1) 기준을 통과한 움직임만 남김
+    kept_groups = []
     for gr in groups:
         a, f, e, d = gr["start"], gr["first"], gr["end"], gr["dir"]
         base = p[a]
-        seg = p[a:min(n, e + 1)]
-        k = a + (seg.index(max(seg)) if d == "up" else seg.index(min(seg)))
-        move = p[k] / base - 1
         # 유지: 처음 기준을 넘은 뒤 10분 안에 '움직임의 60% 이상'을 지킨 분이 hold분 이상
         keep_lvl = base * (1 + 0.6 * th) if d == "up" else base * (1 - 0.6 * th)
         after = p[f:min(n, f + 10)]
         kept = sum(1 for x in after if (x >= keep_lvl if d == "up" else x <= keep_lvl))
         if kept < hold:
-            if not day_over and len(after) < hold:
-                continue          # 아직 진행 중: 다음 실행 때 다시 판단
-            continue              # 금방 되돌아감 (한두 건 주문으로 튄 경우)
+            continue              # 금방 되돌아감(체결 몇 건으로 튄 경우) 또는 아직 진행 중
+        kept_groups.append({"a": a, "e": e, "d": d, "kept": kept})
+
+    # 2) 같은 방향으로 이어진 움직임은 하나로 묶음
+    #    앞 움직임 뒤 되돌림이 그 움직임의 절반이 안 되고 다음 움직임이 이어지면, 한 번의 긴 하락(상승)으로 봄
+    #    (예: 09:00 -4%, 09:55 -3%로 쪼개지던 것을 '09:00~10:30 -8.8%' 하나로)
+    def _ext(a, e, d):
+        seg = p[a:min(n, e + 1)]
+        return a + (seg.index(max(seg)) if d == "up" else seg.index(min(seg)))
+    merged = []
+    for g0 in kept_groups:
+        if merged and merged[-1]["d"] == g0["d"]:
+            m = merged[-1]
+            k = _ext(m["a"], m["e"], m["d"])
+            between = p[k:g0["a"] + 1] or [p[k]]
+            size = abs(p[k] - p[m["a"]])
+            back = (p[k] - min(between)) if m["d"] == "up" else (max(between) - p[k])
+            if back < 0.5 * size:
+                m["e"] = max(m["e"], g0["e"])
+                m["kept"] = max(m["kept"], g0["kept"])
+                continue
+        merged.append(dict(g0))
+
+    out = []
+    for m in merged:
+        a, e, d, kept = m["a"], m["e"], m["d"], m["kept"]
+        base = p[a]
+        k = _ext(a, e, d)
+        move = p[k] / base - 1
         val = sum(value[a + 1:e + 1])
         if val < min_val:
             continue
         start_label = "전일 종가" if (prev_close and a == 0) else ts[a].strftime("%H:%M")
-        rule = (f"{win}분 안에 {move*100:+.1f}% ({start_label} {base:,.0f}원 → {ts[k]:%H:%M} {p[k]:,.0f}원), "
-                f"{kept}분 이상 유지, 구간 거래대금 {_fmt_won(val)}")
         st = ts[a + 1] if (prev_close and a == 0) else ts[a]
+        rule = (f"{st:%H:%M}~{ts[k]:%H:%M} 이어진 움직임 {move*100:+.1f}% ({start_label} {base:,.0f}원 → "
+                f"{ts[k]:%H:%M} {p[k]:,.0f}원), {kept}분 이상 유지, 구간 거래대금 {_fmt_won(val)}")
         out.append({
             "event_type": "intraday", "direction": d,
             "start_ts": st.isoformat(timespec="minutes")[:16], "last_ts": ts[e].isoformat(timespec="minutes")[:16],
