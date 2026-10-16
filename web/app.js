@@ -500,7 +500,6 @@
 
     const cards = [...document.querySelectorAll("#feed .day-card")];
     const state = new Map();     // date → { d, chart, open }
-    const causeOpen = new Set(); // 원인 본문을 펼친 날 (오늘 카드를 30초마다 다시 그려도 유지)
     const draw = (card, d) => {
       const date = card.dataset.date, isLatest = date === dates[0];
       const st = state.get(date) || {};
@@ -511,8 +510,7 @@
       const hasEvents = d.events.length > 0;
       if (!isLatest && !hasEvents && !st.open) { card.innerHTML = foldRow(d, dayArts); return; }
       card.classList.remove("is-quiet");
-      card.innerHTML = dayCardHtml(d, dayArts, isLatest, causeOpen.has(date));
-      loadCausePreview(card);
+      card.innerHTML = dayCardHtml(d, dayArts, isLatest);
       const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       if (d.bars.length) {
         st.chart = priceVolumeChart($(".day-chart", card), $(".day-legend", card), d.bars, {
@@ -537,25 +535,6 @@
       if (fold) {
         const card = fold.closest(".day-card"), st = state.get(card.dataset.date);
         st.open = true; draw(card, st.d);
-        return;
-      }
-      const more = ev.target.closest("[data-cause-more]");
-      if (more) {
-        const card = more.closest(".day-card"), body = $(".day-cause-body", card);
-        body.classList.toggle("open");
-        const open = body.classList.contains("open");
-        if (open) causeOpen.add(card.dataset.date); else causeOpen.delete(card.dataset.date);
-        more.textContent = open ? "접기" : "더 보기";
-        return;
-      }
-      const ask = ev.target.closest("[data-ask-day]");
-      if (ask) {
-        const m = $("[data-ask-msg]", ask.parentElement);
-        m.className = "form-msg";
-        if (!CLOUD) { m.textContent = "PC 화면에서는 '이벤트 기록'의 분석 요청을 이용해 주세요."; return; }
-        sendInbox({ type: "analyze", date: ask.dataset.askDay, from: null, to: null })
-          .then((t) => { m.textContent = t; })
-          .catch((err) => { m.className = "form-msg err"; m.textContent = err.message; });
         return;
       }
       const b = ev.target.closest("[data-id]");
@@ -585,19 +564,6 @@
     }, 30000));
   }
 
-  /** 원인 본문은 상세 자료에만 있으므로 원인이 있는 날만 따로 받아 앞부분을 보여 줌 */
-  async function loadCausePreview(card) {
-    const box = $(".day-cause-body", card);
-    if (!box) return;
-    let d;
-    try { d = await api(`/api/events/${box.dataset.causeEv}`); } catch (_) { box.hidden = true; return; }
-    const m = d.event && d.event.manual;
-    if (!m || !m.body) { box.hidden = true; return; }
-    $(".mc-body", box).innerHTML = mdRender(m.body);
-    const more = $("[data-cause-more]", card);
-    if (more) more.hidden = !box.classList.contains("open") && box.scrollHeight <= box.clientHeight + 2;
-  }
-
   /** 이상변동 없던 날: 한 줄 (누르면 펼침) */
   function foldRow(d, dayArts) {
     const chg = dayChange(d);
@@ -614,23 +580,7 @@
     return live ? live.chg : d.bars[d.bars.length - 1].c / d.prev_close - 1;
   }
 
-  /** 하루 칸 아래 원인 자리. 원인은 하루 단위로 찾으므로 이곳이 기본 입구. */
-  function dayCauseHtml(date, dailyEv, open) {
-    if (dailyEv && dailyEv.cause_headline) {
-      return `<div class="day-cause">
-        <div class="day-cause-head">${esc(dailyEv.cause_headline)}</div>
-        <div class="day-cause-body manual-cause${open ? " open" : ""}" data-cause-ev="${dailyEv.id}"><div class="mc-body"></div></div>
-        <div class="day-cause-actions"><button type="button" class="btn-link" data-cause-more hidden>${open ? "접기" : "더 보기"}</button>
-          <button type="button" class="btn-link" data-id="${dailyEv.id}">원인 고치기 ›</button></div></div>`;
-    }
-    const btn = dailyEv
-      ? `<button type="button" class="btn primary small" data-id="${dailyEv.id}">원인 찾기 ›</button>`
-      : `<button type="button" class="btn primary small" data-ask-day="${date}" title="이날 하루 전체(전일 종가 → 종가)를 분석하도록 요청합니다">원인 찾기 ›</button>`;
-    return `<div class="day-cause day-cause-empty"><span class="muted">${dailyEv ? "원인을 아직 넣지 않았습니다." : "하루 기록이 없는 날입니다 (전일 대비 ±3% 안). 원인을 찾으려면 먼저 분석을 요청하세요."}</span>
-      ${btn}<span class="form-msg" data-ask-msg></span></div>`;
-  }
-
-  function dayCardHtml(d, dayArts, isLatest, causeOpen) {
+  function dayCardHtml(d, dayArts, isLatest) {
     const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
     // 하루 전체 등락 (전일 종가 대비)를 맨 위 한 칸으로. 하루 기록(급등·급락)이 있으면 이 칸이 곧 그 기록이고,
     // 같은 방향의 장중 조각(09:00 -4%, 09:55 -3% 등)은 이 안에 포함되므로 따로 나열하지 않음.
@@ -651,21 +601,25 @@
       const head = dailyEv
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
-      dayTotal = `<div class="day-total">
+      const cause = dailyEv
+        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${esc(dailyEv.cause_headline)}` : NO_CAUSE}</span>` : "";
+      const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
           <span class="day-total-sub">전일 종가 ${wonT(d.prev_close)} → ${closed && !(live && live.open) ? "종가 " : ""}${wonT(nowPx)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
+          ${cause}
         </div>
-        <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>
-        ${dayCauseHtml(d.date, dailyEv, causeOpen)}</div>`;
+        <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>`;
+      dayTotal = dailyEv
+        ? `<button type="button" class="day-total is-event" data-id="${dailyEv.id}">${inner}</button>`
+        : `<div class="day-total">${inner}</div>`;
     }
     const row = (e) => `
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? esc(e.cause_headline) : esc(compareLine(e))}</span>
+          <span class="tl-rule">${e.cause_headline ? `${esc(e.cause_headline)}` : `${NO_CAUSE} · ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)} 동안</small></span>
-          <span class="tl-go" aria-hidden="true">›</span>
         </button></li>`;
     const chart = d.bars.length
       ? `<div class="day-legend"></div><div class="day-chart"></div>`
@@ -997,21 +951,18 @@
         ${m.headline ? `<div class="mc-head">${esc(m.headline)}</div>` : ""}
         <div class="mc-body">${mdRender(m.body || "")}</div>
         ${m.inherited ? `<p class="note" style="margin:8px 0 0">그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다.</p>` : ""}</div>`
-      : `<div class="empty"><strong>원인 미입력</strong>아래 1→2→3 순서로 넣으세요.</div>`;
+      : `<div class="empty"><strong>원인 미입력</strong>아래 'ChatGPT에게 묻기'로 원인을 물어본 뒤, 받은 답을 '원인 붙여넣기'로 넣으세요.</div>`;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
       ${view}
       <div class="ask-block">
-        <div class="ask-step"><span class="step-no">1</span><b>AI에게 묻기</b><span class="muted">숫자·사실 자료가 채워진 새 창이 열립니다</span></div>
         <textarea id="ask-q" rows="2" placeholder="(선택) 따로 묻고 싶은 것. 비워 두면 '원인을 찾아 달라'로 보냅니다."></textarea>
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료가 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button></div>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료가 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button>
+          <button class="btn" type="button" id="mc-open">${own ? "원인 고치기" : "원인 붙여넣기"}</button>${own ? '<button class="btn" type="button" id="mc-del">원인 삭제</button>' : ""}</div>
         <span class="form-msg" id="ask-claude-msg"></span>
-        <div class="ask-step"><span class="step-no">2</span><b>받은 답 붙여넣기</b>
-          <button class="btn small" type="button" id="mc-open">${own ? "원인 고치기" : "붙여넣을 칸 열기"}</button>${own ? '<button class="btn small" type="button" id="mc-del">원인 삭제</button>' : ""}</div>
         <form class="mc-form" id="mc-form" hidden>
           <label>한 줄 요약 <small class="muted">(목록에 보임. 비우면 본문 첫 줄)</small><input id="mc-head" type="text" maxlength="200" value="${own ? esc(m.headline || "") : ""}" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피 (신뢰도 중간)"></label>
           <label>원인 본문<textarea id="mc-body" rows="10" placeholder="ChatGPT 답을 그대로 붙여넣으세요.">${own ? esc(m.body || "") : ""}</textarea></label>
           <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다. 같은 날 같은 방향 장중 순간에도 함께 보입니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장하면 암호화된 요청이 GitHub에 올라가고, 다음 자동 실행(장중 약 3~5분) 때 반영됩니다.</p>
-          <div class="ask-step"><span class="step-no">3</span><b>저장</b><span class="muted">GitHub 창이 열리면 초록색 [Create]를 눌러야 반영됩니다</span></div>
           <div class="ask-row"><button class="btn primary" type="submit">저장</button><button class="btn" type="button" id="mc-cancel">취소</button></div>
         </form>
       </div>`;
@@ -1165,7 +1116,6 @@
       <section class="d-block">${newsBlock(c)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
     const askWith = async (where) => {
-      $("#mc-form").hidden = false;           // 2 붙여넣을 칸을 미리 열어 둠
       const q = $("#ask-q").value.trim() || "이 움직임의 원인을 찾아 줘.";
       const msg = $("#ask-claude-msg");
       const text = eventContext(d, q);
@@ -1175,7 +1125,7 @@
         : `https://claude.ai/new?q=${encodeURIComponent(text)}`;
       window.open(url, "_blank", "noopener");
       msg.className = "form-msg";
-      msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 아직 보내지 않았으니 입력칸 옆에서 모델과 ${where === "gpt" ? "노력 강도" : "사고 설정"}를 고른 뒤 보내세요. 입력칸이 비어 있으면 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요. 답을 받으면 아래 2번 칸에 붙여넣으세요.`;
+      msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 아직 보내지 않았으니 입력칸 옆에서 모델과 ${where === "gpt" ? "노력 강도" : "사고 설정"}를 고른 뒤 보내세요. 입력칸이 비어 있으면 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요.`;
     };
     $("#ask-gpt").onclick = () => askWith("gpt");
     $("#ask-claude").onclick = () => askWith("claude");
