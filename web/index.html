@@ -32,24 +32,18 @@
       <section class="hero" id="hero" hidden>
         <div class="hero-head">
           <div class="quote">
-            <div class="quote-name"><span id="q-name">이 종목</span><span class="quote-code" id="q-code"></span></div>
-            <div class="quote-price"><span id="q-price">-</span><span class="won">원</span></div>
-            <div class="quote-change" id="q-change"></div>
+            <span class="quote-name"><span id="q-name">이 종목</span><span class="quote-code" id="q-code"></span></span>
+            <span class="quote-price"><span id="q-price">-</span><span class="won">원</span></span>
+            <span class="quote-change" id="q-change"></span>
           </div>
           <dl class="hero-stats">
             <div><dt>KOSDAQ</dt><dd id="q-kosdaq">-</dd></div>
             <div><dt>거래량</dt><dd id="q-volume">-</dd></div>
             <div><dt id="q-events-label">오늘 이상변동</dt><dd id="q-events">-</dd></div>
           </dl>
+          <button class="rules-btn" id="rules-toggle" type="button" aria-expanded="false" aria-controls="rules">감지 기준</button>
         </div>
-        <div class="session">
-          <div class="session-legend" id="hero-legend"></div>
-          <div class="session-chart" id="hero-chart"></div>
-          <div class="session-foot">
-            <span id="session-date"></span>
-            <span class="key"><i class="k-up"></i>급등 <i class="k-down"></i>급락</span>
-          </div>
-        </div>
+        <ul class="rules hero-rules" id="rules" hidden></ul>
       </section>
     </div>
   </header>
