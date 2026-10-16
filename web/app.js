@@ -654,7 +654,7 @@
   }
 
   // ---------------------------------------------------------------- events page
-  const evState = { range: "1m", kind: "all", tier: "all", day: null };
+  const evState = { range: "1m", kind: "all", tier: "all" };
 
   async function pageEvents() {
     main.innerHTML = `<div class="wrap">
@@ -669,7 +669,6 @@
         <div class="seg" id="ev-tier" aria-label="크기">
           <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% 관찰 + 직접 요청한 분석">관찰·요청</button>
         </div>
-        <span class="day-filter" id="ev-day" hidden></span>
         <span class="spacer"></span>
         <button class="btn editable" type="button" id="ask-toggle" title="기준에 안 걸린 날도 원인을 분석해 기록에 올립니다">분석 요청</button>
         <a class="btn" id="ev-csv" href="#">
@@ -685,14 +684,13 @@
         </div>
         <div class="form-msg" id="ask-msg" role="status"></div>
       </form>
-      <div class="panel cal-wrap" id="cal"></div>
       <div class="panel table-panel"><div class="table-wrap" id="ev-table"><p class="loading" style="padding:20px">불러오는 중…</p></div></div>
     </div>`;
     const bindSeg = (id, key) => {
       const el = $(id);
       const sync = () => el.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === evState[key])));
       sync();
-      el.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; evState[key] = b.dataset.v; if (key === "range") evState.day = null; sync(); loadEvents(); };
+      el.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; evState[key] = b.dataset.v; sync(); loadEvents(); };
     };
     bindSeg("#ev-range", "range");
     bindSeg("#ev-kind", "kind");
@@ -734,26 +732,23 @@
       ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰" && e.tier !== "요청").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건${all.some((e) => e.tier === "요청") ? `, 직접 요청 ${all.filter((e) => e.tier === "요청").length}건` : ""}입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
       : "이 기간에는 급등·급락이 없었습니다.";
 
-    loadCalendar();
-
     let list = all;
     if (evState.kind !== "all") list = list.filter((e) => e.direction === evState.kind);
     if (evState.tier === "main") list = list.filter((e) => e.tier !== "관찰" && e.tier !== "요청");
     else if (evState.tier === "watch") list = list.filter((e) => e.tier === "관찰" || e.tier === "요청");
-    if (evState.day) list = list.filter((e) => e.start_ts.startsWith(evState.day));
-
-    const dayEl = $("#ev-day");
-    if (evState.day) {
-      dayEl.hidden = false;
-      dayEl.innerHTML = `${dayLabel(evState.day)}만 보는 중 <button type="button">해제</button>`;
-      $("button", dayEl).onclick = () => { evState.day = null; loadEvents(); };
-    } else dayEl.hidden = true;
 
     const csv = new URLSearchParams();
-    if (evState.day) { csv.set("from", evState.day); csv.set("to", evState.day); } else if (from) csv.set("from", from);
+    if (from) csv.set("from", from);
     if (evState.kind !== "all") csv.set("kind", evState.kind);
     $("#ev-csv").href = `/api/events.csv?${csv}`;
     $("#ev-csv").onclick = CLOUD ? (ev) => { ev.preventDefault(); csvDownload(list); } : null;
+
+    // 같은 날 안에서는 하루 전체 기록을 맨 위에, 장중 구간은 그 아래 (원래 순서 유지)
+    list = list.map((e, i) => [e, i]).sort((x, y) => {
+      const dx = x[0].start_ts.slice(0, 10), dy = y[0].start_ts.slice(0, 10);
+      if (dx !== dy) return dx < dy ? 1 : -1;
+      return (isDaily(y[0]) - isDaily(x[0])) || (x[1] - y[1]);
+    }).map((x) => x[0]);
 
     if (!list.length) {
       $("#ev-table").innerHTML = `<div class="empty" style="padding:22px 16px;border:0"><strong>조건에 맞는 이상변동이 없습니다.</strong>기간이나 구분을 바꿔 보세요.</div>`;
@@ -766,7 +761,7 @@
         const day = e.start_ts.slice(0, 10);
         const head = i === 0 || list[i - 1].start_ts.slice(0, 10) !== day
           ? `<tr class="day-head"><td colspan="5">${dayLabel(day)}<small>${list.filter((x) => x.start_ts.startsWith(day)).length}건</small></td></tr>` : "";
-        return head + `<tr data-id="${e.id}" tabindex="0">
+        return head + `<tr data-id="${e.id}" tabindex="0"${isDaily(e) ? ' class="is-daily"' : ""}>
         <td class="when num">${isDaily(e) ? "하루<small>전일 종가 → 종가</small>" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`}</td>
         <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
@@ -777,49 +772,6 @@
     const tb = $("#ev-table tbody");
     tb.onclick = (ev) => { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); };
     tb.onkeydown = (ev) => { if (ev.key === "Enter") { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); } };
-  }
-
-  async function loadCalendar() {
-    const since = new Date(); since.setDate(since.getDate() - 182);
-    try {
-      const d = await api(`/api/events?from=${isoDate(since)}`);
-      renderCalendar(d.trading_days, d.events, null);
-    } catch (_) { /* 달력은 보조 정보 */ }
-  }
-
-  function renderCalendar(tradingDays, events, from) {
-    const el = $("#cal");
-    if (!tradingDays.length) { el.innerHTML = `<p class="muted" style="margin:0">아직 기록된 거래일이 없습니다.</p>`; return; }
-    const byDay = {};
-    events.forEach((e) => { const k = e.start_ts.slice(0, 10); (byDay[k] ||= { up: 0, down: 0, flat: 0, n: 0 }); byDay[k][e.direction]++; byDay[k].n++; });
-    const tset = new Set(tradingDays);
-    const start = new Date((from || tradingDays[0]) + "T00:00:00");
-    const end = new Date(tradingDays[tradingDays.length - 1] + "T00:00:00");
-    // 월요일부터 시작
-    const s = new Date(start); s.setDate(s.getDate() - ((s.getDay() + 6) % 7));
-    let html = `<span class="lbl"></span><span class="lbl">월</span><span class="lbl"></span><span class="lbl">수</span><span class="lbl"></span><span class="lbl">금</span>`;
-    let lastMonth = -1;
-    for (let w = new Date(s); w <= end; w.setDate(w.getDate() + 7)) {
-      const m = w.getMonth();
-      const showMonth = m !== lastMonth;
-      lastMonth = m;
-      html += `<span class="lbl">${showMonth ? `${m + 1}월` : ""}</span>`;
-      for (let i = 0; i < 5; i++) {
-        const d = new Date(w); d.setDate(w.getDate() + i);
-        const k = isoDate(d);
-        if (d < start || d > end) { html += `<span class="cell" style="visibility:hidden"></span>`; continue; }
-        if (!tset.has(k)) { html += `<span class="cell off" title="${k} 기록 없음(휴장 또는 PC 꺼짐)"></span>`; continue; }
-        const c = byDay[k];
-        if (!c) { html += `<button type="button" class="cell" title="${k} 이상변동 없음" data-day="${k}"></button>`; continue; }
-        const dom = c.up >= c.down && c.up >= c.flat ? "up" : c.down >= c.flat ? "down" : "flat";
-        const lvl = c.n >= 4 ? "" : c.n >= 2 ? "l2" : "l1";
-        html += `<button type="button" class="cell has c-${dom} ${lvl} ${evState.day === k ? "sel" : ""}" data-day="${k}" title="${k} ${c.n}건: 급등 ${c.up}, 급락 ${c.down}" aria-label="${k} 이상변동 ${c.n}건"></button>`;
-      }
-    }
-    el.innerHTML = `<div class="cal-head"><h2 class="sec" style="margin:0">거래일별 기록</h2><p>최근 6개월까지 보여줍니다. 칸을 누르면 그날 이상변동만 볼 수 있습니다.</p></div>
-      <div class="cal">${html}</div>
-      <div class="cal-legend"><span><i style="background:var(--line)"></i>이상변동 없음</span><span><i style="box-shadow:inset 0 0 0 1px var(--line-2)"></i>기록 없음</span><span><i style="background:var(--up)"></i>급등 위주</span><span><i style="background:var(--down)"></i>급락 위주</span><span>색이 진할수록 건수가 많음</span></div>`;
-    el.onclick = (ev) => { const b = ev.target.closest("button.has"); if (!b) return; evState.day = evState.day === b.dataset.day ? null : b.dataset.day; loadEvents(); };
   }
 
   // ---------------------------------------------------------------- event drawer

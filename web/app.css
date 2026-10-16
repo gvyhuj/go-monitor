@@ -240,23 +240,8 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .btn.danger { color: var(--up); }
 .btn svg { width: 16px; height: 16px; }
 .spacer { flex: 1; }
-.day-filter { font-size: 14px; color: var(--ink-2); display: inline-flex; gap: 8px; align-items: center; }
-.day-filter button { border: 0; background: none; color: var(--brand-blue); cursor: pointer; padding: 0; font-weight: 600; }
 
 /* ------------------------------------------------------------ calendar */
-.cal-wrap { padding: 20px 22px 16px; margin-bottom: 22px; overflow-x: auto; }
-.cal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
-.cal-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
-.cal { display: grid; grid-auto-flow: column; grid-template-rows: 20px repeat(5, 24px); grid-auto-columns: 24px; gap: 5px; justify-content: start; }
-.cal .lbl { font-size: 12px; color: var(--muted); line-height: 24px; white-space: nowrap; overflow: visible; }
-.cal .cell { width: 24px; height: 24px; border-radius: 5px; background: var(--line); border: 0; padding: 0; cursor: default; }
-.cal .cell.off { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
-.cal .cell.has { cursor: pointer; }
-.cal .cell.c-up { background: var(--up); } .cal .cell.c-down { background: var(--down); } .cal .cell.c-flat { background: var(--vol); }
-.cal .cell.l1 { opacity: .55; } .cal .cell.l2 { opacity: .8; }
-.cal .cell.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
-.cal-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 12px; flex-wrap: wrap; }
-.cal-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
 
 /* ------------------------------------------------------------ table */
 .table-wrap { overflow-x: auto; }
@@ -275,6 +260,8 @@ table.data .when small { color: var(--muted); font-weight: 500; margin-left: 6px
 table.data tr.day-head td { padding: 14px 12px 6px; font-weight: 700; font-size: 15px; background: var(--canvas); cursor: default; }
 table.data tr.day-head small { margin-left: 8px; color: var(--muted); font-weight: 500; font-size: 13px; }
 table.data tbody tr.day-head:hover td { background: var(--canvas); }
+table.data tr.is-daily td { background: color-mix(in srgb, var(--brand-blue) 6%, var(--surface)); border-bottom: 2px solid var(--line-2); font-weight: 600; }
+table.data tr.is-daily td:first-child { box-shadow: inset 3px 0 0 var(--brand-blue); }
 .panel.table-panel { padding: 4px 6px 6px; }
 
 /* ------------------------------------------------------------ drawer */
