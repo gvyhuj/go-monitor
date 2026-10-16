@@ -761,16 +761,22 @@
     }
     $("#ev-table").innerHTML = `<table class="data"><thead><tr>
         <th>일시</th><th>구분</th><th class="r">움직임</th><th class="r">KOSDAQ 같은 기간</th><th>원인</th></tr></thead><tbody>
-      ${list.map((e) => `<tr data-id="${e.id}" tabindex="0">
-        <td class="when num">${dayLabel(e.start_ts)}<small>${isDaily(e) ? "하루 (전일 종가 → 종가)" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`}</small></td>
+      ${list.map((e, i) => {
+        // 같은 날 기록은 날짜를 한 번만 적은 머리줄 아래로 묶음
+        const day = e.start_ts.slice(0, 10);
+        const head = i === 0 || list[i - 1].start_ts.slice(0, 10) !== day
+          ? `<tr class="day-head"><td colspan="5">${dayLabel(day)}<small>${list.filter((x) => x.start_ts.startsWith(day)).length}건</small></td></tr>` : "";
+        return head + `<tr data-id="${e.id}" tabindex="0">
+        <td class="when num">${isDaily(e) ? "하루<small>전일 종가 → 종가</small>" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`}</td>
         <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
         <td class="r num">${e.kosdaq_change == null ? '<span class="muted">없음</span>' : pct(e.kosdaq_change)}</td>
-        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`).join("")}
+        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`;
+      }).join("")}
       </tbody></table>`;
     const tb = $("#ev-table tbody");
-    tb.onclick = (ev) => { const r = ev.target.closest("tr"); if (r) openEvent(+r.dataset.id); };
-    tb.onkeydown = (ev) => { if (ev.key === "Enter") { const r = ev.target.closest("tr"); if (r) openEvent(+r.dataset.id); } };
+    tb.onclick = (ev) => { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); };
+    tb.onkeydown = (ev) => { if (ev.key === "Enter") { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); } };
   }
 
   async function loadCalendar() {

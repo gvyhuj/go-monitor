@@ -272,6 +272,9 @@ table.data .r { text-align: right; }
 table.data .rule { color: var(--ink-2); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.data .when { white-space: nowrap; font-weight: 600; }
 table.data .when small { color: var(--muted); font-weight: 500; margin-left: 6px; }
+table.data tr.day-head td { padding: 14px 12px 6px; font-weight: 700; font-size: 15px; background: var(--canvas); cursor: default; }
+table.data tr.day-head small { margin-left: 8px; color: var(--muted); font-weight: 500; font-size: 13px; }
+table.data tbody tr.day-head:hover td { background: var(--canvas); }
 .panel.table-panel { padding: 4px 6px 6px; }
 
 /* ------------------------------------------------------------ drawer */
