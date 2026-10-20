@@ -612,7 +612,7 @@
       box.style.left = `${Math.min(a, b)}px`;
       box.style.width = `${Math.max(2, Math.abs(b - a))}px`;
     };
-    const show = () => { paint(); renderRangePanel(panel, d, st, arts, prevDay, () => { st.range = null; st.pending = null; show(); }); };
+    const show = () => { paint(); renderRangePanel(panel, d, st, arts, prevDay, () => { st.range = null; show(); }); };
     let drag = null;
     el.addEventListener("pointerdown", (ev) => {
       if (ev.pointerType !== "mouse" || ev.button !== 0) return;
@@ -628,18 +628,41 @@
       if (drag.moved && t != null) { st.range = [drag.t0, t]; paint(); }
     });
     el.addEventListener("pointerup", (ev) => {
-      if (ev.pointerType === "mouse") {
-        if (drag && drag.moved && st.range) { st.range.sort((x, y) => x - y); st.pending = null; show(); }
-        drag = null;
-        return;
+      // PC 끌기 = 직접 고른 구간. 클릭(폰은 탭) = 그 지점까지 갑자기 움직인 구간을 자동으로 찾음
+      // (폰에서 화면을 끌어 스크롤하면 브라우저가 pointercancel을 보내므로 여기로 오지 않음)
+      if (drag && drag.moved && st.range) st.range.sort((x, y) => x - y);
+      else {
+        const t = timeAt(ev);
+        const r = t == null ? null : autoRange(d, t);
+        if (!r) { drag = null; return; }
+        st.range = r;
       }
-      const t = timeAt(ev);                 // 폰: 첫 번째 누름 = 시작, 두 번째 = 끝
-      if (t == null) return;
-      if (st.pending == null) { st.pending = t; st.range = [t, t]; }
-      else { st.range = [st.pending, t].sort((x, y) => x - y); st.pending = null; }
+      drag = null;
       show();
     });
     requestAnimationFrame(show);           // 오늘 카드를 다시 그려도 고른 구간은 유지
+  }
+
+  /** 클릭한 지점에서 최대 60분을 거슬러 올라가 움직임이 시작된 곳을 찾음
+   *  (떨어졌으면 그 사이 가장 높았던 때, 올랐으면 가장 낮았던 때부터 클릭한 지점까지) */
+  function autoRange(d, t) {
+    const upto = d.bars.filter((x) => toTime(x.t) <= t);
+    const end = upto.length ? upto[upto.length - 1] : d.bars[0];
+    if (!end) return null;
+    const te = toTime(end.t);
+    const win = d.bars.filter((x) => { const u = toTime(x.t); return u >= te - 60 * 60 && u <= te; });
+    const hi = win.reduce((m, x) => (x.c > m.c ? x : m), win[0]), lo = win.reduce((m, x) => (x.c < m.c ? x : m), win[0]);
+    const drop = hi.c / end.c - 1, rise = end.c / lo.c - 1;     // 시작점에서 클릭 지점까지 얼마나 움직였나
+    const down = drop >= rise, ext = down ? hi : lo, total = Math.abs(end.c - ext.c);
+    // 최고(최저)점 뒤로 한동안 옆으로 기다 갑자기 움직인 경우, 실제로 움직이기 시작한 곳을 시작점으로:
+    // 클릭 지점까지 남은 움직임이 전체의 85% 이상인 가장 늦은 때
+    let start = ext;
+    for (const x of win) {
+      if (toTime(x.t) < toTime(ext.t)) continue;
+      if (Math.abs(end.c - x.c) >= total * 0.85 && (down ? x.c >= end.c : x.c <= end.c)) start = x;
+    }
+    const ts0 = toTime(start.t);
+    return [ts0 < te ? ts0 : Math.max(toTime(win[0].t), te - 30 * 60), te];
   }
 
   /** 고른 구간의 숫자 (브라우저에 있는 1분봉·KOSDAQ만으로 계산) */
@@ -670,12 +693,7 @@
 
   function renderRangePanel(panel, d, st, arts, prevDay, clear) {
     if (!st.range) {
-      panel.innerHTML = `<p class="range-hint">차트를 마우스로 끌어 구간을 고르면(폰은 시작·끝을 차례로 누르면) 그 구간만 원인을 물어볼 수 있습니다.</p>`;
-      return;
-    }
-    if (st.pending != null) {
-      panel.innerHTML = `<p class="range-hint"><b>${utcHHMM(st.pending)}</b>부터 — 끝 지점을 한 번 더 눌러 주세요. <button type="button" class="btn-link" data-range-clear>취소</button></p>`;
-      $("[data-range-clear]", panel).onclick = clear;
+      panel.innerHTML = `<p class="range-hint">차트를 클릭(폰은 탭)하면 그 지점까지 갑자기 움직인 구간을 찾아 원인을 물어볼 수 있습니다. PC는 마우스로 끌어 구간을 직접 고를 수도 있습니다.</p>`;
       return;
     }
     const r = rangeStats(d, st.range[0], st.range[1]);
@@ -701,9 +719,9 @@
   function rangeContext(d, r, arts, prevDay, question) {
     const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
     const L = [];
-    L.push(`아래는 '${name}' 주가의 특정 구간 움직임에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-    L.push("웹 검색으로 ① 같은 시간대 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마 종목들의 같은 시간대 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 이 구간의 원인을 찾아줘.");
-    L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    L.push(`아래는 '${name}' 주가가 특정 구간에 갑자기 움직인 것에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
+    L.push("이 구간의 움직임이 초점이지만, 원인을 이 시간 안에서만 찾지는 말아줘. 웹 검색으로 ① 전날 장 마감 뒤부터 이 시점까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이 구간 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
+    L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
     L.push(`[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
     if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · 구간 끝 ${pct(r.fromPrev)} · 구간 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · 구간 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
