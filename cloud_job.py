@@ -399,6 +399,15 @@ def main(argv) -> int:
         import traceback
         annotate("error", "수집·분석 오류: " + "".join(traceback.format_exception(e)[-4:]))
     set_state("monitor_status", "running")
+    # 갱신 멈춤 알림 (수집이 실패한 실행에서도 확인하도록 수집 try 밖에서)
+    if static:
+        try:
+            from core import alerts
+            now2 = feed.kst_now()
+            for t in alerts.check_health(now2, trading_day=now2.weekday() < 5, log=log.info):
+                annotate("notice", t)
+        except Exception as e:  # noqa: BLE001
+            annotate("warning", f"갱신 멈춤 확인 실패: {e}")
     from core.db import now_iso
     set_state("monitor_heartbeat", now_iso())
 

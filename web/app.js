@@ -391,7 +391,14 @@
         : `${when}에 자동 수집·분석한 자료입니다. 장중에는 약 ${iv}분마다 새로 갱신됩니다.`;
       if (marketNow && age > iv * 2 + 15) {
         setEngine("stale", `갱신 지연 (마지막 ${when})`);
-        showAlert(`<strong>지금 장중인데 ${Math.round(age)}분째 새 자료가 없습니다.</strong> ${byPc ? "회사 PC가 꺼져 있거나 감시 프로그램이 멈춘 것 같습니다." : "자동 실행이 늦어지고 있습니다. 보통 다음 실행 때 그동안의 분봉까지 한꺼번에 채워집니다."}`);
+        const head = `<strong>지금 장중인데 ${Math.round(age)}분째 새 자료가 없습니다.</strong> `;
+        showAlert(head + (byPc ? "회사 PC가 꺼져 있거나 감시 프로그램이 멈춘 것 같습니다." : "자동 실행이 늦어지고 있습니다. 보통 다음 실행 때 그동안의 분봉까지 한꺼번에 채워집니다."));
+        if (STATIC && STATIC.repo) runHealth().then((h) => {
+          if (!h || $("#alert").hidden) return;
+          showAlert(head + (h === "publish"
+            ? "자동 실행과 수집은 정상인데 사이트 게시(GitHub Pages)가 늦어지고 있습니다. 수집은 계속되며, 풀리면 그동안의 자료가 한꺼번에 채워집니다."
+            : "자동 실행이 멈췄거나 실패하고 있습니다. GitHub 저장소의 Actions 탭에서 최근 실행을 확인해 주세요."));
+        });
       } else {
         setEngine("ok", `갱신 ${when}`);
         showAlert(null);
@@ -414,6 +421,22 @@
     }
     renderQuote();
     renderFoot();
+  }
+
+  // 자료가 오래됐을 때 원인 구분: GitHub 공개 정보로 최근 자동 실행이 계속 성공 중인지 확인
+  // "publish" = 실행은 정상인데 사이트 게시만 늦음, "runner" = 실행이 멈췄거나 실패, null = 확인 못 함
+  let RUN_HEALTH = null, RUN_HEALTH_AT = 0;
+  async function runHealth() {
+    if (Date.now() - RUN_HEALTH_AT < 5 * 60000) return RUN_HEALTH;      // 공개 API 횟수 제한(시간당 60번) 때문에 5분마다만
+    RUN_HEALTH_AT = Date.now();
+    try {
+      const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/runs?per_page=10`, { cache: "no-store" });
+      if (!r.ok) throw new Error(String(r.status));
+      const runs = (await r.json()).workflow_runs || [];
+      const recent = runs.filter((x) => Date.now() - new Date(x.created_at).getTime() < 15 * 60000);
+      RUN_HEALTH = recent.some((x) => x.conclusion === "success") ? "publish" : "runner";
+    } catch (_) { RUN_HEALTH = null; }
+    return RUN_HEALTH;
   }
 
   function setEngine(state, label) {

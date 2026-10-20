@@ -181,3 +181,112 @@ def send_test(log=None) -> bool:
         if log:
             log(f"시험 알림 실패: {ex}")
         return False
+
+
+# ------------------------------------------------------------------ 갱신 멈춤 알림
+# A: 수집은 정상인데 사이트(GitHub Pages)에 새 자료가 30분 넘게 안 올라감
+# B: 네이버 시세를 30분 넘게 정상으로 받지 못함 (값이 그대로인 것과는 구분: '응답 성공 시각'으로 봄)
+# 같은 종류는 하루 한 번만 알리고, 다시 정상이 되면 '복구'를 한 번 알림.
+# 자동 실행 자체가 멈춘 경우는 알림을 보낼 주체가 없으므로 사이트 경고로만 알림.
+STALE_MIN = 30
+HEALTH_WORD = {"A": "사이트 게시 지연", "B": "시세 수집 실패"}
+
+
+def market_hours(now: datetime, trading_day: bool) -> bool:
+    return trading_day and now.weekday() < 5 and "09:00" <= now.strftime("%H:%M") <= "15:30"
+
+
+def health_problems(now: datetime, *, data_last_ok: datetime | None, site_modified: datetime | None,
+                    build_streak_start: datetime | None, trading_day: bool) -> set:
+    """지금 장중에 멈춰 있는 것들 ('A', 'B')."""
+    if not market_hours(now, trading_day):
+        return set()
+    late = now - timedelta(minutes=STALE_MIN)
+    bad = set()
+    if data_last_ok is None or data_last_ok < late:
+        bad.add("B")
+    # 사이트 파일이 오래됐어도, 자동 실행 자신이 30분 동안 계속 돌며 올리고 있었을 때만 '게시 지연'
+    # (실행이 멈췄다가 다시 돈 직후에 잘못 알리지 않게)
+    if site_modified is not None and site_modified < late and build_streak_start is not None and build_streak_start <= late:
+        bad.add("A")
+    return bad
+
+
+def _site_modified() -> datetime | None:
+    """지금 사이트가 실제로 내주는 자료 파일의 수정 시각 (한국 시간)."""
+    base = _site()
+    if not base:
+        return None
+    from email.utils import parsedate_to_datetime
+    req = urllib.request.Request(f"{base}d/live.bin?check={int(datetime.now().timestamp())}", method="HEAD")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        lm = r.headers.get("Last-Modified")
+    if not lm:
+        return None
+    return (parsedate_to_datetime(lm) + timedelta(hours=9)).replace(tzinfo=None)
+
+
+def _state_json(key: str) -> dict:
+    st = get_state(key)
+    try:
+        return json.loads(st["value"]) if st and st.get("value") else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def check_health(now: datetime, trading_day: bool, log=None) -> list:
+    """장중 갱신 멈춤을 확인하고 필요하면 알림·복구 알림을 보냄. 보낸 제목 목록을 돌려줌."""
+    def _dt(key):
+        st = get_state(key)
+        try:
+            return datetime.fromisoformat(st["value"]) if st and st.get("value") else None
+        except (ValueError, TypeError):
+            return None
+
+    # 자동 실행이 끊김 없이 돈 시작 시각 (직전 실행과 10분 넘게 벌어지면 새로 시작)
+    prev = _dt("health:last_run")
+    streak = _dt("health:streak_start")
+    if prev is None or streak is None or now - prev > timedelta(minutes=10):
+        streak = now
+    set_state("health:last_run", now.isoformat(timespec="seconds"))
+    set_state("health:streak_start", streak.isoformat(timespec="seconds"))
+
+    try:
+        site_mod = _site_modified()
+    except (urllib.error.URLError, ValueError, TypeError) as ex:
+        site_mod = None
+        if log:
+            log(f"사이트 확인 실패: {ex}")
+    bad = health_problems(now, data_last_ok=_dt("data_last_ok"), site_modified=site_mod,
+                          build_streak_start=streak, trading_day=trading_day)
+    st = _state_json("health:alerts")
+    today = now.date().isoformat()
+    sent = []
+    for kind, word in HEALTH_WORD.items():
+        k = st.get(kind) or {}
+        if kind in bad and not k.get("active") and k.get("alerted") != today:
+            if kind == "A":
+                title = f"[{word}] 사이트 자료가 {site_mod:%H:%M}에 멈춰 있습니다 ({now:%m/%d %H:%M} 확인)"
+                msg = "자동 실행과 수집은 정상인데 사이트(GitHub Pages)에 새 자료가 올라가지 않고 있습니다. 수집은 계속되며, 풀리면 그동안의 자료가 한꺼번에 채워집니다."
+            else:
+                last = _dt("data_last_ok")
+                err = (get_state("data_status") or {}).get("value") or ""
+                title = f"[{word}] 네이버 시세를 {last:%H:%M} 이후 받지 못하고 있습니다" if last else f"[{word}] 네이버 시세를 받지 못하고 있습니다"
+                msg = "자동 실행은 돌고 있지만 네이버에서 시세를 받지 못하고 있습니다." + (f" 마지막 오류: {err[:200]}" if err.startswith("error") else "")
+        elif kind not in bad and k.get("active"):
+            title = f"[복구] {word}가 풀렸습니다 ({now:%m/%d %H:%M})"
+            msg = "다시 정상적으로 갱신되고 있습니다."
+        else:
+            continue
+        try:
+            _post_issue(title, _body(msg))
+        except (urllib.error.URLError, KeyError, ValueError) as ex:
+            if log:
+                log(f"알림 실패: {ex}")
+            continue
+        st[kind] = {"active": True, "alerted": today} if kind in bad else {"active": False, "alerted": k.get("alerted")}
+        sent.append(title)
+        if log:
+            log(f"알림 보냄: {title}")
+    set_state("health:alerts", json.dumps(st))
+    return sent
