@@ -203,8 +203,10 @@ def api_intraday(q):
     prev = analysis.load_range(sym, day0 - timedelta(days=10), day0 - timedelta(minutes=1))
     prev_close = float(prev["close"].iloc[-1]) if not prev.empty else None
     quote = state_json(f"quote:{sym}")
-    if d == dates[0] and quote and quote.get("price") is not None and quote.get("change") is not None:
-        prev_close = quote["price"] - quote["change"]   # 네이버 기준 전일 종가
+    # 네이버 기준 전일 종가. 단 시세가 이 날짜 체결일 때만 (다음 날 장 시작 전엔 네이버가 등락 0으로 돌려
+    # '전일 종가 = 그날 종가'가 되어 버림)
+    if d == dates[0] and quote and quote.get("price") is not None and quote.get("change") is not None             and str(quote.get("traded_at") or "")[:10] == d:
+        prev_close = quote["price"] - quote["change"]
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
             "prev_close": prev_close, "events": event_rows(sym, d, d, None)}
 
