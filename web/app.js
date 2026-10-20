@@ -690,24 +690,11 @@
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
-      <textarea class="range-q" rows="2" placeholder="(선택) 따로 묻고 싶은 것. 비워 두면 '이 구간 움직임의 원인을 찾아 달라'로 보냅니다.">${esc(st.q || "")}</textarea>
-      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask="gpt">이 구간 ChatGPT에게 묻기</button>
-        <button class="btn small" type="button" data-range-ask="claude">Claude에게 묻기</button>
-        <button class="btn small" type="button" data-range-req title="자동 실행이 업종 몫 나누기·수급·이슈 기사까지 계산해 '요청' 기록으로 올립니다 (몇 분 걸림)">자세한 숫자까지 분석 요청</button></div>
+      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button></div>
       <span class="form-msg" data-range-msg></span></div>`;
-    const msg = $("[data-range-msg]", panel), q = $(".range-q", panel);
-    q.oninput = () => { st.q = q.value; };
+    const msg = $("[data-range-msg]", panel);
     $("[data-range-clear]", panel).onclick = clear;
-    panel.querySelectorAll("[data-range-ask]").forEach((b) => {
-      b.onclick = () => openAsk(b.dataset.rangeAsk, rangeContext(d, r, arts, prevDay, q.value.trim() || "이 구간 움직임의 원인을 찾아 줘."), msg);
-    });
-    $("[data-range-req]", panel).onclick = () => {
-      msg.className = "form-msg";
-      if (!CLOUD) { msg.textContent = "PC 화면에서는 '이벤트 기록'의 분석 요청을 이용해 주세요."; return; }
-      sendInbox({ type: "analyze", date: d.date, from: r.from, to: r.to === r.from ? null : r.to })
-        .then((t) => { msg.textContent = `${t} 올라오면 '이벤트 기록'에 '요청'으로 보이고, 거기서 원인을 붙여넣을 수 있습니다.`; })
-        .catch((err) => { msg.className = "form-msg err"; msg.textContent = err.message; });
-    };
+    $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."), msg);
   }
 
   /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음) */
@@ -728,12 +715,12 @@
     return `${L.join("\n")}\n\n[질문] ${question}`;
   }
 
-  /** ChatGPT·Claude 새 창에 자료를 채워 엶 (보내기는 사용자가 직접) */
-  function openAsk(where, text, msg) {
+  /** ChatGPT 새 창에 자료를 채워 엶 (보내기는 사용자가 직접). 따로 묻고 싶은 것은 그 창에서 덧붙임 */
+  function openAsk(text, msg) {
     try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
-    window.open(where === "gpt" ? `https://chatgpt.com/?q=${encodeURIComponent(text)}` : `https://claude.ai/new?q=${encodeURIComponent(text)}`, "_blank", "noopener");
+    window.open(`https://chatgpt.com/?q=${encodeURIComponent(text)}`, "_blank", "noopener");
     msg.className = "form-msg";
-    msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 아직 보내지 않았으니 모델을 고른 뒤 보내세요. 입력칸이 비어 있으면 붙여넣기(Ctrl+V) 하세요.`;
+    msg.textContent = "ChatGPT 새 창을 열었습니다. 아직 보내지 않았으니 모델을 고른 뒤 보내세요. 따로 묻고 싶은 것은 거기서 덧붙이면 됩니다. 입력칸이 비어 있으면 붙여넣기(Ctrl+V) 하세요.";
   }
 
   /** 이상변동 없던 날: 한 줄 (누르면 펼침) */
@@ -1085,8 +1072,7 @@
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
       ${view}
       <div class="ask-block">
-        <textarea id="ask-q" rows="2" placeholder="(선택) 따로 묻고 싶은 것. 비워 두면 '원인을 찾아 달라'로 보냅니다."></textarea>
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료가 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button><button class="btn" type="button" id="ask-claude">Claude에게 묻기</button>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료가 채워진 ChatGPT 창을 엽니다. 보내기 전에 모델과 노력 강도를 고르세요">ChatGPT에게 묻기</button>
           <button class="btn" type="button" id="mc-open">${own ? "원인 고치기" : "원인 붙여넣기"}</button>${own ? '<button class="btn" type="button" id="mc-del">원인 삭제</button>' : ""}</div>
         <span class="form-msg" id="ask-claude-msg"></span>
         <form class="mc-form" id="mc-form" hidden>
@@ -1238,20 +1224,7 @@
       ${disclosureBlock(c)}
       <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
-    const askWith = async (where) => {
-      const q = $("#ask-q").value.trim() || "이 움직임의 원인을 찾아 줘.";
-      const msg = $("#ask-claude-msg");
-      const text = eventContext(d, q);
-      try { await navigator.clipboard.writeText(text); } catch (_) {}
-      const url = where === "gpt"
-        ? `https://chatgpt.com/?q=${encodeURIComponent(text)}`
-        : `https://claude.ai/new?q=${encodeURIComponent(text)}`;
-      window.open(url, "_blank", "noopener");
-      msg.className = "form-msg";
-      msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 아직 보내지 않았으니 입력칸 옆에서 모델과 ${where === "gpt" ? "노력 강도" : "사고 설정"}를 고른 뒤 보내세요. 입력칸이 비어 있으면 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 하세요.`;
-    };
-    $("#ask-gpt").onclick = () => askWith("gpt");
-    $("#ask-claude").onclick = () => askWith("claude");
+    $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
     const form = $("#mc-form"), msg = $("#ask-claude-msg");
     const target = isDaily(e)
