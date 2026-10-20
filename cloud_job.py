@@ -404,7 +404,11 @@ def main(argv) -> int:
         try:
             from core import alerts
             now2 = feed.kst_now()
-            for t in alerts.check_health(now2, trading_day=now2.weekday() < 5, log=log.info):
+            q = get_state(f"quote:{code}")
+            ok = get_state("data_last_ok")
+            day_open = alerts.is_trading_day(now2, json.loads(q["value"]) if q and q.get("value") else None,
+                                             datetime.fromisoformat(ok["value"]) if ok and ok.get("value") else None)
+            for t in alerts.check_health(now2, trading_day=day_open, log=log.info):
                 annotate("notice", t)
         except Exception as e:  # noqa: BLE001
             annotate("warning", f"갱신 멈춤 확인 실패: {e}")

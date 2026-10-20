@@ -84,3 +84,14 @@ def test_alert_once_a_day_then_recovery(tmpdb, monkeypatch):
     alerts.check_health(NOW + timedelta(minutes=30), trading_day=True)
     alerts.check_health(NOW + timedelta(minutes=33), trading_day=True)
     assert len(posted) == 2
+
+
+def test_trading_day_from_naver_status():
+    ok = NOW - timedelta(minutes=2)
+    assert alerts.is_trading_day(NOW, {"market_status": "OPEN", "traded_at": "2026-10-20T10:04:00+09:00"}, ok)
+    # 평일 휴장일(선거일 등): 네이버가 닫힘이고 오늘 체결이 없음
+    assert not alerts.is_trading_day(NOW, {"market_status": "CLOSE", "traded_at": "2026-10-19T15:30:00+09:00"}, ok)
+    # 네이버를 못 받고 있으면 상태를 모르니 평일은 거래일로 봄 (그래야 수집 실패 알림이 나감)
+    assert alerts.is_trading_day(NOW, {"market_status": "CLOSE", "traded_at": "2026-10-19T15:30:00+09:00"},
+                                 NOW - timedelta(hours=1))
+    assert not alerts.is_trading_day(datetime(2026, 10, 18, 10, 0), None, None)   # 일요일

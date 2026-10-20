@@ -381,7 +381,11 @@
       const pub = s.published_at ? new Date(s.published_at) : null;
       const age = pub ? (Date.now() - pub.getTime()) / 60000 : 1e9;
       const kst = new Date(Date.now() + 9 * 3600e3), hm = kst.getUTCHours() * 100 + kst.getUTCMinutes(), wd = kst.getUTCDay();
-      const marketNow = wd >= 1 && wd <= 5 && hm >= 905 && hm <= 1535;
+      // 휴장일: 오늘 장중에 받은 네이버 장 상태가 '열림'이 아니고 오늘 체결도 없으면 장중으로 보지 않음
+      const today = kst.toISOString().slice(0, 10), q = s.quote || {};
+      const closedToday = q.market_status && q.market_status !== "OPEN" && String(q.traded_at || "").slice(0, 10) !== today
+        && String(s.published_at || "").slice(0, 10) === today && String(s.published_at).slice(11, 16) >= "09:05";
+      const marketNow = wd >= 1 && wd <= 5 && hm >= 905 && hm <= 1535 && !closedToday;
       const when = s.published_at ? `${s.published_at.slice(5, 10).replace("-", "/")} ${s.published_at.slice(11, 16)}` : "-";
       const iv = (LIVE && LIVE.interval_min) || 15;
       const byPc = !STATIC && LIVE && LIVE.runner === "pc";
@@ -1004,14 +1008,9 @@
     return `<details class="verify"><summary>이 숫자는 얼마나 정확한가요?</summary><ul>${rows.join("")}</ul></details>`;
   }
 
-  function peersBlock(c, followups) {
-    const b = c && c.buyer;
-    if (!b) return "";
-    const fu = (followups || []).length ? `<div class="followup"><b>후속 공시</b> ${followups.map((x) => `${esc(x.date)} ${esc(x.title)}`).join(", ")} — 실제 보유자와 보유 목적이 이 공시에 나옵니다.</div>` : "";
-    const peers = (b.peers || []).filter((p) => p.listed || p.net);
-    if (!peers.length && !fu) return "";
-    return `${fu}${peers.length ? `<h4 class="sub">같은 날 ${esc(b.broker)} 창구의 같은 업종 거래 <small class="muted">(이 종목 순${esc(b.side)} ${b.qty_is_min ? "최소 " : ""}${int(b.qty)}주)</small></h4><ul class="rel">${peers.map((p) => `<li><span class="nm">${esc(p.name)}</span><span class="muted">${p.listed ? `${p.net >= 0 ? "+" : "−"}${int(Math.abs(p.net))}주` : "상위 거래원에 없음"}</span><span class="num v ${sgnCls(p.net)}">${p.amount != null ? eok(p.amount) : "-"}</span></li>`).join("")}</ul>
-      <p class="note">같은 업종 종목의 거래원도 상위 5개사 기준 추정치입니다. 금액은 그날 마지막 가격으로 계산한 대략치입니다.</p>` : ""}`;
+  /** 후속 공시 (실제 보유자·보유 목적). 같은 창구의 업종 거래 목록은 화면에서 뺌 (ChatGPT 자료에는 그대로 넣음) */
+  function followupBlock(followups) {
+    return (followups || []).length ? `<div class="followup"><b>후속 공시</b> ${followups.map((x) => `${esc(x.date)} ${esc(x.title)}`).join(", ")} — 실제 보유자와 보유 목적이 이 공시에 나옵니다.</div>` : "";
   }
 
   function articleBlock(c) {
@@ -1060,15 +1059,13 @@
   }
   const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
 
-  function newsBlock(c) {
-    const news = (c && c.news) || [], discl = (c && c.disclosures) || [];
-    if (!news.length && !discl.length) return `<h3 class="d-sec">뉴스·공시</h3><p class="note">이 시간대 앞뒤로 확인된 뉴스와 공시가 없습니다.</p>`;
-    return `<h3 class="d-sec">뉴스·공시</h3><ul class="news">
+  /** 공시 (뉴스 목록은 화면에서 뺌: 이 종목 기사는 '이 종목 기사' 칸에 있음. ChatGPT 자료에는 그대로 넣음) */
+  function disclosureBlock(c) {
+    const discl = (c && c.disclosures) || [];
+    if (!discl.length) return "";
+    return `<section class="d-block"><h3 class="d-sec">공시</h3><ul class="news">
       ${discl.map((x) => `<li><span class="when">${esc(x.date.slice(5))}</span><span class="timing same">공시</span><span class="tt">${esc(x.title)}</span></li>`).join("")}
-      ${news.map((n) => `<li><span class="when">${esc(n.ts.slice(5, 16).replace("T", " "))}</span>
-        <span class="timing ${n.timing === "선행" ? "lead" : "late"}">${n.timing === "선행" ? "움직임 전" : "움직임 후"}</span>
-        <span class="tt">${n.peer ? `<em class="peer">${esc(n.peer)}</em>` : ""}<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a><small>${esc(n.office)}</small></span></li>`).join("")}
-    </ul><p class="note">움직임 뒤에 나온 기사는 주가가 먼저 움직인 뒤 확인된 정보라 원인으로 단정하지 않습니다.</p>`;
+    </ul></section>`;
   }
 
   function renderEventDrawer(d) {
@@ -1091,10 +1088,10 @@
       </dl>
       <section class="d-block">${manualBlock(e)}</section>
       <section class="d-block">${factsBlock(c)}</section>
-      ${articleBlock(c)}
-      <section class="d-block">${flowBlock(c)}${peersBlock(c, d.followups)}</section>
       <section class="d-block">${relatedBlock(c, e.own_change)}</section>
-      <section class="d-block">${newsBlock(c)}</section>
+      ${articleBlock(c)}
+      ${disclosureBlock(c)}
+      <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
       <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>`;
     const askWith = async (where) => {
       const q = $("#ask-q").value.trim() || "이 움직임의 원인을 찾아 줘.";

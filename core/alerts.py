@@ -192,6 +192,17 @@ STALE_MIN = 30
 HEALTH_WORD = {"A": "사이트 게시 지연", "B": "시세 수집 실패"}
 
 
+def is_trading_day(now: datetime, quote: dict | None, data_last_ok: datetime | None) -> bool:
+    """오늘이 거래일인지: 휴장일 목록 대신 네이버 장 상태로 판단 (선거일 같은 임시 휴장도 맞음).
+    네이버를 최근에 못 받아 상태를 모르면 평일을 거래일로 봄."""
+    if now.weekday() >= 5:
+        return False
+    fresh = data_last_ok is not None and now - data_last_ok <= timedelta(minutes=STALE_MIN)
+    if not fresh or not quote:
+        return True
+    return quote.get("market_status") == "OPEN" or str(quote.get("traded_at") or "")[:10] == now.date().isoformat()
+
+
 def market_hours(now: datetime, trading_day: bool) -> bool:
     return trading_day and now.weekday() < 5 and "09:00" <= now.strftime("%H:%M") <= "15:30"
 
