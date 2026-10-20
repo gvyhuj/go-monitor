@@ -1267,7 +1267,6 @@
     };
     const del = $("#mc-del");
     if (del) del.onclick = () => {
-      if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "한 번 더 누르면 삭제됩니다"; del.classList.add("danger"); return; }
       del.disabled = true; del.textContent = "삭제 요청함";
       const m = e.manual;
       sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts })
