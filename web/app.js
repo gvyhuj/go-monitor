@@ -544,6 +544,7 @@
           events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
           extendTo: closed ? null : `${d.date}T15:30`,
         });
+        attachRange(card, st.chart, d, st, arts, dates[dates.indexOf(date) + 1] || null);
       }
       if (isLatest) {
         const n = d.events.filter((e) => !isDaily(e)).length || (d.events.some(isDaily) ? 1 : 0);
@@ -589,6 +590,150 @@
       if (latest.date !== dates[0]) { route(); return; }       // 새 거래일이 시작되면 피드를 처음부터 다시 그림
       draw(cards[0], latest);
     }, 30000));
+  }
+
+  // ---------------------------------------------------------------- 차트 구간 골라 원인 묻기
+  // PC는 차트를 마우스로 끌어 구간을 고르고, 폰은 시작·끝을 차례로 누름 (손가락 끌기는 페이지 스크롤과 겹치므로)
+  function attachRange(card, chart, d, st, arts, prevDay) {
+    const el = $(".day-chart", card), panel = $(".range-panel", card);
+    if (!el || !panel) return;
+    el.classList.add("range-able");
+    const box = document.createElement("div");
+    box.className = "range-sel";
+    box.hidden = true;
+    el.appendChild(box);
+    const ts = chart.timeScale();
+    const timeAt = (ev) => ts.coordinateToTime(ev.clientX - el.getBoundingClientRect().left);
+    const paint = () => {
+      const r = st.range;
+      const a = r && ts.timeToCoordinate(r[0]), b = r && ts.timeToCoordinate(r[1]);
+      if (a == null || b == null) { box.hidden = true; return; }
+      box.hidden = false;
+      box.style.left = `${Math.min(a, b)}px`;
+      box.style.width = `${Math.max(2, Math.abs(b - a))}px`;
+    };
+    const show = () => { paint(); renderRangePanel(panel, d, st, arts, prevDay, () => { st.range = null; st.pending = null; show(); }); };
+    let drag = null;
+    el.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType !== "mouse" || ev.button !== 0) return;
+      const t = timeAt(ev);
+      if (t == null) return;
+      drag = { t0: t, x0: ev.clientX, moved: false };
+      el.setPointerCapture(ev.pointerId);
+    });
+    el.addEventListener("pointermove", (ev) => {
+      if (!drag) return;
+      if (Math.abs(ev.clientX - drag.x0) > 4) drag.moved = true;
+      const t = timeAt(ev);
+      if (drag.moved && t != null) { st.range = [drag.t0, t]; paint(); }
+    });
+    el.addEventListener("pointerup", (ev) => {
+      if (ev.pointerType === "mouse") {
+        if (drag && drag.moved && st.range) { st.range.sort((x, y) => x - y); st.pending = null; show(); }
+        drag = null;
+        return;
+      }
+      const t = timeAt(ev);                 // 폰: 첫 번째 누름 = 시작, 두 번째 = 끝
+      if (t == null) return;
+      if (st.pending == null) { st.pending = t; st.range = [t, t]; }
+      else { st.range = [st.pending, t].sort((x, y) => x - y); st.pending = null; }
+      show();
+    });
+    requestAnimationFrame(show);           // 오늘 카드를 다시 그려도 고른 구간은 유지
+  }
+
+  /** 고른 구간의 숫자 (브라우저에 있는 1분봉·KOSDAQ만으로 계산) */
+  function rangeStats(d, a, b) {
+    const inR = d.bars.filter((x) => { const t = toTime(x.t); return t >= a && t <= b; });
+    if (!inR.length) return null;
+    const first = inR[0], last = inR[inR.length - 1];
+    const startPx = first.o ?? first.c, endPx = last.c;
+    const lo = (x) => x.l ?? x.c, hi = (x) => x.h ?? x.c;
+    const low = inR.reduce((m, x) => (lo(x) < lo(m) ? x : m)), high = inR.reduce((m, x) => (hi(x) > hi(m) ? x : m));
+    const kq = d.kosdaq || [];
+    const kAt = (t) => { let k = null; for (const x of kq) { if (toTime(x.t) <= t) k = x; else break; } return k; };
+    const k0 = kAt(a - 60) || kq[0], k1 = kAt(b);
+    const vol = inR.reduce((s, x) => s + (x.v || 0), 0);
+    const out = d.bars.filter((x) => { const t = toTime(x.t); return t < a || t > b; });
+    const outAvg = out.length ? out.reduce((s, x) => s + (x.v || 0), 0) / out.length : null;
+    const pc = d.prev_close;
+    return {
+      from: hhmm(first.t), to: hhmm(last.t), minutes: inR.length,
+      own: endPx / startPx - 1, startPx, endPx,
+      fromPrev: pc ? endPx / pc - 1 : null,
+      low: { at: hhmm(low.t), fromPrev: pc ? lo(low) / pc - 1 : null },
+      high: { at: hhmm(high.t), fromPrev: pc ? hi(high) / pc - 1 : null },
+      kq: k0 && k1 && k0 !== k1 ? k1.c / k0.c - 1 : null,
+      vol, volRatio: outAvg ? (vol / inR.length) / outAvg : null,
+    };
+  }
+
+  function renderRangePanel(panel, d, st, arts, prevDay, clear) {
+    if (!st.range) {
+      panel.innerHTML = `<p class="range-hint">차트를 마우스로 끌어 구간을 고르면(폰은 시작·끝을 차례로 누르면) 그 구간만 원인을 물어볼 수 있습니다.</p>`;
+      return;
+    }
+    if (st.pending != null) {
+      panel.innerHTML = `<p class="range-hint"><b>${utcHHMM(st.pending)}</b>부터 — 끝 지점을 한 번 더 눌러 주세요. <button type="button" class="btn-link" data-range-clear>취소</button></p>`;
+      $("[data-range-clear]", panel).onclick = clear;
+      return;
+    }
+    const r = rangeStats(d, st.range[0], st.range[1]);
+    if (!r) {
+      panel.innerHTML = `<p class="range-hint">고른 구간에 1분봉이 없습니다. 다시 골라 주세요. <button type="button" class="btn-link" data-range-clear>선택 해제</button></p>`;
+      $("[data-range-clear]", panel).onclick = clear;
+      return;
+    }
+    panel.innerHTML = `<div class="range-box">
+      <div class="range-head"><b>${r.from} ~ ${r.to} 구간</b>
+        <span>이 종목 <b class="num ${sgnCls(r.own)}">${pct(r.own)}</b>${r.fromPrev != null ? ` <span class="muted">(전일 대비 ${pct(r.fromPrev)})</span>` : ""}</span>
+        <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
+        <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
+        <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
+      <textarea class="range-q" rows="2" placeholder="(선택) 따로 묻고 싶은 것. 비워 두면 '이 구간 움직임의 원인을 찾아 달라'로 보냅니다.">${esc(st.q || "")}</textarea>
+      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask="gpt">이 구간 ChatGPT에게 묻기</button>
+        <button class="btn small" type="button" data-range-ask="claude">Claude에게 묻기</button>
+        <button class="btn small" type="button" data-range-req title="자동 실행이 업종 몫 나누기·수급·이슈 기사까지 계산해 '요청' 기록으로 올립니다 (몇 분 걸림)">자세한 숫자까지 분석 요청</button></div>
+      <span class="form-msg" data-range-msg></span></div>`;
+    const msg = $("[data-range-msg]", panel), q = $(".range-q", panel);
+    q.oninput = () => { st.q = q.value; };
+    $("[data-range-clear]", panel).onclick = clear;
+    panel.querySelectorAll("[data-range-ask]").forEach((b) => {
+      b.onclick = () => openAsk(b.dataset.rangeAsk, rangeContext(d, r, arts, prevDay, q.value.trim() || "이 구간 움직임의 원인을 찾아 줘."), msg);
+    });
+    $("[data-range-req]", panel).onclick = () => {
+      msg.className = "form-msg";
+      if (!CLOUD) { msg.textContent = "PC 화면에서는 '이벤트 기록'의 분석 요청을 이용해 주세요."; return; }
+      sendInbox({ type: "analyze", date: d.date, from: r.from, to: r.to === r.from ? null : r.to })
+        .then((t) => { msg.textContent = `${t} 올라오면 '이벤트 기록'에 '요청'으로 보이고, 거기서 원인을 붙여넣을 수 있습니다.`; })
+        .catch((err) => { msg.className = "form-msg err"; msg.textContent = err.message; });
+    };
+  }
+
+  /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음) */
+  function rangeContext(d, r, arts, prevDay, question) {
+    const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
+    const L = [];
+    L.push(`아래는 '${name}' 주가의 특정 구간 움직임에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
+    L.push("웹 검색으로 ① 같은 시간대 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마 종목들의 같은 시간대 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 이 구간의 원인을 찾아줘.");
+    L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
+    L.push(`[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
+    if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · 구간 끝 ${pct(r.fromPrev)} · 구간 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · 구간 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
+    L.push(`[KOSDAQ 같은 구간] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
+    L.push(`[거래량] 구간 ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
+    const since = `${prevDay || d.date}T15:30`, until = `${d.date}T${r.to}`;
+    (arts || []).filter((a) => a.category !== "단순 언급" && !a.hidden && a.ts && a.ts >= since && a.ts <= until).slice(0, 8)
+      .forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」${a.office ? ` (${a.office})` : ""}`));
+    return `${L.join("\n")}\n\n[질문] ${question}`;
+  }
+
+  /** ChatGPT·Claude 새 창에 자료를 채워 엶 (보내기는 사용자가 직접) */
+  function openAsk(where, text, msg) {
+    try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
+    window.open(where === "gpt" ? `https://chatgpt.com/?q=${encodeURIComponent(text)}` : `https://claude.ai/new?q=${encodeURIComponent(text)}`, "_blank", "noopener");
+    msg.className = "form-msg";
+    msg.textContent = `${where === "gpt" ? "ChatGPT" : "Claude"} 새 창을 열었습니다. 아직 보내지 않았으니 모델을 고른 뒤 보내세요. 입력칸이 비어 있으면 붙여넣기(Ctrl+V) 하세요.`;
   }
 
   /** 이상변동 없던 날: 한 줄 (누르면 펼침) */
@@ -649,7 +794,7 @@
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${hhmm(e.start_ts)}~${hhmm(e.peak_ts)} 동안</small></span>
         </button></li>`;
     const chart = d.bars.length
-      ? `<div class="day-legend"></div><div class="day-chart"></div>`
+      ? `<div class="day-legend"></div><div class="day-chart"></div><div class="range-panel"></div>`
       : `<p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`;
     const list = rest.length
       ? `<ul class="timeline">${rest.map(row).join("")}</ul>`

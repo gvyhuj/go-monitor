@@ -177,6 +177,16 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .day-legend { height: 20px; font-size: 13px; color: var(--ink-2); display: flex; gap: 16px; }
 .day-legend b { color: var(--ink); font-weight: 640; }
 .day-chart { height: 200px; margin: 0 -6px 6px; }
+.day-chart.range-able { cursor: crosshair; position: relative; }
+.range-sel { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 3;
+  background: color-mix(in srgb, var(--brand-blue) 14%, transparent); border-left: 1px solid var(--brand-blue); border-right: 1px solid var(--brand-blue); }
+.range-hint { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
+.range-box { margin: 4px 0 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--brand-blue) 4%, var(--surface)); }
+.range-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; font-size: 14px; margin-bottom: 8px; }
+.range-head .btn-link { margin-left: auto; }
+.range-q { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
+.btn-link { background: none; border: 0; padding: 2px 0; font-size: 13px; font-weight: 600; color: var(--brand-blue); cursor: pointer; }
+.btn-link:hover { text-decoration: underline; }
 .day-nochart, .day-calm { font-size: 14px; color: var(--muted); margin: 6px 0; }
 .day-arts { margin-top: 14px; }
 .day-arts h3 { font-size: 13px; font-weight: 650; color: var(--ink-2); margin: 0 0 2px; }
