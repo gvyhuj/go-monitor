@@ -5,7 +5,8 @@
 
 연결 규칙
 - 하루 기록: 같은 날·같은 방향의 '하루' 원인
-- 장중 순간: 같은 날·같은 방향이고 구간이 겹치는 '장중' 원인 → 없으면 그날 '하루' 원인을 함께 보여 줌
+- 장중 순간: 같은 날·같은 방향이고 구간이 겹치는 '장중' 원인만 (하루 원인은 장중 순간에 보여 주지 않음 —
+  각 줄에는 그 줄에 넣은 원인만 보이고 그 줄에서 지움)
 """
 from __future__ import annotations
 
@@ -26,18 +27,15 @@ def _scope(event_type: str) -> str:
 
 
 def find(conn, ev: dict) -> dict | None:
-    """이벤트(행)에 붙일 직접 입력 원인. 장중 순간은 자기 것이 없으면 그날 하루 원인을 씀 (inherited=True)."""
+    """이벤트(행)에 붙일 직접 입력 원인. 그 줄(하루 또는 장중 순간)에 넣은 원인만."""
     day, d = ev["start_ts"][:10], ev["direction"]
     if _scope(ev["event_type"]) == "intraday":
         r = conn.execute("SELECT * FROM manual_causes WHERE date=? AND direction=? AND scope='intraday' "
                          "AND start_ts<=? AND last_ts>=? ORDER BY updated_at DESC LIMIT 1",
                          (day, d, ev["last_ts"], ev["start_ts"])).fetchone()
-        if r:
-            return {**dict(r), "inherited": False}
-    r = conn.execute("SELECT * FROM manual_causes WHERE date=? AND direction=? AND scope='day'", (day, d)).fetchone()
-    if not r:
-        return None
-    return {**dict(r), "inherited": _scope(ev["event_type"]) == "intraday"}
+    else:
+        r = conn.execute("SELECT * FROM manual_causes WHERE date=? AND direction=? AND scope='day'", (day, d)).fetchone()
+    return {**dict(r), "inherited": False} if r else None
 
 
 def summary(m: dict | None) -> str | None:

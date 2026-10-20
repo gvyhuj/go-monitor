@@ -619,11 +619,15 @@
       const t = timeAt(ev);
       if (t == null) return;
       drag = { t0: t, x0: ev.clientX, moved: false };
+      st.range = null;                     // 누를 때마다 이전 구간은 지우고 새로 고름
+      paint();
       el.setPointerCapture(ev.pointerId);
     });
     el.addEventListener("pointermove", (ev) => {
       if (!drag) return;
-      if (Math.abs(ev.clientX - drag.x0) > 4) drag.moved = true;
+      // 버튼을 누르고 있을 때만 끌기 (손 뗌 신호를 놓쳤으면 끌기를 끝냄 — 마우스만 움직여도 구간이 늘어나지 않게)
+      if (!(ev.buttons & 1)) { drag = null; return; }
+      if (Math.abs(ev.clientX - drag.x0) > 8) drag.moved = true;
       const t = timeAt(ev);
       if (drag.moved && t != null) { st.range = [drag.t0, t]; paint(); }
     });
@@ -634,12 +638,13 @@
       else {
         const t = timeAt(ev);
         const r = t == null ? null : autoRange(d, t);
-        if (!r) { drag = null; return; }
+        if (!r) { drag = null; show(); return; }
         st.range = r;
       }
       drag = null;
       show();
     });
+    el.addEventListener("lostpointercapture", () => { if (drag && !drag.moved) drag = null; });
     requestAnimationFrame(show);           // 오늘 카드를 다시 그려도 고른 구간은 유지
   }
 
@@ -1085,7 +1090,7 @@
     const view = m ? `<div class="manual-cause">
         ${m.headline ? `<div class="mc-head">${esc(m.headline)}</div>` : ""}
         <div class="mc-body">${mdRender(m.body || "")}</div>
-        ${m.inherited ? `<p class="note" style="margin:8px 0 0">그날 '하루 전체' 칸에 입력한 원인입니다. 이 순간만의 원인을 따로 붙여넣으면 그것을 보여 줍니다.</p>` : ""}</div>`
+        </div>`
       : `<div class="empty"><strong>원인 미입력</strong>아래 'ChatGPT에게 묻기'로 원인을 물어본 뒤, 받은 답을 '원인 붙여넣기'로 넣으세요.</div>`;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3><span class="stage">${m ? "직접 입력" : "원인 미입력"}</span></div>
       ${view}
@@ -1096,7 +1101,7 @@
         <form class="mc-form" id="mc-form" hidden>
           <label>한 줄 요약 <small class="muted">(목록에 보임. 비우면 본문 첫 줄)</small><input id="mc-head" type="text" maxlength="200" value="${own ? esc(m.headline || "") : ""}" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피 (신뢰도 중간)"></label>
           <label>원인 본문<textarea id="mc-body" rows="10" placeholder="ChatGPT 답을 그대로 붙여넣으세요.">${own ? esc(m.body || "") : ""}</textarea></label>
-          <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다. 같은 날 같은 방향 장중 순간에도 함께 보입니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장하면 암호화된 요청이 GitHub에 올라가고, 다음 자동 실행(장중 약 3~5분) 때 반영됩니다.</p>
+          <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장하면 암호화된 요청이 GitHub에 올라가고, 다음 자동 실행(장중 약 3~5분) 때 반영됩니다.</p>
           <div class="ask-row"><button class="btn primary" type="submit">저장</button><button class="btn" type="button" id="mc-cancel">취소</button></div>
         </form>
       </div>`;
@@ -1262,9 +1267,11 @@
     };
     const del = $("#mc-del");
     if (del) del.onclick = () => {
-      if (!confirm("붙여넣은 원인을 삭제할까요?")) return;
+      if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "한 번 더 누르면 삭제됩니다"; del.classList.add("danger"); return; }
+      del.disabled = true; del.textContent = "삭제 요청함";
       const m = e.manual;
-      sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts });
+      sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts })
+        .then(() => { if (msg.classList.contains("err")) { del.disabled = false; del.dataset.confirm = ""; del.textContent = "원인 삭제"; del.classList.remove("danger"); } });
     };
     const btn = $("#re-analyze");
     if (btn) btn.onclick = async () => {

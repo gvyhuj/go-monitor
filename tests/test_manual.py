@@ -30,13 +30,13 @@ def _find(ev):
         return manual.find(conn, ev)
 
 
-def test_day_cause_shows_on_day_and_intraday(tmpdb):
+def test_day_cause_shows_only_on_day(tmpdb):
     manual.save({"type": "cause", "date": DAY, "direction": "down", "scope": "day",
                  "body": "확인해보면, 오늘은…\n외국인 매도", "source": "ChatGPT"}, NOW)
     d = _find(_ev("daily", "09:00", "15:30"))
     assert d and d["inherited"] is False and d["source"] == "ChatGPT"
     i = _find(_ev("intraday", "09:00", "10:29"))
-    assert i and i["inherited"] is True                 # 하루 원인을 장중 순간에도 보여 줌
+    assert i is None                                    # 하루 원인은 장중 순간 줄에 보이지 않음
     assert _find(_ev("intraday", "09:00", "10:29", direction="up")) is None
 
 
@@ -45,7 +45,7 @@ def test_intraday_cause_overrides_day(tmpdb):
     manual.save({"type": "cause", "date": DAY, "direction": "down", "scope": "intraday",
                  "start_ts": f"{DAY}T09:00", "last_ts": f"{DAY}T10:29", "body": "장중"}, NOW)
     assert _find(_ev("intraday", "09:10", "10:40"))["body"] == "장중"   # 구간이 겹치면 연결 (다시 묶여도)
-    assert _find(_ev("intraday", "13:00", "13:30"))["body"] == "하루"   # 안 겹치는 순간은 하루 원인
+    assert _find(_ev("intraday", "13:00", "13:30")) is None            # 안 겹치는 순간은 원인 없음
 
 
 def test_resave_overwrites_and_delete(tmpdb):
