@@ -72,3 +72,48 @@ def test_earlier_disclosure_moves_base_time(tmpdb):
     t = datetime(2026, 8, 6, 14, 32)
     assert articles.earlier_disclosure("X", f"{NAME}, 42억 규모 방산 센서부 공급계약", t)["ts"] == "2026-08-06T11:11"
     assert articles.earlier_disclosure("X", f"{NAME}, 전시회 참가", t) is None
+
+
+def _series(code, rets, start="2026-01-01"):
+    from datetime import date, timedelta
+    d, px = date.fromisoformat(start), 10000.0
+    with db.connect() as conn:
+        for r in [0.0] + list(rets):
+            while d.weekday() >= 5:
+                d += timedelta(days=1)
+            px *= 1 + r
+            conn.execute("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,?)",
+                         (code, d.isoformat(), px, px, px, px, 1000))
+            d += timedelta(days=1)
+    return d
+
+
+def test_day_split_uses_related_segment_not_noise_and_no_alpha(tmpdb):
+    import numpy as np
+    from core import causal
+    rng = np.random.default_rng(1)
+    n = 150
+    mkt = rng.normal(0, 0.01, n)
+    seg_a = 0.8 * mkt + rng.normal(0, 0.01, n)          # 이 종목과 같이 움직이는 분야
+    seg_b = rng.normal(0, 0.01, n)                       # 상관없는 분야
+    own = 0.004 + 1.2 * mkt + 1.0 * (seg_a - 0.8 * mkt) + rng.normal(0, 0.004, n)   # 매일 +0.4% 추세
+    own[-1] += 0.05                                      # 마지막 날: 기사 효과 +5%
+    for code, r in (("X", own), ("KOSDAQ", mkt), ("A1", seg_a), ("B1", seg_b)):
+        _series(code, r)
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO related_stocks(code, name, market, source) VALUES (?,?,?,?)",
+                         [("A1", "a", "", "분야A"), ("B1", "b", "", "분야B")])
+        last = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol='X'").fetchone()[0]
+    sp = causal.day_split("X", last)
+    beta = {p["name"]: p["beta"] for p in sp["parts"]}
+    assert sp["method"] == "분야별 회귀" and abs(beta["분야A"] - 1.0) < 0.2 and abs(beta["분야B"]) < 0.2
+    # 추세(+0.4%)를 빼지 않으므로 고유 몫 ≈ 5% + 0.4%
+    assert 0.045 < sp["d0"]["abnormal"] < 0.06 and sp["d0"]["z"] > 5
+
+
+def test_late_article_judged_on_two_days():
+    dc = {"d0": {"abnormal": 0.005, "z": 0.5, "own": 0.01, "market": 0.0, "sector": 0.0},
+          "d01": {"abnormal": 0.06, "z": 4.0, "own": 0.07, "market": 0.0, "sector": 0.0}}
+    assert articles._verdict({"decomp": dc}, 0, "회사 발표")[1] == "flat"
+    v = articles._verdict({"decomp": dc, "late": True}, 0, "회사 발표")
+    assert v[1] == "up" and v[2]["label"] == "반응일+다음날 고유 반응"

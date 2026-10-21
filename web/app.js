@@ -521,10 +521,9 @@
     const mag = (a) => (a.effect && a.effect.measure && a.effect.measure.value != null ? Math.abs(a.effect.measure.value) : -1);
     for (const k in artsByDay) artsByDay[k].sort((x, y) => mag(y) - mag(x));
 
-    // 오늘은 펼쳐 두고, 지난 날짜는 모두 한 줄로 접어 둠 (누르면 그 자리에서 차트를 펼침)
-    $("#feed").innerHTML = dates.map((x, i) => {
-      const quiet = i > 0;
-      return `<article class="day-card${quiet ? " is-quiet" : ""}" data-date="${x}">
+    // 모든 날짜를 펼친 채로 보여주고, 지난 날짜는 '접기'로 한 줄로 줄일 수 있음
+    $("#feed").innerHTML = dates.map((x) => {
+      return `<article class="day-card" data-date="${x}">
         <div class="day-card-load"><span class="day-card-date">${dayLabel(x)}</span><span class="muted">불러오는 중…</span></div></article>`;
     }).join("");
 
@@ -538,7 +537,7 @@
       st.d = d;
       state.set(date, st);
       const dayArts = artsByDay[date] || [];
-      if (!isLatest && !st.open) { card.classList.add("is-quiet"); card.innerHTML = foldRow(d, dayArts); return; }
+      if (!isLatest && st.open === false) { card.classList.add("is-quiet"); card.innerHTML = foldRow(d, dayArts); return; }
       card.classList.remove("is-quiet");
       card.innerHTML = (isLatest ? "" : `<button type="button" class="day-collapse btn-link">접기</button>`) + dayCardHtml(d, dayArts, isLatest);
       const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
@@ -1004,8 +1003,8 @@
     const rows = fp ? [
       { k: "이 종목 실제 변동", v: sp.own, cls: "me" },
       { k: `시장 몫 <small>KOSDAQ ${pct(fp[0].factor)} × 민감도 ${fp[0].beta.toFixed(2)}</small>`, v: sp.market },
-      ...fp.slice(1).map((f) => ({ k: `업종 몫 · ${esc(f.name)} <small>ETF ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib })),
-      { k: "이 종목 고유 몫 <small>= 실제 − 시장 몫 − 업종 몫 (리스크 모델의 '종목 고유 수익')</small>", v: sp.specific, cls: "abn" },
+      ...fp.slice(1).map((f) => ({ k: `분야 몫 · ${esc(f.name)} <small>${f.kind === "seg" ? "비교 종목 평균" : "ETF"} ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib })),
+      { k: "이 종목 고유 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>", v: sp.specific, cls: "abn" },
     ] : [
       { k: "이 종목 실제 변동", v: sp.own, cls: "me" },
       { k: `시장 몫 <small>KOSDAQ ${pct(sp.kosdaq)}${sp.beta_market ? ` × 민감도 ${sp.beta_market.toFixed(2)}` : ""}</small>`, v: sp.market },
@@ -1519,26 +1518,26 @@
   const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : "k-ext"}">${a.kind === "pr" ? "우리 보도자료" : "외부 기사"}</span>`;
   const artFlags = (ef) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}`;
 
-  function decompBlock(dc, tm, d0) {
-    const p = dc.d0, sig = dc.sigma;
+  function decompBlock(dc, tm, d0, two) {
+    const p = (two && dc.d01) || dc.d0, sig = dc.sigma;
+    const parts = p.parts || [];
     const rows = [
       { k: "이 종목 실제 변동", v: p.own, cls: "me" },
       { k: `시장 몫 <small>KOSDAQ ${pct(p.kosdaq)} × 민감도 ${dc.beta_market.toFixed(2)}</small>`, v: p.market },
-      { k: `업종 몫 <small>${p.sector_avg != null ? `업종 평균 ${pct(p.sector_avg)} 중 시장과 무관한 부분 × 민감도 ${dc.beta_sector.toFixed(2)}` : "같은 업종 시세 없음"}</small>`, v: p.sector },
-      { k: "기사(고유) 몫 <small>= 실제 − 시장 몫 − 업종 몫</small>", v: p.abnormal, cls: "abn" },
+      ...(parts.length ? parts.map((f) => ({ k: `분야 몫 · ${esc(f.name)} <small>${f.kind === "etf" ? "ETF" : "비교 종목 평균"} ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib }))
+        : [{ k: `업종 몫 <small>${dc.method === "단순" ? "기록이 짧아 시장만 감안" : "비교 종목 시세 없음"}</small>`, v: p.sector }]),
+      { k: "기사(고유) 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>", v: p.abnormal, cls: "abn" },
     ];
     const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
     const zTxt = p.z != null ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
     const judge = p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임이라 기사 효과로 볼 근거가 있습니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도라 기사 효과는 약하게만 보입니다." : "평소에도 이 정도는 움직이므로 기사 효과라고 보기 어렵습니다.";
-    const two = dc.d01 && dc.d01.days === 2 ? `<p class="note" style="margin-top:6px">다음날까지 2일 누적: 실제 ${pct(dc.d01.own)}, 기사(고유) 몫 ${pct(dc.d01.abnormal)}${dc.d01.z != null ? ` (평소 폭의 ${Math.abs(dc.d01.z).toFixed(1)}배)` : ""}</p>` : "";
-    return `<h3 class="d-sec" style="margin-top:22px">기사 효과 나누기 <small class="muted">반응일 ${esc(d0)}</small></h3>
+    return `<h3 class="d-sec" style="margin-top:22px">기사 효과 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
       <ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
         <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
       <p class="flow-sum" style="margin-top:10px">${zTxt ? `기사(고유) 몫은 ${zTxt}입니다. ` : ""}${judge}</p>
       ${tm ? `<p class="flow-sum"><b>시간 순서</b> ${esc(tm.label)}</p>` : ""}
-      ${two}
-      <p class="note" style="margin-top:6px">${dc.method === "회귀" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·업종을 몇 배로 따라 움직이는지).` : "기록이 짧아 시장·업종을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
+      <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·사업 분야를 몇 배로 따라 움직이는지). 평소 추세는 빼지 않고, 평소 고유 변동폭은 큰 사건 며칠에 흔들리지 않게 중앙값으로 잽니다.` : "기록이 짧아 시장을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
   }
 
   async function loadPR(id) {
@@ -1556,6 +1555,7 @@
     const notes = [];
     if (e.disclosure) notes.push(`같은 내용의 공시(「${esc(e.disclosure.title)}」)가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 공시 시각부터 쟀습니다.`);
     if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day.slice(5).replace("-", "/")) : "다음 거래일"} 움직임으로 쟀습니다. 그 사이 다른 소식도 섞였을 수 있어 판정을 한 단계 낮췄습니다.${dl && dl.gap != null ? ` 시초가 갭 <b class="${sgnCls(dl.gap)}">${pct(dl.gap)}</b>.` : ""}`);
+    if (e.late) notes.push("오후 늦게(14시 이후) 나와 그날 남은 거래 시간이 짧아, 반응일과 다음날 2일 누적으로 판정했습니다.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
     html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
@@ -1572,12 +1572,12 @@
     }
 
     let ev = "";
-    if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day);
+    if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late);
     if (dl) {
       const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;
       ev += `<h3 class="d-sec" style="margin-top:22px">일별 반응 <small class="muted">반응일 ${esc(e.reaction_day)} · 전날 종가 ${won(dl.prev_close)}원 기준</small></h3>
         <table class="ladder"><thead><tr><th></th><th style="text-align:right">이 종목</th><th style="text-align:right">같은 업종</th><th style="text-align:right">KOSDAQ</th><th style="text-align:right">초과 반응</th></tr></thead><tbody>
-        ${row("d0", "반응일")}${row("d1", "다음날까지")}${row("d3", "3거래일")}</tbody></table>
+        ${row("d0", "반응일")}${e.late ? row("d1", "다음날까지") : ""}</tbody></table>
         <p class="note" style="margin-top:4px">초과 반응은 ${esc(dl.bench_name)} 대비입니다. 반응일 거래량 ${int(dl.volume)}주${dl.vol_ratio ? `, 직전 20일 평균의 ${dl.vol_ratio.toFixed(1)}배` : ""}${dl.gap != null ? `, 시초가 갭 ${pct(dl.gap)}` : ""}.</p>`;
     }
     if (m) {

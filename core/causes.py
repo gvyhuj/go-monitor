@@ -25,7 +25,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "14"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석
+CAUSE_VERSION = "15"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -910,21 +910,23 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
         factor = _causal.factor_attribution(symbol, day.isoformat(), _cfg.get("factor_etfs") or [])
     except Exception as e:
         factor = {"ok": False, "reason": str(e)}
-    if daily and factor and factor.get("ok") and len(factor["parts"]) > 1:
-        # 하루 이벤트: 시장(KOSDAQ) + 업종 ETF 회귀 (월스트리트 리스크 모델 방식)
-        mk = factor["parts"][0]["contrib"]
-        sc_ = sum(x["contrib"] for x in factor["parts"][1:])
-        split = {"own": factor["actual"], "market": mk + factor["alpha"], "sector": sc_, "specific": factor["specific"],
-                 "z": factor["z"], "kosdaq": factor["parts"][0]["factor"], "sector_avg": (split or {}).get("sector_avg"),
-                 "method": "팩터", "beta_market": factor["parts"][0]["beta"], "beta_sector": None,
-                 "sigma": factor["sigma"], "basis": "하루", "factor_parts": factor["parts"]}
+    ds = _causal.day_split(symbol, day.isoformat(), _cfg.get("factor_etfs") or []) if daily else None
+    if ds and ds.get("d0") and ds["method"] != "단순":
+        # 하루 이벤트: 시장(KOSDAQ) + 사업 분야별(·업종 ETF) 회귀. 기사 영향 분석과 같은 계산
+        p0 = ds["d0"]
+        split = {"own": p0["own"], "market": p0["market"], "sector": p0["sector"], "specific": p0["abnormal"],
+                 "z": p0["z"], "kosdaq": p0["kosdaq"], "sector_avg": (split or {}).get("sector_avg"),
+                 "method": ds["method"], "beta_market": ds["beta_market"], "beta_sector": None,
+                 "sigma": ds["sigma"], "basis": "하루",
+                 "factor_parts": [{"name": "시장(KOSDAQ)", "factor": p0["kosdaq"], "beta": ds["beta_market"],
+                                   "contrib": p0["market"]}] + p0["parts"]}
     causal = {"factor": factor}
     try:
         causal["intensity"] = _causal.trading_intensity(symbol, day.isoformat())
     except Exception:
         causal["intensity"] = None
     es = None
-    if daily and not (split and split.get("method") == "팩터"):
+    if daily and not (split and split.get("method") in ("팩터", "분야별 회귀")):
         try:
             es = _causal.event_study(symbol, day.isoformat())   # 업종 ETF 기록이 모자랄 때 시장만 감안한 대체 계산
         except Exception as e:

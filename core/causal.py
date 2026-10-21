@@ -219,6 +219,98 @@ def factor_attribution(symbol: str, d0: str, etfs: list[dict], est_len: int = 25
             "r2": r2}
 
 
+# ------------------------------------------------------------------ ① 하루 몫 나누기 (이벤트 상세·기사 분석 공통)
+
+def _segment_rets(lo: str, hi: str) -> dict[str, dict]:
+    """사업 분야별 비교 종목 평균 등락 {분야: {날짜: 평균}} (그날 시세가 있는 종목만으로 평균)."""
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT code, source FROM related_stocks")]
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r["source"] or "비교 종목", []).append(_rets(r["code"], lo, hi))
+    out = {}
+    for name, series in groups.items():
+        days = sorted(set().union(*[s.keys() for s in series])) if series else []
+        avg = {}
+        for d in days:
+            xs = [s[d] for s in series if d in s]
+            if xs:
+                avg[d] = sum(xs) / len(xs)
+        if avg:
+            out[name] = avg
+    return out
+
+
+def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int = 120, gap: int = 5) -> dict | None:
+    """반응일 하루(전일 종가 → 종가) 등락을 시장 몫 + 분야별 몫 + 고유 몫으로 나눔.
+
+    - 분야별 몫: 사업 분야(비교 종목 묶음)마다 평균 등락을 따로 넣고(업종 ETF가 설정돼 있으면 함께),
+      각 분야에서 시장과 겹치는 부분을 뺀 뒤 회귀 → 이 종목과 실제로 같이 움직이는 분야만 크게 반영됨
+    - 평소 추세(α)는 빼지 않음: 몇 달 오른(내린) 추세가 하루 반응을 깎지 않게
+    - 평소 고유 변동폭(σ)은 중앙값 기반(1.4826 × MAD): 큰 사건 며칠에 부풀지 않게
+    - 민감도는 반응일 gap거래일 전까지 est_len거래일로 추정. 기록이 40거래일보다 짧으면 시장 1배로 단순 비교
+    결과의 d0은 반응일 하루, d01은 반응일+다음날 2일 누적.
+    """
+    day0 = date.fromisoformat(d0)
+    lo, hi = (day0 - timedelta(days=int(est_len * 1.6) + 40)).isoformat(), (day0 + timedelta(days=10)).isoformat()
+    own, mkt = _rets(symbol, lo, hi), _rets(KOSDAQ, lo, hi)
+    facs = [(n, r, "seg") for n, r in _segment_rets(lo, hi).items()]
+    facs += [(f["name"], _rets(f["code"], lo, hi), "etf") for f in (etfs or [])]
+    dates = sorted(d for d in own if d in mkt)
+    if d0 not in dates:
+        return None
+    i0 = dates.index(d0)
+    est_all = dates[max(0, i0 - gap - est_len):max(0, i0 - gap)]
+    # 추정 기간의 80% 이상 시세가 있는 분야만 씀 (최근 상장 종목뿐인 분야는 뺌)
+    facs = [f for f in facs if est_all and sum(d in f[1] for d in est_all) >= 0.8 * len(est_all) and d0 in f[1]]
+    est = [d for d in est_all if all(d in f[1] for f in facs)]
+    out = {"n_obs": len(est), "window": [est[0], est[-1]] if est else None}
+    if len(est) >= 40:
+        m = np.array([mkt[d] for d in est])
+        resid, slopes = [], []
+        for _, r, _ in facs:                     # 분야에서 시장과 겹치는 부분을 뺌 (분야만의 움직임)
+            y = np.array([r[d] for d in est])
+            b = float(m @ y / (m @ m)) if m @ m else 0.0
+            slopes.append(b)
+            resid.append(y - b * m)
+        X = np.column_stack([m] + resid)
+        yo = np.array([own[d] for d in est])
+        coef, *_ = np.linalg.lstsq(X, yo, rcond=None)
+        res = yo - X @ coef
+        sigma = float(1.4826 * np.median(np.abs(res - np.median(res))))
+        out.update({"method": "분야별 회귀", "beta_market": float(coef[0]), "sigma": sigma})
+        betas = [float(c) for c in coef[1:]]
+    else:                                        # 기록이 짧으면 시장 1배, 분야 몫 없이
+        diffs = np.array([own[d] - mkt[d] for d in dates[max(0, i0 - 60):i0]])
+        sigma = float(1.4826 * np.median(np.abs(diffs - np.median(diffs)))) if len(diffs) >= 10 else None
+        facs, slopes, betas = [], [], []
+        out.update({"method": "단순", "beta_market": 1.0, "sigma": sigma})
+    out["beta_sector"] = None
+    out["parts"] = [{"name": n, "kind": k, "beta": betas[i]} for i, (n, _, k) in enumerate(facs)]
+
+    def window(n_days: int) -> dict | None:
+        ds = dates[i0:i0 + n_days]
+        if len(ds) < n_days or any(d not in mkt for d in ds):
+            return None
+        own_r = float(np.prod([1 + own[d] for d in ds]) - 1)
+        mk = sum(out["beta_market"] * mkt[d] for d in ds)
+        parts = []
+        for i, (n, r, k) in enumerate(facs):
+            fr = sum(r.get(d, 0.0) - slopes[i] * mkt[d] for d in ds)
+            parts.append({"name": n, "kind": k, "factor": float(np.prod([1 + r.get(d, 0.0) for d in ds]) - 1),
+                          "factor_resid": float(fr), "beta": betas[i], "contrib": float(betas[i] * fr)})
+        sec = sum(p["contrib"] for p in parts)
+        abn = own_r - mk - sec
+        sig = out["sigma"]
+        return {"own": own_r, "market": float(mk), "sector": float(sec), "abnormal": float(abn),
+                "z": float(abn / (sig * len(ds) ** 0.5)) if sig else None,
+                "kosdaq": float(np.prod([1 + mkt[d] for d in ds]) - 1), "sector_avg": None,
+                "parts": parts, "days": len(ds)}
+
+    out["d0"], out["d01"] = window(1), window(2)
+    return out
+
+
 # ------------------------------------------------------------------ ③ 거래 강도
 
 def trading_intensity(symbol: str, d0: str, n: int = 20) -> dict | None:

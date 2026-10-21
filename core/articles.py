@@ -328,75 +328,11 @@ def _close_series(code: str, lo: str, hi: str) -> dict:
     return {r["date"]: r["close"] for r in _daily(code, lo, hi) if r.get("close")}
 
 
-def decompose(symbol: str, d0: str, peers: list[dict]) -> dict | None:
-    """반응일 주가 변동을 '시장 몫 + 업종 몫 + 고유(기사) 몫'으로 나눔 (사건 연구 방식).
-
-    - 민감도: 반응일 6거래일 전까지 약 120거래일의 일별 수익률로 회귀
-        이 종목 = α + β시장 × KOSDAQ + β업종 × (업종 평균 − 업종의 시장 몫) + 잔차
-    - 반응일 고유 몫 = 실제 − α − 시장 몫 − 업종 몫
-    - 평소 고유 변동폭(잔차 표준편차)과 비교해 몇 배인지(z)로 '뚜렷한지' 판단
-    """
-    import numpy as np
-    day0 = date.fromisoformat(d0)
-    lo, hi = (day0 - timedelta(days=260)).isoformat(), (day0 + timedelta(days=10)).isoformat()
-    own, mkt = _close_series(symbol, lo, hi), _close_series(KOSDAQ, lo, hi)
-    pser = [_close_series(p["code"], lo, hi) for p in peers]
-    dates = sorted(d for d in own if d in mkt)
-    if d0 not in dates:
-        return None
-    rows = []
-    for a, b in zip(dates, dates[1:]):
-        ro, rm = own[b] / own[a] - 1, mkt[b] / mkt[a] - 1
-        ps = [p[b] / p[a] - 1 for p in pser if a in p and b in p and p[a]]
-        rs = sum(ps) / len(ps) if len(ps) >= 2 else None
-        rows.append((b, ro, rm, rs))
-    idx = next((i for i, r in enumerate(rows) if r[0] == d0), None)
-    if idx is None:
-        return None
-    est = [r for r in rows[max(0, idx - 125):max(0, idx - 5)] if r[3] is not None]
-    has_sector = rows[idx][3] is not None
-    out = {"n_obs": len(est), "window": [est[0][0], est[-1][0]] if est else None, "has_sector": has_sector}
-    if len(est) >= 40:
-        m = np.array([r[2] for r in est])
-        sct = np.array([r[3] for r in est])
-        y = np.array([r[1] for r in est])
-        b_sm = float(np.polyfit(m, sct, 1)[0])                     # 업종이 시장을 따라가는 정도
-        sx = sct - b_sm * m                                         # 업종 고유 움직임
-        X = np.column_stack([np.ones(len(y)), m, sx]) if has_sector else np.column_stack([np.ones(len(y)), m])
-        coef, *_ = np.linalg.lstsq(X, y, rcond=None)
-        resid = y - X @ coef
-        alpha, b_m = float(coef[0]), float(coef[1])
-        b_s = float(coef[2]) if has_sector else 0.0
-        sigma = float(np.std(resid, ddof=X.shape[1]))
-        out.update({"method": "회귀", "alpha": alpha, "beta_market": b_m, "beta_sector": b_s, "beta_sector_market": b_sm,
-                    "sigma": sigma})
-    else:
-        # 기록이 짧으면 민감도 1로 단순 비교 (시장 1배, 업종 1배)
-        diffs = [r[1] - (r[3] if r[3] is not None else r[2]) for r in rows[max(0, idx - 60):idx]]
-        sigma = float(np.std(diffs)) if len(diffs) >= 10 else None
-        out.update({"method": "단순", "alpha": 0.0, "beta_market": 1.0, "beta_sector": 1.0 if has_sector else 0.0,
-                    "beta_sector_market": 1.0, "sigma": sigma})
-
-    def split(i_from: int, i_to: int) -> dict | None:
-        seg = rows[i_from:i_to + 1]
-        if not seg or any(r[0] is None for r in seg):
-            return None
-        own_r = float(np.prod([1 + r[1] for r in seg]) - 1)
-        mkt_part = sum(out["beta_market"] * r[2] for r in seg)
-        sec_part = sum(out["beta_sector"] * ((r[3] - out["beta_sector_market"] * r[2]) if r[3] is not None else 0.0)
-                       for r in seg)
-        abn = own_r - out["alpha"] * len(seg) - mkt_part - sec_part
-        sig = out.get("sigma")
-        z = abn / (sig * len(seg) ** 0.5) if sig else None
-        sector_r = (float(np.prod([1 + r[3] for r in seg]) - 1) if all(r[3] is not None for r in seg) else None)
-        return {"own": own_r, "market": float(mkt_part), "sector": float(sec_part), "abnormal": float(abn),
-                "z": float(z) if z is not None else None,
-                "kosdaq": float(np.prod([1 + r[2] for r in seg]) - 1), "sector_avg": sector_r,
-                "days": len(seg)}
-
-    out["d0"] = split(idx, idx)
-    out["d01"] = split(idx, min(idx + 1, len(rows) - 1)) if idx + 1 < len(rows) else None
-    return out
+def decompose(symbol: str, d0: str, peers: list[dict] | None = None) -> dict | None:
+    """반응일 주가 변동을 '시장 몫 + 분야별 몫 + 고유(기사) 몫'으로 나눔. 이벤트 상세(하루)와 같은 계산(causal.day_split)."""
+    from . import causal
+    from .detector import load_settings
+    return causal.day_split(symbol, d0, load_settings().get("factor_etfs") or [])
 
 
 def timing(symbol: str, start: datetime, peers: list[dict], minutes: int = 30) -> dict | None:
@@ -465,8 +401,10 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
     # 장 마감 뒤나 휴장일에 나온 기사: 다음 거래일 움직임에 다른 요인이 섞일 수 있음
     # (같은 날 장 시작 전 기사는 그날 시초가부터 반영되므로 해당 없음)
     off = ts.time() > time(15, 30) or ts.date().isoformat() not in days
+    # 14시 이후~장 마감 전 기사: 그날 남은 거래 시간이 짧아 반응일+다음날 2일 누적으로 봄
+    late = bool(d0) and not off and ts.time() >= time(14, 0)
     out = {"reaction_day": d0, "minute": None, "daily": None, "verdict": None, "verdict_cls": "none",
-           "notes": [], "off_session": bool(d0) and off, "base_ts": ts.isoformat(timespec="minutes"),
+           "notes": [], "off_session": bool(d0) and off, "late": late, "base_ts": ts.isoformat(timespec="minutes"),
            "disclosure": {"ts": disc["ts"], "title": disc["title"], "kind": disc["kind"]} if disc else None}
     peers = _peer_codes()
 
@@ -536,13 +474,15 @@ def _verdict(eff: dict, tone: int, category: str):
     d, dc = eff.get("daily"), eff.get("decomp")
     vol = d.get("vol_ratio") if d else None
     measure = None
-    if dc and dc.get("d0"):
-        part = dc["d0"]
-        measure = {"label": "반응일 고유 반응", "value": part["abnormal"], "z": part.get("z"), "vol_ratio": vol,
-                   "own": part["own"], "market": part["market"], "sector": part["sector"]}
-    elif d and d["excess"].get("d0") is not None:
-        measure = {"label": f"반응일 초과 반응 ({d['bench_name']} 대비)", "value": d["excess"]["d0"], "vol_ratio": vol,
-                   "own": d.get("d0")}
+    two = bool(eff.get("late"))
+    if dc and dc.get("d01" if two else "d0"):
+        part = dc["d01" if two else "d0"]
+        measure = {"label": "반응일+다음날 고유 반응" if two else "반응일 고유 반응", "value": part["abnormal"],
+                   "z": part.get("z"), "vol_ratio": vol, "own": part["own"], "market": part["market"], "sector": part["sector"]}
+    elif d and d["excess"].get("d1" if two else "d0") is not None:
+        k = "d1" if two else "d0"
+        measure = {"label": f"{'반응일+다음날' if two else '반응일'} 초과 반응 ({d['bench_name']} 대비)",
+                   "value": d["excess"][k], "vol_ratio": vol, "own": d.get(k)}
     if measure is None:
         return "반응 계산 불가", "none", None
     if category == "시황·특징주":
