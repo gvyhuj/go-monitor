@@ -376,7 +376,6 @@
     const s = STATUS;
     document.body.classList.toggle("shared", s.viewer === "shared");
     document.body.classList.toggle("cloud", s.viewer === "cloud");
-    document.body.classList.toggle("can-edit", canEdit());
     if (s.share) renderShareBtn(s.share);
     if (s.viewer === "cloud") {
       const pub = s.published_at ? new Date(s.published_at) : null;
@@ -481,28 +480,11 @@
     }
   }
 
-  // 사이트(비밀번호로 보는 곳)는 기본이 보기 전용. 원인 붙여넣기·기사 등록은 GitHub 저장소 주인 요청만 반영되므로
-  // 주인이 자기 기기에서 한 번 '편집 켜기'를 누르면 그 기기에서만 편집 버튼이 보임
-  function canEdit() {
-    if (!CLOUD) return true;
-    try { return localStorage.getItem("go_edit") === "1"; } catch (_) { return false; }
-  }
-  document.addEventListener("click", (ev) => {
-    const a = ev.target.closest && ev.target.closest("[data-edit-toggle]");
-    if (!a) return;
-    ev.preventDefault();
-    try { localStorage.setItem("go_edit", canEdit() ? "0" : "1"); } catch (_) {}
-    document.body.classList.toggle("can-edit", canEdit());
-    renderFoot();
-    route();
-  });
-
   function renderFoot() {
     if (!STATUS) return;
     const since = STATUS.first_bar_ts ? dayLabel(STATUS.first_bar_ts) : "-";
-    const edit = CLOUD ? ` · <a href="#" data-edit-toggle title="원인 붙여넣기·기사 등록 버튼을 이 기기에서 ${canEdit() ? "숨깁니다" : "보입니다 (저장소 주인만 반영됨)"}">${canEdit() ? "편집 끄기" : "편집 켜기"}</a>` : "";
     $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융(공식 제공 서비스가 아니어서 형식이 바뀌면 수신이 멈출 수 있습니다)</span>` +
-      `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 이상변동 ${int(STATUS.events_count)}건${edit}${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
+      `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 이상변동 ${int(STATUS.events_count)}건${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
   }
 
   // ---------------------------------------------------------------- dashboard

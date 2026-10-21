@@ -572,7 +572,7 @@ details.verify b { color: var(--ink); margin-right: 4px; }
 .progress i { display: block; height: 100%; background: var(--brand-blue); transition: width .4s; }
 .shared-banner { display: none; background: #2E9E6B; color: #fff; font-size: 13px; font-weight: 600; text-align: center; padding: 6px 12px; border-radius: 6px; margin: 0 0 10px; }
 body.shared .shared-banner { display: block; }
-body.shared .local-only, body.shared .editable, body.cloud .local-only, body.cloud:not(.can-edit) .editable { display: none !important; }
+body.shared .local-only, body.shared .editable, body.cloud .local-only { display: none !important; }
 body:not(.shared) .shared-only { display: none !important; }
 
 @media (max-width: 980px) {
