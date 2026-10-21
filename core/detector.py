@@ -162,6 +162,65 @@ def _ensure_version(symbol: str, log=None):
     return True
 
 
+KRX_DAILY_KEY = "detector_krx_daily_v1"
+
+
+def _rescan_daily_krx(symbol: str, s: dict, now: datetime, log=None, sync: bool = True) -> bool:
+    """한 번만: 지난 90일 '하루' 기록을 거래소(KRX) 확정 종가로 다시 계산.
+
+    예전 일봉은 넥스트레이드 애프터마켓이 섞인 네이버 값이라 등락률이 거래소와 달랐음.
+    숫자는 같은 기록(번호)에 고쳐 쓰고, 기준(±관찰%) 밑으로 내려간 날은 기록을 지움.
+    붙여넣은 원인(manual_causes)은 날짜·방향으로 따로 보관되므로 건드리지 않음.
+    """
+    if get_state(KRX_DAILY_KEY):
+        return False
+    with connect() as conn:
+        fresh_db = not conn.execute("SELECT 1 FROM daily_bars WHERE symbol=? LIMIT 1", (symbol,)).fetchone()
+    if fresh_db:                                    # 새 기록(첫 실행): 처음부터 거래소 일봉으로 쌓이므로 할 일 없음
+        set_state(KRX_DAILY_KEY, now.isoformat(timespec="minutes"))
+        return False
+    if sync:
+        from . import daum, macro
+        try:
+            daum.fetch_daily(symbol, pages=1)       # 거래소 일봉을 못 받으면 다음 실행 때 다시 시도
+        except daum.DataSourceError:
+            if log:
+                log("거래소 일봉을 받지 못해 하루 기록 재계산을 다음 실행으로 미룸")
+            return False
+        macro.sync_daily_bars([symbol])
+    today = now.date().isoformat()
+    since = (now - timedelta(days=int(s.get("daily_event_lookback_days", 90)))).date().isoformat()
+    with connect() as conn:
+        days = sorted({r[0] for r in conn.execute(
+            "SELECT date FROM daily_bars WHERE symbol=? AND date>=? AND date<?", (symbol, since, today))} |
+            {r[0] for r in conn.execute(
+                "SELECT DISTINCT substr(start_ts,1,10) FROM events WHERE symbol=? AND event_type='daily' "
+                "AND substr(start_ts,1,10)>=? AND substr(start_ts,1,10)<?", (symbol, since, today))})
+    df = load_bars(symbol, since + "T00:00")
+    changed = removed = 0
+    with connect() as conn:
+        for day in days:
+            bars = df[df["ts"].dt.date.astype(str) == day] if not df.empty else None
+            dv = daily_event(symbol, day, s, bars if bars is not None and not bars.empty else None)
+            olds = [dict(r) for r in conn.execute(
+                "SELECT id, direction, peak_return_5m FROM events WHERE symbol=? AND event_type='daily' "
+                "AND substr(start_ts,1,10)=?", (symbol, day))]
+            keep = dv["direction"] if dv else None
+            for o in olds:
+                if o["direction"] != keep:
+                    conn.execute("DELETE FROM events WHERE id=?", (o["id"],))
+                    removed += 1
+            if dv:
+                old = next((o for o in olds if o["direction"] == keep), None)
+                if old is None or abs((old["peak_return_5m"] or 0) - dv["peak_return_5m"]) > 1e-9:
+                    changed += 1
+                _upsert(conn, symbol, dv)
+    set_state(KRX_DAILY_KEY, now.isoformat(timespec="minutes"))
+    if log:
+        log(f"하루 기록을 거래소 종가로 다시 계산: 바뀜·추가 {changed}건, 기준 밑이라 지움 {removed}건")
+    return True
+
+
 def _state_key(symbol: str) -> str:
     return f"detector_day:{symbol}"
 
@@ -550,6 +609,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
     from .feed import kst_now
     now = now or kst_now().replace(tzinfo=None)
     _ensure_version(symbol, log)
+    _rescan_daily_krx(symbol, s, now, log)
     st = get_state(_state_key(symbol))
     if rescan and target_date is not None:
         since = target_date.isoformat()

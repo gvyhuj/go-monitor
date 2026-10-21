@@ -170,3 +170,29 @@ def test_multiday_alert_not_flooded_on_first_run(tmpdb):
     assert alerts.send_multiday(SYM) == 1
     assert "5일 누적 하락" in tmpdb[-1]
     assert alerts.send_multiday(SYM) == 0
+
+
+def test_krx_daily_rescan_fixes_numbers_and_drops_below_threshold(tmpdb):
+    # 넥스트레이드가 섞인 예전 일봉으로 만든 '급등 +6.97%' 기록 → 거래소 종가로는 +2.41%라 지워짐,
+    # 거래소 종가로 -11.25%인 날은 같은 번호에 숫자만 고쳐 씀. 붙여넣은 원인은 그대로 남음
+    from core import manual
+    s = {"event_move_pct": 5.0, "event_watch_pct": 3.0, "event_big_pct": 10.0}
+    rows = [("2026-10-14", 12620), ("2026-10-15", 11200), ("2026-10-16", 11470)]
+    with db.connect() as conn:
+        for d, c in rows:
+            conn.execute("INSERT INTO daily_bars(symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,?)",
+                         (SYM, d, c, c, c, c, 1000))
+        for d, dr, r, tier in (("2026-10-15", "down", -0.1349, "대형"), ("2026-10-16", "up", 0.0697, "일반")):
+            conn.execute("INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, peak_return_5m, "
+                         "return_5m, peak_ts, status, tier) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (SYM, f"{d}T09:00", f"{d}T15:30", "daily", dr, r, r, f"{d}T15:30", "closed", tier))
+    manual.save({"type": "cause", "date": "2026-10-16", "direction": "up", "scope": "day", "body": "원인 글"},
+                datetime(2026, 10, 16, 16, 0))
+    assert detector._rescan_daily_krx(SYM, s, datetime(2026, 10, 21, 10, 0), sync=False)
+    with db.connect() as conn:
+        evs = {r["start_ts"][:10]: dict(r) for r in conn.execute("SELECT * FROM events WHERE event_type='daily'")}
+        kept = conn.execute("SELECT COUNT(*) FROM manual_causes WHERE date='2026-10-16'").fetchone()[0]
+    assert set(evs) == {"2026-10-15"}
+    assert abs(evs["2026-10-15"]["peak_return_5m"] - (11200 / 12620 - 1)) < 1e-9 and evs["2026-10-15"]["tier"] == "대형"
+    assert kept == 1
+    assert not detector._rescan_daily_krx(SYM, s, datetime(2026, 10, 21, 10, 0), sync=False)   # 한 번만
