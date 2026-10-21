@@ -770,3 +770,4 @@ details.art-group > button { padding-left: 24px; }
 @media (max-width: 720px) {
   .art-detail table.ladder { display: block; max-width: 100%; overflow-x: auto; font-size: 12.5px; }
 }
+.score-note { flex-basis: 100%; margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }

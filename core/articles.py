@@ -463,8 +463,42 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
             out["timing"] = timing(symbol, datetime.fromisoformat(out["minute"]["reaction_start"]), peers)
         except Exception as e:
             out["notes"].append(f"시간 순서 계산 실패: {e}")
+    # 장중(09:00~14:00) 기사이고 분봉이 있으면: 공개 후 60분을 하루와 같은 계수로 나눔 (그날 오후 다른 일이 섞이지 않게)
+    dc = out.get("decomp")
+    if r.ok and 60 in (r.returns or {}) and not off and not late and dc and dc.get("method") != "단순" \
+            and time(9, 0) <= ts.time() < time(14, 0):
+        try:
+            out["minute60"] = _minute_split(symbol, r, dc)
+        except Exception as e:          # noqa: BLE001 - 보조 계산
+            out["notes"].append(f"60분 계산 실패: {e}")
     out["verdict"], out["verdict_cls"], out["measure"] = _verdict(out, tone, category)
     return out
+
+
+def _minute_split(symbol: str, r, dc: dict) -> dict | None:
+    from . import causal
+    t0 = r.reaction_start
+    t1 = t0 + timedelta(minutes=60)
+    own, kq = r.returns[60], (r.kosdaq_returns or {}).get(60)
+    if kq is None:
+        return None
+    with connect() as conn:
+        rel = [dict(x) for x in conn.execute("SELECT code, source FROM related_stocks")]
+    sector, used = 0.0, 0
+    for part in dc.get("parts") or []:
+        if part.get("kind") != "seg":
+            continue
+        ch = [c for c in (_minute_change(x["code"], t0, t1) for x in rel if (x["source"] or "비교 종목") == part["name"])
+              if c is not None]
+        if ch:
+            sector += part["beta"] * (sum(ch) / len(ch) - part["slope"] * kq)
+            used += 1
+    market = dc["beta_market"] * kq
+    abn = own - market - sector
+    rr = causal.window_rarity(symbol, t1, 60, abn)
+    return {"own": own, "market": market, "sector": sector, "abnormal": abn, "kosdaq": kq,
+            "segments_used": used, "rarity": rr.get("p") if rr and rr.get("ok") else None,
+            "n_null": rr.get("n") if rr and rr.get("ok") else None, "start": t0.isoformat(timespec="minutes")}
 
 
 def _verdict(eff: dict, tone: int, category: str):
@@ -478,20 +512,32 @@ def _verdict(eff: dict, tone: int, category: str):
     if dc and dc.get("d01" if two else "d0"):
         part = dc["d01" if two else "d0"]
         measure = {"label": "반응일+다음날 고유 반응" if two else "반응일 고유 반응", "value": part["abnormal"],
-                   "z": part.get("z"), "vol_ratio": vol, "own": part["own"], "market": part["market"], "sector": part["sector"]}
+                   "z": part.get("z"), "rarity": part.get("rarity"), "n_null": part.get("n_null"),
+                   "basis": "2일" if two else "하루", "vol_ratio": vol,
+                   "own": part["own"], "market": part["market"], "sector": part["sector"]}
     elif d and d["excess"].get("d1" if two else "d0") is not None:
         k = "d1" if two else "d0"
         measure = {"label": f"{'반응일+다음날' if two else '반응일'} 초과 반응 ({d['bench_name']} 대비)",
-                   "value": d["excess"][k], "vol_ratio": vol, "own": d.get(k)}
+                   "value": d["excess"][k], "vol_ratio": vol, "own": d.get(k), "basis": "2일" if two else "하루"}
+    m60 = eff.get("minute60")
+    if m60 and m60.get("abnormal") is not None:          # 장중 기사: 공개 후 60분 고유 반응이 기사 효과에 더 가까움
+        measure = {"label": "공개 후 60분 고유 반응", "value": m60["abnormal"], "rarity": m60.get("rarity"),
+                   "n_null": m60.get("n_null"), "basis": "60분", "vol_ratio": vol, "own": m60["own"],
+                   "market": m60["market"], "sector": m60["sector"]}
     if measure is None:
         return "반응 계산 불가", "none", None
     if category == "시황·특징주":
         return "주가 움직임을 다룬 기사", "result", measure
     if category == "단순 언급":
         return "이름만 언급된 기사 (효과 판단 제외)", "mention", measure
-    x, z = measure["value"], measure.get("z")
-    strong = abs(x) >= 0.02 and (z is None or abs(z) >= 2)
-    weak = abs(x) >= 0.01 and (z is None or abs(z) >= 1)
+    # 얼마나 드문지: 평소 같은 길이 고유 움직임 중 이번 이상이 상위 5% 안이면 뚜렷, 15% 안이면 약함
+    x, z, rr = measure["value"], measure.get("z"), measure.get("rarity")
+    big, mid = (0.01, 0.005) if measure.get("basis") == "60분" else (0.02, 0.01)
+    if rr is not None:
+        strong, weak = abs(x) >= big and rr <= 0.05, abs(x) >= mid and rr <= 0.15
+    else:
+        strong = abs(x) >= big and (z is None or abs(z) >= 2)
+        weak = abs(x) >= mid and (z is None or abs(z) >= 1)
     if eff.get("off_session"):
         strong, weak = False, strong
     if tone < 0 and (strong or weak) and x > 0:

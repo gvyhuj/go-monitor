@@ -25,7 +25,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "15"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로)
+CAUSE_VERSION = "16"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -917,7 +917,7 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
         split = {"own": p0["own"], "market": p0["market"], "sector": p0["sector"], "specific": p0["abnormal"],
                  "z": p0["z"], "kosdaq": p0["kosdaq"], "sector_avg": (split or {}).get("sector_avg"),
                  "method": ds["method"], "beta_market": ds["beta_market"], "beta_sector": None,
-                 "sigma": ds["sigma"], "basis": "하루",
+                 "sigma": ds["sigma"], "basis": "하루", "rarity": p0.get("rarity"), "n_null": p0.get("n_null"),
                  "factor_parts": [{"name": "시장(KOSDAQ)", "factor": p0["kosdaq"], "beta": ds["beta_market"],
                                    "contrib": p0["market"]}] + p0["parts"]}
     causal = {"factor": factor}
@@ -936,7 +936,10 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
     spec = (split or {}).get("specific", own)
     # 고유 몫이 평소에 비해 얼마나 드문가 (|z| 2 이상 = 100번 중 5번 미만)
     abn = None
-    if daily and split and split.get("z") is not None:
+    if daily and split and split.get("rarity") is not None:   # 정규분포 가정 대신 실제 기록과 비교
+        abn = {"z": split["z"], "p": split["rarity"],
+               "basis": f"평소 {split['n_null']}거래일 고유 움직임 대비"}
+    elif daily and split and split.get("z") is not None:
         abn = {"z": split["z"], "p": _causal._p_norm(split["z"]),
                "basis": f"평소 하루 고유 변동 ±{(split.get('sigma') or 0)*100:.1f}% 대비"}
     elif daily and es and es.get("ok"):

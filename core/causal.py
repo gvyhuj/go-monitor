@@ -241,13 +241,19 @@ def _segment_rets(lo: str, hi: str) -> dict[str, dict]:
     return out
 
 
+RIDGE_OBS = 30.0     # 분야 계수 축소 강도 (기록 60일이면 약 2/3, 120일이면 약 4/5로 줄어듦)
+
+
 def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int = 120, gap: int = 5) -> dict | None:
     """반응일 하루(전일 종가 → 종가) 등락을 시장 몫 + 분야별 몫 + 고유 몫으로 나눔.
 
     - 분야별 몫: 사업 분야(비교 종목 묶음)마다 평균 등락을 따로 넣고(업종 ETF가 설정돼 있으면 함께),
       각 분야에서 시장과 겹치는 부분을 뺀 뒤 회귀 → 이 종목과 실제로 같이 움직이는 분야만 크게 반영됨
     - 평소 추세(α)는 빼지 않음: 몇 달 오른(내린) 추세가 하루 반응을 깎지 않게
+    - 분야 계수는 축소 추정(릿지, RIDGE_OBS): 기록이 짧거나 같이 움직이는 정도가 약한 분야는 작게 반영
     - 평소 고유 변동폭(σ)은 중앙값 기반(1.4826 × MAD): 큰 사건 며칠에 부풀지 않게
+    - 얼마나 드문지는 정규분포 가정 대신 실제 기록과 비교(rarity): 추정 기간의 고유 움직임 중
+      이만큼 이상 컸던 비율 (꼬리가 두꺼운 종목이라 z=2를 '100번 중 5번'으로 읽으면 틀림)
     - 민감도는 반응일 gap거래일 전까지 est_len거래일로 추정. 기록이 40거래일보다 짧으면 시장 1배로 단순 비교
     결과의 d0은 반응일 하루, d01은 반응일+다음날 2일 누적.
     """
@@ -273,20 +279,26 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
             b = float(m @ y / (m @ m)) if m @ m else 0.0
             slopes.append(b)
             resid.append(y - b * m)
-        X = np.column_stack([m] + resid)
         yo = np.array([own[d] for d in est])
-        coef, *_ = np.linalg.lstsq(X, yo, rcond=None)
-        res = yo - X @ coef
+        # 분야는 표준화한 뒤 릿지(시장 계수는 축소하지 않음): 관측 RIDGE_OBS개만큼의 '0일 것'이라는 사전 믿음
+        scale = [float(np.std(r)) or 1.0 for r in resid]
+        Z = np.column_stack([m] + [r / sc for r, sc in zip(resid, scale)])
+        pen = np.diag([0.0] + [RIDGE_OBS] * len(resid))
+        cz = np.linalg.solve(Z.T @ Z + pen, Z.T @ yo)
+        coef = np.array([cz[0]] + [cz[1 + i] / scale[i] for i in range(len(resid))])
+        res = yo - Z @ cz
         sigma = float(1.4826 * np.median(np.abs(res - np.median(res))))
         out.update({"method": "분야별 회귀", "beta_market": float(coef[0]), "sigma": sigma})
         betas = [float(c) for c in coef[1:]]
     else:                                        # 기록이 짧으면 시장 1배, 분야 몫 없이
-        diffs = np.array([own[d] - mkt[d] for d in dates[max(0, i0 - 60):i0]])
+        res = np.array([own[d] - mkt[d] for d in dates[max(0, i0 - 60):i0]])
+        diffs = res
         sigma = float(1.4826 * np.median(np.abs(diffs - np.median(diffs)))) if len(diffs) >= 10 else None
         facs, slopes, betas = [], [], []
         out.update({"method": "단순", "beta_market": 1.0, "sigma": sigma})
     out["beta_sector"] = None
-    out["parts"] = [{"name": n, "kind": k, "beta": betas[i]} for i, (n, _, k) in enumerate(facs)]
+    out["parts"] = [{"name": n, "kind": k, "beta": betas[i], "slope": slopes[i]} for i, (n, _, k) in enumerate(facs)]
+    resid_hist = [float(x) for x in res]
 
     def window(n_days: int) -> dict | None:
         ds = dates[i0:i0 + n_days]
@@ -302,7 +314,11 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
         sec = sum(p["contrib"] for p in parts)
         abn = own_r - mk - sec
         sig = out["sigma"]
+        # 평소 같은 길이(n_days일) 고유 움직임 중 이번 이상으로 컸던 비율
+        null = [sum(resid_hist[i:i + n_days]) for i in range(len(resid_hist) - n_days + 1)]
+        rarity = (1 + sum(1 for v in null if abs(v) >= abs(abn))) / (1 + len(null)) if len(null) >= 20 else None
         return {"own": own_r, "market": float(mk), "sector": float(sec), "abnormal": float(abn),
+                "rarity": rarity, "n_null": len(null),
                 "z": float(abn / (sig * len(ds) ** 0.5)) if sig else None,
                 "kosdaq": float(np.prod([1 + mkt[d] for d in ds]) - 1), "sector_avg": None,
                 "parts": parts, "days": len(ds)}

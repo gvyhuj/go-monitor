@@ -1017,7 +1017,7 @@
     return `<ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
         <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
-      <p class="flow-sum" style="margin-top:8px">${judge}${sp.z != null ? ` 고유 몫은 평소 이 종목 혼자 움직이는 폭의 <b>${Math.abs(sp.z).toFixed(1)}배</b>입니다${sp.abn_basis ? ` (${esc(sp.abn_basis)})` : ""} — ${Math.abs(sp.z) >= 2 ? "평소엔 100번 중 5번도 안 나오는 크기라 이례적입니다." : "평소에도 나올 수 있는 크기입니다."}` : ""}</p>`;
+      <p class="flow-sum" style="margin-top:8px">${judge}${sp.abn_p != null ? ` 고유 몫은 ${esc(sp.abn_basis || "평소 기록 대비")}, 이만큼 이상 움직인 경우가 <b>${sp.abn_p < 0.01 ? "1% 미만" : `${(sp.abn_p * 100).toFixed(sp.abn_p < 0.1 ? 1 : 0)}%`}</b>입니다 — ${sp.abn_p <= 0.05 ? "드문 크기라 이례적입니다." : sp.abn_p <= 0.15 ? "다소 드문 크기입니다." : "평소에도 흔한 크기입니다."}` : ""}</p>`;
   }
 
   function causalBlock(ca, mv) {
@@ -1397,6 +1397,12 @@
     if (!m) return "";
     return `${esc(m.label)} <b class="${sgnCls(m.value)}">${pct(m.value)}</b>${m.vol_ratio ? `, 거래량 평소의 ${m.vol_ratio.toFixed(1)}배` : ""}`;
   }
+  // 평소 기록과 비교한 드문 정도 (정규분포 가정 없이: 평소 같은 길이 고유 움직임 중 이번 이상이었던 비율)
+  function rarityTxt(rr, n, unit) {
+    if (rr == null) return "";
+    const p = rr * 100;
+    return `평소 ${unit} ${n ? `${n}개 중` : ""} 이만큼 이상 움직인 경우가 ${p < 1 ? "1% 미만" : `${p.toFixed(p < 10 ? 1 : 0)}%`} — ${rr <= 0.05 ? "드문 크기입니다" : rr <= 0.15 ? "다소 드문 크기입니다" : "평소에도 흔한 크기입니다"}`;
+  }
 
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
@@ -1465,14 +1471,26 @@
     const since = isoDate(new Date(Date.now() - 183 * 864e5));
     const recent = groups.pr.filter((e) => (e.day || "") >= since);
     const cls = (e) => (byId.get(e.lead).effect || {}).verdict_cls;
-    const nStrong = recent.filter((e) => ["up", "down"].includes(cls(e))).length;
-    const nWeak = recent.filter((e) => ["up-weak", "down-weak"].includes(cls(e))).length;
     const avgOut = recent.length ? recent.reduce((s, e) => s + (e.outlets || 1), 0) / recent.length : 0;
+    // 사건별 고유 반응의 평균과 95% 범위 (t분포). 건수가 적으면 범위가 넓어져 '아직 모름'이 솔직하게 드러남
+    const xs = recent.map((e) => (byId.get(e.lead).effect || {}).measure).filter((m) => m && m.value != null).map((m) => m.value);
+    let ci = null;
+    if (xs.length >= 3) {
+      const n = xs.length, mean = xs.reduce((a, b) => a + b, 0) / n;
+      const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
+      const T = [12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09];
+      const h = (n - 1 <= T.length ? T[n - 2] : 2.0) * sd / Math.sqrt(n);
+      ci = { n, mean, lo: mean - h, hi: mean + h };
+    }
+    const ciTxt = !ci ? "" : ci.lo > 0 ? "보도자료가 나간 날 평균적으로 이 종목만 더 올랐다고 볼 근거가 있습니다."
+      : ci.hi < 0 ? "보도자료가 나간 날 평균적으로 오히려 더 약했습니다."
+      : "범위가 0을 포함해, 아직 보도자료에 평균적인 주가 효과가 있다고 말할 근거는 부족합니다.";
     $("#pr-score").innerHTML = recent.length ? `<div class="score-line">
       <span><small>최근 6개월 보도자료</small><b>${recent.length}건</b></span>
-      <span><small>뚜렷한 반응</small><b>${nStrong}건</b></span>
-      <span><small>약한 반응</small><b>${nWeak}건</b></span>
-      <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span></div>` : "";
+      <span><small>평균 고유 반응${ci ? ` (계산 ${ci.n}건)` : ""}</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? pct(ci.mean) : "-"}</b></span>
+      <span><small>95% 범위</small><b>${ci ? `${pct(ci.lo)} ~ ${pct(ci.hi)}` : "-"}</b></span>
+      <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
+      ${ci ? `<p class="score-note">${ciTxt}</p>` : ""}</div>` : "";
 
     if (!["pr", "ext", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
     const seg = $("#art-cat");
@@ -1496,7 +1514,7 @@
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
           <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef)}</span>
           <span class="t">${esc(a.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${m ? `<span class="num ${sgnCls(m.value)}">${pct(m.value)}</span>` : ""}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
+          <span class="al-foot">${verdictTag(ef)}${m ? `<span class="num ${sgnCls(m.value)}">${pct(m.value)}</span>${m.basis ? `<span class="muted">${esc(m.basis)} 기준</span>` : ""}` : ""}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
           ${others.length ? `<details class="art-group"${others.some((x) => x.id === current) ? " open" : ""}><summary>같은 날 기사 ${others.length}건 더</summary>${others.map(sub).join("")}</details>` : ""}</li>`;
       }).join("");
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
@@ -1529,8 +1547,9 @@
       { k: "기사(고유) 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>", v: p.abnormal, cls: "abn" },
     ];
     const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
-    const zTxt = p.z != null ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
-    const judge = p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임이라 기사 효과로 볼 근거가 있습니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도라 기사 효과는 약하게만 보입니다." : "평소에도 이 정도는 움직이므로 기사 효과라고 보기 어렵습니다.";
+    const zTxt = p.z != null && sig ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
+    const judge = p.rarity != null ? `${rarityTxt(p.rarity, p.n_null, two && dc.d01 ? "2일 고유 움직임" : "하루 고유 움직임")}.`
+      : p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임입니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도입니다." : "평소에도 이 정도는 움직입니다.";
     return `<h3 class="d-sec" style="margin-top:22px">기사 효과 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
       <ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
@@ -1559,7 +1578,8 @@
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
     html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
-      <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}${e.measure && e.measure.z != null ? ` <span class="muted">(평소 혼자 움직이는 폭의 ${Math.abs(e.measure.z).toFixed(1)}배)</span>` : ""}</div>
+      <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
+      ${e.measure && e.measure.rarity != null ? `<div class="vb-note">${rarityTxt(e.measure.rarity, e.measure.n_null, e.measure.basis === "60분" ? "60분 움직임" : e.measure.basis === "2일" ? "2일 고유 움직임" : "하루 고유 움직임")}.</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 우리 보도자료)
     if (!a.manual) {
@@ -1572,6 +1592,17 @@
     }
 
     let ev = "";
+    const m60 = e.minute60;
+    if (m60) {
+      const r6 = [["이 종목 실제 변동", m60.own, "me"], [`시장 몫 <small>KOSDAQ ${pct(m60.kosdaq)} × 민감도 ${e.decomp.beta_market.toFixed(2)}</small>`, m60.market],
+        [`분야 몫 <small>${m60.segments_used ? `분야 ${m60.segments_used}곳의 같은 60분` : "분야 분봉 없음"}</small>`, m60.sector], ["기사(고유) 몫", m60.abnormal, "abn"]];
+      const mx = Math.max(0.003, ...r6.map((x) => Math.abs(x[1] || 0)));
+      ev += `<h3 class="d-sec" style="margin-top:22px">공개 후 60분 나누기 <small class="muted">${hhmm(m60.start)}부터 · 판정 기준</small></h3>
+        <ul class="rel decomp">${r6.map(([k, v, c]) => `<li class="${c || ""}"><span class="nm">${k}</span>
+        <span class="dbar"><i class="${(v || 0) >= 0 ? "b" : "s"}" style="${(v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / mx) * 50}%`};width:${(Math.abs(v || 0) / mx) * 50}%"></i></span>
+        <span class="num v ${sgnCls(v)}">${pct(v)}</span></li>`).join("")}</ul>
+        <p class="note" style="margin-top:6px">민감도는 아래 하루 계산과 같은 값을 씁니다. 장중에 나온 기사는 그날 오후 다른 일이 섞이지 않도록 공개 후 60분으로 판정합니다.</p>`;
+    }
     if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late);
     if (dl) {
       const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;

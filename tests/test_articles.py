@@ -106,7 +106,9 @@ def test_day_split_uses_related_segment_not_noise_and_no_alpha(tmpdb):
         last = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol='X'").fetchone()[0]
     sp = causal.day_split("X", last)
     beta = {p["name"]: p["beta"] for p in sp["parts"]}
-    assert sp["method"] == "분야별 회귀" and abs(beta["분야A"] - 1.0) < 0.2 and abs(beta["분야B"]) < 0.2
+    # 릿지로 조금 줄어들지만(1.0 → 0.7~1.0) 상관없는 분야는 0 근처
+    assert sp["method"] == "분야별 회귀" and 0.6 < beta["분야A"] <= 1.05 and abs(beta["분야B"]) < 0.15
+    assert sp["d0"]["rarity"] is not None and sp["d0"]["rarity"] < 0.05   # 평소 기록 중 가장 큰 축
     # 추세(+0.4%)를 빼지 않으므로 고유 몫 ≈ 5% + 0.4%
     assert 0.045 < sp["d0"]["abnormal"] < 0.06 and sp["d0"]["z"] > 5
 
@@ -117,3 +119,17 @@ def test_late_article_judged_on_two_days():
     assert articles._verdict({"decomp": dc}, 0, "회사 발표")[1] == "flat"
     v = articles._verdict({"decomp": dc, "late": True}, 0, "회사 발표")
     assert v[1] == "up" and v[2]["label"] == "반응일+다음날 고유 반응"
+
+
+def test_verdict_uses_empirical_rarity_and_60min_thresholds():
+    def v(x, rr, basis="하루"):
+        part = {"abnormal": x, "z": 9.0, "rarity": rr, "own": x, "market": 0.0, "sector": 0.0}
+        eff = {"decomp": {"d0": part}}
+        if basis == "60분":
+            eff["minute60"] = {**part, "abnormal": x}
+        return articles._verdict(eff, 0, "회사 발표")
+    assert v(0.03, 0.03)[1] == "up"
+    assert v(0.03, 0.10)[1] == "up-weak"
+    assert v(0.03, 0.30)[1] == "flat"           # z가 커도 평소 기록상 흔하면 효과 없음
+    m = v(0.012, 0.02, "60분")
+    assert m[1] == "up" and m[2]["basis"] == "60분"
