@@ -66,6 +66,20 @@ def fetch_trader_ranks(code: str, interval: str = "TODAY") -> dict:
     }
 
 
+def fetch_daily(code: str, pages: int = 3) -> list[dict]:
+    """KRX(거래소) 확정 일봉, 오래된 날짜부터. 네이버 일봉은 넥스트레이드 애프터마켓까지 합친 값이라
+    거래소 종가·등락률(HTS·네이버 화면의 등락률)과 다를 수 있어서, 확정 종가는 이것을 씀."""
+    out = []
+    for page in range(1, pages + 1):
+        d = _json(f"{API}/quote/A{code}/days?symbolCode=A{code}&page={page}&perPage=100&pagination=true", code)
+        for r in d.get("data") or []:
+            out.append({"date": str(r.get("date") or "")[:10], "open": r.get("openingPrice"), "high": r.get("highPrice"),
+                        "low": r.get("lowPrice"), "close": r.get("tradePrice"), "volume": _int(r.get("accTradeVolume"))})
+        if page >= int(d.get("totalPages") or 1):
+            break
+    return sorted((r for r in out if r["date"] and r["close"]), key=lambda r: r["date"])
+
+
 def fetch_trader_histories(code: str, n: int = 30) -> list[dict]:
     d = _json(f"{API}/trader/histories?symbolCode=A{code}&page=1&perPage={n}", code)
     out = []

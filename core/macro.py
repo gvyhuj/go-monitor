@@ -25,7 +25,7 @@ import re
 import time as _time
 from datetime import date, datetime, timedelta
 
-from . import naver
+from . import daum, naver
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
@@ -504,6 +504,20 @@ def _price_infos(d) -> list[dict]:
 
 
 def fetch_daily(code: str, days: int = 420) -> list[dict]:
+    """일봉. 종목은 최근 약 300거래일을 거래소(KRX) 확정치로 덮어씀 (네이버 일봉은 넥스트레이드 애프터마켓 포함)."""
+    rows = _fetch_daily_naver(code, days)
+    if code == KOSDAQ or not re.fullmatch(r"[0-9A-Z]{6}", code):
+        return rows
+    try:
+        krx = daum.fetch_daily(code)
+    except daum.DataSourceError:
+        return rows
+    by_date = {r["date"]: r for r in rows}
+    by_date.update({r["date"]: r for r in krx})
+    return [by_date[d] for d in sorted(by_date)]
+
+
+def _fetch_daily_naver(code: str, days: int = 420) -> list[dict]:
     """일봉. fchart(1년 이상, KOSDAQ 지수 포함). 실패하면 api.stock.naver.com(약 6개월)."""
     if True:
         try:
