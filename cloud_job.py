@@ -239,10 +239,10 @@ def main(argv) -> int:
     task = argv[1] if len(argv) > 1 else "run"
     static = static_mode()
     if static:
-        if len(_site_password()) < 8:
-            log.error("SITE_PASSWORD(사이트 비밀번호)가 없거나 8자보다 짧습니다. 저장소 Settings → Secrets 에 넣어 주세요.")
-            summary("### 실패\nSITE_PASSWORD 비밀값이 없거나 8자보다 짧습니다.")
-            annotate("error", f"SITE_PASSWORD 비밀값이 없거나 8자보다 짧습니다 (현재 {len(_site_password())}자).")
+        if len(_site_password()) < 4:
+            log.error("SITE_PASSWORD(사이트 비밀번호)가 없거나 4자보다 짧습니다. 저장소 Settings → Secrets 에 넣어 주세요.")
+            summary("### 실패\nSITE_PASSWORD 비밀값이 없거나 4자보다 짧습니다.")
+            annotate("error", f"SITE_PASSWORD 비밀값이 없거나 4자보다 짧습니다 (현재 {len(_site_password())}자).")
             return 1
         restored = restore_state(log)
     init_db()

@@ -45,8 +45,8 @@ def file_name(key: str) -> str:
 
 def build(out: Path, password: str, salt: bytes, items: list[tuple[str, str, bool]], repo: str = "") -> int:
     """items: (키, JSON 문자열, base64여부) — core.cloud 의 업로드 목록과 같은 형식."""
-    if len(password or "") < 8:
-        raise ValueError("SITE_PASSWORD(사이트 비밀번호)가 없거나 8자보다 짧습니다.")
+    if len(password or "") < 4:
+        raise ValueError("SITE_PASSWORD(사이트 비밀번호)가 없거나 4자보다 짧습니다.")
     if out.exists():
         shutil.rmtree(out)
     (out / "d").mkdir(parents=True)

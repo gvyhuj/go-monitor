@@ -5,7 +5,7 @@
 # - 공개 저장소는 GitHub Actions 사용 시간이 무제한 무료입니다.
 # - 사이트 주소: https://<계정>.github.io/<저장소>/  (분석 자료는 SITE_PASSWORD로 암호화되어 있어 비밀번호 없이는 못 봅니다)
 # - 필요한 비밀값(Settings → Secrets and variables → Actions):
-#     SITE_PASSWORD  사이트 비밀번호 (8자 이상)
+#     SITE_PASSWORD  사이트 비밀번호 (4자 이상)
 #     DATA_KEY       기록 백업용 열쇠 (선택. 없으면 SITE_PASSWORD 사용. 한 번 정하면 바꾸지 마세요)
 #     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET  네이버 검색 API (선택. 국제·정치 이슈 기사 수집용, 무료)
 # - 기록(SQLite)은 암호화해서 실행 사이에 넘기고(Actions 캐시), 1시간마다 data 브랜치에도 백업합니다.

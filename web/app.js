@@ -1693,8 +1693,8 @@
           <button class="btn danger" type="button" id="cloud-off">연결 해제</button>
         </div>
         <form id="cloud-pw" class="cloud-pw" hidden autocomplete="off">
-          <label class="field"><span>새 비밀번호 (8자 이상)</span><input type="password" name="pw" required minlength="8" autocomplete="new-password"></label>
-          <label class="field"><span>한 번 더</span><input type="password" name="pw2" required minlength="8" autocomplete="new-password"></label>
+          <label class="field"><span>새 비밀번호 (4자 이상)</span><input type="password" name="pw" required minlength="4" autocomplete="new-password"></label>
+          <label class="field"><span>한 번 더</span><input type="password" name="pw2" required minlength="4" autocomplete="new-password"></label>
           <button class="btn primary" type="submit">바꾸기</button><p class="note">바꾸면 이미 로그인한 기기도 모두 다시 비밀번호를 물어봅니다.</p>
         </form>
         <div class="form-msg" id="cloud-msg" role="status"></div>
@@ -1741,8 +1741,8 @@
       <form id="cloud-form" autocomplete="off">
         <label class="field"><span>API 토큰</span><input name="token" type="password" required placeholder="붙여 넣기 (Ctrl+V)" autocomplete="off"></label>
         <div class="field-row">
-          <label class="field"><span>사이트 비밀번호 (8자 이상)</span><input name="pw" type="password" required minlength="8" autocomplete="new-password"></label>
-          <label class="field"><span>한 번 더</span><input name="pw2" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label class="field"><span>사이트 비밀번호 (4자 이상)</span><input name="pw" type="password" required minlength="4" autocomplete="new-password"></label>
+          <label class="field"><span>한 번 더</span><input name="pw2" type="password" required minlength="4" autocomplete="new-password"></label>
         </div>
         <button class="btn primary" type="submit" id="cloud-go">사이트 만들기</button>
         <div class="form-msg" id="cloud-msg" role="status"></div>

@@ -276,8 +276,8 @@ def ensure_site(log=None, force: bool = False) -> dict:
 
 
 def _check_password(password: str):
-    if len(password or "") < 8:
-        raise ValueError("비밀번호는 8자 이상으로 정해 주세요.")
+    if len(password or "") < 4:
+        raise ValueError("비밀번호는 4자 이상으로 정해 주세요.")
 
 
 def setup(token: str, password: str, log=None) -> dict:
