@@ -1530,7 +1530,8 @@
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
     if (!current) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
-    loadPR(current);
+    const curEv = events.find((e) => e.ids.includes(current));
+    loadPR(current, curEv ? curEv.ids.filter((x) => x !== current && byId.has(x)).map((x) => byId.get(x)) : []);
   }
 
   const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : "k-ext"}">${a.kind === "pr" ? "우리 보도자료" : "외부 기사"}</span>`;
@@ -1559,7 +1560,7 @@
       <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·사업 분야를 몇 배로 따라 움직이는지). 평소 추세는 빼지 않고, 평소 고유 변동폭은 큰 사건 며칠에 흔들리지 않게 중앙값으로 잽니다.` : "기록이 짧아 시장을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
   }
 
-  async function loadPR(id) {
+  async function loadPR(id, sameDay = []) {
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
     let d;
@@ -1623,7 +1624,16 @@
     ev += `<div class="chart-legend" id="pr-legend" style="margin-top:14px"></div><div class="chart-box" id="pr-chart"></div>`;
     if ((d.confounders || []).length) ev += `<h3 class="d-sec" style="margin-top:18px">함께 봐야 할 것</h3><ul class="notes" style="margin-top:0">${d.confounders.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
     if ((e.events || []).length) ev += `<div class="rule-full"><b>반응일에 감지된 이상변동</b><br>${e.events.map((x) => `<a href="#/events" data-ev="${x.id}">${hhmm(x.start_ts)} ${KIND[x.direction]} ${pct(x.peak_return_5m)}</a>`).join(", ")}</div>`;
-    if ((a.related_titles || []).length) ev += `<div class="rule-full"><b>같은 내용의 다른 기사</b><br>${a.related_titles.map((r) => `${dayLabel(r.ts)} ${hhmm(r.ts)} ${esc(r.office)} <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>`).join("<br>")}</div>`;
+
+    // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
+    const outlets = [{ ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
+    const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
+    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}</li>`;
+    html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
+      <ul>${outlets.map(link).join("")}</ul>
+      ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
+      ${sameDay.length ? `<h3 class="d-sec" style="margin-top:14px">같은 날 함께 묶인 기사 <small class="muted">${sameDay.length}건 · 반응을 나눌 수 없어 한 사건으로 봄</small></h3>
+        <ul>${sameDay.map((x) => link({ ts: x.ts, office: x.office, title: x.title, url: x.url })).join("")}</ul>` : ""}</section>`;
     html += `<details class="evidence"><summary>근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></summary>${ev}</details>`;
     html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 기사 때문에 움직였다고 단정하지는 않습니다.</p>`;
     html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;

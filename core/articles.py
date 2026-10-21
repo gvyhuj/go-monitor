@@ -126,6 +126,10 @@ def _key_title(t: str) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", t or "")[:30]
 
 
+def _key_office(o: str | None) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", o or "")
+
+
 def reclassify(code: str) -> int:
     """한 번만: 회사 이름 대신 '이 종목'으로 분류하던 동안(공개 저장소 전환 뒤) 잘못 매겨진 분류를 다시 매김."""
     from .db import get_state, set_state
@@ -144,11 +148,11 @@ def reclassify(code: str) -> int:
 def _save(code: str, items: list[dict], source: str) -> int:
     name, now = company_name(), datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        if source == "google":                     # 네이버로 이미 받은 같은 기사(같은 제목)는 다시 넣지 않음
-            have = {_key_title(r[0]) for r in conn.execute(
-                "SELECT title FROM articles WHERE symbol=? AND ts >= ?", (code, min(i["ts"] for i in items)[:10]))} \
+        if source == "google":   # 이미 받은 같은 매체·같은 제목은 다시 넣지 않음 (다른 매체의 같은 제목은 링크를 위해 남김)
+            have = {_key_title(r[0]) + "|" + _key_office(r[1]) for r in conn.execute(
+                "SELECT title, office FROM articles WHERE symbol=? AND ts >= ?", (code, min(i["ts"] for i in items)[:10]))} \
                 if items else set()
-            items = [i for i in items if _key_title(i["title"]) not in have]
+            items = [i for i in items if _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
         rows = []
         for i in items:
             cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
@@ -176,7 +180,7 @@ def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, lo
     if name == NAME:
         return 0
     now = now or datetime.now()
-    st = get_state("articles:google_backfill_v1")
+    st = get_state("articles:google_backfill_v2")
     done = set(json.loads(st["value"])) if st and st.get("value") else set()
     queries, todo = [], []
     d = GOOGLE_FROM
@@ -202,7 +206,7 @@ def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, lo
         n += _save(code, items, "google") if items else 0
         if i < len(todo):
             done.add(todo[i])
-            set_state("articles:google_backfill_v1", json.dumps(sorted(done)))
+            set_state("articles:google_backfill_v2", json.dumps(sorted(done)))
     if n:
         group_stories(code)
     return n
@@ -621,7 +625,9 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["category"] = best["category"]
         if not lead.get("tone"):
             lead["tone"] = best.get("tone") or 0
-        lead["outlets_total"] = sum(int(g.get("outlets") or 1) for g in group)
+        # 실린 매체 수: 네이버 묶음 수(링크는 대표 1개뿐)와 실제로 모은 매체 수 중 큰 값 (더하면 같은 매체를 두 번 셈)
+        lead["outlets_total"] = max(max(int(g.get("outlets") or 1) for g in group),
+                                    len({_key_office(g.get("office")) for g in group}))
         lead["related_titles"] = [{"ts": g["ts"], "office": g["office"], "title": g["title"], "url": g["url"]} for g in group[1:]]
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
         lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
