@@ -227,6 +227,9 @@ _EVENT_MIGRATIONS = {
 
 
 _SNAPSHOT_MIGRATIONS = {"buy_top5": "INTEGER", "sell_top5": "INTEGER"}
+# 기사: 수집 출처(naver/google), 직접 고친 '우리 보도자료/외부 기사'(pr/ext)·악재 표시(-1/0)
+_ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override": "INTEGER"}
+_DISCLOSURE_MIGRATIONS = {"ts": "TEXT"}          # 공시 시각 (네이버 공시 목록의 접수 시각)
 
 
 def init_db():
@@ -237,6 +240,11 @@ def init_db():
         for col, typ in _SNAPSHOT_MIGRATIONS.items():
             if col not in scols:
                 conn.execute(f"ALTER TABLE trader_snapshots ADD COLUMN {col} {typ}")
+        for table, migs in (("articles", _ARTICLE_MIGRATIONS), ("disclosures", _DISCLOSURE_MIGRATIONS)):
+            tcols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for col, typ in migs.items():
+                if col not in tcols:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(events)")}
         for col, typ in _EVENT_MIGRATIONS.items():
             if col not in cols:

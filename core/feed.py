@@ -254,7 +254,14 @@ def sync_disclosures(code: str, n: int = 20) -> int:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             [(i["no"], code, i["date"], i["title"], i["kind"], i["summary"], now) for i in items],
         )
-        return conn.total_changes - before
+        added = conn.total_changes - before
+    try:                                    # 공시 접수 시각 (기사보다 먼저 나왔는지 보려고)
+        from . import kind
+        today = kst_now().date()
+        kind.fill_times(code, today - timedelta(days=400), today)
+    except Exception as e:                  # noqa: BLE001 - 시각이 없어도 공시 목록은 그대로
+        print(f"::warning title=공시 시각::{type(e).__name__}: {str(e)[:150]}", flush=True)
+    return added
 
 
 def sync_investor(code: str) -> int:

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -44,10 +45,31 @@ NEG = ("유상증자", "적자", "손실", "소송", "해지", "취소", "블록
        "재고", "하락", "논란", "고평가", "굴욕", "민원")
 
 
-def classify(title: str, body: str) -> tuple[str, str]:
+# 매주 자동으로 만들어지는 종목 분석 글, 여러 종목 모음 기사 → '단순 언급'으로 (목록 기본 화면에서 숨김)
+NOISE_TITLE = re.compile(r"투자분석\s*\d{4}|브리핑|모음|마감\s*시황|오늘의\s*(특징주|종목|공시)|주간\s*(유망|추천)")
+NOISE_OFFICE = ("주달",)
+# 외부 기사에 '악재'를 붙이는 뚜렷한 단어 (그 밖에는 호재·악재를 자동으로 붙이지 않음)
+STRONG_NEG = ("유상증자", "소송", "적자", "오버행", "블록딜", "전환사채", "감사의견", "거래정지", "불성실", "계약 해지",
+              "해지", "취소", "보호예수 해제", "횡령", "배임", "상장폐지", "관리종목", "하한가")
+
+
+def company_name() -> str:
+    """회사 이름 (비공개 설정의 display_name). 공개 저장소에는 이름이 없어서 실행할 때 읽음."""
+    try:
+        from .detector import load_settings
+        n = (load_settings().get("display_name") or "").strip()
+    except Exception:          # noqa: BLE001 - 설정을 못 읽으면 예전처럼 동작
+        n = ""
+    return n or NAME
+
+
+def classify(title: str, body: str, name: str | None = None, office: str = "") -> tuple[str, str]:
+    name = name or company_name()
     t, b = title or "", body or ""
-    in_title = NAME in t
-    mention = "제목" if in_title else ("본문" if NAME in b else "연결")
+    in_title = name in t
+    mention = "제목" if in_title else ("본문" if name in b else "연결")
+    if office in NOISE_OFFICE or NOISE_TITLE.search(t):
+        return "단순 언급", mention
     has_company = any(w in t for w in COMPANY)
     if any(w in t for w in MARKET_STRONG) or (in_title and any(w in t for w in MARKET_WEAK) and not has_company):
         return "시황·특징주", mention
@@ -57,7 +79,7 @@ def classify(title: str, body: str) -> tuple[str, str]:
         if t.lstrip().startswith("[") and not t.lstrip().startswith("[단독]"):
             return "언론 분석", mention          # 기획 연재 ([빛을 담는 기업들] 등)
         return ("회사 발표" if has_company else "언론 분석"), mention
-    if NAME in b[:90]:
+    if name in b[:90]:
         return "언론 분석", mention              # 제목엔 없지만 이 종목을 다룬 기사
     if any(w in t for w in THEME):
         return "테마·수혜주", mention
@@ -73,8 +95,8 @@ def tone_of(title: str, body: str = "") -> int:
     return t if t else score((body or "")[:120])
 
 
-def _tokens(title: str) -> set[str]:
-    s = re.sub(r"\[[^\]]*\]|[\"'“”‘’…·,.!?()<>「」『』~\-–—/|]", " ", (title or "").replace(NAME, " "))
+def _tokens(title: str, name: str = NAME) -> set[str]:
+    s = re.sub(r"\[[^\]]*\]|[\"'“”‘’…·,.!?()<>「」『』~\-–—/|]", " ", (title or "").replace(name, " "))
     return {w for w in s.split() if len(w) >= 2}
 
 
@@ -100,8 +122,94 @@ def fetch_stock_news(code: str, page: int = 1, size: int = 50) -> list[dict]:
     return out
 
 
+def _key_title(t: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", t or "")[:30]
+
+
+def reclassify(code: str) -> int:
+    """한 번만: 회사 이름 대신 '이 종목'으로 분류하던 동안(공개 저장소 전환 뒤) 잘못 매겨진 분류를 다시 매김."""
+    from .db import get_state, set_state
+    name = company_name()
+    if name == NAME or get_state("articles:reclass_v1"):
+        return 0
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT id, title, body, office FROM articles WHERE symbol=?", (code,))]
+        for r in rows:
+            cat, mention = classify(r["title"], r["body"], name, r["office"] or "")
+            conn.execute("UPDATE articles SET category=?, mention=? WHERE id=?", (cat, mention, r["id"]))
+    set_state("articles:reclass_v1", datetime.now().isoformat(timespec="minutes"))
+    return len(rows)
+
+
+def _save(code: str, items: list[dict], source: str) -> int:
+    name, now = company_name(), datetime.now().isoformat(timespec="minutes")
+    with connect() as conn:
+        if source == "google":                     # 네이버로 이미 받은 같은 기사(같은 제목)는 다시 넣지 않음
+            have = {_key_title(r[0]) for r in conn.execute(
+                "SELECT title FROM articles WHERE symbol=? AND ts >= ?", (code, min(i["ts"] for i in items)[:10]))} \
+                if items else set()
+            items = [i for i in items if _key_title(i["title"]) not in have]
+        rows = []
+        for i in items:
+            cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
+            rows.append((i["id"], code, i["ts"], i["office"], i["title"], i["body"], i["url"], i.get("outlets") or 1,
+                         cat, tone_of(i["title"], i["body"]), mention, now, source))
+        before = conn.total_changes
+        conn.executemany(
+            "INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention, first_seen, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets",
+            rows)
+        return conn.total_changes - before
+
+
+GOOGLE_FROM = date(2026, 1, 1)          # 구글 뉴스로 지난 기사를 채우는 시작일
+
+
+def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, log=None) -> int:
+    """구글 뉴스에서 회사 이름으로 검색해 네이버 종목 뉴스에 빠진 기사(지역지·전문지 등)를 보충.
+
+    처음에는 GOOGLE_FROM부터 반달씩 나눠 지난 기사를 채우고(한 번에 max_queries개), 그 뒤로는 최근 7일만.
+    """
+    from . import newssearch
+    from .db import get_state, set_state
+    name = company_name()
+    if name == NAME:
+        return 0
+    now = now or datetime.now()
+    st = get_state("articles:google_backfill_v1")
+    done = set(json.loads(st["value"])) if st and st.get("value") else set()
+    queries, todo = [], []
+    d = GOOGLE_FROM
+    while d <= now.date():
+        mid = d.replace(day=16)
+        nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+        for a, b in ((d, mid), (mid, nxt)):
+            if a <= now.date() and a.isoformat() not in done:
+                todo.append(a.isoformat())
+                queries.append(f'"{name}" after:{a.isoformat()} before:{b.isoformat()}')
+        d = nxt
+    queries, todo = queries[:max_queries], todo[:max_queries]
+    if not newssearch._throttled("articles:google", 20):
+        queries.append(f'"{name}" when:7d')
+    n = 0
+    for i, q in enumerate(queries):
+        try:
+            items = newssearch.google(q)
+        except RuntimeError as e:
+            if log:
+                log(f"구글 뉴스 기사 수집 실패: {e}")
+            break
+        n += _save(code, items, "google") if items else 0
+        if i < len(todo):
+            done.add(todo[i])
+            set_state("articles:google_backfill_v1", json.dumps(sorted(done)))
+    if n:
+        group_stories(code)
+    return n
+
+
 def sync_articles(code: str, pages: int = 1) -> int:
-    now = datetime.now().isoformat(timespec="minutes")
+    reclassify(code)
     n = 0
     for p in range(1, pages + 1):
         try:
@@ -112,32 +220,26 @@ def sync_articles(code: str, pages: int = 1) -> int:
             break
         if not items:
             break
-        rows = []
-        for i in items:
-            cat, mention = classify(i["title"], i["body"])
-            rows.append((i["id"], code, i["ts"], i["office"], i["title"], i["body"], i["url"], i["outlets"],
-                         cat, tone_of(i["title"], i["body"]), mention, now))
-        with connect() as conn:
-            before = conn.total_changes
-            conn.executemany(
-                "INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention, first_seen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets",
-                rows)
-            n += conn.total_changes - before
+        n += _save(code, items, "naver")
     group_stories(code)
+    try:
+        n += sync_google(code)
+    except Exception as e:      # noqa: BLE001 - 구글이 막혀도 네이버 수집은 그대로
+        print(f"::warning title=구글 뉴스 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
     return n
 
 
 def group_stories(code: str):
     """같은 내용을 여러 매체가 낸 기사를 하나로 묶음 (가장 먼저 나온 기사 기준)."""
+    name = company_name()
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
-            "SELECT id, ts, title FROM articles WHERE symbol=? ORDER BY ts DESC LIMIT 500", (code,))]
+            "SELECT id, ts, title FROM articles WHERE symbol=? ORDER BY ts DESC LIMIT 2000", (code,))]
     rows.sort(key=lambda r: r["ts"])
     stories = []   # (story_id, ts, tokens)
     assign = {}
     for r in rows:
-        tk = _tokens(r["title"])
+        tk = _tokens(r["title"], name)
         t = datetime.fromisoformat(r["ts"])
         best = None
         for sid, st, stk in stories:
@@ -191,7 +293,8 @@ def _ret_path(symbol: str, d0: str, n_after: int = 3):
     if idx is None or idx == 0:
         return None
     prev = rows[idx - 1]["close"]
-    out = {"prev_close": prev, "d0_close": rows[idx]["close"]}
+    out = {"prev_close": prev, "d0_close": rows[idx]["close"],
+           "gap": rows[idx]["open"] / prev - 1 if rows[idx].get("open") and prev else None}   # 시초가 갭
     for k, off in (("d0", 0), ("d1", 1), ("d3", 3)):
         j = idx + off
         out[k] = rows[j]["close"] / prev - 1 if j < len(rows) and prev else None
@@ -332,12 +435,39 @@ def timing(symbol: str, start: datetime, peers: list[dict], minutes: int = 30) -
             "peak_at": peak[0].isoformat(timespec="minutes") if hasattr(peak[0], "isoformat") else str(peak[0])}
 
 
-def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "") -> dict:
+# 기사와 같은 내용의 공시: 공시가 먼저 나왔으면 공시 시각부터 잼 (공시 종류 → 기사 제목에 나올 단어)
+DISCLOSURE_MATCH = {"공급계약": ("계약", "공급", "수주", "납품"), "손익구조": ("매출", "영업익", "영업이익", "실적", "흑자"),
+                    "기업설명회": ("IR", "기업설명회"), "증자": ("증자",), "전환사채": ("전환사채", "CB")}
+
+
+def earlier_disclosure(symbol: str, title: str, ts: datetime) -> dict | None:
+    """기사보다 먼저(36시간 안) 나온 같은 내용의 공시."""
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT date, ts, title, kind FROM disclosures WHERE symbol=? AND ts IS NOT NULL AND ts < ? AND ts >= ? "
+            "ORDER BY ts DESC", (symbol, ts.isoformat(timespec="minutes"),
+                                 (ts - timedelta(hours=36)).isoformat(timespec="minutes")))]
+    for r in rows:
+        src = f"{r['kind'] or ''} {r['title'] or ''}"
+        for key, words in DISCLOSURE_MATCH.items():
+            if key in src and any(w in (title or "") for w in words):
+                return r
+    return None
+
+
+def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: str = "") -> dict:
     from . import analysis
     days = trading_days(symbol)
+    disc = earlier_disclosure(symbol, title, ts) if title else None
+    if disc:                                # 공시가 먼저: 시장이 처음 안 시각부터 잼
+        ts = datetime.fromisoformat(disc["ts"])
     d0 = reaction_day(ts, days)
+    # 장 마감 뒤나 휴장일에 나온 기사: 다음 거래일 움직임에 다른 요인이 섞일 수 있음
+    # (같은 날 장 시작 전 기사는 그날 시초가부터 반영되므로 해당 없음)
+    off = ts.time() > time(15, 30) or ts.date().isoformat() not in days
     out = {"reaction_day": d0, "minute": None, "daily": None, "verdict": None, "verdict_cls": "none",
-           "notes": []}
+           "notes": [], "off_session": bool(d0) and off, "base_ts": ts.isoformat(timespec="minutes"),
+           "disclosure": {"ts": disc["ts"], "title": disc["title"], "kind": disc["kind"]} if disc else None}
     peers = _peer_codes()
 
     # 분봉 반응 (최근 기록이 있을 때)
@@ -377,7 +507,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "") -> dict
                     for k in ("d0", "d1", "d3")} if len(pp) >= 2 else {}
             bench = pavg if pavg else kq
             out["daily"] = {
-                **{k: own.get(k) for k in ("d0", "d1", "d3", "vol_ratio", "volume", "prev_close")},
+                **{k: own.get(k) for k in ("d0", "d1", "d3", "vol_ratio", "volume", "prev_close", "gap")},
                 "kosdaq": {k: kq.get(k) for k in ("d0", "d1", "d3")},
                 "peers": pavg,
                 "excess": {k: (own[k] - bench[k]) if own.get(k) is not None and bench.get(k) is not None else None
@@ -400,19 +530,19 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "") -> dict
 
 
 def _verdict(eff: dict, tone: int, category: str):
-    """판정 순서: (1) 시장·업종 몫을 뺀 고유 몫과 평소 변동폭 대비 크기, (2) 분봉 시간 순서, (3) 단순 초과 반응."""
-    m, d, dc, tm = eff.get("minute"), eff.get("daily"), eff.get("decomp"), eff.get("timing")
+    """모든 기사를 같은 잣대로: 반응일(전일 종가 → 종가) 이 종목 움직임에서 시장·업종 몫을 뺀 고유 반응.
+    분봉(공개 후 N분)은 보조 자료로만 보여주고 판정에는 쓰지 않음.
+    장 시간 밖(장 마감 뒤·주말) 공개는 다음 거래일에 다른 요인이 섞일 수 있어 판정을 한 단계 낮춤."""
+    d, dc = eff.get("daily"), eff.get("decomp")
     vol = d.get("vol_ratio") if d else None
     measure = None
     if dc and dc.get("d0"):
         part = dc["d0"]
-        measure = {"label": "반응일 기사(고유) 몫", "value": part["abnormal"], "z": part.get("z"), "vol_ratio": vol,
+        measure = {"label": "반응일 고유 반응", "value": part["abnormal"], "z": part.get("z"), "vol_ratio": vol,
                    "own": part["own"], "market": part["market"], "sector": part["sector"]}
-    elif m and m.get("excess"):
-        h = "60" if "60" in m["excess"] else max(m["excess"], key=int)
-        measure = {"label": f"공개 후 {h}분 초과 반응", "value": m["excess"][h], "vol_ratio": vol}
     elif d and d["excess"].get("d0") is not None:
-        measure = {"label": "반응일 초과 반응", "value": d["excess"]["d0"], "vol_ratio": vol}
+        measure = {"label": f"반응일 초과 반응 ({d['bench_name']} 대비)", "value": d["excess"]["d0"], "vol_ratio": vol,
+                   "own": d.get("d0")}
     if measure is None:
         return "반응 계산 불가", "none", None
     if category == "시황·특징주":
@@ -422,12 +552,9 @@ def _verdict(eff: dict, tone: int, category: str):
     x, z = measure["value"], measure.get("z")
     strong = abs(x) >= 0.02 and (z is None or abs(z) >= 2)
     weak = abs(x) >= 0.01 and (z is None or abs(z) >= 1)
-    if tm and tm.get("cls") == "lead" and abs(x) >= 0.01:
-        strong = strong or (z is not None and abs(z) >= 1.5)
-        weak = True
-    if tm and tm.get("cls") == "together" and not strong:
-        weak = False
-    if tone and (strong or weak) and x * tone < 0:
+    if eff.get("off_session"):
+        strong, weak = False, strong
+    if tone < 0 and (strong or weak) and x > 0:
         return "기사 방향과 반대로 움직임", "opposite", measure
     if strong:
         return ("뚜렷한 기사 효과 (상승)" if x > 0 else "뚜렷한 기사 효과 (하락)"), ("up" if x > 0 else "down"), measure
@@ -510,34 +637,48 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
             lead["tone"] = best.get("tone") or 0
         lead["outlets_total"] = sum(int(g.get("outlets") or 1) for g in group)
         lead["related_titles"] = [{"ts": g["ts"], "office": g["office"], "title": g["title"], "url": g["url"]} for g in group[1:]]
+        lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
+        lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
         out.append(lead)
+    # 우리 보도자료: 직접 등록했거나, '회사 발표' 기사가 같은 날 3개 매체 이상 실렸으면 (보도자료 배포의 모양)
+    per_day: dict[str, int] = {}
+    for a in out:
+        if a["category"] == "회사 발표":
+            per_day[a["ts"][:10]] = per_day.get(a["ts"][:10], 0) + a["outlets_total"]
+    for a in out:
+        auto = bool(a.get("manual")) or (a["category"] == "회사 발표" and per_day.get(a["ts"][:10], 0) >= 3)
+        a["kind_auto"] = "pr" if auto else "ext"
+        a["kind"] = a.get("kind_override") or a["kind_auto"]
+        # 호재·악재: 보도자료는 표시하지 않고, 외부 기사는 뚜렷한 악재 단어가 있을 때만 '악재'
+        auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in (a["title"] or "") for w in STRONG_NEG) else 0)
+        a["tone"] = a["tone_override"] if a.get("tone_override") is not None else auto_tone
     out.sort(key=lambda a: a["ts"], reverse=True)
+    return out
+
+
+def group_events(items: list[dict]) -> list[dict]:
+    """같은 반응일의 기사들은 주가 반응을 나눌 수 없으므로 한 사건으로 묶음 (통계도 사건 수 기준).
+    items: api가 만든 기사 목록 (effect 포함). 대표는 우리 보도자료 → 가장 먼저 나온 기사 순."""
+    by_day: dict[str, list[dict]] = {}
+    for a in items:
+        day = (a.get("effect") or {}).get("reaction_day") or f"x{a['id']}"
+        by_day.setdefault(day, []).append(a)
+    out = []
+    for day, g in by_day.items():
+        g.sort(key=lambda a: a["ts"])
+        main = [a for a in g if a["category"] not in ("단순 언급", "시황·특징주")] or g
+        lead = next((a for a in main if a["kind"] == "pr"), main[0])
+        out.append({"day": None if day.startswith("x") else day, "lead": lead["id"],
+                    "kind": "pr" if any(a["kind"] == "pr" for a in main) else "ext",
+                    "ids": [a["id"] for a in g], "outlets": sum(a.get("outlets_total") or 1 for a in main),
+                    "n_pr": sum(1 for a in main if a["kind"] == "pr"),
+                    "noise": all(a["category"] in ("단순 언급", "시황·특징주") for a in g)})
+    out.sort(key=lambda e: max(a["ts"] for a in by_day[e["day"] or f"x{e['lead']}"]), reverse=True)
     return out
 
 
 def find(symbol: str, art_id: str) -> dict | None:
     return next((a for a in article_rows(symbol, include_hidden=True) if a["id"] == art_id), None)
-
-
-def summarize(rows: list[dict]) -> list[dict]:
-    """유형별 평균 반응."""
-    out = []
-    for cat in CATEGORIES:
-        g = [r for r in rows if r["category"] == cat and r.get("effect") and r["effect"].get("measure")]
-        n_all = len([r for r in rows if r["category"] == cat])
-        if not n_all:
-            continue
-        xs = [r["effect"]["measure"]["value"] for r in g]
-        pos = [r["effect"]["measure"]["value"] for r in g if r["tone"] > 0]
-        neg = [r["effect"]["measure"]["value"] for r in g if r["tone"] < 0]
-        strong = len([r for r in g if r["effect"]["verdict_cls"] in ("up", "down")])
-        out.append({"category": cat, "count": n_all, "measured": len(g),
-                    "avg": sum(xs) / len(xs) if xs else None,
-                    "avg_abs": sum(abs(v) for v in xs) / len(xs) if xs else None,
-                    "pos_avg": sum(pos) / len(pos) if pos else None, "pos_n": len(pos),
-                    "neg_avg": sum(neg) / len(neg) if neg else None, "neg_n": len(neg),
-                    "strong": strong})
-    return out
 
 
 def before_event(symbol: str, t_start: datetime, t_end: datetime) -> dict:
@@ -555,7 +696,7 @@ def before_event(symbol: str, t_start: datetime, t_end: datetime) -> dict:
     lead.sort(key=lambda a: a["ts"], reverse=True)
     out_lead = []
     for a in lead[:4]:
-        eff = effect(symbol, datetime.fromisoformat(a["ts"]), a["tone"], a["category"])
+        eff = effect(symbol, datetime.fromisoformat(a["ts"]), a["tone"], a["category"], a["title"])
         out_lead.append({**{k: a.get(k) for k in ("id", "ts", "office", "title", "url", "category", "tone",
                                                    "outlets_total", "manual")},
                          "verdict": eff["verdict"], "verdict_cls": eff["verdict_cls"], "measure": eff.get("measure"),

@@ -91,6 +91,16 @@ def apply_inbox(item: dict, log):
             aid = str(item.get("id") or "")
             conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if t == "hide" else 0, aid, aid))
             log.info("사이트에서 기사 %s: %s", "빼기" if t == "hide" else "다시 표시", aid)
+        elif t == "article_kind":               # 우리 보도자료(pr) / 외부 기사(ext) / 자동(auto)
+            aid, kind = str(item.get("id") or ""), item.get("kind")
+            val = kind if kind in ("pr", "ext") else None
+            conn.execute("UPDATE articles SET kind_override=? WHERE id=? OR story=?", (val, aid, aid))
+            log.info("사이트에서 기사 구분 변경: %s → %s", aid, val or "자동")
+        elif t == "article_tone":               # 악재(-1) / 표시 안 함(0) / 자동(auto)
+            aid, tone = str(item.get("id") or ""), item.get("tone")
+            val = int(tone) if tone in (-1, 0, "-1", "0") else None
+            conn.execute("UPDATE articles SET tone_override=? WHERE id=? OR story=?", (val, aid, aid))
+            log.info("사이트에서 기사 악재 표시 변경: %s → %s", aid, "자동" if val is None else val)
         elif t == "analyze":
             from core.detector import requested_event
             day = str(item.get("date") or "")[:10]

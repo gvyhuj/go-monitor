@@ -373,10 +373,10 @@ def _data_stamp(sym):
 
 
 def _effect_cached(sym, a, stamp):
-    key = (a["id"], a["ts"], a["category"], a["tone"], stamp)
+    key = (a["id"], a["ts"], a["category"], a["tone"], a["title"], stamp)
     hit = _EFF_CACHE.get(key)
     if hit is None:
-        hit = articles.effect(sym, datetime.fromisoformat(a["ts"]), a["tone"], a["category"])
+        hit = articles.effect(sym, datetime.fromisoformat(a["ts"]), a["tone"], a["category"], a["title"])
         if len(_EFF_CACHE) > 3000:
             _EFF_CACHE.clear()
         _EFF_CACHE[key] = hit
@@ -397,15 +397,17 @@ def api_articles(q):
             continue
         e = _effect_cached(sym, a, stamp)
         out.append({**{k: a.get(k) for k in ("id", "ts", "office", "title", "url", "category", "tone", "mention",
-                                              "outlets_total", "manual", "hidden")},
+                                              "outlets_total", "manual", "hidden", "kind", "kind_auto")},
                     "n_related": len(a.get("related_titles") or []),
-                    "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure")},
+                    "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session",
+                                                     "disclosure")},
+                    "gap": (e.get("daily") or {}).get("gap"),
                     "d0_excess": ((e.get("daily") or {}).get("excess") or {}).get("d0"),
                     "m60_excess": ((e.get("minute") or {}).get("excess") or {}).get("60")})
-    summary = articles.summarize(out) if not limit else None
+    events = articles.group_events(out) if not limit else None
     with connect() as conn:
         first = conn.execute("SELECT MIN(date) FROM daily_bars WHERE symbol=?", (sym,)).fetchone()[0]
-    return {"items": out, "summary": summary, "categories": articles.CATEGORIES, "daily_since": first}
+    return {"items": out, "events": events, "categories": articles.CATEGORIES, "daily_since": first}
 
 
 def api_article_detail(q, aid):
@@ -414,7 +416,7 @@ def api_article_detail(q, aid):
     a = articles.find(sym, aid)
     if not a:
         raise LookupError("해당 기사를 찾을 수 없습니다.")
-    e = articles.effect(sym, datetime.fromisoformat(a["ts"]), a["tone"], a["category"])
+    e = articles.effect(sym, datetime.fromisoformat(a["ts"]), a["tone"], a["category"], a["title"])
     conf = articles.confounders(sym, e, a["id"], a.get("story"))
     out = {"article": a, "effect": e, "confounders": conf}
     m = e.get("minute")
