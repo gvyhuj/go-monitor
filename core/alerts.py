@@ -63,9 +63,10 @@ def _site() -> str:
     return f"https://{owner.lower()}.github.io/{name}/"
 
 
-def _body(extra: str = "") -> str:
+def _body(extra: str = "", event_id: int | None = None) -> str:
     owner = os.environ.get("GITHUB_REPOSITORY_OWNER") or os.environ.get("GITHUB_REPOSITORY", "/").split("/")[0]
-    return (f"@{owner} {extra}\n\n원인 분석은 사이트에서 확인하세요: {_site()}\n\n"
+    link = f"{_site()}#/events/{event_id}" if event_id and _site() else _site()   # 누르면 그 이상변동 상세가 바로 열림
+    return (f"@{owner} {extra}\n\n원인 분석은 사이트에서 확인하세요: {link}\n\n"
             "_자동 알림입니다. 이 글은 알림용이라 바로 닫힙니다._")
 
 
@@ -115,7 +116,7 @@ def send_new(symbol: str, log=None) -> int:
         title = f"{word} {mv*100:+.1f}% ({when})" + (" · 대형" if tier == "대형" else "")
         try:
             _post_issue(title, _body(f"주가가 {'장중 전일 종가 대비' if running else e['start_ts'][11:16] + '부터' if e['event_type'] != 'daily' else '하루 동안'} "
-                                      f"{mv*100:+.1f}% 움직였습니다."))
+                                      f"{mv*100:+.1f}% 움직였습니다.", e.get("id")))
             sent.add(key)
             if tier == "대형":
                 sent.add(f"{e['start_ts'][:10]}:{e['direction']}:일반{sfx}")
