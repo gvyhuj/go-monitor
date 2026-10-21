@@ -110,3 +110,25 @@ def test_inbox_accepts_cause_and_gzip():
     got = ghinbox.parse(issue, unseal=lambda _b: unseal(raw))
     assert got["type"] == "cause" and len(got["body"]) == 3000
     assert cloud_job._unzip(b'{"a":1}') == b'{"a":1}'
+
+
+@pytest.mark.parametrize("body, want, conf", [
+    ("종합판단\n시장 급락과 방산주 약세가 주된 배경입니다.\n- 근거", "시장 급락과 방산주 약세가 주된 배경입니다.", None),
+    ("■ 그린광학 주가 변동 원인 분석 (2026.10.12)\n\n외국인 매도가 하락을 이끌었습니다.", "외국인 매도가 하락을 이끌었습니다.", None),
+    ("한 줄 요약 (신뢰도 중간) 시장 급락과 반도체 약세가 배경입니다.\n본문", "시장 급락과 반도체 약세가 배경입니다.", "중간"),
+    ("**한 줄 요약 (신뢰도 높음)**\n공급계약 공시가 직접 원인입니다.", "공급계약 공시가 직접 원인입니다.", "높음"),
+])
+def test_summary_skips_title_lines(body, want, conf):
+    m = {"headline": None, "body": body}
+    assert manual.summary(m) == want
+    assert manual.confidence(m) == conf
+
+
+def test_headline_drops_confidence_text():
+    m = {"headline": "외국계 차익실현 (신뢰도 중간)", "body": "x"}
+    assert manual.summary(m) == "외국계 차익실현" and manual.confidence(m) == "중간"
+
+
+def test_headline_drops_summary_label():
+    m = {"headline": "한 줄 요약 (신뢰도 중간) 시장 급락이 배경입니다.", "body": "x"}
+    assert manual.summary(m) == "시장 급락이 배경입니다." and manual.confidence(m) == "중간"

@@ -38,19 +38,55 @@ def find(conn, ev: dict) -> dict | None:
     return {**dict(r), "inherited": False} if r else None
 
 
+_CONF_RE = re.compile(r"[(\[（]?\s*신뢰도\s*[:：]?\s*(높음|중간|낮음)\s*[)\]）]?")
+_SUMMARY_LABEL = re.compile(r"^(한\s*줄\s*요약|요약|결론|종합\s*판단|종합)\s*[:：\-–—]?\s*")
+
+
+def _clean(ln: str) -> str:
+    t = re.sub(r"^[>*\-•■□▶▷◆◇●○※\s\d.)]+", "", ln)
+    return re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t).replace("**", "").strip()
+
+
+def _is_title(t: str) -> bool:
+    """'종합판단', '그린광학 주가 변동 원인 분석 (2026.10.12)'처럼 내용 없는 제목 줄"""
+    if len(t) <= 8 and not re.search(r"[.다요음]$", t):
+        return True
+    return bool(re.search(r"원인\s*분석", t) and re.search(r"\d{4}[.\-/]\s*\d{1,2}", t))
+
+
 def summary(m: dict | None) -> str | None:
-    """목록에 보일 한 줄: 입력한 요약 → 없으면 본문에서 제목(#)이 아닌 첫 줄(마크다운 기호 정리, 80자)."""
+    """목록에 보일 한 줄: 입력한 요약 → 없으면 본문의 '한 줄 요약' 줄 → 제목 줄을 건너뛴 첫 문장 (80자).
+    신뢰도 표시는 confidence()로 따로 보여 주므로 뺌."""
     if not m:
         return None
     if (m.get("headline") or "").strip():
-        return m["headline"].strip()[:120]
-    for ln in (m.get("body") or "").splitlines():
-        if re.match(r"^\s*#", ln):
-            continue
-        t = re.sub(r"^[>*\-•\s\d.)]+", "", ln)
-        t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t).replace("**", "").strip()
-        if t:
-            return t[:80] + ("…" if len(t) > 80 else "")
+        t = _CONF_RE.sub("", m["headline"].replace("**", "")).strip()
+        t = _SUMMARY_LABEL.sub("", t).strip() or t
+        return t[:120] or None
+    lines = [ln for ln in (m.get("body") or "").splitlines() if not re.match(r"^\s*#", ln)]
+    cleaned = [_clean(ln) for ln in lines]
+    pick = None
+    for i, t in enumerate(cleaned):                 # 'ChatGPT에게 묻기'는 첫 줄을 '한 줄 요약 (신뢰도 …)'로 달라고 함
+        if re.match(r"^한\s*줄\s*요약", t):
+            rest = _SUMMARY_LABEL.sub("", _CONF_RE.sub("", t)).strip(" :：")
+            pick = rest or next((x for x in cleaned[i + 1:] if x), None)
+            break
+    if pick is None:
+        pick = next((x for x in cleaned if x and not _is_title(x)), None) or next((x for x in cleaned if x), None)
+    if not pick:
+        return None
+    pick = _SUMMARY_LABEL.sub("", _CONF_RE.sub("", pick)).strip()
+    return pick[:80] + ("…" if len(pick) > 80 else "") if pick else None
+
+
+def confidence(m: dict | None) -> str | None:
+    """요약·본문 앞부분에 적힌 '신뢰도 높음/중간/낮음'"""
+    if not m:
+        return None
+    for src in (m.get("headline") or "", "\n".join((m.get("body") or "").splitlines()[:6])):
+        x = _CONF_RE.search(src)
+        if x:
+            return x.group(1)
     return None
 
 

@@ -123,7 +123,7 @@ def event_rows(symbol: str, d_from: str | None, d_to: str | None, kind: str | No
         out.append({
             "cause_headline": manual.summary(mc),
             "cause_label": None,
-            "cause_confidence": None,
+            "cause_confidence": manual.confidence(mc),
             "cause_summary": None,
             "manual": {k: v for k, v in mc.items() if k != "body"} if mc else None,   # 본문은 상세 화면에서만
             "cause_stage": r.get("cause_stage"),
