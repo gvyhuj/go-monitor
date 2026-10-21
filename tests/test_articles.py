@@ -182,3 +182,19 @@ def test_day_split_winsorized_betas_ignore_one_huge_day(tmpdb):
         last = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol='X'").fetchone()[0]
     sp = causal.day_split("X", last)
     assert abs(sp["beta_market"] - 1.0) < 0.25          # 거대한 하루에 끌려가지 않음 (안 누르면 약 2.1)
+
+
+def test_manual_duplicate_of_crawled_article_removed_once(tmpdb):
+    with db.connect() as conn:
+        conn.execute("INSERT INTO pr_events(title, published_ts, url, pr_type) VALUES (?,?,?,?)",
+                     (f"{NAME}, 인도 위성군에 광학미러 공급", "2026-10-06T09:10", "", "직접 등록"))
+        conn.execute("INSERT INTO pr_events(title, published_ts, url, pr_type) VALUES (?,?,?,?)",
+                     (f"{NAME}, 아직 기사 안 난 보도자료", "2026-10-07T09:00", "", "직접 등록"))
+        _art(conn, "n1", "2026-10-06T09:09", f"{NAME}, 인도 위성군에 광학미러 공급")
+    assert articles.drop_manual_duplicates("X") == 1
+    with db.connect() as conn:
+        left = [r[0] for r in conn.execute("SELECT title FROM pr_events")]
+    assert left == [f"{NAME}, 아직 기사 안 난 보도자료"]
+    rows = articles.article_rows("X")
+    assert not any(a.get("manual") and "광학미러" in a["title"] for a in rows)
+    assert articles.drop_manual_duplicates("X") == 0          # 한 번만

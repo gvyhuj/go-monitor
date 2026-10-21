@@ -212,6 +212,26 @@ def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, lo
     return n
 
 
+def drop_manual_duplicates(code: str) -> int:
+    """한 번만: 직접 등록한 기사 중 자동으로 모은 기사와 같은 기사(주소나 제목이 같음)를 지움.
+    (이후 새로 생기는 중복은 사이트의 '중복이라 삭제' 버튼으로 지움)"""
+    from .db import get_state, set_state
+    if get_state("articles:pr_dedupe_v1"):
+        return 0
+    n = 0
+    with connect() as conn:
+        prs = [dict(r) for r in conn.execute("SELECT id, title, url FROM pr_events")]
+        arts = [dict(r) for r in conn.execute("SELECT title, url FROM articles WHERE symbol=?", (code,))]
+        ku = lambda u: (re.search(r"/article/(\d+)/(\d+)", u or "") or [None])[0] or (u or "").split("?")[0].rstrip("/")
+        kt = lambda t: re.sub(r"[^0-9A-Za-z가-힣]", "", t or "")[:40]
+        for p in prs:
+            if any((p["url"] and ku(a["url"]) == ku(p["url"])) or (kt(p["title"]) and kt(a["title"]) == kt(p["title"]))
+                   for a in arts):
+                n += conn.execute("DELETE FROM pr_events WHERE id=?", (p["id"],)).rowcount
+    set_state("articles:pr_dedupe_v1", datetime.now().isoformat(timespec="minutes"))
+    return n
+
+
 def sync_articles(code: str, pages: int = 1) -> int:
     reclassify(code)
     n = 0
@@ -226,6 +246,7 @@ def sync_articles(code: str, pages: int = 1) -> int:
             break
         n += _save(code, items, "naver")
     group_stories(code)
+    drop_manual_duplicates(code)
     try:
         n += sync_google(code)
     except Exception as e:      # noqa: BLE001 - 구글이 막혀도 네이버 수집은 그대로
@@ -640,7 +661,8 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         # 실린 매체 수: 네이버 묶음 수(링크는 대표 1개뿐)와 실제로 모은 매체 수 중 큰 값 (더하면 같은 매체를 두 번 셈)
         lead["outlets_total"] = max(max(int(g.get("outlets") or 1) for g in group),
                                     len({_key_office(g.get("office")) for g in group}))
-        lead["related_titles"] = [{"ts": g["ts"], "office": g["office"], "title": g["title"], "url": g["url"]} for g in group[1:]]
+        lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "ts": g["ts"], "office": g["office"],
+                                   "title": g["title"], "url": g["url"]} for g in group[1:]]
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
         lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
         out.append(lead)

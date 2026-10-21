@@ -91,6 +91,10 @@ def apply_inbox(item: dict, log):
             aid = str(item.get("id") or "")
             conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if t == "hide" else 0, aid, aid))
             log.info("사이트에서 기사 %s: %s", "빼기" if t == "hide" else "다시 표시", aid)
+        elif t == "hide_one":                   # 중복으로 두 번 들어온 기사 중 이 한 줄만 숨김 (같은 묶음의 다른 기사는 그대로)
+            aid = str(item.get("id") or "")
+            conn.execute("UPDATE articles SET hidden=1 WHERE id=?", (aid,))
+            log.info("사이트에서 중복 기사 숨김: %s", aid)
         elif t == "article_kind":               # 우리 보도자료(pr) / 외부 기사(ext) / 자동(auto)
             aid, kind = str(item.get("id") or ""), item.get("kind")
             val = kind if kind in ("pr", "ext") else None
