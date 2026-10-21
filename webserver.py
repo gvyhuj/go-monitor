@@ -401,7 +401,7 @@ def api_articles(q):
                     "n_related": len(a.get("related_titles") or []),
                     "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session",
                                                      "disclosure")},
-                    "gap": (e.get("daily") or {}).get("gap"),
+                    "gap": (e.get("daily") or {}).get("gap"), "vol_rank": (e.get("daily") or {}).get("vol_rank"),
                     "d0_excess": ((e.get("daily") or {}).get("excess") or {}).get("d0"),
                     "m60_excess": ((e.get("minute") or {}).get("excess") or {}).get("60")})
     events = articles.group_events(out) if not limit else None

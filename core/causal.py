@@ -144,6 +144,66 @@ def window_rarity(symbol: str, t_end: datetime, minutes: int, move: float) -> di
     return {"ok": True, "p": p, "n": len(null), "sd": sd, "z": (move / sd) if sd else 0.0}
 
 
+def _prev_closes(code: str, lo: str, hi: str) -> dict:
+    """{날짜: 그 전 거래일 종가}"""
+    rows = _daily(code, lo, hi)
+    return {rows[i][0]: rows[i - 1][2] for i in range(1, len(rows)) if rows[i - 1][2]}
+
+
+def _by_day(rows) -> dict:
+    out = {}
+    for ts_, c in rows:
+        out.setdefault(ts_.date(), []).append((ts_, c))
+    return out
+
+
+def abnormal_rarity(symbol: str, day: date, move: float, beta_m: float, minutes: int | None = 60,
+                    until=None, lookback_days: int = 45) -> dict | None:
+    """기사 반응(시장 몫을 뺀 고유 움직임)이 평소 같은 구간의 '시장 몫을 뺀' 움직임에 비해 얼마나 드문지.
+
+    minutes가 있으면 장중 겹치지 않는 minutes분 구간들, minutes=None이면 날마다 '전일 종가 → until 시각'
+    (장 시작 전 기사용). 비교 대상도 같은 계수(β시장)로 KOSDAQ 몫을 빼서 기준을 맞춤.
+    """
+    lo = (day - timedelta(days=lookback_days)).isoformat()
+    hi = day.isoformat() + "T00:00"
+    own, kq = _by_day(_minutes(symbol, lo, hi)), _by_day(_minutes(KOSDAQ, lo, hi))
+    null = []
+    if minutes is None:
+        pc_o, pc_k = _prev_closes(symbol, lo, day.isoformat()), _prev_closes(KOSDAQ, lo, day.isoformat())
+        for d, rs in own.items():
+            ds = d.isoformat()
+            t = datetime.combine(d, until)
+            a, b = _price_at(rs, t), _price_at(kq.get(d, []), t)
+            if a and b and pc_o.get(ds) and pc_k.get(ds):
+                null.append((a / pc_o[ds] - 1) - beta_m * (b / pc_k[ds] - 1))
+    else:
+        for d, rs in own.items():
+            ks = kq.get(d, [])
+            st = datetime.combine(d, datetime.min.time()) + timedelta(hours=9)
+            k = st
+            while k + timedelta(minutes=minutes) <= st + timedelta(hours=6, minutes=20):
+                x, y = _price_at(rs, k), _price_at(rs, k + timedelta(minutes=minutes))
+                u, v = _price_at(ks, k), _price_at(ks, k + timedelta(minutes=minutes))
+                if x and y and u and v:
+                    null.append((y / x - 1) - beta_m * (v / u - 1))
+                k += timedelta(minutes=minutes)
+    if len(null) < 20:
+        return {"ok": False, "reason": "비교할 평소 분봉 기록이 부족합니다."}
+    p = (1 + sum(1 for x in null if abs(x) >= abs(move))) / (1 + len(null))
+    return {"ok": True, "p": p, "n": len(null)}
+
+
+def window_return(code: str, day: date, until, start: datetime | None = None) -> float | None:
+    """그날 until 시각 가격의 등락: start가 없으면 전일 종가 대비, 있으면 start 시각 가격 대비."""
+    rows = _minutes(code, day.isoformat() + "T00:00", day.isoformat() + "T23:59")
+    b = _price_at(rows, datetime.combine(day, until) if not isinstance(until, datetime) else until)
+    if start is None:
+        a = _prev_closes(code, (day - timedelta(days=10)).isoformat(), day.isoformat()).get(day.isoformat())
+    else:
+        a = _price_at(rows, start)
+    return b / a - 1 if a and b else None
+
+
 def narrow_window(symbol: str, ts: str, minutes: int = 30) -> dict | None:
     """발표 직후 움직임이 평소 같은 길이 구간보다 얼마나 드문지 (경험적 p값)."""
     t = datetime.fromisoformat(ts[:16])
@@ -241,6 +301,7 @@ def _segment_rets(lo: str, hi: str) -> dict[str, dict]:
     return out
 
 
+WINSOR_K = 4.0      # 민감도 추정 때 값을 누르는 범위 (중앙값 ± 4×MAD)
 RIDGE_OBS = 30.0     # 분야 계수 축소 강도 (기록 60일이면 약 2/3, 120일이면 약 4/5로 줄어듦)
 
 
@@ -272,21 +333,32 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
     est = [d for d in est_all if all(d in f[1] for f in facs)]
     out = {"n_obs": len(est), "window": [est[0], est[-1]] if est else None}
     if len(est) >= 40:
-        m = np.array([mkt[d] for d in est])
-        resid, slopes = [], []
+        # 민감도는 큰 사건 날(±16% 같은 날)에 끌려가지 않게, 추정할 때만 값을 중앙값 ± 4×MAD 안으로 눌러서(윈저화) 구함
+        def w(x):
+            x = np.asarray(x, dtype=float)
+            med = np.median(x)
+            mad = 1.4826 * np.median(np.abs(x - med)) or float(np.std(x)) or 1.0
+            return np.clip(x, med - WINSOR_K * mad, med + WINSOR_K * mad)
+        m_raw = np.array([mkt[d] for d in est])
+        m = w(m_raw)
+        resid, resid_raw, slopes = [], [], []
         for _, r, _ in facs:                     # 분야에서 시장과 겹치는 부분을 뺌 (분야만의 움직임)
-            y = np.array([r[d] for d in est])
+            y_raw = np.array([r[d] for d in est])
+            y = w(y_raw)
             b = float(m @ y / (m @ m)) if m @ m else 0.0
             slopes.append(b)
             resid.append(y - b * m)
-        yo = np.array([own[d] for d in est])
+            resid_raw.append(y_raw - b * m_raw)
+        yo_raw = np.array([own[d] for d in est])
+        yo = w(yo_raw)
         # 분야는 표준화한 뒤 릿지(시장 계수는 축소하지 않음): 관측 RIDGE_OBS개만큼의 '0일 것'이라는 사전 믿음
         scale = [float(np.std(r)) or 1.0 for r in resid]
         Z = np.column_stack([m] + [r / sc for r, sc in zip(resid, scale)])
         pen = np.diag([0.0] + [RIDGE_OBS] * len(resid))
         cz = np.linalg.solve(Z.T @ Z + pen, Z.T @ yo)
         coef = np.array([cz[0]] + [cz[1 + i] / scale[i] for i in range(len(resid))])
-        res = yo - Z @ cz
+        # 평소 고유 움직임(σ·얼마나 드문가 비교용)은 누르지 않은 실제 값으로
+        res = yo_raw - np.column_stack([m_raw] + resid_raw) @ coef
         sigma = float(1.4826 * np.median(np.abs(res - np.median(res))))
         out.update({"method": "분야별 회귀", "beta_market": float(coef[0]), "sigma": sigma})
         betas = [float(c) for c in coef[1:]]

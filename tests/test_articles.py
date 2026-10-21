@@ -133,3 +133,52 @@ def test_verdict_uses_empirical_rarity_and_60min_thresholds():
     assert v(0.03, 0.30)[1] == "flat"           # z가 커도 평소 기록상 흔하면 효과 없음
     m = v(0.012, 0.02, "60분")
     assert m[1] == "up" and m[2]["basis"] == "60분"
+
+
+def test_abnormal_rarity_market_adjusted_and_premarket(tmpdb):
+    """평소 같은 구간도 시장 몫을 빼고 비교: 시장과 같이 크게 움직인 날은 '드문 고유 움직임'이 아님."""
+    from datetime import date, datetime, timedelta
+    import numpy as np
+    from core import causal
+    rng = np.random.default_rng(3)
+    d = date(2026, 9, 1)
+    px, kq = 10000.0, 800.0
+    with db.connect() as conn:
+        for _ in range(40):
+            while d.weekday() >= 5:
+                d += timedelta(days=1)
+            for code, base in (("X", px), ("KOSDAQ", kq)):
+                conn.execute("INSERT INTO daily_bars(symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,?)",
+                             (code, d.isoformat(), base, base, base, base, 1000))
+            mk = rng.normal(0, 0.01)                       # 시장이 크게 움직이고 이 종목은 1.5배로 따라감
+            for i in range(0, 391, 10):
+                t = datetime.combine(d, datetime.min.time()) + timedelta(hours=9, minutes=i)
+                f = (i / 390)
+                conn.execute("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                             ("KOSDAQ", t.isoformat(timespec="minutes"), 0, 0, 0, kq * (1 + mk * f), 0, "t"))
+                conn.execute("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                             ("X", t.isoformat(timespec="minutes"), 0, 0, 0, px * (1 + 1.5 * mk * f + rng.normal(0, 0.0005)), 0, "t"))
+            d += timedelta(days=1)
+    day = d + timedelta(days=(7 - d.weekday()) % 7 if d.weekday() >= 5 else 0)
+    from datetime import time as _t
+    big = causal.abnormal_rarity("X", day, 0.03, 1.5, minutes=60)
+    small = causal.abnormal_rarity("X", day, 0.0005, 1.5, minutes=60)
+    assert big["ok"] and big["p"] < 0.02 and small["p"] > 0.3
+    pre = causal.abnormal_rarity("X", day, 0.03, 1.5, minutes=None, until=_t(10, 0))
+    assert pre["ok"] and pre["p"] < 0.1
+
+
+def test_day_split_winsorized_betas_ignore_one_huge_day(tmpdb):
+    import numpy as np
+    from core import causal
+    rng = np.random.default_rng(5)
+    n = 150
+    mkt = rng.normal(0, 0.01, n)
+    own = 1.0 * mkt + rng.normal(0, 0.005, n)
+    own[60] = 0.30; mkt[60] = 0.05                    # 추정 기간 안의 거대한 하루 (상한가 + 시장 급등)
+    for code, r in (("X", own), ("KOSDAQ", mkt)):
+        _series(code, r)
+    with db.connect() as conn:
+        last = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol='X'").fetchone()[0]
+    sp = causal.day_split("X", last)
+    assert abs(sp["beta_market"] - 1.0) < 0.25          # 거대한 하루에 끌려가지 않음 (안 누르면 약 2.1)

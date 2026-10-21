@@ -291,7 +291,7 @@ def reaction_day(ts: datetime, days: list[str]) -> str | None:
 
 def _ret_path(symbol: str, d0: str, n_after: int = 3):
     """반응일 전 종가 대비 D0, D+1, D+3 누적 변화율과 거래량 배수."""
-    rows = _daily(symbol, (date.fromisoformat(d0) - timedelta(days=45)).isoformat(),
+    rows = _daily(symbol, (date.fromisoformat(d0) - timedelta(days=100)).isoformat(),
                   (date.fromisoformat(d0) + timedelta(days=12)).isoformat())
     idx = next((i for i, r in enumerate(rows) if r["date"] == d0), None)
     if idx is None or idx == 0:
@@ -304,6 +304,9 @@ def _ret_path(symbol: str, d0: str, n_after: int = 3):
         out[k] = rows[j]["close"] / prev - 1 if j < len(rows) and prev else None
     vols = [r["volume"] for r in rows[max(0, idx - 20):idx] if r["volume"]]
     out["vol_ratio"] = rows[idx]["volume"] / (sum(vols) / len(vols)) if vols and rows[idx]["volume"] else None
+    # 거래량이 얼마나 드문가: 직전 60거래일 중 이날 이상 거래된 날의 비율 (시장의 관심 정도)
+    past = [r["volume"] for r in rows[max(0, idx - 60):idx] if r["volume"]]
+    out["vol_rank"] = (1 + sum(1 for v in past if v >= rows[idx]["volume"])) / (1 + len(past))         if len(past) >= 20 and rows[idx]["volume"] else None
     out["volume"] = rows[idx]["volume"]
     return out
 
@@ -449,7 +452,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
                     for k in ("d0", "d1", "d3")} if len(pp) >= 2 else {}
             bench = pavg if pavg else kq
             out["daily"] = {
-                **{k: own.get(k) for k in ("d0", "d1", "d3", "vol_ratio", "volume", "prev_close", "gap")},
+                **{k: own.get(k) for k in ("d0", "d1", "d3", "vol_ratio", "vol_rank", "volume", "prev_close", "gap")},
                 "kosdaq": {k: kq.get(k) for k in ("d0", "d1", "d3")},
                 "peers": pavg,
                 "excess": {k: (own[k] - bench[k]) if own.get(k) is not None and bench.get(k) is not None else None
@@ -467,24 +470,29 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
             out["timing"] = timing(symbol, datetime.fromisoformat(out["minute"]["reaction_start"]), peers)
         except Exception as e:
             out["notes"].append(f"시간 순서 계산 실패: {e}")
-    # 장중(09:00~14:00) 기사이고 분봉이 있으면: 공개 후 60분을 하루와 같은 계수로 나눔 (그날 오후 다른 일이 섞이지 않게)
+    # 짧은 구간으로 판정 (그날 오후 다른 일이 섞이지 않게), 하루와 같은 계수로 나눔
+    #  - 장중(09:00~14:00) 기사: 공개 후 60분
+    #  - 장 시작 전(같은 날 09:00 전) 기사: 전일 종가 → 10:00 (밤사이 반영되는 시초가 + 개장 1시간)
     dc = out.get("decomp")
-    if r.ok and 60 in (r.returns or {}) and not off and not late and dc and dc.get("method") != "단순" \
-            and time(9, 0) <= ts.time() < time(14, 0):
+    if d0 and not off and not late and dc and dc.get("method") != "단순":
         try:
-            out["minute60"] = _minute_split(symbol, r, dc)
+            if time(9, 0) <= ts.time() < time(14, 0) and r.ok and 60 in (r.returns or {}):
+                out["minute60"] = _window_split(symbol, dc, r.reaction_start, r.reaction_start + timedelta(minutes=60))
+            elif ts.time() < time(9, 0) and ts.date().isoformat() == d0:
+                out["minute60"] = _window_split(symbol, dc, None, datetime.combine(ts.date(), time(10, 0)))
         except Exception as e:          # noqa: BLE001 - 보조 계산
-            out["notes"].append(f"60분 계산 실패: {e}")
+            out["notes"].append(f"짧은 구간 계산 실패: {e}")
     out["verdict"], out["verdict_cls"], out["measure"] = _verdict(out, tone, category)
     return out
 
 
-def _minute_split(symbol: str, r, dc: dict) -> dict | None:
+def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> dict | None:
+    """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 분야 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
     from . import causal
-    t0 = r.reaction_start
-    t1 = t0 + timedelta(minutes=60)
-    own, kq = r.returns[60], (r.kosdaq_returns or {}).get(60)
-    if kq is None:
+    day = t1.date()
+    ret = lambda code: causal.window_return(code, day, t1.time(), t0)
+    own, kq = ret(symbol), ret(KOSDAQ)
+    if own is None or kq is None:
         return None
     with connect() as conn:
         rel = [dict(x) for x in conn.execute("SELECT code, source FROM related_stocks")]
@@ -492,18 +500,21 @@ def _minute_split(symbol: str, r, dc: dict) -> dict | None:
     for part in dc.get("parts") or []:
         if part.get("kind") != "seg":
             continue
-        ch = [c for c in (_minute_change(x["code"], t0, t1) for x in rel if (x["source"] or "비교 종목") == part["name"])
-              if c is not None]
+        ch = [c for c in (ret(x["code"]) for x in rel if (x["source"] or "비교 종목") == part["name"]) if c is not None]
         if ch:
             sector += part["beta"] * (sum(ch) / len(ch) - part["slope"] * kq)
             used += 1
     market = dc["beta_market"] * kq
     abn = own - market - sector
-    rr = causal.window_rarity(symbol, t1, 60, abn)
-    return {"own": own, "market": market, "sector": sector, "abnormal": abn, "kosdaq": kq,
-            "segments_used": used, "rarity": rr.get("p") if rr and rr.get("ok") else None,
-            "n_null": rr.get("n") if rr and rr.get("ok") else None, "start": t0.isoformat(timespec="minutes")}
-
+    if t0 is None:
+        rr = causal.abnormal_rarity(symbol, day, abn, dc["beta_market"], minutes=None, until=t1.time())
+    else:
+        rr = causal.abnormal_rarity(symbol, day, abn, dc["beta_market"], minutes=int((t1 - t0).total_seconds() // 60))
+    ok = rr and rr.get("ok")
+    return {"own": own, "market": market, "sector": sector, "abnormal": abn, "kosdaq": kq, "segments_used": used,
+            "rarity": rr["p"] if ok else None, "n_null": rr["n"] if ok else None,
+            "start": t0.isoformat(timespec="minutes") if t0 else None, "end": t1.isoformat(timespec="minutes"),
+            "basis": "60분" if t0 else "개장 1시간"}
 
 def _verdict(eff: dict, tone: int, category: str):
     """모든 기사를 같은 잣대로: 반응일(전일 종가 → 종가) 이 종목 움직임에서 시장·업종 몫을 뺀 고유 반응.
@@ -525,8 +536,9 @@ def _verdict(eff: dict, tone: int, category: str):
                    "value": d["excess"][k], "vol_ratio": vol, "own": d.get(k), "basis": "2일" if two else "하루"}
     m60 = eff.get("minute60")
     if m60 and m60.get("abnormal") is not None:          # 장중 기사: 공개 후 60분 고유 반응이 기사 효과에 더 가까움
-        measure = {"label": "공개 후 60분 고유 반응", "value": m60["abnormal"], "rarity": m60.get("rarity"),
-                   "n_null": m60.get("n_null"), "basis": "60분", "vol_ratio": vol, "own": m60["own"],
+        pre = m60.get("basis") == "개장 1시간"
+        measure = {"label": "전일 종가→10:00 고유 반응" if pre else "공개 후 60분 고유 반응", "value": m60["abnormal"],
+                   "rarity": m60.get("rarity"), "n_null": m60.get("n_null"), "basis": m60.get("basis", "60분"), "vol_ratio": vol, "own": m60["own"],
                    "market": m60["market"], "sector": m60["sector"]}
     if measure is None:
         return "반응 계산 불가", "none", None
@@ -536,7 +548,7 @@ def _verdict(eff: dict, tone: int, category: str):
         return "이름만 언급된 기사 (효과 판단 제외)", "mention", measure
     # 얼마나 드문지: 평소 같은 길이 고유 움직임 중 이번 이상이 상위 5% 안이면 뚜렷, 15% 안이면 약함
     x, z, rr = measure["value"], measure.get("z"), measure.get("rarity")
-    big, mid = (0.01, 0.005) if measure.get("basis") == "60분" else (0.02, 0.01)
+    big, mid = {"60분": (0.01, 0.005), "개장 1시간": (0.015, 0.0075)}.get(measure.get("basis"), (0.02, 0.01))
     if rr is not None:
         strong, weak = abs(x) >= big and rr <= 0.05, abs(x) >= mid and rr <= 0.15
     else:

@@ -1534,7 +1534,7 @@
     loadPR(current, curEv ? curEv.ids.filter((x) => x !== current && byId.has(x)).map((x) => byId.get(x)) : []);
   }
 
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : "k-ext"}">${a.kind === "pr" ? "우리 보도자료" : "외부 기사"}</span>`;
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : "k-ext"}">${a.kind === "pr" ? "우리 보도자료" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two) {
@@ -1580,7 +1580,8 @@
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
     html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
       <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
-      ${e.measure && e.measure.rarity != null ? `<div class="vb-note">${rarityTxt(e.measure.rarity, e.measure.n_null, e.measure.basis === "60분" ? "60분 움직임" : e.measure.basis === "2일" ? "2일 고유 움직임" : "하루 고유 움직임")}.</div>` : ""}
+      ${e.measure && e.measure.rarity != null ? `<div class="vb-note">${rarityTxt(e.measure.rarity, e.measure.n_null, { "60분": "60분 고유 움직임", "개장 1시간": "전일 종가→10:00 고유 움직임", "2일": "2일 고유 움직임" }[e.measure.basis] || "하루 고유 움직임")}.</div>` : ""}
+      ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 우리 보도자료)
     if (!a.manual) {
@@ -1598,11 +1599,11 @@
       const r6 = [["이 종목 실제 변동", m60.own, "me"], [`시장 몫 <small>KOSDAQ ${pct(m60.kosdaq)} × 민감도 ${e.decomp.beta_market.toFixed(2)}</small>`, m60.market],
         [`분야 몫 <small>${m60.segments_used ? `분야 ${m60.segments_used}곳의 같은 60분` : "분야 분봉 없음"}</small>`, m60.sector], ["기사(고유) 몫", m60.abnormal, "abn"]];
       const mx = Math.max(0.003, ...r6.map((x) => Math.abs(x[1] || 0)));
-      ev += `<h3 class="d-sec" style="margin-top:22px">공개 후 60분 나누기 <small class="muted">${hhmm(m60.start)}부터 · 판정 기준</small></h3>
+      ev += `<h3 class="d-sec" style="margin-top:22px">${m60.start ? `공개 후 60분 나누기 <small class="muted">${hhmm(m60.start)}부터 · 판정 기준</small>` : `전일 종가→10:00 나누기 <small class="muted">장 시작 전 공개 · 시초가 + 개장 1시간 · 판정 기준</small>`}</h3>
         <ul class="rel decomp">${r6.map(([k, v, c]) => `<li class="${c || ""}"><span class="nm">${k}</span>
         <span class="dbar"><i class="${(v || 0) >= 0 ? "b" : "s"}" style="${(v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / mx) * 50}%`};width:${(Math.abs(v || 0) / mx) * 50}%"></i></span>
         <span class="num v ${sgnCls(v)}">${pct(v)}</span></li>`).join("")}</ul>
-        <p class="note" style="margin-top:6px">민감도는 아래 하루 계산과 같은 값을 씁니다. 장중에 나온 기사는 그날 오후 다른 일이 섞이지 않도록 공개 후 60분으로 판정합니다.</p>`;
+        <p class="note" style="margin-top:6px">민감도는 아래 하루 계산과 같은 값을 씁니다. ${m60.start ? "장중에 나온 기사는" : "장 시작 전에 나온 기사는 밤사이 시초가에 반영되므로 전일 종가부터 개장 1시간까지로,"} 그날 오후 다른 일이 섞이지 않도록 짧은 구간으로 판정합니다. 얼마나 드문지는 평소 같은 구간에서 같은 방식으로 시장 몫을 뺀 움직임과 비교합니다.</p>`;
     }
     if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late);
     if (dl) {
