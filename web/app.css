@@ -576,7 +576,7 @@ body.shared .local-only, body.shared .editable, body.cloud .local-only { display
 body:not(.shared) .shared-only { display: none !important; }
 
 @media (max-width: 980px) {
-  .art-layout { grid-template-columns: 1fr; }
+  .art-layout { grid-template-columns: minmax(0, 1fr); }
   .art-list { position: static; max-height: 420px; }
   .pr-form-grid { grid-template-columns: 1fr 1fr; }
   .pr-form-grid .field:first-child { grid-column: 1 / -1; }
@@ -751,3 +751,22 @@ details.art-stats { margin: 0 0 14px; }
 details.art-stats > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--brand-blue); margin-bottom: 10px; }
 details.art-group > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); padding: 2px 12px 8px; }
 details.art-group > button { padding-left: 24px; }
+
+/* 기사 영향 분석: 보도자료 성과 요약 · 구분 표시 */
+.score-line { display: flex; flex-wrap: wrap; gap: 10px 28px; padding: 14px 18px; margin: 0 0 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.score-line span { display: grid; gap: 2px; }
+.score-line small { font-size: 12px; color: var(--muted); }
+.score-line b { font-size: 20px; font-weight: 760; letter-spacing: -.01em; }
+.ktag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; margin-right: 6px; white-space: nowrap; }
+.ktag.k-pr { background: color-mix(in srgb, var(--brand-blue) 14%, transparent); color: var(--brand-blue); }
+.ktag.k-ext { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--ink-2); }
+.al-meta .tier { margin-left: 6px; }
+.vb-note { margin-top: 6px; font-size: 13px; color: var(--ink-2); }
+.art-fix { margin: 10px 0 0; }
+.art-list button.sub { padding: 8px 14px 8px 24px; }
+.art-list button.sub .t { font-weight: 520; font-size: 13.5px; }
+@media (prefers-color-scheme: dark) { .ktag.k-pr { color: var(--lens); } }
+@media (max-width: 720px) {
+  .art-detail table.ladder { display: block; max-width: 100%; overflow-x: auto; font-size: 12.5px; }
+}
