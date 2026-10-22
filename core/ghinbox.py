@@ -13,6 +13,10 @@ import urllib.request
 
 API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 TYPES = {"등록": "pr", "빼기": "hide", "다시표시": "show", "삭제": "delete_pr"}
+# 사이트가 보내는 요청 종류 (cloud_job.apply_inbox가 처리하는 것과 같아야 함)
+KNOWN = ("pr", "hide", "show", "delete_pr", "analyze", "cause", "cause_delete",
+         "hide_one", "event_delete", "article_kind", "article_tone")
+RETRY_KEY = "ghinbox:retry_unknown_v1"
 
 
 def _req(method: str, path: str, body=None):
@@ -40,7 +44,7 @@ def parse(issue: dict, unseal=None) -> dict | None:
             item = unseal(re.sub(r"\s", "", e.group(1)))
         except Exception:
             raise ValueError("요청을 풀지 못했습니다 (사이트 비밀번호가 바뀐 뒤 만든 요청일 수 있습니다).")
-        if not isinstance(item, dict) or item.get("type") not in ("pr", "hide", "show", "delete_pr", "analyze", "cause", "cause_delete"):
+        if not isinstance(item, dict) or item.get("type") not in KNOWN:
             raise ValueError("알 수 없는 요청입니다.")
         if item["type"] == "pr" and (not item.get("title") or not item.get("published_ts")):
             raise ValueError("기사 제목과 발표 시각이 필요합니다.")
@@ -81,12 +85,31 @@ def parse(issue: dict, unseal=None) -> dict | None:
     return item
 
 
+def _retry_rejected(repo: str, owner: str) -> list[dict]:
+    """한 번만: 새 요청 종류를 받는 목록에 늦게 넣는 바람에 '알 수 없는 요청'으로 닫힌 최근 요청을 다시 처리."""
+    from .db import get_state, set_state
+    if get_state(RETRY_KEY):
+        return []
+    set_state(RETRY_KEY, "1")
+    closed = _req("GET", f"/repos/{repo}/issues?state=closed&creator={owner}&since=2026-10-20T00:00:00Z"
+                         f"&per_page=50&sort=created&direction=asc") or []
+    out = []
+    for it in closed:
+        if not str(it.get("title") or "").startswith("[요청]") or not it.get("comments"):
+            continue
+        comments = _req("GET", f"/repos/{repo}/issues/{it['number']}/comments") or []
+        if comments and "알 수 없는 요청" in str(comments[-1].get("body") or ""):
+            out.append(it)
+    return out
+
+
 def process(apply, log=None, unseal=None) -> int:
     repo = os.environ.get("GITHUB_REPOSITORY")
     owner = os.environ.get("GITHUB_REPOSITORY_OWNER")
     if not repo or not owner or not (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
         return 0
-    issues = _req("GET", f"/repos/{repo}/issues?state=open&creator={owner}&per_page=50&sort=created&direction=asc") or []
+    issues = _retry_rejected(repo, owner)
+    issues += _req("GET", f"/repos/{repo}/issues?state=open&creator={owner}&per_page=50&sort=created&direction=asc") or []
     n = 0
     for it in issues:
         if it.get("pull_request") or (it.get("user") or {}).get("login") != owner:

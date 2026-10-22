@@ -184,3 +184,17 @@ def test_delete_recorded_range_removes_it_and_its_cause_only(tmpdb, monkeypatch)
         tiers = [r[0] for r in conn.execute("SELECT tier FROM events")]
         n_cause = conn.execute("SELECT COUNT(*) FROM manual_causes").fetchone()[0]
     assert tiers == ["관찰"] and n_cause == 0
+
+
+def test_inbox_accepts_every_type_the_site_sends():
+    """사이트(app.js)가 보내는 요청 종류는 모두 받는 목록(ghinbox.KNOWN)에 있어야 함 (빠지면 '알 수 없는 요청'으로 버려짐)."""
+    import re
+    from pathlib import Path
+    js = Path(__file__).resolve().parent.parent.joinpath("web", "app.js").read_text(encoding="utf-8")
+    sent = set(re.findall(r'type:\s*"([a-z_]+)"', js)) | set(re.findall(r'type:\s*a\.hidden \? "([a-z_]+)" : "([a-z_]+)"', js)[0])
+    sent -= {"custom", "solid"}                                # 차트 가격 형식·선 모양 등 요청이 아닌 것
+    assert sent and sent <= set(ghinbox.KNOWN), sent - set(ghinbox.KNOWN)
+    for t in ghinbox.KNOWN:
+        if t in ("pr", "analyze"):
+            continue
+        assert ghinbox.parse({"title": "[요청] x", "body": "```enc\nAAAA\n```"}, unseal=lambda _b, t=t: {"type": t})["type"] == t
