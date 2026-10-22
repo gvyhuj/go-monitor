@@ -452,11 +452,26 @@
   }
 
   // 오늘 '지금 등락'은 한 곳(네이버 현재가)에서만 가져와 화면 어디서나 같은 숫자를 씀
-  function liveFor(date) {
+  // 15:30 이후 네이버 시세는 넥스트레이드 애프터마켓 가격이라 거래소 종가와 다름 → 거래소 종가(15:30 1분봉)를 보여주고
+  // 애프터마켓 가격은 따로 (ah). d: 그날 1분봉 자료 (없으면 사이트에 올라온 최신 자료)
+  function krxClose(d) {
+    if (!d || !d.prev_close || !(d.bars || []).length) return null;
+    const last = [...d.bars].reverse().find((b) => b.t.slice(11, 16) <= "15:30");
+    if (!last || last.t.slice(11, 16) < "15:30") return null;          // 종가 단일가 체결 전
+    return { price: last.c, chg: last.c / d.prev_close - 1, prev: d.prev_close };
+  }
+  function liveFor(date, d) {
     const q = STATUS && STATUS.quote;
     if (!q || q.price == null || q.change_pct == null || !q.traded_at || q.traded_at.slice(0, 10) !== date) return null;
-    return { price: q.price, chg: q.change_pct / 100, at: q.traded_at.slice(11, 16), open: q.market_status === "OPEN" };
+    const at = q.traded_at.slice(11, 16);
+    if (at > "15:30") {
+      const k = krxClose(d || (LIVE && LIVE.intraday && LIVE.intraday.date === date ? LIVE.intraday : null));
+      if (k) return { price: k.price, chg: k.chg, prev: k.prev, at: "15:30", open: false, closed: true,
+        ah: { price: q.price, chg: q.change_pct / 100, at } };
+    }
+    return { price: q.price, chg: q.change_pct / 100, at, open: q.market_status === "OPEN" };
   }
+  const ahLine = (ah) => (ah ? `시간외(넥스트레이드) ${won(ah.price)}원 <span class="${sgnCls(ah.chg)}">${pct(ah.chg)}</span> · ${ah.at}` : "");
 
   function renderQuote() {
     if (!STATUS) return;
@@ -464,11 +479,14 @@
     $("#q-name").textContent = STATUS.name;
     $("#q-code").textContent = STATUS.symbol;
     if (q && q.price != null) {
-      $("#q-price").textContent = won(q.price);
-      const cls = q.change > 0 ? "up" : q.change < 0 ? "down" : "";
-      const arrow = q.change > 0 ? "▲" : q.change < 0 ? "▼" : "";
-      const asof = q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준` : "장 마감";
-      $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(q.change))} (${pctRaw(q.change_pct)})</span><span class="asof">${asof}</span>`;
+      const lv = q.traded_at ? liveFor(q.traded_at.slice(0, 10)) : null;
+      const k = lv && lv.closed ? lv : null;               // 장 마감 뒤: 거래소 종가
+      const price = k ? k.price : q.price, change = k ? k.price - k.prev : q.change, cp = k ? k.chg * 100 : q.change_pct;
+      $("#q-price").textContent = won(price);
+      const cls = change > 0 ? "up" : change < 0 ? "down" : "";
+      const arrow = change > 0 ? "▲" : change < 0 ? "▼" : "";
+      const asof = k ? "장 마감 · 거래소 종가" : q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준` : "장 마감";
+      $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(change))} (${pctRaw(cp)})</span><span class="asof">${asof}</span>${k ? `<span class="ah">${ahLine(k.ah)}</span>` : ""}`;
       $("#q-volume").innerHTML = `${int(q.volume)}<small>주</small>`;
     }
     if (k && k.price != null) {
@@ -794,7 +812,7 @@
 
   function dayChange(d) {
     if (!d.prev_close || !d.bars.length) return null;
-    const live = liveFor(d.date);
+    const live = liveFor(d.date, d);
     return live ? live.chg : d.bars[d.bars.length - 1].c / d.prev_close - 1;
   }
 
@@ -809,7 +827,7 @@
     let dayTotal = `<div class="day-total"><div class="day-total-main"><span class="day-total-label">${dayLabel(d.date)}</span></div></div>`;
     if (d.prev_close && d.bars.length) {
       const lastBar = d.bars[d.bars.length - 1];
-      const live = liveFor(d.date);
+      const live = liveFor(d.date, d);
       const nowPx = live ? live.price : lastBar.c;
       const nowAt = live ? live.at : hhmm(lastBar.t);
       const chg = live ? live.chg : lastBar.c / d.prev_close - 1;
@@ -823,8 +841,9 @@
         ? `<span class="day-total-cause">${dailyEv.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(dailyEv.cause_headline)}</span>` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
       const inner = `
         <div class="day-total-main">
-          <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
+          <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${live && live.closed ? "장 마감" : closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
           <span class="day-total-sub">전일 종가 ${wonT(d.prev_close)} → ${closed && !(live && live.open) ? "종가 " : ""}${wonT(nowPx)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
+          ${isLatest && live && live.ah ? `<span class="day-total-sub day-total-ah">${ahLine(live.ah)}</span>` : ""}
           ${cause}
         </div>
         <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>`;
