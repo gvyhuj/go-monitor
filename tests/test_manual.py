@@ -151,3 +151,14 @@ def test_range_request_with_cause_creates_record_and_attaches_cause(tmpdb, monke
     assert ev["tier"] == "요청" and ev["direction"] == "up" and ev["event_type"] == "intraday"
     m = _find({"event_type": "intraday", "direction": "up", "start_ts": ev["start_ts"], "last_ts": ev["last_ts"]})
     assert m and m["body"] == "본문" and manual.summary(m) == "공급계약 소식"
+
+
+def test_day_causes_kept_per_time_with_move(tmpdb):
+    base = {"type": "cause", "date": DAY, "scope": "day"}
+    manual.save({**base, "direction": "down", "at_ts": f"{DAY}T10:05", "move": -0.0265, "body": "오전 분석"}, NOW)
+    manual.save({**base, "direction": "down", "at_ts": f"{DAY}T14:40", "move": -0.0411, "body": "오후 분석"}, NOW)
+    m = _find(_ev("daily", "09:00", "15:30"))
+    assert m["body"] == "오후 분석" and [e["body"] for e in m["entries"]] == ["오후 분석", "오전 분석"]
+    assert [round(e["move"], 4) for e in m["entries"]] == [-0.0411, -0.0265]
+    manual.save({**base, "direction": "down", "at_ts": f"{DAY}T10:05", "type": "cause_delete"}, NOW)
+    assert [e["body"] for e in _find(_ev("daily", "09:00", "15:30"))["entries"]] == ["오후 분석"]

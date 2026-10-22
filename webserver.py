@@ -125,7 +125,7 @@ def event_rows(symbol: str, d_from: str | None, d_to: str | None, kind: str | No
             "cause_label": None,
             "cause_confidence": manual.confidence(mc),
             "cause_summary": None,
-            "manual": {k: v for k, v in mc.items() if k != "body"} if mc else None,   # 본문은 상세 화면에서만
+            "manual": {k: v for k, v in mc.items() if k not in ("body", "entries")} if mc else None,   # 본문은 상세 화면에서만
             "cause_stage": r.get("cause_stage"),
             "tier": r.get("tier") or "일반", "trade_value": r.get("trade_value"),
             "scope": "하루" if daily else "장중",

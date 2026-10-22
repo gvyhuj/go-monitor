@@ -4,7 +4,7 @@
 숫자와 사실 자료(몫 나누기, 창구 매매, 비교 종목, 테마 등락, 기사 목록)는 그대로 둡니다.
 
 연결 규칙
-- 하루 기록: 같은 날·같은 방향의 '하루' 원인
+- 하루 기록: 같은 날의 '하루' 원인 (장중에 여러 번 넣으면 넣은 시각·그때 등락과 함께 모두 남고, 최신이 대표)
 - 장중 순간: 같은 날·같은 방향이고 구간이 겹치는 '장중' 원인만 (하루 원인은 장중 순간에 보여 주지 않음 —
   각 줄에는 그 줄에 넣은 원인만 보이고 그 줄에서 지움)
 """
@@ -34,7 +34,12 @@ def find(conn, ev: dict) -> dict | None:
                          "AND start_ts<=? AND last_ts>=? ORDER BY updated_at DESC LIMIT 1",
                          (day, d, ev["last_ts"], ev["start_ts"])).fetchone()
     else:
-        r = conn.execute("SELECT * FROM manual_causes WHERE date=? AND direction=? AND scope='day'", (day, d)).fetchone()
+        # 하루 원인은 그날 여러 번 넣을 수 있음 (장중에 궁금할 때마다, 그때의 등락과 함께). 최신이 대표
+        rows = [dict(x) for x in conn.execute(
+            "SELECT * FROM manual_causes WHERE date=? AND scope='day' ORDER BY start_ts DESC, updated_at DESC", (day,))]
+        if not rows:
+            return None
+        return {**rows[0], "inherited": False, "entries": rows}
     return {**dict(r), "inherited": False} if r else None
 
 
@@ -97,7 +102,8 @@ def save(item: dict, now: datetime) -> str:
     if d not in ("up", "down"):
         raise ValueError("방향(up/down)이 필요합니다.")
     scope = "day" if item.get("scope") == "day" else "intraday"
-    st = str(item.get("start_ts") or "")[:16] if scope == "intraday" else ""
+    # 하루 원인은 넣은 시각(at_ts)마다 따로 남김 (예전 방식처럼 at_ts가 없으면 하루에 하나)
+    st = str(item.get("start_ts") or "")[:16] if scope == "intraday" else str(item.get("at_ts") or "")[:16]
     lt = str(item.get("last_ts") or "")[:16] if scope == "intraday" else ""
     if scope == "intraday" and not (st and lt):
         raise ValueError("장중 원인은 구간(시작·끝 시각)이 필요합니다.")
@@ -111,12 +117,13 @@ def save(item: dict, now: datetime) -> str:
             if not body:
                 raise ValueError("원인 내용이 비어 있습니다.")
             conn.execute(
-                "INSERT INTO manual_causes(date, direction, scope, start_ts, last_ts, headline, body, source, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(date, direction, scope, start_ts) DO UPDATE SET "
+                "INSERT INTO manual_causes(date, direction, scope, start_ts, last_ts, headline, body, source, updated_at, move) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(date, direction, scope, start_ts) DO UPDATE SET "
                 "last_ts=excluded.last_ts, headline=excluded.headline, body=excluded.body, source=excluded.source, "
-                "updated_at=excluded.updated_at",
+                "updated_at=excluded.updated_at, move=COALESCE(excluded.move, manual_causes.move)",
                 (day, d, scope, st, lt, str(item.get("headline") or "").strip()[:200] or None, body[:20000],
-                 (str(item.get("source") or "")[:40] or None), now.isoformat(timespec="minutes")))
+                 (str(item.get("source") or "")[:40] or None), now.isoformat(timespec="minutes"),
+                 float(item["move"]) if isinstance(item.get("move"), (int, float)) else None))
             what = "저장"
         # 사이트 자료를 다시 만들게: 그날 이벤트 상세와 지난 날짜 장중 화면
         conn.execute("UPDATE events SET cause_updated_at=? WHERE substr(start_ts,1,10)=? AND direction=?",

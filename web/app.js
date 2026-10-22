@@ -7,8 +7,6 @@
   const main = $("#main");
   const KIND = { up: "급등", down: "급락", flat: "거래량만 급증" };
   const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
-  const CONF_CLS = { "높음": "hi", "중간": "mid", "낮음": "lo" };
-  const confTag = (c) => (c ? `<span class="conf ${CONF_CLS[c] || ""}">신뢰도 ${c}</span>` : "");
   const NO_CAUSE = '<span class="muted">원인 미입력</span>';
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
   const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>`
@@ -724,10 +722,7 @@
         <button class="btn small editable" type="button" data-range-rec>이 구간 기록하고 원인 넣기</button></div>
       <form class="mc-form editable" data-range-form hidden>
         <label><span>받은 답 붙여넣기 <small class="muted">(비워 두면 구간만 기록하고 원인은 나중에)</small></span><textarea rows="5" data-rf-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
-        <div class="mc-meta">
-          <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-rf-head></label>
-          <label>신뢰도<select data-rf-conf><option value="">-</option><option>높음</option><option>중간</option><option>낮음</option></select></label>
-        </div>
+        <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-rf-head></label>
         <p class="note" style="margin:0">${r.from}~${r.to} 구간이 이 날짜 아래 '요청' 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
         <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
       </form>
@@ -736,16 +731,15 @@
     $("[data-range-clear]", panel).onclick = clear;
     $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."), msg);
     // 고른 구간을 기록(요청)으로 남기고 원인을 함께 붙임 → 다음 실행 뒤 이 날짜 아래 줄로 보임
-    const form = $("[data-range-form]", panel), body = $("[data-rf-body]", panel), head = $("[data-rf-head]", panel), conf = $("[data-rf-conf]", panel);
+    const form = $("[data-range-form]", panel), body = $("[data-rf-body]", panel), head = $("[data-rf-head]", panel);
     $("[data-range-rec]", panel).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
     head.oninput = () => { head.dataset.touched = "1"; };
-    conf.onchange = () => { conf.dataset.touched = "1"; };
-    body.oninput = () => { const g = guessSummary(body.value); if (!head.dataset.touched) head.value = g.head; if (!conf.dataset.touched && g.conf) conf.value = g.conf; };
+    body.oninput = () => { if (!head.dataset.touched) head.value = guessSummary(body.value).head; };
     form.onsubmit = async (ev) => {
       ev.preventDefault();
-      const h = head.value.replace(CONF_RE, "").trim(), cf = conf.value, b = body.value.trim();
+      const h = head.value.replace(CONF_RE, "").trim(), b = body.value.trim();
       const item = { type: "analyze", date: d.date, from: r.from, to: r.to };
-      if (b) Object.assign(item, { cause_body: b, cause_headline: h ? `${h}${cf ? ` (신뢰도 ${cf})` : ""}` : "" });
+      if (b) Object.assign(item, { cause_body: b, cause_headline: h });
       try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); form.hidden = true; }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
@@ -787,7 +781,7 @@
     const tags = (dailyEv ? `<span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}` : "") +
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
     const what = d.events.length
-      ? (lead && lead.cause_headline ? `${confTag(lead.cause_confidence)}${esc(lead.cause_headline)}` : "")
+      ? (lead && lead.cause_headline ? `${esc(lead.cause_headline)}` : "")
       : `이상변동 없음${dayArts.length ? ` · 기사 ${dayArts.length}건` : ""}`;
     return `<button type="button" class="day-fold">
       <span class="day-card-date">${dayLabel(d.date)}</span>
@@ -825,7 +819,7 @@
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
       const cause = dailyEv
-        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${confTag(dailyEv.cause_confidence)}${esc(dailyEv.cause_headline)}` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
+        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${esc(dailyEv.cause_headline)}` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
@@ -841,7 +835,7 @@
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
+          <span class="tl-rule">${e.cause_headline ? `${esc(e.cause_headline)}` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>전일 대비</small></span>
         </button></li>`;
     const chart = d.bars.length
@@ -989,7 +983,7 @@
         <td><span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}</td>
         <td class="r num ${sgnCls(e.peak_return_5m)}"><b>${pct(e.peak_return_5m)}</b></td>
         <td class="r num">${e.kosdaq_change == null ? '<span class="muted">없음</span>' : pct(e.kosdaq_change)}</td>
-        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${confTag(e.cause_confidence)}${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`;
+        <td class="rule" title="${esc(e.rule)}">${e.cause_headline ? `${esc(e.cause_headline)}` : NO_CAUSE}</td></tr>`;
       }).join("")}
       </tbody></table>`;
     const tb = $("#ev-table tbody");
@@ -1140,37 +1134,45 @@
     return { head: head.length > 80 ? head.slice(0, 80) + "…" : head, conf: cm ? cm[1] : "" };
   }
 
-  // 왜 움직였나: 결론(한 줄 + 신뢰도)을 맨 위에. 원인이 없으면 ① 묻기 → ② 붙여넣기 → ③ 저장 순서로 바로 보이게
+  // 원인 한 줄: 입력한 요약 → 없으면 본문에서 추린 줄 (신뢰도 표시는 하지 않음)
+  function causeHead(m) {
+    const h0 = m && m.headline ? m.headline.replace(/\*\*/g, "").replace(CONF_RE, "").trim() : "";
+    return (m && m.headline ? h0.replace(SUM_LABEL, "").trim() || h0 : guessSummary(m && m.body).head) || "원인 요약 없음";
+  }
+  const kstNow = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16);
+
+  // 왜 움직였나: 넣은 원인을 위에 (하루 기록은 장중에 여러 번 넣을 수 있어 넣은 시각·그때 등락과 함께 최신부터).
+  // 원인이 없으면 ① 묻기 → ② 붙여넣기 → ③ 저장 순서로 바로 보이게
   function manualBlock(e) {
     const m = e.manual;
     const daily = isDaily(e);
-    const own = m && !m.inherited;
-    const g = m ? guessSummary(m.body) : { head: "", conf: "" };
-    const h0 = m && m.headline ? m.headline.replace(/\*\*/g, "").replace(CONF_RE, "").trim() : "";
-    const head = m && m.headline ? h0.replace(SUM_LABEL, "").trim() || h0 : g.head;
-    const conf = (m && m.headline && (m.headline.match(CONF_RE) || [])[1]) || g.conf || e.cause_confidence || "";
-    const view = m ? `<div class="manual-cause">
-        <div class="mc-head">${confTag(conf)}${esc(head || "원인 요약 없음")}</div>
-        <details class="mc-full"><summary>답 전체 보기</summary><div class="mc-body">${mdRender(m.body || "")}</div></details>
-        </div>`
+    const entries = m ? (m.entries && m.entries.length ? m.entries : [m]) : [];
+    const day = e.start_ts.slice(0, 10);
+    const when = (x) => {
+      if (!daily || !x.start_ts) return "";
+      const intra = x.start_ts.slice(0, 10) === day && hhmm(x.start_ts) < "15:30";
+      return `<span class="mc-when">${intra ? `${hhmm(x.start_ts)} 기준` : "장 마감 뒤"}${x.move != null ? ` <b class="${sgnCls(x.move)}">${pct(x.move)}</b>` : ""}</span>`;
+    };
+    const view = entries.length ? entries.map((x, i) => `<div class="manual-cause">
+        <div class="mc-head">${when(x)}${esc(causeHead(x))}</div>
+        <details class="mc-full"><summary>답 전체 보기</summary><div class="mc-body">${mdRender(x.body || "")}</div></details>
+        <div class="ask-row editable mc-actions"><button class="btn-link" type="button" data-mc-edit="${i}">고치기</button><button class="btn-link" type="button" data-mc-del="${i}">삭제</button></div>
+        </div>`).join("")
       : `<div class="manual-cause is-empty"><div class="mc-head">원인 미입력</div>
         <p class="note editable" style="margin:0">아래 순서대로 하면 이 칸과 목록에 원인이 표시됩니다.</p></div>`;
-    const curHead = own ? head : "", curConf = own ? conf : "";
     const step = (n, t) => `<span class="step-n">${n}</span>${t}`;
-    return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3></div>
+    const has = entries.length > 0;
+    return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3>${daily && entries.length > 1 ? `<span class="stage">원인 기록 ${entries.length}개</span>` : ""}</div>
       ${view}
       <div class="ask-block">
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">${m ? "ChatGPT에게 다시 묻기" : `${step(1, "ChatGPT에게 묻기")}`}</button>
-          ${m ? `<span class="editable"><button class="btn" type="button" id="mc-open">${own ? "원인 고치기" : "원인 붙여넣기"}</button>${own ? '<button class="btn" type="button" id="mc-del">원인 삭제</button>' : ""}</span>` : ""}</div>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">${has ? "ChatGPT에게 다시 묻기" : `${step(1, "ChatGPT에게 묻기")}`}</button>
+          ${has ? `<button class="btn editable" type="button" id="mc-open">${daily ? "지금 원인 하나 더 넣기" : "원인 고치기"}</button>` : ""}</div>
         <span class="form-msg" id="ask-claude-msg"></span>
-        <form class="mc-form editable" id="mc-form"${m ? " hidden" : ""}>
-          <label><span>${m ? "원인 본문" : step(2, "받은 답 붙여넣기")}</span><textarea id="mc-body" rows="${m ? 10 : 5}" placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V).">${own ? esc(m.body || "") : ""}</textarea></label>
-          <div class="mc-meta">
-            <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐, 고쳐도 됨)</small><input id="mc-head" type="text" maxlength="200" value="${esc(curHead)}" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피"></label>
-            <label>신뢰도<select id="mc-conf"><option value="">-</option>${["높음", "중간", "낮음"].map((c) => `<option${c === curConf ? " selected" : ""}>${c}</option>`).join("")}</select></label>
-          </div>
-          <p class="note" style="margin:0">${daily ? "이 날 '하루 전체' 원인으로 저장됩니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장을 누르면 GitHub 창이 열립니다. 거기서 초록색 [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
-          <div class="ask-row"><button class="btn primary" type="submit">${m ? "저장" : step(3, "저장")}</button>${m ? '<button class="btn" type="button" id="mc-cancel">취소</button>' : ""}</div>
+        <form class="mc-form editable" id="mc-form"${has ? " hidden" : ""}>
+          <label><span>${has ? "원인 본문" : step(2, "받은 답 붙여넣기")}</span><textarea id="mc-body" rows="${has ? 10 : 5}" placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
+          <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐, 고쳐도 됨)</small><input id="mc-head" type="text" maxlength="200" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피"></label>
+          <p class="note" style="margin:0" id="mc-note">${daily ? "지금 시각과 지금 등락이 함께 기록되고, 앞서 넣은 원인도 그대로 남습니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장을 누르면 GitHub 창이 열립니다. 거기서 초록색 [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
+          <div class="ask-row"><button class="btn primary" type="submit">${has ? "저장" : step(3, "저장")}</button>${has ? '<button class="btn" type="button" id="mc-cancel">취소</button>' : ""}</div>
         </form>
       </div>`;
   }
@@ -1307,37 +1309,50 @@
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
     const form = $("#mc-form"), msg = $("#ask-claude-msg");
-    const target = isDaily(e)
-      ? { date: e.start_ts.slice(0, 10), direction: e.direction, scope: "day" }
-      : { date: e.start_ts.slice(0, 10), direction: e.direction, scope: "intraday", start_ts: e.start_ts, last_ts: e.last_ts };
+    const entries = e.manual ? (e.manual.entries && e.manual.entries.length ? e.manual.entries : [e.manual]) : [];
+    const day = e.start_ts.slice(0, 10);
+    let editing = null;                       // 고치는 중인 원인 (없으면 새로 넣기)
     const sendReq = async (item) => {
       msg.className = "form-msg";
       try { msg.textContent = await sendInbox(item); } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
-    if ($("#mc-open")) $("#mc-open").onclick = () => { form.hidden = false; $("#mc-body").focus(); };
-    if ($("#mc-cancel")) $("#mc-cancel").onclick = () => { form.hidden = true; };
-    // 붙여넣으면 한 줄 요약·신뢰도를 자동으로 채움 (직접 고친 칸은 건드리지 않음)
-    const headIn = $("#mc-head"), confIn = $("#mc-conf");
-    headIn.oninput = () => { headIn.dataset.touched = "1"; };
-    confIn.onchange = () => { confIn.dataset.touched = "1"; };
-    $("#mc-body").oninput = () => {
-      const g = guessSummary($("#mc-body").value);
-      if (!headIn.dataset.touched) headIn.value = g.head;
-      if (!confIn.dataset.touched && g.conf) confIn.value = g.conf;
+    const headIn = $("#mc-head"), bodyIn = $("#mc-body");
+    const openForm = (x) => {
+      editing = x;
+      bodyIn.value = x ? x.body || "" : "";
+      headIn.value = x ? causeHead(x) : "";
+      headIn.dataset.touched = x ? "1" : "";
+      form.hidden = false; bodyIn.focus();
     };
+    if ($("#mc-open")) $("#mc-open").onclick = () => openForm(daily ? null : entries[0] || null);
+    if ($("#mc-cancel")) $("#mc-cancel").onclick = () => { form.hidden = true; editing = null; };
+    $("#drawer-body").querySelectorAll("[data-mc-edit]").forEach((b) => { b.onclick = () => openForm(entries[+b.dataset.mcEdit]); });
+    $("#drawer-body").querySelectorAll("[data-mc-del]").forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "한 번 더 누르면 삭제"; return; }
+        const x = entries[+b.dataset.mcDel];
+        b.disabled = true; b.textContent = "삭제 요청함";
+        sendReq({ type: "cause_delete", date: x.date, direction: x.direction, scope: x.scope, start_ts: x.start_ts, last_ts: x.last_ts, at_ts: x.start_ts });
+      };
+    });
+    // 붙여넣으면 한 줄 요약을 자동으로 채움 (직접 고친 칸은 건드리지 않음)
+    headIn.oninput = () => { headIn.dataset.touched = "1"; };
+    bodyIn.oninput = () => { if (!headIn.dataset.touched) headIn.value = guessSummary(bodyIn.value).head; };
     form.onsubmit = (ev) => {
       ev.preventDefault();
-      const body = $("#mc-body").value.trim();
+      const body = bodyIn.value.trim();
       if (!body) { msg.className = "form-msg err"; msg.textContent = "ChatGPT 답을 붙여넣어 주세요."; return; }
-      const h = headIn.value.replace(CONF_RE, "").trim(), cf = confIn.value;
-      sendReq({ type: "cause", ...target, headline: h ? `${h}${cf ? ` (신뢰도 ${cf})` : ""}` : "", body });
-    };
-    const del = $("#mc-del");
-    if (del) del.onclick = () => {
-      del.disabled = true; del.textContent = "삭제 요청함";
-      const m = e.manual;
-      sendReq({ type: "cause_delete", date: m.date, direction: m.direction, scope: m.scope, start_ts: m.start_ts, last_ts: m.last_ts })
-        .then(() => { if (msg.classList.contains("err")) { del.disabled = false; del.dataset.confirm = ""; del.textContent = "원인 삭제"; del.classList.remove("danger"); } });
+      const headline = headIn.value.replace(CONF_RE, "").trim();
+      if (!daily) {
+        sendReq({ type: "cause", date: day, direction: e.direction, scope: "intraday", start_ts: e.start_ts, last_ts: e.last_ts, headline, body });
+        return;
+      }
+      // 하루 기록: 새로 넣으면 지금 시각·지금 등락으로 하나 더, 고치면 그 시각의 기록을 덮어씀
+      const live = liveFor(day);
+      const item = editing
+        ? { type: "cause", date: day, direction: editing.direction, scope: "day", at_ts: editing.start_ts, move: editing.move, headline, body }
+        : { type: "cause", date: day, direction: e.direction, scope: "day", at_ts: kstNow(), move: live ? live.chg : e.peak_return_5m, headline, body };
+      sendReq(item);
     };
     const btn = $("#re-analyze");
     if (btn) btn.onclick = async () => {

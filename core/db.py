@@ -230,6 +230,7 @@ _SNAPSHOT_MIGRATIONS = {"buy_top5": "INTEGER", "sell_top5": "INTEGER"}
 # 기사: 수집 출처(naver/google), 직접 고친 '우리 보도자료/외부 기사'(pr/ext)·악재 표시(-1/0)
 _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override": "INTEGER"}
 _DISCLOSURE_MIGRATIONS = {"ts": "TEXT"}          # 공시 시각 (네이버 공시 목록의 접수 시각)
+_CAUSE_MIGRATIONS = {"move": "REAL"}            # 하루 원인: 원인을 넣은 시각의 전일 대비 등락
 
 
 def init_db():
@@ -240,7 +241,8 @@ def init_db():
         for col, typ in _SNAPSHOT_MIGRATIONS.items():
             if col not in scols:
                 conn.execute(f"ALTER TABLE trader_snapshots ADD COLUMN {col} {typ}")
-        for table, migs in (("articles", _ARTICLE_MIGRATIONS), ("disclosures", _DISCLOSURE_MIGRATIONS)):
+        for table, migs in (("articles", _ARTICLE_MIGRATIONS), ("disclosures", _DISCLOSURE_MIGRATIONS),
+                            ("manual_causes", _CAUSE_MIGRATIONS)):
             tcols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             for col, typ in migs.items():
                 if col not in tcols:
