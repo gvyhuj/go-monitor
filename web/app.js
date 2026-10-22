@@ -781,7 +781,7 @@
     const tags = (dailyEv ? `<span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}` : "") +
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
     const what = d.events.length
-      ? (lead && lead.cause_headline ? `${esc(lead.cause_headline)}` : "")
+      ? (lead && lead.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(lead.cause_headline)}</span>` : "")
       : `이상변동 없음${dayArts.length ? ` · 기사 ${dayArts.length}건` : ""}`;
     return `<button type="button" class="day-fold">
       <span class="day-card-date">${dayLabel(d.date)}</span>
@@ -819,7 +819,7 @@
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
       const cause = dailyEv
-        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `${esc(dailyEv.cause_headline)}` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
+        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(dailyEv.cause_headline)}</span>` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
@@ -835,7 +835,7 @@
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? `${esc(e.cause_headline)}` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
+          <span class="tl-rule">${e.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(e.cause_headline)}</span>` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>전일 대비</small></span>
         </button></li>`;
     const chart = d.bars.length
@@ -1155,7 +1155,7 @@
     };
     const view = entries.length ? entries.map((x, i) => `<div class="manual-cause">
         <div class="mc-head">${when(x)}${esc(causeHead(x))}</div>
-        <details class="mc-full"><summary>답 전체 보기</summary><div class="mc-body">${mdRender(x.body || "")}</div></details>
+        <div class="mc-body">${mdRender(x.body || "")}</div>
         <div class="ask-row editable mc-actions"><button class="btn-link" type="button" data-mc-edit="${i}">고치기</button><button class="btn-link" type="button" data-mc-del="${i}">삭제</button></div>
         </div>`).join("")
       : `<div class="manual-cause is-empty"><div class="mc-head">원인 미입력</div>

@@ -199,7 +199,7 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .day-total.is-event:hover { background: color-mix(in srgb, var(--surface) 85%, var(--canvas)); }
 .day-total-main { min-width: 0; }
 .day-total-tags { margin-left: 8px; font-weight: 500; }
-.day-total-cause { display: block; margin-top: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-total-cause { display: block; margin-top: 10px; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-to { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
 .tl-sub { margin: 4px 0 6px; font-size: 12px; color: var(--muted); }
 .day-total-val { font-size: 22px; font-weight: 800; white-space: nowrap; }
@@ -784,3 +784,10 @@ section.evidence { margin-top: 28px; border-top: 1px solid var(--line); padding-
 .evidence-title { font-size: 16px; font-weight: 720; margin: 0; }
 .evidence-title .muted { font-size: 13px; font-weight: 500; margin-left: 8px; }
 section.evidence > .d-block:first-of-type { margin-top: 18px; }
+
+/* 원인 줄: '원인' 표시를 붙이고 본문색·굵게 (처음 보는 사람도 원인으로 읽게) */
+.cause-label { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;
+  color: #fff; background: var(--navy-2); vertical-align: 1px; }
+.cause-text { color: var(--ink); font-weight: 650; }
+.manual-cause .mc-head { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+@media (prefers-color-scheme: dark) { .cause-label { background: var(--brand-blue); } }
