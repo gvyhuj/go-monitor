@@ -791,3 +791,4 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .cause-text { color: var(--ink); font-weight: 650; }
 .manual-cause .mc-head { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 @media (prefers-color-scheme: dark) { .cause-label { background: var(--brand-blue); } }
+.tl-actions { display: flex; justify-content: flex-end; gap: 10px; align-items: center; padding: 0 4px 8px; margin-top: -6px; font-size: 12.5px; }

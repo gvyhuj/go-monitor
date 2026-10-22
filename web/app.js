@@ -569,6 +569,8 @@
         st.open = fold.classList.contains("day-fold"); draw(card, st.d);
         return;
       }
+      const del = ev.target.closest("[data-ev-del]");
+      if (del) { deleteRecord(del); return; }
       const b = ev.target.closest("[data-id]");
       if (b) openEvent(+b.dataset.id);
     };
@@ -722,7 +724,7 @@
       <form class="mc-form editable" data-range-form hidden>
         <label><span>받은 답 붙여넣기 <small class="muted">(비워 두면 구간만 기록하고 원인은 나중에)</small></span><textarea rows="5" data-rf-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
         <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-rf-head></label>
-        <p class="note" style="margin:0">${r.from}~${r.to} 구간이 이 날짜 아래 '요청' 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
+        <p class="note" style="margin:0">${r.from}~${r.to} 구간이 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
         <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
       </form>
       <span class="form-msg" data-range-msg></span></div>`;
@@ -836,7 +838,7 @@
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
           <span class="tl-rule">${e.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(e.cause_headline)}</span>` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>전일 대비</small></span>
-        </button></li>`;
+        </button>${e.tier === "요청" ? `<div class="tl-actions editable"><button type="button" class="btn-link" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></div>` : ""}</li>`;
     const chart = d.bars.length
       ? `<div class="day-legend"></div><div class="day-chart"></div><div class="range-panel"></div>`
       : `<p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`;
@@ -883,7 +885,7 @@
           <button type="button" data-v="all">전체</button><button type="button" data-v="up">오름</button><button type="button" data-v="down">내림</button>
         </div>
         <div class="seg" id="ev-tier" aria-label="크기">
-          <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% 관찰 + 직접 요청한 분석">관찰·요청</button>
+          <button type="button" data-v="all">모든 크기</button><button type="button" data-v="main" title="±5% 이상 (알림 보낸 것)">급등·급락만</button><button type="button" data-v="watch" title="±3~5% 관찰 + 직접 기록한 구간">관찰·직접 기록</button>
         </div>
         <span class="spacer"></span>
         <button class="btn editable" type="button" id="ask-toggle" title="기준에 안 걸린 날도 원인을 분석해 기록에 올립니다">분석 요청</button>
@@ -891,7 +893,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>엑셀로 내려받기</a>
       </div>
       <form class="panel form pr-form editable" id="ask-form" autocomplete="off" hidden>
-        <p class="hint">기준(±3%)에 안 걸려 기록되지 않은 움직임도 원인이 궁금하면 여기서 요청하세요. 시간대를 비우면 하루(전일 종가 → 종가) 기준, 시간을 넣으면 그 시간대만 분석합니다. 장중 약 3분, 그 밖에는 15분 안에 이 목록에 '요청'으로 올라오고 원인 분석이 이어집니다.</p>
+        <p class="hint">기준(±3%)에 안 걸려 기록되지 않은 움직임도 원인이 궁금하면 여기서 요청하세요. 시간대를 비우면 하루(전일 종가 → 종가) 기준, 시간을 넣으면 그 시간대만 분석합니다. 장중 약 5분, 그 밖에는 15분 안에 이 목록에 올라오고 원인 분석이 이어집니다.</p>
         <div class="pr-form-grid">
           <label class="field"><span>날짜</span><input type="date" name="date" value="${isoDate(new Date())}" required></label>
           <label class="field"><span>시작 시각 (선택)</span><input type="time" name="from" min="09:00" max="15:30"></label>
@@ -945,7 +947,7 @@
     all.forEach((e) => counts[e.direction]++);
     const since = d.trading_days[0];
     $("#ev-sub").textContent = all.length
-      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰" && e.tier !== "요청").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건${all.some((e) => e.tier === "요청") ? `, 직접 요청 ${all.filter((e) => e.tier === "요청").length}건` : ""}입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
+      ? `${since ? dayLabel(since) + "부터 " : ""}${all.length}건. 급등·급락(±5% 이상) ${all.filter((e) => e.tier !== "관찰" && e.tier !== "요청").length}건, 관찰(±3~5%, 알림 없음) ${all.filter((e) => e.tier === "관찰").length}건${all.some((e) => e.tier === "요청") ? `, 직접 기록 ${all.filter((e) => e.tier === "요청").length}건` : ""}입니다 (하루 기준 ${all.filter(isDaily).length}건, 장중 ${all.filter((e) => !isDaily(e)).length}건).`
       : "이 기간에는 급등·급락이 없었습니다.";
 
     let list = all;
@@ -988,6 +990,15 @@
     const tb = $("#ev-table tbody");
     tb.onclick = (ev) => { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); };
     tb.onkeydown = (ev) => { if (ev.key === "Enter") { const r = ev.target.closest("tr[data-id]"); if (r) openEvent(+r.dataset.id); } };
+  }
+
+  // 직접 기록한 구간 지우기 (두 번 눌러야 지워짐). 붙인 원인도 함께 지워짐
+  async function deleteRecord(btn) {
+    const msg = btn.nextElementSibling;
+    if (btn.dataset.confirm !== "1") { btn.dataset.confirm = "1"; btn.textContent = "한 번 더 누르면 삭제"; return; }
+    btn.disabled = true;
+    try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "event_delete", id: +btn.dataset.evDel }); btn.textContent = "삭제 요청함"; }
+    catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; btn.disabled = false; }
   }
 
   // ---------------------------------------------------------------- event drawer
@@ -1295,6 +1306,7 @@
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
+      ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 매매 창구</span></h3>
         <section class="d-block">${factsBlock(c)}</section>
         <section class="d-block">${relatedBlock(c, e.own_change)}</section>
@@ -1303,6 +1315,8 @@
         <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>
       </section>`;
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
+    const dDel = $("#drawer-body [data-ev-del]");
+    if (dDel) dDel.onclick = () => deleteRecord(dDel);
     // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
     const form = $("#mc-form"), msg = $("#ask-claude-msg");
     const entries = e.manual ? (e.manual.entries && e.manual.entries.length ? e.manual.entries : [e.manual]) : [];

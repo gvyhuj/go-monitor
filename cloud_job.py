@@ -91,6 +91,16 @@ def apply_inbox(item: dict, log):
             aid = str(item.get("id") or "")
             conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if t == "hide" else 0, aid, aid))
             log.info("사이트에서 기사 %s: %s", "빼기" if t == "hide" else "다시 표시", aid)
+        elif t == "event_delete":               # 직접 기록한 구간(요청)만 지움 + 그 구간에 붙인 장중 원인도 함께
+            eid = int(item.get("id") or 0)
+            ev = conn.execute("SELECT * FROM events WHERE id=? AND tier='요청'", (eid,)).fetchone()
+            if ev:
+                if ev["event_type"] != "daily":
+                    conn.execute("DELETE FROM manual_causes WHERE scope='intraday' AND date=? AND direction=? "
+                                 "AND start_ts<=? AND last_ts>=?",
+                                 (ev["start_ts"][:10], ev["direction"], ev["last_ts"], ev["start_ts"]))
+                conn.execute("DELETE FROM events WHERE id=?", (eid,))
+                log.info("사이트에서 직접 기록한 구간 삭제: %s %s~%s", ev["start_ts"][:10], ev["start_ts"][11:16], ev["last_ts"][11:16])
         elif t == "hide_one":                   # 중복으로 두 번 들어온 기사 중 이 한 줄만 숨김 (같은 묶음의 다른 기사는 그대로)
             aid = str(item.get("id") or "")
             conn.execute("UPDATE articles SET hidden=1 WHERE id=?", (aid,))

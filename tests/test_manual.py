@@ -162,3 +162,25 @@ def test_day_causes_kept_per_time_with_move(tmpdb):
     assert [round(e["move"], 4) for e in m["entries"]] == [-0.0411, -0.0265]
     manual.save({**base, "direction": "down", "at_ts": f"{DAY}T10:05", "type": "cause_delete"}, NOW)
     assert [e["body"] for e in _find(_ev("daily", "09:00", "15:30"))["entries"]] == ["오후 분석"]
+
+
+def test_delete_recorded_range_removes_it_and_its_cause_only(tmpdb, monkeypatch):
+    import logging
+    import cloud_job
+    monkeypatch.setenv("GO_PRIVATE_CONFIG", json.dumps({"symbol": "X"}))
+    with db.connect() as conn:
+        for i, px in enumerate([10000, 10000, 10100, 10300, 10400, 10400]):
+            conn.execute("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                         ("X", f"{DAY}T10:{i * 10:02d}", px, px, px, px, 100, "t"))
+        conn.execute("INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, status, tier) "
+                     "VALUES ('X', ?, ?, 'intraday', 'up', 'closed', '관찰')", (f"{DAY}T13:00", f"{DAY}T13:30"))
+    log = logging.getLogger("t")
+    cloud_job.apply_inbox({"type": "analyze", "date": DAY, "from": "10:10", "to": "10:40", "cause_body": "본문"}, log)
+    with db.connect() as conn:
+        rid, watch = (conn.execute("SELECT id FROM events WHERE tier=?", (t,)).fetchone()[0] for t in ("요청", "관찰"))
+    cloud_job.apply_inbox({"type": "event_delete", "id": watch}, log)        # 감지된 기록은 지우지 않음
+    cloud_job.apply_inbox({"type": "event_delete", "id": rid}, log)
+    with db.connect() as conn:
+        tiers = [r[0] for r in conn.execute("SELECT tier FROM events")]
+        n_cause = conn.execute("SELECT COUNT(*) FROM manual_causes").fetchone()[0]
+    assert tiers == ["관찰"] and n_cause == 0
