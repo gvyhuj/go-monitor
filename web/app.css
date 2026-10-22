@@ -778,3 +778,9 @@ details.art-group > button { padding-left: 24px; }
 .mc-when { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
   color: var(--ink-2); background: color-mix(in srgb, var(--muted) 12%, transparent); vertical-align: 2px; }
 .manual-cause .mc-actions { margin-top: 6px; gap: 14px; }
+
+/* 근거 자세히: 접지 않고 늘 펼친 칸 */
+section.evidence { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; }
+.evidence-title { font-size: 16px; font-weight: 720; margin: 0; }
+.evidence-title .muted { font-size: 13px; font-weight: 500; margin-left: 8px; }
+section.evidence > .d-block:first-of-type { margin-top: 18px; }

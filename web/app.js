@@ -1296,16 +1296,13 @@
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
-      <details class="evidence"><summary>근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 매매 창구</span></summary>
+      <section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 매매 창구</span></h3>
         <section class="d-block">${factsBlock(c)}</section>
         <section class="d-block">${relatedBlock(c, e.own_change)}</section>
         ${disclosureBlock(c)}
         <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
         <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>
-      </details>`;
-    const evd = $("#drawer-body .evidence");
-    try { evd.open = localStorage.getItem("go_evidence_open") === "1"; } catch (_) {}
-    evd.ontoggle = () => { try { localStorage.setItem("go_evidence_open", evd.open ? "1" : "0"); } catch (_) {} };
+      </section>`;
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
     const form = $("#mc-form"), msg = $("#ask-claude-msg");
@@ -1662,17 +1659,12 @@
       <span class="form-msg" id="dup-msg"></span>
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section>`;
-    html += `<details class="evidence"><summary>근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></summary>${ev}</details>`;
+    html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
     html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 기사 때문에 움직였다고 단정하지는 않습니다.</p>`;
     html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
     box.innerHTML = html;
 
-    // 차트는 접힌 칸을 처음 펼칠 때 그림 (접힌 채로 그리면 폭이 0)
-    const evd = $(".evidence", box);
-    let drawn = false;
     const draw = () => {
-      if (drawn || !evd.open) return;
-      drawn = true;
       if (m && d.bars && d.bars.length) {
         const kqBase = d.kosdaq.length ? (d.kosdaq.filter((b) => b.t < m.reaction_start).slice(-1)[0] || d.kosdaq[0]).c : null;
         indexedChart($("#pr-chart"), $("#pr-legend"), d.bars, d.kosdaq, m.base_price, kqBase, m.reaction_start, m.outside_session ? "장 시작" : "공개");
@@ -1686,8 +1678,6 @@
         $("#pr-chart").outerHTML = `<p class="note">차트를 그릴 시세 기록이 없습니다.</p>`;
       }
     };
-    try { evd.open = localStorage.getItem("go_evidence_open") === "1"; } catch (_) {}
-    evd.ontoggle = () => { try { localStorage.setItem("go_evidence_open", evd.open ? "1" : "0"); } catch (_) {} draw(); };
     draw();
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));
