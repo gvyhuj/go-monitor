@@ -132,3 +132,22 @@ def test_headline_drops_confidence_text():
 def test_headline_drops_summary_label():
     m = {"headline": "한 줄 요약 (신뢰도 중간) 시장 급락이 배경입니다.", "body": "x"}
     assert manual.summary(m) == "시장 급락이 배경입니다." and manual.confidence(m) == "중간"
+
+
+def test_range_request_with_cause_creates_record_and_attaches_cause(tmpdb, monkeypatch):
+    """차트에서 고른 구간: 기록(요청)을 만들고 붙여넣은 원인을 그 구간에 붙임."""
+    import logging
+    import cloud_job
+    from core import detector
+    monkeypatch.setenv("GO_PRIVATE_CONFIG", json.dumps({"symbol": "X"}))
+    with db.connect() as conn:
+        for i, px in enumerate([10000, 10000, 10100, 10300, 10400, 10400]):
+            conn.execute("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                         ("X", f"{DAY}T10:{i * 10:02d}", px, px, px, px, 100, "t"))
+    cloud_job.apply_inbox({"type": "analyze", "date": DAY, "from": "10:10", "to": "10:40",
+                           "cause_headline": "공급계약 소식 (신뢰도 중간)", "cause_body": "본문"}, logging.getLogger("t"))
+    with db.connect() as conn:
+        ev = dict(conn.execute("SELECT * FROM events").fetchone())
+    assert ev["tier"] == "요청" and ev["direction"] == "up" and ev["event_type"] == "intraday"
+    m = _find({"event_type": "intraday", "direction": "up", "start_ts": ev["start_ts"], "last_ts": ev["last_ts"]})
+    assert m and m["body"] == "본문" and manual.summary(m) == "공급계약 소식"

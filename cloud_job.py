@@ -113,6 +113,13 @@ def apply_inbox(item: dict, log):
             r = requested_event(load_settings()["symbol"], day, hhmm(item.get("from")), hhmm(item.get("to")))
             log.info("사이트에서 분석 요청: %s %s~%s (%s)", day, item.get("from") or "", item.get("to") or "",
                      "기존 기록 다시 분석" if r["existing"] else "새 기록")
+            if str(item.get("cause_body") or "").strip():     # 차트에서 고른 구간에 원인을 함께 붙여넣은 경우
+                from core import manual
+                daily = r["event_type"] == "daily"
+                log.info("사이트에서 구간 원인 %s", manual.save({
+                    "type": "cause", "date": day, "direction": r["direction"], "scope": "day" if daily else "intraday",
+                    "start_ts": r["start_ts"], "last_ts": r["last_ts"], "headline": item.get("cause_headline"),
+                    "body": item["cause_body"]}, feed.kst_now()))
         elif t in ("cause", "cause_delete"):
             from core import manual
             log.info("사이트에서 원인 %s", manual.save(item, feed.kst_now()))

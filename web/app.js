@@ -512,7 +512,12 @@
     ]);
     // 지난 날짜 차트 자료는 만들어 둔 것을 다시 쓰므로, 원인(나중에 붙여넣은 것)은 매번 새로 받는 이벤트 목록 값으로 덮어씀
     const evById = new Map(evs.map((e) => [e.id, e]));
-    const fresh = (d) => ({ ...d, events: d.events.filter((e) => !evs.length || evById.has(e.id)).map((e) => (evById.has(e.id) ? { ...e, ...evById.get(e.id) } : e)) });
+    // 지난 날짜에 나중에 생긴 기록(차트 구간 요청 등)도 보이게, 만들어 둔 자료에 없는 그날 기록을 더함
+    const fresh = (d) => {
+      const have = new Set(d.events.map((e) => e.id));
+      const added = evs.filter((e) => e.start_ts.slice(0, 10) === d.date && !have.has(e.id));
+      return { ...d, events: d.events.filter((e) => !evs.length || evById.has(e.id)).map((e) => (evById.has(e.id) ? { ...e, ...evById.get(e.id) } : e)).concat(added) };
+    };
     const artsByDay = {};
     for (const a of arts) {
       if (a.category === "단순 언급" || a.hidden || !a.ts) continue;
@@ -589,6 +594,7 @@
     timers.push(setInterval(async () => {
       try { latest = await api("/api/intraday"); } catch (_) { return; }
       if (latest.date !== dates[0]) { route(); return; }       // 새 거래일이 시작되면 피드를 처음부터 다시 그림
+      if (cards[0].querySelector("[data-range-form]:not([hidden])")) return;   // 구간 원인을 입력하는 중이면 다시 그리지 않음
       draw(cards[0], latest);
     }, 30000));
   }
@@ -714,11 +720,35 @@
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
-      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button></div>
+      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button>
+        <button class="btn small editable" type="button" data-range-rec>이 구간 기록하고 원인 넣기</button></div>
+      <form class="mc-form editable" data-range-form hidden>
+        <label><span>받은 답 붙여넣기 <small class="muted">(비워 두면 구간만 기록하고 원인은 나중에)</small></span><textarea rows="5" data-rf-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
+        <div class="mc-meta">
+          <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-rf-head></label>
+          <label>신뢰도<select data-rf-conf><option value="">-</option><option>높음</option><option>중간</option><option>낮음</option></select></label>
+        </div>
+        <p class="note" style="margin:0">${r.from}~${r.to} 구간이 이 날짜 아래 '요청' 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
+        <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
+      </form>
       <span class="form-msg" data-range-msg></span></div>`;
     const msg = $("[data-range-msg]", panel);
     $("[data-range-clear]", panel).onclick = clear;
     $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."), msg);
+    // 고른 구간을 기록(요청)으로 남기고 원인을 함께 붙임 → 다음 실행 뒤 이 날짜 아래 줄로 보임
+    const form = $("[data-range-form]", panel), body = $("[data-rf-body]", panel), head = $("[data-rf-head]", panel), conf = $("[data-rf-conf]", panel);
+    $("[data-range-rec]", panel).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
+    head.oninput = () => { head.dataset.touched = "1"; };
+    conf.onchange = () => { conf.dataset.touched = "1"; };
+    body.oninput = () => { const g = guessSummary(body.value); if (!head.dataset.touched) head.value = g.head; if (!conf.dataset.touched && g.conf) conf.value = g.conf; };
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const h = head.value.replace(CONF_RE, "").trim(), cf = conf.value, b = body.value.trim();
+      const item = { type: "analyze", date: d.date, from: r.from, to: r.to };
+      if (b) Object.assign(item, { cause_body: b, cause_headline: h ? `${h}${cf ? ` (신뢰도 ${cf})` : ""}` : "" });
+      try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); form.hidden = true; }
+      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    };
   }
 
   /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음) */
@@ -1205,23 +1235,6 @@
     return (followups || []).length ? `<div class="followup"><b>후속 공시</b> ${followups.map((x) => `${esc(x.date)} ${esc(x.title)}`).join(", ")} — 실제 보유자와 보유 목적이 이 공시에 나옵니다.</div>` : "";
   }
 
-  function articleBlock(c) {
-    const ac = c && c.articles;
-    if (!ac) return "";
-    let body;
-    if (ac.lead.length) {
-      body = `<ul class="art-lead">${ac.lead.map((a) => `<li>
-        <div class="al-meta">${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${a.gap_min < 60 * 24 ? `움직임 ${a.gap_min >= 60 ? `${Math.floor(a.gap_min / 60)}시간 ` : ""}${a.gap_min % 60}분 전` : `${dayLabel(a.ts)} ${hhmm(a.ts)}`}</span></div>
-        <a class="al-title" href="#/pr/${esc(a.id)}">${esc(a.title)}</a>
-        <div class="al-foot">${verdictTag(a)}${a.measure ? `<span class="muted">${measureTxt(a.measure)}</span>` : ""}<span class="muted">${esc(a.office || "")}${a.outlets_total > 1 ? ` 외 ${a.outlets_total - 1}곳` : ""}</span></div></li>`).join("")}</ul>`;
-    } else {
-      body = `<p class="flow-sum">이 움직임 전 3일 안에 나온 이 종목 기사는 없습니다.${ac.last_before ? ` 가장 최근 기사는 ${dayLabel(ac.last_before.ts)} 「${esc(ac.last_before.title)}」(${esc(ac.last_before.category)})입니다.` : ""}</p>`;
-    }
-    const late = (ac.late || []).length ? `<p class="note" style="margin-top:8px">움직임 뒤에 나온 기사: ${ac.late.map((a) => `<a href="#/pr/${esc(a.id)}">${esc(a.title)}</a> (${hhmm(a.ts)}, ${esc(a.category)})`).join(", ")}</p>` : "";
-    return `<section class="d-block art-first"><h3 class="d-sec">직전 이 종목 기사와 그 반응</h3>${body}${late}
-      <p class="note" style="margin-top:6px">회사 발표뿐 아니라 언론 분석·리서치·테마 기사도 포함합니다. 기사를 누르면 기사 영향 분석에서 자세히 볼 수 있습니다.</p></section>`;
-  }
-
   function eok(v) {
     if (v == null) return "-";
     const a = Math.abs(v) / 1e8;
@@ -1281,10 +1294,9 @@
         <div><dt>거래대금</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
-      <details class="evidence"><summary>근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 기사 · 매매 창구</span></summary>
+      <details class="evidence"><summary>근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 매매 창구</span></summary>
         <section class="d-block">${factsBlock(c)}</section>
         <section class="d-block">${relatedBlock(c, e.own_change)}</section>
-        ${articleBlock(c)}
         ${disclosureBlock(c)}
         <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
         <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>
