@@ -10,8 +10,7 @@
   const NO_CAUSE = '<span class="muted">원인 미입력</span>';
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
   const tierTag = (e) => (e.tier === "대형" ? `<span class="tier">대형</span>`
-    : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>`
-    : e.tier === "요청" ? `<span class="tier watch" title="직접 분석을 요청한 움직임">요청</span>` : "");
+    : e.tier === "관찰" ? `<span class="tier watch" title="3~5% 움직임: 기록만 하고 알림은 보내지 않습니다">관찰</span>` : "");
   const isDaily = (e) => e.scope === "하루" || e.event_type === "daily";
   const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
