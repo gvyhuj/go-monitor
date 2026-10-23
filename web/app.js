@@ -1498,7 +1498,8 @@
       <div class="page-head"><div><h1 class="page-title">기사 영향 분석</h1>
         <p class="page-sub" id="art-sub">그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(고유 반응) 봅니다.</p></div></div>
       <div id="pr-score"></div>
-      <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div><span class="spacer"></span>
+      <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
+        <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span class="spacer"></span>
         <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 직접 등록</button></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
@@ -1550,15 +1551,12 @@
       kind: a.kind || (a.category === "회사 발표" || a.manual ? "pr" : "ext"), outlets: a.outlets_total || 1,
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
     items.forEach((a) => { if (!a.kind) a.kind = a.category === "회사 발표" || a.manual ? "pr" : "ext"; });
-    const REACT = ["up", "down", "up-weak", "down-weak", "opposite"];
-    const reacted = (e) => REACT.includes((byId.get(e.lead).effect || {}).verdict_cls);
     const groups = {
       pr: events.filter((e) => e.kind === "pr"),
-      ext: events.filter((e) => e.kind === "ext" && !e.noise && reacted(e)),
       all: events.filter((e) => e.kind === "ext" && !e.noise),
       noise: events.filter((e) => e.kind === "ext" && e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", disc: "공시", ext: "외부 기사 · 반응 있음", all: "외부 기사 전체", noise: "단순 언급·시황" };
+    const LABEL = { pr: "그린광학 보도자료", disc: "공시", all: "외부 기사 전체", noise: "단순 언급·시황" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
     if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
@@ -1606,9 +1604,17 @@
       ${ci ? `<p class="score-note">${ciTxt}</p>` : ""}</div>` : "";
     const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : prScore; };
 
-    if (!["pr", "disc", "ext", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
+    if (!["pr", "disc", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
+    // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
+    const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
+    const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
+    const shown = (cat) => cat === "disc" ? groups.disc.filter((x) => hit(x.title, x.filer, x.kind))
+      : groups[cat].filter((e) => e.ids.some((id) => { const a = byId.get(id); return a && hit(a.title, a.office, a.category); }));
+    const qBox = $("#art-q");
+    qBox.value = artState.q || "";
+    qBox.oninput = () => { artState.q = qBox.value; renderList(); followTab(); };
     const seg = $("#art-cat");
-    seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small>${v === "disc" ? discs.length : groups[v].length}</small></button>`).join("");
+    seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small></small></button>`).join("");
     seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); followTab(); };
     const typeBox = $("#disc-types");
     const typeCount = (t) => discs.filter((x) => (x.pblntf || "?") === t).length;
@@ -1630,25 +1636,32 @@
     };
     // 탭·종류를 바꾸면 오른쪽 상세도 그 목록의 맨 위 항목으로 (지금 보던 항목이 목록에 있으면 그대로)
     function followTab() {
-      const ids = artState.cat === "disc" ? groups.disc.map((x) => x.id) : groups[artState.cat].flatMap((e) => e.ids);
+      const list = shown(artState.cat);
+      const ids = artState.cat === "disc" ? list.map((x) => x.id) : list.flatMap((e) => e.ids);
       if (current && ids.includes(current)) return;
-      current = ids.length ? (artState.cat === "disc" ? ids[0] : groups[artState.cat][0].lead) : null;
+      current = ids.length ? (artState.cat === "disc" ? ids[0] : list[0].lead) : null;
       history.replaceState(null, "", current ? `#/pr/${current}` : "#/pr");
       renderList();
       if (current) loadPR(current);
-      else $("#pr-detail").innerHTML = `<div class="empty"><strong>${artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong></div>`;
+      else $("#pr-detail").innerHTML = `<div class="empty"><strong>${artState.q ? "검색에 맞는 항목이 없습니다." : artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong></div>`;
     }
 
     function renderList() {
-      seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat)));
+      seg.querySelectorAll("button").forEach((b) => {
+        b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat));
+        // 탭 숫자: 검색어가 있으면 맞는 수 (공시는 종류 버튼과 관계없이 전체 공시 중)
+        b.querySelector("small").textContent = b.dataset.v === "disc"
+          ? (artState.q ? discs.filter((x) => hit(x.title, x.filer, x.kind)).length : discs.length) : shown(b.dataset.v).length;
+      });
       typeBox.hidden = artState.cat !== "disc";
       if (artState.cat === "disc") renderTypes();
       renderScore();
       const ul = $("#art-list");
       if (artState.cat === "disc") {
-        const list = groups.disc;
+        const list = shown("disc");
         if (!list.length) {
-          ul.innerHTML = !dd ? `<li class="empty"><strong>공시 자료를 불러오지 못했습니다.</strong>사이트에 아직 올라오지 않았으면 다음 자동 수집 때 반영됩니다.</li>`
+          ul.innerHTML = artState.q && groups.disc.length ? `<li class="empty"><strong>검색에 맞는 공시가 없습니다.</strong>다른 검색어를 넣거나 위 종류 버튼을 더 켜 보세요.</li>`
+            : !dd ? `<li class="empty"><strong>공시 자료를 불러오지 못했습니다.</strong>사이트에 아직 올라오지 않았으면 다음 자동 수집 때 반영됩니다.</li>`
             : `<li class="empty"><strong>${discs.length ? "선택한 종류의 공시가 없습니다." : "아직 모인 공시가 없습니다."}</strong>${discs.length ? "위 종류 버튼을 눌러 다른 공시도 볼 수 있습니다." : "자동 수집이 돌면 DART에서 이 회사 공시를 모읍니다."}</li>`;
           return;
         }
@@ -1662,9 +1675,9 @@
         ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
         return;
       }
-      const list = groups[artState.cat];
+      const list = shown(artState.cat);
       if (!list.length) {
-        ul.innerHTML = `<li class="empty"><strong>${artState.cat === "ext" ? "뚜렷하게 반응한 외부 기사가 없습니다." : "해당 기사가 없습니다."}</strong>${artState.cat === "ext" ? "'외부 기사 전체'에서 모두 볼 수 있습니다." : ""}</li>`;
+        ul.innerHTML = `<li class="empty"><strong>${artState.q ? "검색에 맞는 기사가 없습니다." : "해당 기사가 없습니다."}</strong></li>`;
         return;
       }
       const sub = (a) => `<button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}" class="sub">
@@ -1688,9 +1701,9 @@
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" ? "pr" : ev.noise ? "noise" : (artState.cat === "ext" && reacted(ev)) ? "ext" : "all";
+      if (ev) artState.cat = ev.kind === "pr" ? "pr" : ev.noise ? "noise" : "all";
     }
-    if (!current) { const first = (artState.cat === "disc" ? groups.disc[0] : groups[artState.cat][0]) || events[0]; current = first && (first.lead || first.id); }
+    if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length
       ? `그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(<b>고유 반응</b>)를 반응일(전일 종가 → 종가) 기준으로 봅니다. 같은 날 나온 기사는 한 사건으로 묶었습니다.`
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";

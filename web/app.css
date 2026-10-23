@@ -762,6 +762,9 @@ details.art-group > button { padding-left: 24px; }
 .ktag.k-pr { background: color-mix(in srgb, var(--brand-blue) 14%, transparent); color: var(--brand-blue); }
 .ktag.k-ext { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--ink-2); }
 .ktag.k-disc { background: color-mix(in srgb, var(--navy) 12%, transparent); color: var(--navy); }
+.art-search { flex: 0 1 240px; min-width: 160px; padding: 7px 12px; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-sm); }
+.art-search:focus { outline: 2px solid var(--brand-blue); outline-offset: -1px; }
 /* 공시 종류 버튼 (여러 개 켤 수 있음) */
 .disc-types { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
 .disc-types button { border: 1px solid var(--line-2); background: var(--surface); border-radius: 999px; padding: 5px 12px;
