@@ -110,6 +110,13 @@ def apply_inbox(item: dict, log):
             val = kind if kind in ("pr", "ext") else None
             conn.execute("UPDATE articles SET kind_override=? WHERE id=? OR story=?", (val, aid, aid))
             log.info("사이트에서 기사 구분 변경: %s → %s", aid, val or "자동")
+        elif t == "case_move":                  # 사건 묶음 고치기: 항목들을 다른 항목의 사건으로 / 따로(self) / 자동(None)
+            from core import cases
+            ids = [str(x) for x in (item.get("items") or [])][:200]
+            to = item.get("to")
+            to = str(to) if to not in (None, "", "auto") else None
+            cases.save_override(ids, to)
+            log.info("사이트에서 사건 묶음 고침: %s → %s", ", ".join(ids), to or "자동")
         elif t == "article_tone":               # 악재(-1) / 표시 안 함(0) / 자동(auto)
             aid, tone = str(item.get("id") or ""), item.get("tone")
             val = int(tone) if tone in (-1, 0, "-1", "0") else None

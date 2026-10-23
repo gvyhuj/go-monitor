@@ -5,6 +5,9 @@
 - 둘 다 없으면 같은 날 + 같은 대표 주제일 때만 같은 사건
 - 같은 종류의 공시(계약·실적·IR·증자·전환사채)가 사건 첫 기사보다 36시간 안에 먼저 나왔으면 그 공시를 사건에 넣고 기준 시점으로 삼음
 단순 언급·시황 기사는 사건을 만들지 않음.
+
+관리자가 고친 묶음(overrides, system_state 'cases:overrides')을 자동 묶음 위에 적용:
+{항목 id: 같은 사건으로 옮길 다른 항목 id 또는 "self"(따로 떼어 새 사건)}
 """
 from __future__ import annotations
 
@@ -52,7 +55,58 @@ def _same_partner(a: str | None, b: str | None) -> bool:
     return bool(a and b) and (a == b or a.startswith(b) or b.startswith(a))
 
 
-def build(articles: list[dict], disclosures: list[dict], company: str = "그린광학") -> list[dict]:
+OVERRIDES_KEY = "cases:overrides"
+
+
+def load_overrides() -> dict:
+    import json
+    from .db import get_state
+    st = get_state(OVERRIDES_KEY)
+    try:
+        v = json.loads(st["value"]) if st and st.get("value") else {}
+    except (ValueError, TypeError):
+        v = {}
+    return v if isinstance(v, dict) else {}
+
+
+def save_override(items: list[str], to: str | None):
+    """items를 to(다른 항목 id, 'self' = 따로 떼기, None = 자동으로 되돌리기)로."""
+    import json
+    from .db import set_state
+    cur = load_overrides()
+    for i in items:
+        if to:
+            cur[str(i)] = str(to)
+        else:
+            cur.pop(str(i), None)
+    set_state(OVERRIDES_KEY, json.dumps(cur, ensure_ascii=False))
+
+
+def _apply(cases: list[dict], overrides: dict) -> list[dict]:
+    where = {i["id"]: c for c in cases for i in c["items"]}
+    for iid, to in overrides.items():
+        c = where.get(iid)
+        if c is None:
+            continue
+        if to == "self":
+            if len(c["items"]) == 1:
+                continue
+            target = {"items": [], "manual": True}
+            cases.append(target)
+        else:
+            target = where.get(to)
+            if target is None or target is c:
+                continue
+        item = next(i for i in c["items"] if i["id"] == iid)
+        c["items"].remove(item)
+        target["items"].append(item)
+        c["manual"] = target["manual"] = True
+        where[iid] = target
+    return [c for c in cases if c["items"]]
+
+
+def build(articles: list[dict], disclosures: list[dict], company: str = "그린광학",
+          overrides: dict | None = None) -> list[dict]:
     """articles: api_articles의 items (같은 내용 묶음의 대표), disclosures: disclosure_rows. 최근 사건이 먼저."""
     from .articles import DISCLOSURE_MATCH
     leads = sorted((a for a in articles if a.get("category") not in NOISE and not a.get("hidden")),
@@ -75,7 +129,7 @@ def build(articles: list[dict], disclosures: list[dict], company: str = "그린�
             found = {"_start": t, "_partners": set(), "_amounts": set(), "_days": set(), "_topics": set(), "items": []}
             cases.append(found)
         found["items"].append({"type": "article", "id": a["id"], "ts": a["ts"], "title": a["title"],
-                               "office": a.get("office"), "kind": a.get("kind"),
+                               "office": a.get("office"), "kind": a.get("kind"), "topic": a.get("topic"),
                                "outlets": a.get("outlets_total") or 1})
         found["_days"].add(a["ts"][:10])
         if a.get("topic"):
@@ -100,19 +154,24 @@ def build(articles: list[dict], disclosures: list[dict], company: str = "그린�
                                       "office": d.get("filer"), "kind": "disclosure"})
                 used.add(d["id"])
                 break
+    cases = _apply(cases, overrides or {})
     out = []
     for c in cases:
         items = sorted(c["items"], key=lambda i: i["ts"])
         arts = [i for i in items if i["type"] == "article"]
-        lead = next((i for i in arts if i["kind"] == "pr"), next((i for i in arts if i["kind"] == "company"), arts[0]))
+        lead = next((i for i in arts if i["kind"] == "pr"), next((i for i in arts if i["kind"] == "company"),
+                                                                   arts[0] if arts else items[0]))
+        partners = {w for w in (partner(i["title"], company) for i in arts) if w}
+        amounts = {v for v in (amount(i["title"]) for i in arts) if v}
+        topics = {i["topic"] for i in arts if i.get("topic")}
         out.append({"id": f"c{items[0]['id']}", "start": items[0]["ts"], "end": items[-1]["ts"],
                     "title": lead["title"], "lead": lead["id"],
                     "kind": "pr" if any(i["kind"] == "pr" for i in arts) else
                             "company" if any(i["kind"] == "company" for i in arts) else
-                            "unknown" if all(i["kind"] == "unknown" for i in arts) else "ext",
-                    "partner": max(c["_partners"], key=len) if c["_partners"] else None,
-                    "amount": max(c["_amounts"]) if c["_amounts"] else None,
-                    "topic": next(iter(sorted(c["_topics"])), None),
+                            "unknown" if arts and all(i["kind"] == "unknown" for i in arts) else "ext",
+                    "partner": max(partners, key=len) if partners else None,
+                    "amount": max(amounts) if amounts else None,
+                    "topic": next(iter(sorted(topics)), None), "manual": bool(c.get("manual")),
                     "n_articles": len(arts), "n_outlets": sum(i.get("outlets") or 1 for i in arts),
                     "n_days": len({i["ts"][:10] for i in items}),
                     "items": items})

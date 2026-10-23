@@ -67,3 +67,45 @@ def test_amount_and_partner_extraction():
     assert cases.partner("그린광학, 美 우주기업 '아라비르'와 MOU") == "아라비르"
     assert cases.partner('SDT-그린광학 "양자점 기반 SWIR 카메라 완성도↑"') == "SDT"
     assert cases.partner("NASA 출신이 선택한 한국 광학기술…그린광학, 美 우주기업과 위성 카메라 공급 협력") is None
+
+
+def test_manual_split_and_merge_override_auto_grouping():
+    auto = {c["lead"]: c for c in cases.build(ARTS, DISCS)}
+    assert ids(auto["p1"]) == ["p1", "p2"]
+    got = {c["lead"]: c for c in cases.build(ARTS, DISCS, overrides={"p2": "self", "q2": "q1"})}
+    assert ids(got["p1"]) == ["p1"] and got["p1"]["manual"]
+    assert ids(got["p2"]) == ["p2"] and got["p2"]["partner"] == "파라스"
+    assert ids(got["q1"]) == ["q1", "q2"] and got["q1"]["manual"] and got["q1"]["amount"] == 134
+    assert not got["lig"]["manual"]
+    # 없는 항목·같은 사건으로 옮기기는 무시
+    same = cases.build(ARTS, DISCS, overrides={"zzz": "q1", "p2": "p1"})
+    assert {c["lead"]: ids(c) for c in same}["p1"] == ["p1", "p2"]
+
+
+def test_disclosure_can_be_split_off_alone():
+    got = cases.build(ARTS, DISCS, overrides={"d1": "self"})
+    alone = next(c for c in got if ids(c) == ["d1"])
+    assert alone["lead"] == "d1" and alone["n_articles"] == 0
+
+
+def test_save_override_roundtrip(tmp_path, monkeypatch):
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    cases.save_override(["a", "b"], "c")
+    cases.save_override(["b"], None)
+    assert cases.load_overrides() == {"a": "c"}
+
+
+def test_case_move_request_from_site(tmp_path, monkeypatch):
+    import logging
+    import cloud_job
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    log = logging.getLogger("t")
+    cloud_job.apply_inbox({"type": "case_move", "items": ["p2", "q2"], "to": "self"}, log)
+    cloud_job.apply_inbox({"type": "case_move", "items": ["q2"], "to": "auto"}, log)
+    assert cases.load_overrides() == {"p2": "self"}

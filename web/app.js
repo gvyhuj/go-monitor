@@ -2068,7 +2068,7 @@
       current = ids.length ? (flat ? ids[0] : list[0].lead) : null;
       history.replaceState(null, "", current ? `#/pr/${current}` : "#/pr");
       renderList();
-      if (current && caseById.has(current)) $("#pr-detail").innerHTML = caseDetail(caseById.get(current));
+      if (current && caseById.has(current)) showCase(caseById.get(current), groups.case);
       else if (current) loadPR(current);
       else $("#pr-detail").innerHTML = `<div class="empty"><strong>${artState.q ? "검색에 맞는 항목이 없습니다." : artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong></div>`;
     }
@@ -2168,20 +2168,50 @@
       }, 30000));
     }
     if (!current) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
-    if (caseById.has(current)) { $("#pr-detail").innerHTML = caseDetail(caseById.get(current)); return; }
+    if (caseById.has(current)) { showCase(caseById.get(current), groups.case); return; }
     loadPR(current);
   }
 
   const caseSpan = (c) => (c.start.slice(0, 10) === c.end.slice(0, 10) ? dayLabel(c.start) : `${dayLabel(c.start)} ~ ${dayLabel(c.end)} (${c.n_days}일)`);
   // 사건 상세: 묶인 기사·공시를 시간 순으로 (각 항목을 누르면 그 기사·공시 상세)
-  function caseDetail(c) {
+  // 관리자 고치기: 항목 '따로 떼기', 사건 전체 '다른 사건과 합치기', 고친 사건은 '자동으로 되돌리기'
+  // (요청은 다른 수정과 같이 GitHub 이슈로 가고, 저장소 주인이 만든 요청만 반영됨)
+  function caseDetail(c, all = []) {
     const facts = [c.partner ? `상대 ${esc(c.partner)}` : "", c.amount ? `금액 ${c.amount.toLocaleString("ko-KR")}억 원` : "", c.topic ? `주제 ${esc(c.topic)}` : ""].filter(Boolean);
-    return `<div class="al-meta">${kindTag({ kind: c.kind })}<span class="ktag">사건</span></div>
+    const t0 = Date.parse(c.start.slice(0, 10)), near = all.filter((x) => x.id !== c.id && Math.abs(Date.parse(x.start.slice(0, 10)) - t0) <= 45 * 864e5);
+    return `<div class="al-meta">${kindTag({ kind: c.kind })}<span class="ktag">사건</span>${c.manual ? '<span class="tier watch">직접 고침</span>' : ""}</div>
       <h2 class="pr-title">${esc(c.title)}</h2>
       <p class="pr-meta">${caseSpan(c)} · 기사 ${c.n_articles}건 · 매체 기사 ${c.n_outlets}건${facts.length ? ` · ${facts.join(" · ")}` : ""}</p>
       <ul class="case-items">${c.items.map((i) => `<li><a href="#/pr/${esc(i.id)}">
         <span class="al-meta">${i.type === "disclosure" ? '<span class="ktag k-disc">공시</span>' : kindTag({ kind: i.kind })}<span class="muted">${dayLabel(i.ts)} ${hhmm(i.ts)}${i.office ? ` · ${esc(i.office)}` : ""}${i.outlets > 1 ? ` · ${i.outlets}개 매체` : ""}</span></span>
-        <span class="t">${esc(i.title)}</span></a></li>`).join("")}</ul>`;
+        <span class="t">${esc(i.title)}</span></a>${c.items.length > 1 ? `<button type="button" class="btn-link editable case-split" data-item="${esc(i.id)}">이 사건에서 따로 떼기</button>` : ""}</li>`).join("")}</ul>
+      <div class="ask-row editable case-fix">
+        ${near.length ? `<select id="case-merge-to" aria-label="합칠 사건"><option value="">다른 사건과 합치기…</option>${near.map((x) => `<option value="${esc(x.lead)}">${esc(x.start.slice(5, 10).replace("-", "/"))} ${esc(x.title.slice(0, 40))}</option>`).join("")}</select>
+          <button class="btn small" type="button" id="case-merge">합치기</button>` : ""}
+        ${c.manual ? `<button class="btn-link" type="button" id="case-auto">자동 묶음으로 되돌리기</button>` : ""}
+        <span class="form-msg" id="case-msg"></span></div>`;
+  }
+
+  function showCase(c, all) {
+    const box = $("#pr-detail");
+    box.innerHTML = caseDetail(c, all);
+    const msg = $("#case-msg");
+    const send = async (btn, items, to) => {
+      try {
+        msg.className = "form-msg";
+        msg.textContent = await sendInbox({ type: "case_move", items, to, title: c.title });
+        btn.disabled = true;
+      } catch (e) { msg.className = "form-msg err"; msg.textContent = e.message; }
+    };
+    box.querySelectorAll(".case-split").forEach((b) => b.addEventListener("click", () => send(b, [b.dataset.item], "self")));
+    const merge = $("#case-merge");
+    if (merge) merge.addEventListener("click", () => {
+      const to = $("#case-merge-to").value;
+      if (!to) { msg.className = "form-msg err"; msg.textContent = "합칠 사건을 먼저 고르세요."; return; }
+      send(merge, c.items.map((i) => i.id), to);
+    });
+    const auto = $("#case-auto");
+    if (auto) auto.addEventListener("click", () => send(auto, c.items.map((i) => i.id), "auto"));
   }
 
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
