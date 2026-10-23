@@ -1,6 +1,8 @@
 """기사 주제 자동 분류와 기자명 읽기 (원문 글귀 형식은 실제 네이버 기사에서 본 것)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from core import reporters, topics
@@ -58,11 +60,38 @@ def test_fill_reads_each_article_once_and_skips_google(tmp_path, monkeypatch):
         if u not in pages:
             raise OSError("안 열림")
         return pages[u]
-    assert reporters.fill("X", limit=2, fetch=fetch) == 0          # 최신 2개(3번 실패, 2번 이름 없음) + 구글은 열지 않음
-    assert reporters.fill("X", limit=2, fetch=fetch) == 1          # 다음 실행에 남은 1번
-    assert reporters.fill("X", limit=2, fetch=fetch) == 0          # 모두 확인함 → 다시 열지 않음
+    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 최신 2개(3번 실패, 2번 이름 없음)
+    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 1          # 다음 실행: 구글(원래 주소 못 찾음 → 열지 않음) + 남은 1번
+    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 모두 확인함 → 다시 열지 않음
     assert opened == ["https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/2",
                       "https://n.news.naver.com/mnews/article/018/1"]
     with db.connect() as conn:
         got = dict(conn.execute("SELECT id, reporter FROM articles").fetchall())
     assert got == {"a0": "안유리", "a1": None, "a2": None, "a3": None}
+
+
+def test_google_link_is_resolved_to_original_and_old_skipped_rows_retried(tmp_path, monkeypatch):
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:   # 예전 코드가 구글이라 건너뛰고 '확인함'으로 남긴 기사
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,reporter_at) VALUES "
+                     "('g','X','2026-10-20T10:00','t','https://news.google.com/rss/articles/CBMiabc?oc=5','2026-10-23T10:00')")
+    orig = "https://www.etnews.com/20261020000006"
+    assert reporters.fill("X", fetch=lambda u: "홍길동 기자 hong@etnews.com" if u == orig else "",
+                          resolve=lambda u: orig) == 1
+    with db.connect() as conn:
+        url, name, done = conn.execute("SELECT url, reporter, resolved_at FROM articles").fetchone()
+    assert (url, name) == (orig, "홍길동") and done
+    assert reporters.fill("X", fetch=lambda u: 1 / 0, resolve=lambda u: 1 / 0) == 0   # 다시 열지 않음
+
+
+def test_google_batchexecute_response_parsing():
+    from core import gnews
+    inner = json.dumps(["garturlres", "https://www.cctimes.kr/news/articleView.html?idxno=1", 1])
+    text = ")]}'\n\n" + json.dumps([["wrb.fr", "Fbv4je", inner, None, None, None, "generic"]]) + "\n\n"
+    assert gnews.parse_batch(text) == "https://www.cctimes.kr/news/articleView.html?idxno=1"
+    assert gnews.parse_batch("garbage") is None
+    assert gnews.is_google("https://news.google.com/rss/articles/x") and not gnews.is_google("https://n.news.naver.com/a")

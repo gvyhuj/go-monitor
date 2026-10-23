@@ -2,7 +2,7 @@
 
 네이버 뉴스는 위쪽 기자 칸을 나중에 스크립트로 채워서, 본문 글귀에서 찾습니다:
 [이데일리 안유리 기자] · (서울=연합뉴스) 홍길동 기자 = · 홍길동 기자 abc@… · 홍길동 기자가 보도합니다 · SBS Biz 윤지혜입니다
-구글 뉴스 연결 주소(news.google.com)는 원문으로 바로 가지 않아 건너뜁니다.
+구글 뉴스 연결 주소(news.google.com)는 먼저 원래 기사 주소로 바꿔(gnews.resolve) 저장한 뒤 그 원문에서 읽습니다.
 """
 from __future__ import annotations
 
@@ -44,20 +44,37 @@ def fetchable(url: str) -> bool:
     return bool(url) and url.startswith("http") and "news.google.com" not in url
 
 
-def fill(symbol: str, limit: int = BATCH, fetch=None, log=None) -> int:
-    """아직 기자명을 확인하지 않은 기사를 limit개까지 열어 기자명을 채움. 찾은 개수."""
+def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) -> int:
+    """아직 기자명을 확인하지 않은 기사를 limit개까지 열어 기자명을 채움. 찾은 개수.
+
+    구글 뉴스 연결 주소는 원래 주소로 바꿔 url에 저장 (바꿔 본 기사는 resolved_at, 예전에 건너뛴 기사도 한 번 더 봄)."""
+    from . import gnews
     if fetch is None:
         from .naver import http_get
         fetch = lambda u: http_get(u, timeout=8, retries=0).decode("utf-8", "ignore")
+    resolve = resolve or gnews.resolve
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        rows = conn.execute("SELECT id, url FROM articles WHERE symbol=? AND reporter_at IS NULL ORDER BY ts DESC",
+        rows = conn.execute("SELECT id, url FROM articles WHERE symbol=? AND (reporter_at IS NULL OR "
+                            "(url LIKE '%news.google.com/%' AND resolved_at IS NULL)) ORDER BY ts DESC",
                             (symbol,)).fetchall()
     found, tried = 0, 0
     for aid, url in rows:
         if tried >= limit:
             break
         name = None
+        if gnews.is_google(url):
+            tried += 1
+            try:
+                orig = resolve(url)
+            except Exception as e:      # noqa: BLE001 - 한 기사가 안 풀려도 계속
+                orig = None
+                if log:
+                    log(f"구글 뉴스 원래 주소 찾기 실패: {e}")
+            with connect() as conn:
+                conn.execute("UPDATE articles SET url=COALESCE(?, url), resolved_at=? WHERE id=?", (orig, now, aid))
+            url = orig or url
+            _time.sleep(0.3)
         if fetchable(url):
             tried += 1
             try:
