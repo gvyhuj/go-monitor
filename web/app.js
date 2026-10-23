@@ -577,7 +577,7 @@
           <button type="button" class="btn small" data-mv="-1" ${mi <= 0 ? "disabled" : ""} aria-label="이전 달">‹</button>
           <b>${y}년 ${m}월</b>
           <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
-          <span class="cal-legend"><span><i class="mk ev up"></i>급등·급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
+          <span class="cal-legend"><span><i class="mk ev up"></i>급등</span><span><i class="mk ev down"></i>급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
         </div>
         <div class="cal-grid">${["일", "월", "화", "수", "목", "금", "토"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
     }
