@@ -11,7 +11,7 @@ const measures = [-0.03, -0.01, 0.01, 0.9].map((value, index) => ({ method: inde
 const context = {
   esc: (value) => String(value), sgnCls: () => "", pct: (value) => `${(value * 100).toFixed(2)}%`,
   points: (value) => `${(value * 100).toFixed(2)}%p`, since: "2026-04-23",
-  groups: { pr: measures.map((measure, index) => ({ day: "2026-10-15", lead: String(index), outlets: 1 })), all: [] },
+  groups: { pr: measures.map((measure, index) => ({ day: "2026-10-15", lead: String(index), outlets: 1 })), ext: [] },
   byId: new Map(measures.map((measure, index) => [String(index), { effect: { measure } }])),
   d: { summary_critical_values: [null, null, 12.706204736, 4.30265273, 3.182446305] }
 };
@@ -26,8 +26,8 @@ assert.match(detail, /실제 상승이 아니라/);
 assert.match(context.measureList(measure), /실제 -5\.00%/);
 assert.equal(context.measureList({ value: 0.9 }), "");
 const score = context.articleScore("pr");
-assert.match(score, /계산 3일 \/ 미계산 1일/);
+assert.match(score, /계산 3일 \/ 미확인·자료 부족 1일/);
 assert.match(score, /-1\.00%p/);
-assert.equal(context.articleScore("all"), "");
+assert.equal(context.articleScore("ext"), "");
 assert.match(context.measureTxt({ value: 0.9 }), /다시 계산/);
 console.log("새 대표 분석 화면 검증 통과: 실제 등락 분리·%p 단위·기존 값 제외·집계 표본 수");
