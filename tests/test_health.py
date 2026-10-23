@@ -59,7 +59,7 @@ def test_outside_hours_or_holiday():
 
 def test_alert_once_a_day_then_recovery(tmpdb, monkeypatch):
     posted = []
-    monkeypatch.setattr(alerts, "_post_issue", lambda t, b: posted.append(t) or 1)
+    monkeypatch.setattr(alerts, "_notify", lambda t, b, log=None: posted.append(t))
     site = {"m": NOW - timedelta(minutes=31)}   # 바로 지금 30분을 넘김
     monkeypatch.setattr(alerts, "_site_modified", lambda: site["m"])
     set_state("data_last_ok", NOW.isoformat(timespec="seconds"))

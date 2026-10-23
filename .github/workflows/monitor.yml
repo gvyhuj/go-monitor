@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       test_alert:
-        description: "알림 시험 보내기"
+        description: "알림 시험 메일 보내기"
         type: boolean
         default: false
   push:
@@ -56,6 +56,11 @@ jobs:
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}          # 선택: 국제·정치 이슈 기사 검색 (없으면 건너뜀)
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       DART_API_KEY: ${{ secrets.DART_API_KEY }}                # 공시 목록 (금융감독원 DART, 없으면 예전처럼 네이버)
+      ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}            # 선택: 급등·급락 알림을 받을 메일 (쉼표로 여러 개)
+      SMTP_USER: ${{ secrets.SMTP_USER }}                      # 보내는 메일 계정 (Gmail 주소)
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}              # Gmail 앱 비밀번호 (계정 비밀번호 아님)
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}                      # 선택: Gmail이 아니면 (기본 smtp.gmail.com)
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}                      # 선택: 기본 465
       GO_INTERVAL_MIN: "5"
       GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -125,6 +130,19 @@ jobs:
           git commit -q -m "백업 $(date '+%Y-%m-%d %H:%M')"
           git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
           echo "data 브랜치에 백업했습니다."
+
+      - name: 주간 백업 (릴리스 '주간 백업'에 날짜별로, 26주 보관)
+        if: always() && hashFiles('weekly/*.db.enc') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 기록 파일이 100MB에 가까워 브랜치(파일 100MB 제한) 대신 릴리스 첨부 파일로 보관 (파일당 2GB까지)
+          gh release view weekly-backup >/dev/null 2>&1 || gh release create weekly-backup --latest=false \
+            --title "주간 백업 (암호화)" --notes "감시 기록의 주간 백업입니다. 날짜별로 26주 보관하며 DATA_KEY 없이는 열 수 없습니다."
+          gh release upload weekly-backup weekly/*.db.enc --clobber
+          gh release view weekly-backup --json assets --jq '[.assets[].name] | sort | .[:-26][]' \
+            | xargs -r -n1 gh release delete-asset weekly-backup -y
+          echo "주간 백업: $(ls weekly)"
 
       - name: 오래된 기록 캐시 정리
         if: always()

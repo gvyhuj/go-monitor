@@ -154,6 +154,7 @@ def checkpoint():
 STATE_DIR = Path(os.environ.get("GO_STATE_DIR", "state"))        # actions/cache 로 다음 실행에 넘김 (암호화)
 RESTORE_DIR = Path(os.environ.get("GO_RESTORE_DIR", "restore"))  # data 브랜치의 백업 (암호화)
 BACKUP_DIR = Path(os.environ.get("GO_BACKUP_DIR", "backup"))     # 이번에 data 브랜치에 올릴 백업
+WEEKLY_DIR = Path(os.environ.get("GO_WEEKLY_DIR", "weekly"))     # 이번에 '주간 백업' 릴리스에 붙일 백업 (날짜별로 26주 보관)
 SITE_DIR = Path(os.environ.get("GO_SITE_DIR", "_site"))
 
 
@@ -228,7 +229,26 @@ def build_static_site(now, log) -> dict:
         checkpoint()
         sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
         sitebuild.backup_db(DB_PATH, BACKUP_DIR, _data_key())
-    return {"files": n, "backup": due}
+    # 주간 백업: 1시간 백업은 최신 하나만 덮어쓰므로, 잘못된 기록이 덮어써도 되돌릴 수 있게 날짜별로 따로 남김
+    weekly = weekly_backup_due(now)
+    if weekly:
+        checkpoint()
+        sitebuild.backup_db(DB_PATH, WEEKLY_DIR, _data_key())
+        (WEEKLY_DIR / "monitor.db.enc").rename(WEEKLY_DIR / f"monitor-{weekly}.db.enc")
+        set_state("site:last_weekly_backup", weekly)
+    return {"files": n, "backup": due, "weekly": weekly}
+
+
+def weekly_backup_due(now) -> str | None:
+    """마지막 주간 백업에서 7일이 지났으면 오늘 날짜(파일 이름에 씀)."""
+    today = now.date()
+    last = get_state("site:last_weekly_backup")
+    try:
+        if last and last.get("value") and (today - date.fromisoformat(last["value"])).days < 7:
+            return None
+    except ValueError:
+        pass
+    return today.isoformat()
 
 
 def annotate(level: str, text: str):
@@ -418,11 +438,13 @@ def main(argv) -> int:
                 set_state("factor_ready", now.isoformat(timespec="minutes"))
                 log.info("업종 ETF 자료가 준비되어 이벤트를 다시 분석합니다")
         causes.refresh_pending(code, feed.kst_now(), fetch=c.fetch, log=log)
-        # 급등·급락 알림 (GitHub 앱 푸시: 저장소 주인 @언급)
+        # 급등·급락 알림 (메일)
         try:
             from core import alerts
+            if not alerts.email_enabled():
+                annotate("warning", "메일 알림 설정(ALERT_EMAIL_TO·SMTP_USER·SMTP_PASSWORD)이 없어 급등·급락 알림을 보내지 않습니다")
             if alerts.send_test(log.warning):
-                annotate("notice", "알림 시험 글을 보냈습니다")
+                annotate("notice", "알림 시험 메일을 보냈습니다")
             n_alert = alerts.send_new(code, log=log.info)
             if n_alert:
                 annotate("notice", f"급등·급락 알림 {n_alert}건 보냄")
@@ -473,7 +495,7 @@ def main(argv) -> int:
                 owner, name = repo.split("/", 1)
                 summary(f"### 사이트 주소\nhttps://{owner.lower()}.github.io/{name}/\n")
             summary(f"- 사이트 자료 {r['files']}개 (암호화), 기록 이어쓰기: {restored}"
-                    + (", data 브랜치 백업" if r["backup"] else "") + (f", 사이트 요청 {inbox_n}건 반영" if inbox_n else ""))
+                    + (", data 브랜치 백업" if r["backup"] else "") + (", 주간 백업" if r.get("weekly") else "") + (f", 사이트 요청 {inbox_n}건 반영" if inbox_n else ""))
         except Exception as e:
             log.error("사이트 만들기 실패: %s", e)
             summary(f"- 사이트 만들기 실패: {e}")

@@ -1,10 +1,10 @@
-"""급등·급락 알림 (GitHub 앱 푸시).
+"""급등·급락 알림 (메일).
 
-급등·급락이 새로 감지되면 저장소에 알림 글(이슈)을 하나 올리고 저장소 주인을 @언급합니다.
-GitHub 휴대폰 앱이 '언급' 알림을 푸시로 보내 줍니다. 글은 올리자마자 닫아서 목록이 쌓이지 않게 합니다.
+급등·급락이 새로 감지되면 ALERT_EMAIL_TO 주소로 메일을 보냅니다 (보내는 계정: SMTP_USER·SMTP_PASSWORD).
+예전에는 저장소 이슈로 GitHub 앱 알림을 보냈지만 지금은 메일로만 보냅니다.
+메일 설정이 없거나 발송에 실패하면 보낸 것으로 표시하지 않아 다음 실행에서 다시 시도합니다.
 
-저장소가 공개라서 알림 글에는 '급등 +8.7% (10:12)' 같은 공개 시세 정보만 적고,
-원인 분석은 비밀번호가 걸린 사이트에서만 보게 합니다.
+메일에는 '급등 +8.7% (10:12)' 같은 시세 정보만 적고, 원인 분석은 비밀번호가 걸린 사이트에서 보게 합니다.
 
 같은 날 같은 방향은 한 번만, 그 뒤 ±10% 이상('대형')으로 커지면 한 번 더 보냅니다.
 장중에 ±3% 안으로 회복했다가 다시 기준을 넘으면 한 번 더 보냅니다.
@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import smtplib
+import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -36,23 +38,45 @@ def _save(keys: set):
     set_state(KEY, json.dumps(sorted(keys)[-400:]))
 
 
-def _post_issue(title: str, body: str) -> int | None:
-    repo, token = os.environ.get("GITHUB_REPOSITORY"), os.environ.get("GITHUB_TOKEN")
-    if not repo or not token:
-        return None
-    hdr = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-           "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"}
-    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/issues", method="POST", headers=hdr,
-                                 data=json.dumps({"title": title, "body": body}).encode())
-    with urllib.request.urlopen(req, timeout=15) as r:
-        num = json.loads(r.read())["number"]
-    try:                                    # 알림은 이미 나갔으니 글은 닫아 둠
-        req = urllib.request.Request(f"https://api.github.com/repos/{repo}/issues/{num}", method="PATCH", headers=hdr,
-                                     data=json.dumps({"state": "closed", "state_reason": "completed"}).encode())
-        urllib.request.urlopen(req, timeout=15).close()
-    except urllib.error.URLError:
-        pass
-    return num
+class AlertError(ValueError):
+    """알림을 보내지 못함 (메일 설정 없음·메일 서버 오류). 보낸 것으로 표시하지 않아 다음 실행에서 다시 시도."""
+
+
+def email_enabled() -> bool:
+    return all(os.environ.get(k) for k in ("ALERT_EMAIL_TO", "SMTP_USER", "SMTP_PASSWORD"))
+
+
+def _send_email(title: str, body: str):
+    """받는 주소는 쉼표로 여러 개. 기본은 Gmail(앱 비밀번호), SMTP_HOST/SMTP_PORT로 바꿀 수 있음."""
+    from email.message import EmailMessage
+    to = [x.strip() for x in os.environ["ALERT_EMAIL_TO"].split(",") if x.strip()]
+    host = os.environ.get("SMTP_HOST") or "smtp.gmail.com"
+    port = int(os.environ.get("SMTP_PORT") or 465)
+    msg = EmailMessage()
+    msg["Subject"] = f"[주가 감시] {title}"
+    msg["From"] = os.environ["SMTP_USER"]
+    msg["To"] = ", ".join(to)
+    msg.set_content(body)
+    ctx = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, context=ctx, timeout=20) as s:
+            s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
+            s.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.starttls(context=ctx)
+            s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
+            s.send_message(msg)
+
+
+def _notify(title: str, body: str, log=None):
+    """알림은 메일로만 보냄 (예전의 GitHub 앱 알림은 끔)."""
+    if not email_enabled():
+        raise AlertError("메일 설정(ALERT_EMAIL_TO·SMTP_USER·SMTP_PASSWORD)이 없어 알림을 보내지 못했습니다.")
+    try:
+        _send_email(title, body)
+    except (OSError, smtplib.SMTPException) as ex:
+        raise AlertError(f"메일 발송 실패: {ex}") from ex
 
 
 def _site() -> str:
@@ -64,10 +88,8 @@ def _site() -> str:
 
 
 def _body(extra: str = "", event_id: int | None = None) -> str:
-    owner = os.environ.get("GITHUB_REPOSITORY_OWNER") or os.environ.get("GITHUB_REPOSITORY", "/").split("/")[0]
     link = f"{_site()}#/events/{event_id}" if event_id and _site() else _site()   # 누르면 그 이상변동 상세가 바로 열림
-    return (f"@{owner} {extra}\n\n원인 분석은 사이트에서 확인하세요: {link}\n\n"
-            "_자동 알림입니다. 이 글은 알림용이라 바로 닫힙니다._")
+    return f"{extra}\n\n원인 분석은 사이트에서 확인하세요: {link}\n\n자동 알림입니다."
 
 
 def init_if_needed(symbol: str):
@@ -115,8 +137,8 @@ def send_new(symbol: str, log=None) -> int:
             when = f"{md} {e['start_ts'][11:16]}~{e['last_ts'][11:16]}"
         title = f"{word} {mv*100:+.1f}% ({when})" + (" · 대형" if tier == "대형" else "")
         try:
-            _post_issue(title, _body(f"주가가 {'장중 전일 종가 대비' if running else e['start_ts'][11:16] + '부터' if e['event_type'] != 'daily' else '하루 동안'} "
-                                      f"{mv*100:+.1f}% 움직였습니다.", e.get("id")))
+            _notify(title, _body(f"주가가 {'장중 전일 종가 대비' if running else e['start_ts'][11:16] + '부터' if e['event_type'] != 'daily' else '하루 동안'} "
+                                      f"{mv*100:+.1f}% 움직였습니다.", e.get("id")), log)
             sent.add(key)
             if tier == "대형":
                 sent.add(f"{e['start_ts'][:10]}:{e['direction']}:일반{sfx}")
@@ -154,8 +176,8 @@ def send_multiday(symbol: str, log=None) -> int:
         md = lambda d: d[5:10].replace("-", "/")
         title = f"{m['days']}일 누적 {word} {m['return']*100:+.1f}% ({md(m['from'])} 종가 → {md(m['date'])} 종가)"
         try:
-            _post_issue(title, _body(f"주가가 {m['days']}거래일 동안 {m['return']*100:+.1f}% 움직였습니다 "
-                                      "(하루하루는 기준 밑이어도 쌓이면 알립니다)."))
+            _notify(title, _body(f"주가가 {m['days']}거래일 동안 {m['return']*100:+.1f}% 움직였습니다 "
+                                      "(하루하루는 기준 밑이어도 쌓이면 알립니다)."), log)
             sent.add(key)
             n += 1
             if log:
@@ -169,19 +191,19 @@ def send_multiday(symbol: str, log=None) -> int:
 
 
 def send_test(log=None) -> bool:
+    """메일 설정을 처음 넣으면 시험 메일을 한 번 (실행 화면에서 '알림 시험 보내기'를 켜면 다시)."""
     force = os.environ.get("GO_ALERT_TEST") == "1"
-    if get_state("alerts:test_v1") and not force:
+    if not email_enabled() or (get_state("alerts:email_test_v1") and not force):
         return False
     try:
-        _post_issue(f"[알림 시험] 주가 감시 알림 ({datetime.now():%m/%d %H:%M})",
-                    _body("이 알림이 휴대폰 GitHub 앱에 보이면 설정이 끝난 것입니다. "
-                          "앞으로 급등·급락이 감지되면 이런 알림이 옵니다."))
-        set_state("alerts:test_v1", datetime.now().isoformat(timespec="minutes"))
-        return True
-    except (urllib.error.URLError, KeyError, ValueError) as ex:
+        _notify(f"[알림 시험] 주가 감시 알림 ({datetime.now():%m/%d %H:%M})",
+                _body("이 메일이 보이면 설정이 끝난 것입니다. 앞으로 급등·급락이 감지되면 이 주소로 알림이 옵니다."), log)
+    except AlertError as ex:
         if log:
             log(f"시험 알림 실패: {ex}")
         return False
+    set_state("alerts:email_test_v1", datetime.now().isoformat(timespec="minutes"))
+    return True
 
 
 # ------------------------------------------------------------------ 갱신 멈춤 알림
@@ -291,7 +313,7 @@ def check_health(now: datetime, trading_day: bool, log=None) -> list:
         else:
             continue
         try:
-            _post_issue(title, _body(msg))
+            _notify(title, _body(msg), log)
         except (urllib.error.URLError, KeyError, ValueError) as ex:
             if log:
                 log(f"알림 실패: {ex}")
