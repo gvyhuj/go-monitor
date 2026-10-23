@@ -429,6 +429,10 @@ def api_article_detail(q, aid):
     e["time_quality"] = a.get("time_quality")
     conf = articles.confounders(sym, e, a["id"], a.get("story"))
     out = {"article": a, "effect": e, "confounders": conf}
+    try:
+        out["intraday"] = articles.intraday_reaction(sym, e, a.get("time_quality") != "check_time")
+    except Exception:
+        out["intraday"] = None
     m = e.get("minute")
     if m:
         rs = datetime.fromisoformat(m["reaction_start"])
@@ -512,6 +516,10 @@ def api_disclosure_detail(_q, did):
          "url": r["url"], "category": r["kind"] or "공시", "tone": 0, "kind": "disc", "pblntf": r.get("pblntf"),
          "outlets_total": 1, "related_titles": [], "links": _disc_links(sym, stamp).get(r["id"], [])}
     out = {"article": a, "effect": e, "confounders": []}
+    try:
+        out["intraday"] = articles.intraday_reaction(sym, e, not r["untimed"])
+    except Exception:
+        out["intraday"] = None
     d0 = e.get("reaction_day")
     if d0:
         lo = (date.fromisoformat(d0) - timedelta(days=14)).isoformat()

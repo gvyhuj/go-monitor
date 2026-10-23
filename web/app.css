@@ -813,3 +813,9 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .baseline summary { cursor: pointer; font-weight: 650; padding: 4px 0; }
 .baseline .ladder td.num, .baseline .ladder th { white-space: nowrap; }
 @media (max-width: 640px) { .baseline table.ladder { display: block; max-width: 100%; overflow-x: auto; font-size: 12.5px; } }
+.intraday-box { border-left: 4px solid var(--ink-2); }
+.intraday-box .vb-span { font-size: 14px; margin-bottom: 10px; }
+.iw-nums { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-bottom: 6px; }
+.iw-nums span { display: flex; flex-direction: column; min-width: 0; }
+.iw-nums small { color: var(--muted); font-size: 12.5px; }
+.iw-nums b { font-size: 18px; font-variant-numeric: tabular-nums; }

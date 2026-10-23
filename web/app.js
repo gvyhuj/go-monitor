@@ -1824,10 +1824,24 @@
     }
     if (isDisc && a.untimed) notes.push("DART에는 접수 날짜만 있고 거래소(KIND)에서도 시각을 찾지 못해, 그날 하루(전일 종가 → 종가)로 쟀습니다.");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}을 반응일로 봅니다. 그 사이 다른 소식도 섞였을 수 있습니다.`);
-    if (e.late) notes.push("오후 늦게 공개됐습니다. 대표 숫자는 다른 기사와 동일하게 반응일 하루 기준이며, 공개 전 움직임도 포함하므로 아래 여러 날의 누적 차이도 함께 보세요.");
+    if (e.late && !d.intraday) notes.push("오후 늦게 공개됐습니다. 대표 숫자는 다른 기사와 동일하게 반응일 하루 기준이며, 공개 전 움직임도 포함하므로 아래 여러 날의 누적 차이도 함께 보세요.");
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("구글 뉴스 공개 시각이 16:00 또는 17:00으로 표시됩니다. 원문 공개 시각과 최초 공개 여부를 확인하기 전에는 반응일·초과수익률을 잠정치로 보세요.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
+    // 공개 시각이 확실하고 분봉이 있으면 발표 직후 30분을 대표로 (다른 요인이 끼어들 틈이 적음), 하루 숫자는 그 아래
+    const iw = d.intraday;
+    if (iw) {
+      const span = iw.kind === "open" ? `전날 종가 → ${esc(e.reaction_day)} ${hhmm(iw.end)} <small class="muted">(장 시작 전 공개라 처음 거래된 ${iw.minutes}분)</small>`
+        : `${hhmm(iw.start)} → ${hhmm(iw.end)} <small class="muted">(공개 직후 ${iw.minutes}분)</small>`;
+      html += `<div class="verdict-box intraday-box"><div class="vb-head">발표 직후 ${iw.minutes}분 반응</div>
+        <div class="vb-span">${span}</div>
+        <div class="iw-nums"><span><small>이 종목</small><b class="${sgnCls(iw.own)}">${pct(iw.own)}</b></span>
+          <span><small>시장·업종 몫</small><b>${points(iw.market + iw.sector)}</b></span>
+          <span><small>고유 움직임</small><b class="${sgnCls(iw.abnormal)}">${points(iw.abnormal)}</b></span>
+          <span><small>평소 같은 구간 중 이보다 크게 움직인 비율</small><b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b></span></div>
+        <div class="vb-note">고유 움직임 = 이 종목 등락 − 시장(KOSDAQ) 몫${iw.segments_used ? " − 업종 몫" : ""}. 비교 대상은 최근 약 두 달의 ${iw.kind === "open" ? "같은 시각(전날 종가 → 09:30) 움직임" : `${iw.minutes}분 구간`} ${iw.n_null}개입니다.${iw.segments_used ? "" : " 같은 시간대 업종 분봉이 없어 시장 몫만 뺐습니다."}${iw.kind === "open" ? " 밤사이 다른 소식이 섞였을 수 있습니다." : ""}</div></div>
+        <h3 class="d-sec" style="margin-top:18px">하루 전체 <small class="muted">반응일 종가 기준 · 공개 전 움직임과 그날 다른 소식도 포함</small></h3>`;
+    }
     html += `<div class="verdict-box v-${e.verdict_cls}">${e.verdict ? `<div class="vb-head">${esc(e.verdict)}</div>` : ""}
       <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
       ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}

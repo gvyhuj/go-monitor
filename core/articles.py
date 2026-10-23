@@ -540,7 +540,36 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> d
     return {"own": own, "market": market, "sector": sector, "abnormal": abn, "kosdaq": kq, "segments_used": used,
             "rarity": rr["p"] if ok else None, "n_null": rr["n"] if ok else None,
             "start": t0.isoformat(timespec="minutes") if t0 else None, "end": t1.isoformat(timespec="minutes"),
-            "basis": "60분" if t0 else "개장 1시간"}
+            "basis": f"{int((t1 - t0).total_seconds() // 60)}분" if t0 else "개장 후 " + t1.strftime("%H:%M") + "까지"}
+
+INTRADAY_MINUTES = 30
+
+
+def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
+    """공개 시각이 확실하고 분봉이 있으면 발표 직후 30분 반응 (상세 화면의 대표 숫자).
+    - 장중 공개(15:00까지): 공개 시각 → 30분 뒤
+    - 장 시작 전·전날 장 마감 뒤 공개: 전일 종가 → 반응일 09:30 (처음 거래된 30분)
+    - 15시 넘어 공개, 시각을 모름, 분봉 없음 → None (하루 단위를 대표로)"""
+    d0 = eff.get("reaction_day")
+    if not time_ok or not d0 or not eff.get("base_ts"):
+        return None
+    ts = datetime.fromisoformat(eff["base_ts"])
+    open_t = datetime.combine(date.fromisoformat(d0), time(9, 0))
+    if ts < open_t:
+        t0, t1, kind = None, open_t + timedelta(minutes=INTRADAY_MINUTES), "open"
+    elif ts.date().isoformat() == d0 and ts.time() <= time(15, 0):
+        t0, t1, kind = ts, ts + timedelta(minutes=INTRADAY_MINUTES), "session"
+    else:
+        return None
+    dc = decompose(symbol, d0)
+    if not dc or dc.get("beta_market") is None:
+        return None
+    w = _window_split(symbol, dc, t0, t1)
+    if not w or w.get("rarity") is None:
+        return None
+    return {**w, "kind": kind, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
+                                                                             if p.get("kind") == "seg"])}
+
 
 def _verdict(eff: dict, tone: int, category: str):
     """대표 수치는 반응일 사건연구의 예상 대비 차이와 95% 범위만 사용. 계산이 된 기사엔 판정 문구 없음."""
