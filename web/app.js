@@ -2510,6 +2510,7 @@
         <dt>기사</dt><dd>${span(st.articles, "건")}${st.articles && st.articles.n ? ` <small class="muted">기자명 ${Number(st.reporters || 0).toLocaleString("ko-KR")}건</small>` : ""}</dd>
         <dt>공시</dt><dd>${span(st.disclosures, "건")}</dd>
         <dt>최신 백업</dt><dd>${b ? `${at(b.at)} · 압축·암호화 ${(b.backup / 1e6).toFixed(1)}MB <small class="muted">(기록 ${(b.db / 1e6).toFixed(1)}MB)</small>` : "-"}</dd>
+        ${b && b.tables ? `<dt>표별 크기</dt><dd><small class="muted">${esc(b.tables)}</small></dd>` : ""}
       </dl></section>`;
   }
 

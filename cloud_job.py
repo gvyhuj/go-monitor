@@ -244,7 +244,8 @@ def build_static_site(now, log) -> dict:
         checkpoint()
         sizes = sitebuild.backup_db(DB_PATH, BACKUP_DIR, _data_key())
         # 수집 현황 화면용: 마지막 백업 시각·크기 (다음 실행으로 넘기는 기록보다 먼저 남겨야 이어짐)
-        set_state("backup:last", json.dumps({"at": now.replace(tzinfo=None).isoformat(timespec="minutes"), **sizes}))
+        set_state("backup:last", json.dumps({"at": now.replace(tzinfo=None).isoformat(timespec="minutes"), **sizes,
+                                             "tables": table_sizes()}, ensure_ascii=False))
         checkpoint()
         sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
         log.info("백업 크기: 기록 %.1f MB → 정리 %.1f MB → 압축·암호화 %.1f MB", sizes["db"] / 1e6,
