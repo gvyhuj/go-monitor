@@ -1560,11 +1560,10 @@
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
-      pr: events.filter((e) => e.kind === "pr"),
-      company: events.filter((e) => e.kind === "company"),
-      all: events.filter((e) => !e.noise),
+      pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
+      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
-    const LABEL = { pr: "자체 보도자료(확인)", company: "회사 관련 보도", all: "기사 전체", disc: "공시" };
+    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
     if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
@@ -1601,7 +1600,7 @@
       <p class="score-note">${c ? ciTxtOf(c, "공시") : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
     }
     function articleScore(kind) {
-      const label = kind === "pr" ? "확인된 보도자료" : kind === "company" ? "회사 관련 보도" : "기사 전체";
+      const label = kind === "pr" ? "그린광학 보도자료" : "외부 기사";
       const recent = groups[kind].filter((event) => (event.day || "") >= since);
       const eligible = recent.filter((event) => !event.time_check && !event.followup_of && !event.followup_candidate_of);
       const summaryMeasures = eligible.map((event) => (byId.get(event.lead).effect || {}).measure).filter((measure) => measure && measure.method === "event-study-v2" && measure.value != null);
@@ -1616,7 +1615,7 @@
     }
     const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat); };
 
-    if (!["pr", "company", "disc", "all"].includes(artState.cat)) artState.cat = "all";
+    if (!["pr", "ext", "disc"].includes(artState.cat)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
@@ -1713,7 +1712,7 @@
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" ? "pr" : "all";
+      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length
