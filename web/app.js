@@ -422,7 +422,9 @@
             : "자동 실행이 멈췄거나 실패하고 있습니다. GitHub 저장소의 Actions 탭에서 최근 실행을 확인해 주세요."));
         });
       } else {
-        setEngine("ok", `갱신 ${when}`);
+        const stuck = ((s.collect && s.collect.sources) || []).filter((r) => r.stale);
+        if (stuck.length) setEngine("stale", `갱신 ${when} · 수집 확인 필요`);
+        else setEngine("ok", `갱신 ${when}`);
         showAlert(null);
       }
       renderQuote();
@@ -2542,6 +2544,35 @@
   function cloudErr(e) { const m = $("#cloud-msg"); if (m) { m.className = "form-msg err"; m.textContent = e.message; } }
 
   // ---------------------------------------------------------------- router
+  // ---------------------------------------------------------------- 수집 현황 (오른쪽 위 갱신 표시를 누르면)
+  async function pageStatus() {
+    main.innerHTML = `<div class="wrap"><div class="page-head"><div><h1 class="page-title">수집 현황</h1>
+      <p class="page-sub">출처마다 마지막으로 받은 시각과 쌓인 양입니다. '확인 필요'는 실패가 이어진 채 장중 1시간·장 밖 6시간이 지난 것입니다.</p></div></div>
+      <div id="status-out"><p class="loading">불러오는 중…</p></div></div>`;
+    if (!STATUS) await refreshStatus();
+    const c = (STATUS && STATUS.collect) || {};
+    const at = (t) => (t ? `${t.slice(5, 10).replace("-", "/")} ${t.slice(11, 16)}` : "-");
+    const rows = (c.sources || []).map((r) => `<tr class="${r.stale ? "st-bad" : r.failing ? "st-warn" : ""}">
+      <td>${esc(r.name)}${r.key ? ' <small class="muted">주요</small>' : ""}</td>
+      <td>${r.stale ? "확인 필요" : r.failing ? "최근 실패" : "정상"}</td>
+      <td class="num">${at(r.last_ok)}</td><td class="num">${r.failing ? at(r.last_err) : "-"}</td>
+      <td class="st-err">${r.failing ? esc(r.error || "") : ""}</td></tr>`).join("");
+    const st = c.stored || {};
+    const span = (x, unit) => (x && x.n ? `${Number(x.n).toLocaleString("ko-KR")}${unit} <small class="muted">${esc(String(x.from || "").slice(0, 10))} ~ ${esc(String(x.to || "").slice(0, 10))}</small>` : "-");
+    const b = st.backup;
+    $("#status-out").innerHTML = `
+      <section class="panel"><h2 class="d-sec">출처별</h2>${rows ? `<div class="table-wrap"><table class="days-table status-table"><thead><tr>
+        <th>출처</th><th>상태</th><th>마지막 성공</th><th>마지막 실패</th><th>오류</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="muted">아직 기록이 없습니다. 다음 자동 수집부터 쌓입니다.</p>`}</section>
+      <section class="panel"><h2 class="d-sec">쌓인 기록</h2><dl class="status-dl">
+        <dt>일봉</dt><dd>${span(st.daily, "일")}</dd>
+        <dt>1분봉</dt><dd>${span(st.minute, "개")}</dd>
+        <dt>기사</dt><dd>${span(st.articles, "건")}${st.articles && st.articles.n ? ` <small class="muted">기자명 ${Number(st.reporters || 0).toLocaleString("ko-KR")}건</small>` : ""}</dd>
+        <dt>공시</dt><dd>${span(st.disclosures, "건")}</dd>
+        <dt>최신 백업</dt><dd>${b ? `${at(b.at)} · 압축·암호화 ${(b.backup / 1e6).toFixed(1)}MB <small class="muted">(기록 ${(b.db / 1e6).toFixed(1)}MB)</small>` : "-"}</dd>
+      </dl></section>`;
+  }
+
   // ---------------------------------------------------------------- 전체 검색 (기사·공시·사건·날짜)
   // 날짜: 2026-04-22 · 4/22 · 4월 22일 · 4월 · 2026-04 처럼 쓰면 그 날짜(달)를 찾음. 나머지는 제목·매체·기자·제출인·상대 회사
   function searchDates(q) {
@@ -2617,11 +2648,13 @@
     else if (page === "pr") { document.title = "소식 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "pivot") { document.title = "기사 피벗 표 | 주가 모니터"; await pagePivot(); }
     else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
+    else if (page === "status") { document.title = "수집 현황 | 주가 모니터"; await pageStatus(); }
     else if (page === "search") { document.title = "검색 | 주가 모니터"; await pageSearch(decodeURIComponent(parts.slice(1).join("/"))); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
   }
 
   window.addEventListener("hashchange", route);
+  $("#engine").addEventListener("click", () => { location.hash = "#/status"; });
   $("#gsearch").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const q = $("#gsearch-q").value.trim();

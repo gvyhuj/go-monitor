@@ -178,6 +178,7 @@ def api_status(_q):
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
         "last_bar_ts": last_bar, "first_bar_ts": first_bar, "bars_count": n_bars, "events_count": n_events,
+        "collect": _collect_status(sym),
         "viewer": viewer, "share": share.status() if viewer == "local" else None,
         "cloud": cloud.status() if viewer == "local" else None,
         "rules": {
@@ -186,6 +187,14 @@ def api_status(_q):
             "min_value_eok": round(float(s.get("event_min_value_won", 5e7)) / 1e8, 2),
         },
     }
+
+
+def _collect_status(sym: str) -> dict:
+    from core import collect_status
+    from core.alerts import market_hours
+    now = feed.kst_now()
+    return {"sources": collect_status.snapshot(now, market_hours(now, now.weekday() < 5)),
+            "stored": collect_status.stored(sym)}
 
 
 def api_intraday(q):

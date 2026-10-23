@@ -190,7 +190,7 @@ def send_test(log=None) -> bool:
 # 같은 종류는 하루 한 번만 알리고, 다시 정상이 되면 '복구'를 한 번 알림.
 # 자동 실행 자체가 멈춘 경우는 알림을 보낼 주체가 없으므로 사이트 경고로만 알림.
 STALE_MIN = 30
-HEALTH_WORD = {"A": "사이트 게시 지연", "B": "시세 수집 실패"}
+HEALTH_WORD = {"A": "사이트 게시 지연", "B": "시세 수집 실패", "C": "기사·공시 수집 실패"}
 
 
 def is_trading_day(now: datetime, quote: dict | None, data_last_ok: datetime | None) -> bool:
@@ -271,13 +271,22 @@ def check_health(now: datetime, trading_day: bool, log=None) -> list:
             log(f"사이트 확인 실패: {ex}")
     bad = health_problems(now, data_last_ok=_dt("data_last_ok"), site_modified=site_mod,
                           build_streak_start=streak, trading_day=trading_day)
+    # C: 기사·공시·일봉·수급 같은 뼈대 출처가 장중 1시간·장 밖 6시간 넘게 실패 중 (장 밖에도 확인)
+    from . import collect_status
+    stuck = [r for r in collect_status.snapshot(now, market_hours(now, trading_day)) if r["stale"] and r["key"]]
+    if stuck:
+        bad.add("C")
     st = _state_json("health:alerts")
     today = now.date().isoformat()
     sent = []
     for kind, word in HEALTH_WORD.items():
         k = st.get(kind) or {}
         if kind in bad and not k.get("active") and k.get("alerted") != today:
-            if kind == "A":
+            if kind == "C":
+                title = f"[{word}] {', '.join(r['name'] for r in stuck)} ({now:%m/%d %H:%M} 확인)"
+                msg = "아래 출처를 한동안 받지 못하고 있습니다. 사이트 오른쪽 위 갱신 표시를 누르면 수집 현황이 나옵니다.\n" + \
+                    "\n".join(f"- {r['name']}: 마지막 성공 {r['last_ok'] or '-'}, 오류 {r['error'] or ''}" for r in stuck)
+            elif kind == "A":
                 title = f"[{word}] 사이트 자료가 {site_mod:%H:%M}에 멈춰 있습니다 ({now:%m/%d %H:%M} 확인)"
                 msg = "자동 실행과 수집은 정상인데 사이트(GitHub Pages)에 새 자료가 올라가지 않고 있습니다. 수집은 계속되며, 풀리면 그동안의 자료가 한꺼번에 채워집니다."
             else:

@@ -91,11 +91,15 @@ class Collector:
 
     # -------------------------------------------------- 원인 분석용 보조 수집
     def _safe(self, what, fn, *a, **k):
+        from core import collect_status
         try:
-            return fn(*a, **k)
+            out = fn(*a, **k)
         except Exception as e:  # 보조 데이터라 실패해도 감시는 계속
             self.log.warning("%s 수집 실패(계속 진행): %s", what, e)
+            collect_status.mark(what, False, e)
             return None
+        collect_status.mark(what, True)          # 수집 현황 화면·실패 알림용 (출처마다 마지막 성공·실패)
+        return out
 
     def _scan_themes(self, today):
         found = self._safe("이 종목 테마 찾기", macro.sync_stock_themes, self.code, self.log)

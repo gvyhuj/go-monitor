@@ -944,3 +944,14 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .gsearch + .engine { margin-left: 0; }
 .tabs a { white-space: nowrap; }
 @media (max-width: 1100px) and (min-width: 721px) { .gsearch input { width: 170px; } }
+
+/* 수집 현황 */
+.engine { cursor: pointer; }
+.status-table td.st-err { white-space: normal; max-width: 420px; color: var(--muted); font-size: 12.5px; text-align: left; }
+.status-table td:nth-child(2) { text-align: left; }
+.status-table tr.st-bad td:nth-child(2) { color: var(--up); font-weight: 600; }
+.status-table tr.st-warn td:nth-child(2) { color: var(--vol); }
+.status-dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.status-dl dt { color: var(--muted); }
+.status-dl dd { margin: 0; }
+.panel + .panel { margin-top: 14px; }

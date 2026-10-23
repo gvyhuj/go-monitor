@@ -95,3 +95,33 @@ def test_trading_day_from_naver_status():
     assert alerts.is_trading_day(NOW, {"market_status": "CLOSE", "traded_at": "2026-10-19T15:30:00+09:00"},
                                  NOW - timedelta(hours=1))
     assert not alerts.is_trading_day(datetime(2026, 10, 18, 10, 0), None, None)   # 일요일
+
+
+def test_collect_status_marks_and_finds_stuck_sources(tmpdb):
+    from core import collect_status
+    t0 = NOW - timedelta(hours=2)
+    collect_status.mark("이 종목 기사", True, at=t0.isoformat(timespec="seconds"))
+    collect_status.mark("이 종목 기사", False, OSError("네이버 접속 실패"), at=(NOW - timedelta(minutes=5)).isoformat(timespec="seconds"))
+    collect_status.mark("공시", True, at=(NOW - timedelta(minutes=10)).isoformat(timespec="seconds"))
+    collect_status.mark("종목토론방", False, "막힘", at=NOW.isoformat(timespec="seconds"))
+    rows = {r["name"]: r for r in collect_status.snapshot(NOW, market=True)}
+    assert rows["이 종목 기사"]["stale"] and rows["이 종목 기사"]["key"] and "네이버" in rows["이 종목 기사"]["error"]
+    assert not rows["공시"]["failing"] and rows["공시"]["error"] is None
+    assert rows["종목토론방"]["stale"] and not rows["종목토론방"]["key"]       # 부가 출처는 알림 대상 아님
+    assert not {r["name"]: r for r in collect_status.snapshot(NOW, market=False)}["이 종목 기사"]["stale"]   # 장 밖은 6시간
+
+
+def test_key_source_failure_alerts_once(tmpdb, monkeypatch):
+    from core import collect_status
+    posted = []
+    monkeypatch.setattr(alerts, "_post_issue", lambda t, b: posted.append((t, b)) or 1)
+    monkeypatch.setattr(alerts, "_site_modified", lambda: NOW)
+    set_state("data_last_ok", NOW.isoformat(timespec="seconds"))
+    collect_status.mark("공시", True, at=(NOW - timedelta(hours=3)).isoformat(timespec="seconds"))
+    collect_status.mark("공시", False, "DART 오류", at=(NOW - timedelta(minutes=1)).isoformat(timespec="seconds"))
+    alerts.check_health(NOW, trading_day=True)
+    alerts.check_health(NOW + timedelta(minutes=3), trading_day=True)
+    assert len(posted) == 1 and "기사·공시 수집 실패" in posted[0][0] and "공시" in posted[0][0] and "DART 오류" in posted[0][1]
+    collect_status.mark("공시", True, at=(NOW + timedelta(minutes=5)).isoformat(timespec="seconds"))
+    alerts.check_health(NOW + timedelta(minutes=6), trading_day=True)
+    assert len(posted) == 2 and posted[1][0].startswith("[복구]")
