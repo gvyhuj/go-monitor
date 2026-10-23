@@ -200,6 +200,9 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         c = cached.get(key)
         keep(key, lambda d=d: ws.api_intraday({"date": d}), c is None or c["built_at"][:10] <= d)
 
+    want.add("daily")
+    keep("daily", lambda: ws.api_daily({}), True)               # 달력용 일별 등락 (가벼워서 매번)
+
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
     lst = ws.api_articles({})
     keep("articles", lambda: lst, True)

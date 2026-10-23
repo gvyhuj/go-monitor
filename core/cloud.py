@@ -484,6 +484,8 @@ def publish(parts=("live", "events", "intraday", "articles", "ui"), log=None) ->
                 items += _intraday_items()
             if "articles" in parts:
                 items += _article_items()
+                import webserver as ws
+                items.append(("daily", _dump(ws.api_daily({})), False))
             hashes = dict(_state().get("hashes") or {})
             changed = [(k, v, b) for k, v, b in items if hashes.get(k) != _h(v)]
             budget = DAILY_WRITE_CAP - writes_today()

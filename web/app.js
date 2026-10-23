@@ -208,6 +208,7 @@
       return { ...a, items: a.items.filter((x) => x.category !== "단순 언급").slice(0, +q.limit), summary: null };
     }
     if (p === "/api/disclosures") return kv("disclosures");
+    if (p === "/api/daily") return kv("daily");
     m = p.match(/^\/api\/disclosures\/(.+)$/);
     if (m) {
       const all = await kv("disclosure_details");
@@ -508,16 +509,133 @@
     if (!STATUS) return;
     const since = STATUS.first_bar_ts ? dayLabel(STATUS.first_bar_ts) : "-";
     $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융(공식 제공 서비스가 아니어서 형식이 바뀌면 수신이 멈출 수 있습니다)</span>` +
-      `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 이상변동 ${int(STATUS.events_count)}건${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
+      `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 급등·급락 ${int(STATUS.events_count)}건${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
   }
 
   // ---------------------------------------------------------------- dashboard
   // 최근 거래일(최대 15일)을 하루 한 장씩 세로로 쌓음. 카드가 화면 가까이 오면 그날 자료를 불러옴.
   // 이상변동이 없던 날은 한 줄로 접어 두고, 누르면 차트를 펼침. 오늘 카드만 30초마다 새로 그림.
   let feedObserver = null;
-  async function pageDashboard() {
+  // 대시보드: [최근] [달력] [표] 세 가지 보기 (예전 '이벤트 기록'은 표 보기)
+  const VIEWS = [["recent", "최근", "#/"], ["calendar", "달력", "#/calendar"], ["table", "표", "#/events"]];
+  async function pageDashboard(view = "recent") {
     $("#hero").hidden = false;
-    main.innerHTML = `<div class="wrap"><div class="feed" id="feed"><p class="loading">불러오는 중…</p></div></div>`;
+    main.innerHTML = `<div class="wrap"><div class="view-bar"><div class="seg" role="tablist" aria-label="보기">${VIEWS.map(([v, t, h]) =>
+      `<a href="${h}" role="tab" aria-pressed="${v === view}">${t}</a>`).join("")}</div></div><div id="view"></div></div>`;
+    if (view === "calendar") return viewCalendar();
+    if (view === "table") return viewTable();
+    return viewRecent();
+  }
+
+  // 달력: 날마다 등락(색)과 그날 소식(보도자료·공시·외부 기사)·급등·급락을 한 화면에. 날짜를 누르면 아래에 그날 내용
+  const calState = { month: null, sel: null };
+  const MAIN_DISC = new Set(["A", "B", "C", "I", "K"]);       // 정기(실적)·주요사항·발행·거래소 공시·거래소 조치
+  async function viewCalendar() {
+    const box = $("#view");
+    box.innerHTML = `<p class="loading">불러오는 중…</p>`;
+    let daily, evs, arts, discs;
+    try {
+      [daily, evs, arts, discs] = await Promise.all([
+        api("/api/daily").then((d) => d.days || []),
+        api("/api/events").then((d) => d.events || []).catch(() => []),
+        api("/api/articles").then((d) => d.items || []).catch(() => []),
+        api("/api/disclosures").then((d) => d.items || []).catch(() => []),
+      ]);
+    } catch (e) { box.innerHTML = `<div class="empty"><strong>달력 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
+    if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
+    const byDay = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
+    const price = Object.fromEntries(daily.map((x) => [x.date, x]));
+    const evDay = byDay(evs, (e) => e.start_ts.slice(0, 10));
+    const artDay = byDay(arts.filter((a) => !a.hidden && a.category !== "단순 언급" && a.ts), (a) => a.ts.slice(0, 10));
+    const discDay = byDay(discs.filter((x) => x.ts), (x) => x.ts.slice(0, 10));
+    const months = [...new Set(daily.map((x) => x.date.slice(0, 7)))].sort();
+    if (!calState.month || !months.includes(calState.month)) calState.month = months[months.length - 1];
+    const isPr = (a) => a.kind === "pr" || a.kind === "company";
+    const bigEv = (list) => (list || []).filter((e) => e.tier !== "관찰" && e.tier !== "요청");
+
+    function grid() {
+      const [y, m] = calState.month.split("-").map(Number);
+      const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+      const lead = (first.getDay() + 6) % 7;                       // 월요일 시작
+      const cells = [];
+      for (let i = 0; i < lead; i++) cells.push(`<div class="cal-cell blank"></div>`);
+      for (let d = 1; d <= days; d++) {
+        const ds = `${calState.month}-${String(d).padStart(2, "0")}`;
+        const px = price[ds], ch = px && px.change;
+        const pr = (artDay[ds] || []).filter(isPr).length, ext = (artDay[ds] || []).filter((a) => !isPr(a)).length;
+        const dc = (discDay[ds] || []).filter((x) => MAIN_DISC.has(x.pblntf || "")).length;
+        const big = bigEv(evDay[ds]);
+        const tint = ch == null ? "" : `style="--tint:${Math.min(1, Math.abs(ch) / 0.1).toFixed(2)}"`;
+        cells.push(`<button type="button" class="cal-cell${ch == null ? " closed" : ""}${ch > 0 ? " up" : ch < 0 ? " down" : ""}${ds === calState.sel ? " sel" : ""}" data-day="${ds}" ${tint}>
+          <span class="cal-d">${d}</span>
+          ${ch != null ? `<span class="cal-ch ${sgnCls(ch)}">${pct(ch, 1)}</span>` : ""}
+          <span class="cal-marks">${big.length ? `<i class="mk ev ${big[0].direction}" title="급등·급락 ${big.length}건"></i>` : ""}${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사 ${ext}건"></i>` : ""}</span>
+        </button>`);
+      }
+      const mi = months.indexOf(calState.month);
+      return `<div class="cal-head">
+          <button type="button" class="btn small" data-mv="-1" ${mi <= 0 ? "disabled" : ""} aria-label="이전 달">‹</button>
+          <b>${y}년 ${m}월</b>
+          <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
+          <span class="cal-legend"><span><i class="mk ev up"></i>급등·급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
+        </div>
+        <div class="cal-grid">${["월", "화", "수", "목", "금", "토", "일"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
+    }
+
+    function dayPanel(ds) {
+      const px = price[ds], ev = evDay[ds] || [], ar = artDay[ds] || [], dc = discDay[ds] || [];
+      const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
+      return `<section class="panel cal-day">
+        <div class="cal-day-head"><h3 class="d-sec">${dayLabel(ds)}</h3>
+          ${px ? `<span>종가 ${won(px.close)}원 · <b class="${sgnCls(px.change)}">${pct(px.change)}</b> · KOSDAQ ${pct(px.kosdaq)} · 거래량 ${int(px.volume)}주</span>` : `<span class="muted">거래 없음</span>`}</div>
+        ${ev.length ? `<h4 class="sub">급등·급락</h4><ul class="cal-list">${ev.map((e) => `<li><button type="button" class="btn-link" data-ev="${e.id}">${isDaily(e) ? "하루" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`} ${e.direction === "up" ? "급등" : "급락"} ${pct(e.peak_return_5m)}${e.tier && e.tier !== "일반" ? ` · ${esc(e.tier)}` : ""}</button></li>`).join("")}</ul>` : ""}
+        ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
+        ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
+        ${!ev.length && !ar.length && !dc.length ? `<p class="muted">이날 모인 급등·급락·기사·공시가 없습니다.</p>` : ""}
+        <div class="ask-row">
+          <button type="button" class="btn small" id="cal-chart">그날 차트 보기</button>
+          ${px ? `<button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button>` : ""}
+          <span class="form-msg" id="cal-msg" role="status"></span></div>
+        <div id="cal-chart-box"></div>
+      </section>`;
+    }
+
+    function render() {
+      box.innerHTML = `<div class="panel cal">${grid()}</div>${calState.sel ? dayPanel(calState.sel) : `<p class="muted cal-hint">날짜를 누르면 그날의 급등·급락·기사·공시가 아래에 나옵니다.</p>`}`;
+    }
+    render();
+    box.onclick = async (ev) => {
+      const mv = ev.target.closest("[data-mv]");
+      if (mv) { calState.month = months[months.indexOf(calState.month) + +mv.dataset.mv]; calState.sel = null; render(); return; }
+      const cell = ev.target.closest(".cal-cell[data-day]");
+      if (cell) { calState.sel = cell.dataset.day; render(); $(".cal-day").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+      const e = ev.target.closest("[data-ev]");
+      if (e) { openEvent(+e.dataset.ev); return; }
+      if (ev.target.closest("#cal-ask")) {
+        const msg = $("#cal-msg");
+        msg.className = "form-msg"; msg.textContent = "요청하는 중…";
+        try { msg.textContent = CLOUD ? await sendInbox({ type: "analyze", date: calState.sel, from: null, to: null }) : "PC 화면에서는 '다시 분석' 버튼을 이용해 주세요."; }
+        catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
+        return;
+      }
+      if (ev.target.closest("#cal-chart")) {
+        const cb = $("#cal-chart-box");
+        cb.innerHTML = `<p class="loading">불러오는 중…</p>`;
+        let d;
+        try { d = await api(`/api/intraday?date=${calState.sel}`); } catch (_) { d = null; }
+        if (!d || !d.bars || !d.bars.length) { cb.innerHTML = `<p class="muted">이날 분봉 기록이 없습니다.</p>`; return; }
+        const card = document.createElement("article");
+        card.className = "day-card";
+        card.innerHTML = dayCardHtml(d, artDay[calState.sel] || [], false);
+        cb.innerHTML = ""; cb.appendChild(card);
+        priceVolumeChart($(".day-chart", card), $(".day-legend", card), d.bars, {
+          events: d.events.filter((x) => !isDaily(x)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id) });
+      }
+    };
+  }
+
+  async function viewRecent() {
+    $("#view").innerHTML = `<div class="feed" id="feed"><p class="loading">불러오는 중…</p></div>`;
     renderRules();
     const tog = $("#rules-toggle");
     tog.onclick = () => { const r = $("#rules"); r.hidden = !r.hidden; tog.setAttribute("aria-expanded", String(!r.hidden)); };
@@ -809,7 +927,7 @@
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
     const what = d.events.length
       ? (lead && lead.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(lead.cause_headline)}</span>` : "")
-      : `이상변동 없음${dayArts.length ? ` · 기사 ${dayArts.length}건` : ""}`;
+      : `급등·급락 없음${dayArts.length ? ` · 기사 ${dayArts.length}건` : ""}`;
     return `<button type="button" class="day-fold">
       <span class="day-card-date">${dayLabel(d.date)}</span>
       <span class="day-fold-val num ${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</span>
@@ -901,9 +1019,9 @@
   // ---------------------------------------------------------------- events page
   const evState = { range: "1m", kind: "all", tier: "all" };
 
-  async function pageEvents() {
-    main.innerHTML = `<div class="wrap">
-      <div class="page-head"><div><h1 class="page-title">이벤트 기록</h1><p class="page-sub" id="ev-sub">감시 엔진이 감지한 이상변동이 모두 여기에 쌓입니다.</p></div></div>
+  async function viewTable() {
+    $("#view").innerHTML = `
+      <p class="page-sub" id="ev-sub" style="margin:0 0 14px"></p>
       <div class="controls">
         <div class="seg" id="ev-range" aria-label="기간">
           <button type="button" data-v="1w">1주</button><button type="button" data-v="1m">1개월</button><button type="button" data-v="3m">3개월</button><button type="button" data-v="all">전체</button>
@@ -929,8 +1047,7 @@
         </div>
         <div class="form-msg" id="ask-msg" role="status"></div>
       </form>
-      <div class="panel table-panel"><div class="table-wrap" id="ev-table"><p class="loading" style="padding:20px">불러오는 중…</p></div></div>
-    </div>`;
+      <div class="panel table-panel"><div class="table-wrap" id="ev-table"><p class="loading" style="padding:20px">불러오는 중…</p></div></div>`;
     const bindSeg = (id, key) => {
       const el = $(id);
       const sync = () => el.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === evState[key])));
@@ -996,7 +1113,7 @@
     }).map((x) => x[0]);
 
     if (!list.length) {
-      $("#ev-table").innerHTML = `<div class="empty" style="padding:22px 16px;border:0"><strong>조건에 맞는 이상변동이 없습니다.</strong>기간이나 구분을 바꿔 보세요.</div>`;
+      $("#ev-table").innerHTML = `<div class="empty" style="padding:22px 16px;border:0"><strong>조건에 맞는 급등·급락이 없습니다.</strong>기간이나 구분을 바꿔 보세요.</div>`;
       return;
     }
     $("#ev-table").innerHTML = `<table class="data"><thead><tr>
@@ -1500,7 +1617,7 @@
   // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
   function pageMethod() {
     const sec = (id, title, body) => `<section class="method-sec" id="m-${id}"><h2>${title}</h2>${body}</section>`;
-    const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사·공시 모음"], ["events", "이벤트 기록 (주가 분석)"], ["limits", "한계"]];
+    const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사·공시 모음"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
       <div class="page-head"><div><h1 class="page-title">계산 방법</h1>
         <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
@@ -1547,7 +1664,7 @@
           <li>살펴보는 구간: 공개 전 5일 [−5,−1], 반응일 [0,0], 전후 3일 [−1,+1], 이후 3일 [0,+2], 후속 3일 [+1,+3]. 여러 날은 각 날의 차이를 더한 값이고 실제 투자 수익률과 다릅니다. 여러 구간을 함께 보는 만큼 우연히 튀는 구간이 생길 수 있습니다(보정하지 않음).</li>
           <li>일별 종가 기준이라 장중 기사는 공개 전의 그날 움직임도 포함합니다.</li>
         </ul>
-        <h3>몫 나누기 (기사 상세 · 이벤트 기록 공통)</h3>
+        <h3>몫 나누기 (기사 상세 · 급등·급락 상세 공통)</h3>
         <ul>
           <li>하루 등락 = 시장 몫 + 분야별 몫 + 고유 움직임. 분야는 이 종목의 사업 분야별 비교 종목 묶음(업종 ETF가 설정돼 있으면 함께)입니다.</li>
           <li>민감도는 반응일 5거래일 전까지의 120거래일로 추정합니다(기사·공시 날은 빼고 채움). 분야에서 시장과 겹치는 부분을 먼저 뺍니다.</li>
@@ -1562,7 +1679,7 @@
           <li><b>시황·특징주</b>: 주가가 움직인 뒤 그 움직임을 다룬 기사라 원인보다 결과에 가깝습니다. <b>단순 언급</b>: 이름만 나오는 기사라 그날 움직임을 기사 효과로 보기 어렵습니다.</li>
           <li><b>거래량 급증</b>: 반응일 거래량이 직전 60거래일 중 상위 5% 안입니다.</li>
         </ul>`)}
-      ${sec("events", "이벤트 기록 (주가 분석)", `
+      ${sec("events", "급등·급락 (주가 분석)", `
         <h3>감지 기준</h3>
         <ul>
           <li>전일 종가 대비 ±3%는 관찰(알림 없음), ±5%는 급등·급락(알림), ±10%는 대형으로 기록합니다. 장중 30분 안의 빠른 움직임도 따로 잡습니다.</li>
@@ -1943,7 +2060,7 @@
     }
     ev += `<div class="chart-legend" id="pr-legend" style="margin-top:14px"></div><div class="chart-box" id="pr-chart"></div>`;
     if ((d.confounders || []).length) ev += `<h3 class="d-sec" style="margin-top:18px">함께 봐야 할 것</h3><ul class="notes" style="margin-top:0">${d.confounders.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
-    if ((e.events || []).length) ev += `<div class="rule-full"><b>반응일에 감지된 이상변동</b><br>${e.events.map((x) => `<a href="#/events" data-ev="${x.id}">${hhmm(x.start_ts)} ${KIND[x.direction]} ${pct(x.peak_return_5m)}</a>`).join(", ")}</div>`;
+    if ((e.events || []).length) ev += `<div class="rule-full"><b>반응일에 감지된 급등·급락</b><br>${e.events.map((x) => `<a href="#/events" data-ev="${x.id}">${hhmm(x.start_ts)} ${KIND[x.direction]} ${pct(x.peak_return_5m)}</a>`).join(", ")}</div>`;
 
     // 공시: 같은 내용이라 이 공시 시각부터 잰 기사들
     if (isDisc) {
@@ -2201,12 +2318,14 @@
     const parts = h.split("/").filter(Boolean);
     const page = parts[0] || "dash";
     document.querySelectorAll(".tabs a").forEach((a) => {
-      const on = a.dataset.route === (page === "dash" ? "dash" : page);
+      const on = a.dataset.route === (["dash", "calendar", "events"].includes(page) ? "dash" : page);
       if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    $("#hero").hidden = page !== "dash";
+    const dashView = { dash: "recent", calendar: "calendar", events: "table" }[page];
+    $("#hero").hidden = !dashView;
     window.scrollTo(0, 0);
-    if (page === "events") { document.title = "이벤트 기록 | 주가 모니터"; await pageEvents(); if (parts[1]) openEvent(+parts[1]); }
+    if (page === "events") { document.title = "급등·급락 표 | 주가 모니터"; await pageDashboard("table"); if (parts[1]) openEvent(+parts[1]); }
+    else if (page === "calendar") { document.title = "달력 | 주가 모니터"; await pageDashboard("calendar"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
     else if (page === "pr") { document.title = "기사·공시 모음 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "method") { document.title = "계산 방법 | 주가 모니터"; pageMethod(); }

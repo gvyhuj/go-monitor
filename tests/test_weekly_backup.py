@@ -1,4 +1,4 @@
-"""주간 백업: 7일마다, 날짜가 붙은 파일, 복원 가능."""
+"""주간 백업(7일마다, 날짜가 붙은 파일, 복원 가능)과 달력용 일별 등락."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -32,3 +32,19 @@ def test_weekly_backup_file_is_dated_and_restorable(tmp_path):
     (tmp_path / "weekly" / "monitor.db.enc").rename(tmp_path / "weekly" / "monitor-2026-10-23.db.enc")
     assert sitebuild.restore_db(tmp_path / "weekly", tmp_path / "back.db", "key")
     assert (tmp_path / "back.db").read_bytes() == b"records"
+
+
+def test_daily_feed_for_calendar(fresh_db, monkeypatch):
+    import webserver
+    from core.db import connect
+    monkeypatch.setattr(webserver, "load_settings", lambda: {"symbol": "X"})
+    with connect() as conn:
+        for sym, rows in (("X", [("2026-10-20", 100, 10), ("2026-10-21", 110, 20), ("2026-10-22", 99, 30)]),
+                          ("KOSDAQ", [("2026-10-20", 800, 0), ("2026-10-21", 808, 0)])):
+            for d, c, v in rows:
+                conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)",
+                             (sym, d, c, c, c, c, v))
+    days = webserver.api_daily({})["days"]
+    assert [d["date"] for d in days] == ["2026-10-20", "2026-10-21", "2026-10-22"]
+    assert days[0]["change"] is None and days[1]["change"] == pytest.approx(0.10) and days[2]["change"] == pytest.approx(-0.10)
+    assert days[1]["kosdaq"] == pytest.approx(0.01) and days[2]["kosdaq"] is None and days[2]["volume"] == 30
