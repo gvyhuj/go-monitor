@@ -912,7 +912,7 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
         factor = {"ok": False, "reason": str(e)}
     ds = _causal.day_split(symbol, day.isoformat(), _cfg.get("factor_etfs") or []) if daily else None
     if ds and ds.get("d0") and ds["method"] != "단순":
-        # 하루 이벤트: 시장(KOSDAQ) + 사업 분야별(·업종 ETF) 회귀. 기사 영향 분석과 같은 계산
+        # 하루 이벤트: 시장(KOSDAQ) + 사업 분야별(·업종 ETF) 회귀. 기사·공시 모음과 같은 계산
         p0 = ds["d0"]
         split = {"own": p0["own"], "market": p0["market"], "sector": p0["sector"], "specific": p0["abnormal"],
                  "z": p0["z"], "kosdaq": p0["kosdaq"], "sector_avg": (split or {}).get("sector_avg"),

@@ -1471,7 +1471,7 @@
     el.parentElement.after(p);
   }
 
-  // ---------------------------------------------------------------- articles (기사 영향 분석)
+  // ---------------------------------------------------------------- articles (기사·공시 모음)
   const CAT_CLS = { "회사 발표": "c-co", "언론 분석": "c-press", "리서치": "c-res", "테마·수혜주": "c-theme", "시황·특징주": "c-mkt", "단순 언급": "c-etc" };
   const TONE_TXT = { 1: "호재", "-1": "악재", 0: "" };
   const catTag = (c) => `<span class="ctag ${CAT_CLS[c] || "c-etc"}">${esc(c)}</span>`;
@@ -1497,12 +1497,10 @@
     return `평소 ${unit} ${n ? `${n}개 중` : ""} 이만큼 이상 움직인 경우 ${p < 1 ? "1% 미만" : `${p.toFixed(p < 10 ? 1 : 0)}%`}`;
   }
 
-  const METHOD_LINK = `숫자를 어떻게 계산했는지는 <a href="#/method">계산 방법</a> 탭에 모아 두었습니다.`;
-
   // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
   function pageMethod() {
     const sec = (id, title, body) => `<section class="method-sec" id="m-${id}"><h2>${title}</h2>${body}</section>`;
-    const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사 영향 분석"], ["events", "이벤트 기록 (주가 분석)"], ["limits", "한계"]];
+    const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사·공시 모음"], ["events", "이벤트 기록 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
       <div class="page-head"><div><h1 class="page-title">계산 방법</h1>
         <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
@@ -1517,7 +1515,7 @@
           <dt>평소 같은 구간 중 이보다 크게 움직인 비율</dt><dd>최근 같은 길이 구간들의 고유 움직임 중 이번 이상으로 컸던 비율입니다. 3%면 평소 그런 구간 100개 중 3개꼴이라는 뜻입니다. 정규분포를 가정하지 않고 실제 기록과 바로 비교합니다.</dd>
           <dt>p값</dt><dd>평소 관계가 그대로라면 이만큼 차이가 우연히 나올 확률입니다. 작을수록 드뭅니다. 여러 구간을 동시에 보면 우연히 작게 나오는 구간도 생깁니다.</dd>
         </dl>`)}
-      ${sec("articles", "기사 영향 분석", `
+      ${sec("articles", "기사·공시 모음", `
         <h3>탭과 건수</h3>
         <ul>
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
@@ -1608,7 +1606,7 @@
 
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
-      <div class="page-head"><div><h1 class="page-title">기사 영향 분석</h1>
+      <div class="page-head"><div><h1 class="page-title">기사·공시 모음</h1>
         <p class="page-sub" id="art-sub"></p></div></div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
@@ -1807,7 +1805,7 @@
       if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
-    $("#art-sub").innerHTML = items.length ? METHOD_LINK
+    $("#art-sub").innerHTML = items.length ? ""
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
     if (CLOUD) {
@@ -1833,7 +1831,7 @@
     loadPR(current);
   }
 
-  let discById = new Map();     // 기사 영향 분석 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
+  let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
   const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
@@ -2210,7 +2208,7 @@
     window.scrollTo(0, 0);
     if (page === "events") { document.title = "이벤트 기록 | 주가 모니터"; await pageEvents(); if (parts[1]) openEvent(+parts[1]); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
-    else if (page === "pr") { document.title = "기사 영향 분석 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "pr") { document.title = "기사·공시 모음 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "method") { document.title = "계산 방법 | 주가 모니터"; pageMethod(); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
   }
