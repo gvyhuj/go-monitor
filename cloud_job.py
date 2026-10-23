@@ -218,6 +218,14 @@ def build_static_site(now, log) -> dict:
     # 관리자 salt도 배포마다 바꾸지 않음: CDN(10분 캐시)이 config.json과 index.bin을 서로 다른 배포판으로 줄 수 있음
     admin_salt = site_salt(admin_password, "site:admin_salt") if admin_password else None
     build_admin(SITE_DIR, admin_password, history, items=items, salt=admin_salt)
+    # 주간 백업: 1시간 백업은 최신 하나만 덮어쓰므로, 잘못된 기록이 덮어써도 되돌릴 수 있게 날짜별로 따로 남김.
+    # '했음' 표시를 다음 실행으로 넘길 기록에 담아야 하므로 그 저장보다 먼저 (늦게 하면 실행마다 다시 올림)
+    weekly = weekly_backup_due(now)
+    if weekly:
+        set_state("site:last_weekly_backup", weekly)
+        checkpoint()
+        sitebuild.backup_db(DB_PATH, WEEKLY_DIR, _data_key())
+        (WEEKLY_DIR / "monitor.db.enc").rename(WEEKLY_DIR / f"monitor-{weekly}.db.enc")
     # 다음 실행으로 넘길 기록 (암호화)
     sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
     # data 브랜치 백업은 1시간에 한 번
@@ -229,13 +237,6 @@ def build_static_site(now, log) -> dict:
         checkpoint()
         sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
         sitebuild.backup_db(DB_PATH, BACKUP_DIR, _data_key())
-    # 주간 백업: 1시간 백업은 최신 하나만 덮어쓰므로, 잘못된 기록이 덮어써도 되돌릴 수 있게 날짜별로 따로 남김
-    weekly = weekly_backup_due(now)
-    if weekly:
-        checkpoint()
-        sitebuild.backup_db(DB_PATH, WEEKLY_DIR, _data_key())
-        (WEEKLY_DIR / "monitor.db.enc").rename(WEEKLY_DIR / f"monitor-{weekly}.db.enc")
-        set_state("site:last_weekly_backup", weekly)
     return {"files": n, "backup": due, "weekly": weekly}
 
 

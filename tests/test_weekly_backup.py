@@ -48,3 +48,36 @@ def test_daily_feed_for_calendar(fresh_db, monkeypatch):
     assert [d["date"] for d in days] == ["2026-10-20", "2026-10-21", "2026-10-22"]
     assert days[0]["change"] is None and days[1]["change"] == pytest.approx(0.10) and days[2]["change"] == pytest.approx(-0.10)
     assert days[1]["kosdaq"] == pytest.approx(0.01) and days[2]["kosdaq"] is None and days[2]["volume"] == 30
+
+
+def test_weekly_mark_is_inside_the_record_handed_to_next_run(fresh_db, monkeypatch, tmp_path):
+    """다음 실행으로 넘기는 기록을 저장하는 순간 '주간 백업 했음' 표시가 이미 들어 있어야 함 (아니면 실행마다 다시 올림)."""
+    import cloud_job
+    from core import eventstudy, history, sitebuild
+    from core.db import get_state
+    monkeypatch.setattr(cloud_job, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(cloud_job, "WEEKLY_DIR", tmp_path / "weekly")
+    monkeypatch.setattr(cloud_job, "BACKUP_DIR", tmp_path / "backup")
+    monkeypatch.setattr(cloud_job, "SITE_DIR", tmp_path / "site")
+    monkeypatch.setattr(cloud_job, "DB_PATH", fresh_db / "monitor.db")
+    monkeypatch.setenv("GO_SITE_PASSWORD", "pw")
+    monkeypatch.delenv("GO_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setattr(sitebuild, "refresh_items", lambda *a, **k: [])
+    monkeypatch.setattr(eventstudy, "validate_primary_exports", lambda items: {})
+    monkeypatch.setattr(sitebuild, "build", lambda *a, **k: 0)
+    monkeypatch.setattr(history, "build_admin", lambda *a, **k: None)
+    seen = {}
+    real = sitebuild.backup_db
+
+    def spy(db, out, pw):
+        if out == cloud_job.STATE_DIR:
+            seen.setdefault("mark_when_carried", (get_state("site:last_weekly_backup") or {}).get("value"))
+        return real(db, out, pw)
+    monkeypatch.setattr(sitebuild, "backup_db", spy)
+
+    class Log:
+        def info(self, *a): pass
+    r = cloud_job.build_static_site(datetime(2026, 10, 23, 12, 50), Log())
+    assert r["weekly"] == "2026-10-23"
+    assert seen["mark_when_carried"] == "2026-10-23"
+    assert (tmp_path / "weekly" / "monitor-2026-10-23.db.enc").exists()
