@@ -17,6 +17,11 @@ async function main() {
   const server = http.createServer(async (request, response) => {
     try {
       const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      if (pathname === "/admin/") {
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end("<!doctype html><title>관리자 이동 검사</title>");
+        return;
+      }
       const filename = path.resolve(root, `.${pathname}${pathname.endsWith("/") ? "index.html" : ""}`);
       if (!filename.startsWith(root + path.sep)) throw new Error("잘못된 경로");
       let content = await fs.readFile(filename);
@@ -65,6 +70,16 @@ async function main() {
     const adminLink = page.getByRole("link", { name: "관리자", exact: true });
     assert.equal(await adminLink.isVisible(), true);
     assert.equal(await adminLink.getAttribute("href"), "admin/");
+    assert.equal(await adminLink.getAttribute("target"), "_blank");
+    const originalUrl = page.url();
+    const popupPromise = page.waitForEvent("popup");
+    await adminLink.click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded");
+    assert.equal(new URL(popup.url()).pathname, "/admin/");
+    assert.equal(page.url(), originalUrl);
+    assert.equal(await popup.evaluate(() => window.opener === null), true);
+    await popup.close();
     await page.getByLabel("기사·공시 검색").focus();
     updated = true;
     await page.clock.fastForward(31000);
