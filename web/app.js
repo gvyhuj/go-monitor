@@ -803,7 +803,6 @@
     const chg = dayChange(d);
     const dailyEv = d.events.filter(isDaily).slice(-1)[0] || null;
     const intra = d.events.filter((e) => !isDaily(e));
-    const missing = d.events.filter((e) => !e.cause_headline).length;
     const lead = dailyEv || intra.find((e) => e.cause_headline) || null;
     const tags = (dailyEv ? `<span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}` : "") +
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
@@ -814,7 +813,7 @@
       <span class="day-card-date">${dayLabel(d.date)}</span>
       <span class="day-fold-val num ${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</span>
       <span class="day-fold-tags">${tags}</span>
-      <span class="day-fold-what">${what}${missing ? `<span class="need-cause">원인 미입력 ${missing}</span>` : ""}</span>
+      <span class="day-fold-what">${what}</span>
       <span class="day-fold-more">펼치기</span></button>`;
   }
 
@@ -845,8 +844,8 @@
       const head = dailyEv
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
-      const cause = dailyEv
-        ? `<span class="day-total-cause">${dailyEv.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(dailyEv.cause_headline)}</span>` : '<span class="need-cause">원인 미입력</span>'}</span>` : "";
+      const cause = dailyEv && dailyEv.cause_headline
+        ? `<span class="day-total-cause"><span class="cause-label">원인</span><span class="cause-text">${esc(dailyEv.cause_headline)}</span></span>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${live && live.closed ? "장 마감" : closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
@@ -863,7 +862,7 @@
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${e.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(e.cause_headline)}</span>` : `<span class="need-cause">원인 미입력</span> ${esc(compareLine(e))}`}</span>
+          <span class="tl-rule">${e.cause_headline ? `<span class="cause-label">원인</span><span class="cause-text">${esc(e.cause_headline)}</span>` : esc(compareLine(e))}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>전일 대비</small></span>
         </button>${e.tier === "요청" ? `<div class="tl-actions editable"><button type="button" class="btn-link" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></div>` : ""}</li>`;
     const chart = d.bars.length
@@ -1707,6 +1706,25 @@
       ? `그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(<b>고유 반응</b>)를 반응일(전일 종가 → 종가) 기준으로 봅니다. 같은 날 나온 기사는 한 사건으로 묶었습니다.`
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
+    if (CLOUD) {
+      const displayedPublication = LIVE && LIVE.published_at;
+      let checking = false;
+      timers.push(setInterval(async () => {
+        if (checking || document.hidden) return;
+        checking = true;
+        const activeRoute = location.hash;
+        try {
+          const next = await cloudLive(true);
+          if (activeRoute !== location.hash || !$("#pr-detail") || next.published_at === displayedPublication) return;
+          if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden])")) return;
+          const scrollPosition = window.scrollY;
+          cleanupPage();
+          await pagePR(current);
+          window.scrollTo(0, scrollPosition);
+        } catch (_) {
+        } finally { checking = false; }
+      }, 30000));
+    }
     if (!current) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
     loadPR(current);
   }

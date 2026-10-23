@@ -71,6 +71,26 @@ def test_existing_cache_is_seeded_only_once(database):
     assert len(archive.records()["article:one"]) == 2
 
 
+def test_market_hours_refresh_does_not_wait_thirty_minutes(database, monkeypatch):
+    import webserver
+    from core import cloud
+
+    archive = history.History(ADMIN_PASSWORD)
+    current = {"value": 0.01}
+    monkeypatch.setattr(webserver, "api_intraday", lambda query: {"dates": []})
+    monkeypatch.setattr(webserver, "api_articles", lambda query: {"items": [{"id": "one"}]})
+    monkeypatch.setattr(webserver, "api_article_detail", lambda query, identity: detail(current["value"]))
+    monkeypatch.setattr(webserver, "api_disclosures", lambda query: {"items": []})
+    monkeypatch.setattr(cloud, "_live_item", lambda: ("live", "{}", False))
+    sitebuild.refresh_items(datetime(2026, 10, 23, 10), history=archive)
+    current["value"] = 0.02
+    items = sitebuild.refresh_items(datetime(2026, 10, 23, 10, 3), history=archive)
+    latest = json.loads(next(raw for key, raw, _ in items if key == "article_details"))
+    assert latest["one"]["effect"]["measure"]["value"] == 0.02
+    records = archive.records()["article:one"]
+    assert [record["data"]["effect"]["measure"]["value"] for record in records] == [0.01, 0.02]
+
+
 def test_eight_character_admin_password_is_supported(database):
     with pytest.raises(ValueError):
         history.History("1234567")

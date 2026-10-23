@@ -200,38 +200,32 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         c = cached.get(key)
         keep(key, lambda d=d: ws.api_intraday({"date": d}), c is None or c["built_at"][:10] <= d)
 
-    # 기사·공시 목록과 상세: 장중 30분, 장 외는 실행할 때마다
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
-    c = cached.get("articles")
-    stale = version_changed or c is None or not _market_hours(now) or \
-        (now - datetime.fromisoformat(c["built_at"])).total_seconds() > 1800 or \
-        "disclosures" not in cached or "disclosure_details" not in cached      # 공시 자료가 아직 없으면 바로
-    if stale:
-        lst = ws.api_articles({})
-        keep("articles", lambda: lst, True)
-        def details():
-            out = {}
-            for a in lst.get("items") or []:
-                try:
-                    out[a["id"]] = ws.api_article_detail({}, a["id"])
-                except Exception:        # noqa: BLE001
-                    continue
-            return out
-        keep("article_details", details, True)
-        dl = {}
-        def disc_list():
-            dl.update(ws.api_disclosures({}))
-            return dl
-        keep("disclosures", disc_list, True)
-        def disc_details():
-            out = {}
-            for r in dl.get("items") or []:
-                try:
-                    out[r["id"]] = ws.api_disclosure_detail({}, r["id"])
-                except Exception:        # noqa: BLE001
-                    continue
-            return out
-        keep("disclosure_details", disc_details, True)
+    lst = ws.api_articles({})
+    keep("articles", lambda: lst, True)
+    def details():
+        out = {}
+        for a in lst.get("items") or []:
+            try:
+                out[a["id"]] = ws.api_article_detail({}, a["id"])
+            except Exception:
+                continue
+        return out
+    keep("article_details", details, True)
+    dl = {}
+    def disc_list():
+        dl.update(ws.api_disclosures({}))
+        return dl
+    keep("disclosures", disc_list, True)
+    def disc_details():
+        out = {}
+        for r in dl.get("items") or []:
+            try:
+                out[r["id"]] = ws.api_disclosure_detail({}, r["id"])
+            except Exception:
+                continue
+        return out
+    keep("disclosure_details", disc_details, True)
 
     with connect() as conn:
         for k in fresh:

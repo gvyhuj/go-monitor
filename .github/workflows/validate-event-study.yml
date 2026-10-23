@@ -14,6 +14,9 @@ on:
       - cloud_job.py
       - tests/test_history.py
       - web/admin/**
+      - web/app.js
+      - tests/dashboard_badges_check.cjs
+      - tests/public_refresh_check.cjs
       - .github/workflows/monitor.yml
 
 permissions:
@@ -42,6 +45,11 @@ jobs:
         run: python -m pip install -r requirements.txt pytest
       - name: 자동 테스트
         run: python -m pytest tests -q
+      - name: 화면 코드와 원인 배지 검사
+        run: |
+          node --check web/app.js
+          node --check web/admin/app.js
+          node tests/dashboard_badges_check.cjs
       - name: 백업 복원 및 읽기 전용 검증
         env:
           VALIDATION_DATA_KEY: ${{ secrets.DATA_KEY || secrets.SITE_PASSWORD }}
