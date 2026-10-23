@@ -130,6 +130,8 @@ def test_read_only_validation_excludes_news_and_preserves_database(tmp_path):
     report = validate(database, "X", dates[140], dates[-1])
     assert report["evaluated_days"] > 0 and report["event_records"] == 1
     assert report["excluded_days"] == 11
+    assert report["coverage"]["event_model_available_days"] == 1
+    assert len(report["event_results"]) == 1
     evaluated = {item["date"] for item in report["results"]}
     assert not evaluated.intersection(dates[156:167])
     assert database.read_bytes() == original

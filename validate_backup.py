@@ -40,6 +40,7 @@ def inspect_backup(backup: Path, password: str, output: Path) -> dict:
     summary = {key: report[key] for key in ("event_records", "candidate_days", "evaluated_days", "unavailable_days",
                                           "legacy_flag_rate", "new_flag_rate", "interpretation")}
     summary.update({"row_counts": counts, "market_days": len(calendar), "source_unchanged": True,
+                    "coverage": report["coverage"],
                     "backup_sha256": original_hash, "validation_available": report["evaluated_days"] > 0,
                     "accuracy_improvement_proven": False})
     report["summary"] = summary

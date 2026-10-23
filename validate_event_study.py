@@ -31,12 +31,14 @@ def validate(database: Path, symbol: str, start: str, end: str) -> dict:
             prices[code][day] = close
     calendar = sorted(prices["KOSDAQ"])
     returns = {code: returns_from_prices(series, calendar) for code, series in prices.items()}
-    excluded = set()
+    excluded, event_days = set(), set()
     for timestamp in events:
         published = datetime.fromisoformat(timestamp)
         index = bisect.bisect_left(calendar, published.date().isoformat())
         if index < len(calendar) and calendar[index] == published.date().isoformat() and published.hour * 60 + published.minute >= 930:
             index += 1
+        if index < len(calendar):
+            event_days.add(calendar[index])
         excluded.update(calendar[max(0, index - 5):index + 6])
     candidates = [day for day in calendar if start <= day <= end and day not in excluded]
     evaluated, unavailable, old_flags, new_flags = [], 0, 0, 0
@@ -51,11 +53,29 @@ def validate(database: Path, symbol: str, start: str, end: str) -> dict:
         evaluated.append({"date": day, "ar": result["ar"], "legacy_p": legacy_p, "p": result["p"],
                           "est_to": result["est_to"]})
     total = len(evaluated)
+    available_models, unavailable_reasons, event_results = 0, {}, []
+    for day in calendar:
+        if not start <= day <= end:
+            continue
+        result = analyze_returns(returns[symbol], returns["KOSDAQ"], day, calendar=calendar[1:])
+        if result and result.get("ok"):
+            available_models += 1
+            if day in event_days:
+                event_results.append({"date": day, "ar": result["ar"], "p": result["p"],
+                                      "ci_low": result["ci_low"], "ci_high": result["ci_high"],
+                                      "car": result["car"], "est_to": result["est_to"]})
+        else:
+            reason = result.get("reason") if result else "반응일 또는 시장 수익률 기록 없음"
+            unavailable_reasons[reason] = unavailable_reasons.get(reason, 0) + 1
     return {"symbol": symbol, "from": start, "to": end, "model": "시장 회귀, 일별 반응일 검정",
             "event_records": len(events), "excluded_days": len(excluded), "candidate_days": len(candidates),
             "evaluated_days": total, "unavailable_days": unavailable,
             "legacy_flag_rate": old_flags / total if total else None,
             "new_flag_rate": new_flags / total if total else None, "results": evaluated,
+            "coverage": {"own_price_days": len(prices[symbol]), "model_available_days": available_models,
+                         "known_event_days": sum(start <= day <= end for day in event_days),
+                         "event_model_available_days": len(event_results), "unavailable_reasons": unavailable_reasons},
+            "event_results": event_results,
             "interpretation": "수집된 기사·공시 전후 5거래일을 제외한 후보일의 5% 기준 이상 반응 판정 비율입니다. 실제 오탐률이나 원인 판정 정확도가 아닙니다.",
             "limitations": ["수집하지 못한 뉴스와 사건이 후보일에 남아 있을 수 있습니다.",
                             "기사 수집의 완전성은 별도로 확인해야 합니다. 판정 비율이 낮을수록 좋은 모형이라는 뜻은 아닙니다.",
