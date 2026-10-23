@@ -9,12 +9,24 @@
   // GitHub Pages CDN은 10분 캐시라 no-store만으로는 옛 배포판이 올 수 있음 → 주소를 매번 다르게
   const fresh = (filename) => `${filename}?t=${Date.now()}`;
 
+  // 실패 종류: fetch(파일을 못 받음) / password(복호화 실패 = 비밀번호가 다름) / data(풀었지만 내용이 깨짐)
+  const failure = (kind, message) => Object.assign(new Error(message), { kind });
+
+  async function fetchOk(filename) {
+    let response;
+    try { response = await fetch(fresh(filename), { cache: "no-store", credentials: "omit" }); }
+    catch (_) { throw failure("fetch", "사이트에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요."); }
+    if (!response.ok) throw failure("fetch", `${filename} 파일을 받지 못했습니다 (응답 ${response.status}). 배포 중일 수 있으니 1~2분 뒤 다시 시도해 주세요.`);
+    return response;
+  }
+
   async function openFile(filename, candidate) {
-    const response = await fetch(fresh(filename), { cache: "no-store", credentials: "omit" });
-    if (!response.ok) throw new Error("자료 파일을 받지 못했습니다. 페이지를 새로고침해 주세요.");
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buffer.slice(0, 12) }, candidate, buffer.slice(12));
-    return JSON.parse(new TextDecoder().decode(plain));
+    const buffer = new Uint8Array(await (await fetchOk(filename)).arrayBuffer());
+    let plain;
+    try { plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buffer.slice(0, 12) }, candidate, buffer.slice(12)); }
+    catch (_) { throw failure("password", "관리자 비밀번호가 맞지 않습니다. 일반 사이트 비밀번호가 아닌 관리자 비밀번호(GitHub의 ADMIN_PASSWORD)를 직접 입력해 주세요."); }
+    try { return JSON.parse(new TextDecoder().decode(plain)); }
+    catch (_) { throw failure("data", "자료를 풀었지만 내용을 읽지 못했습니다. 다음 자동 배포 후 다시 시도해 주세요."); }
   }
 
   async function downloadAnalysis() {
@@ -138,9 +150,9 @@
     element("submit").disabled = true; element("message").textContent = "비밀번호 확인 중…";
     try {
       const password = element("password").value; element("password").value = "";
-      const response = await fetch(fresh("config.json"), { cache: "no-store", credentials: "omit" });
-      if (!response.ok) throw new Error("관리자 설정을 받지 못했습니다.");
-      const current = await response.json();
+      const response = await fetchOk("config.json");
+      let current;
+      try { current = await response.json(); } catch (_) { throw failure("data", "관리자 설정 파일을 읽지 못했습니다. 다음 자동 배포 후 다시 시도해 주세요."); }
       const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
       const salt = Uint8Array.from(atob(current.salt), (character) => character.charCodeAt(0));
       const candidate = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: current.iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
@@ -152,8 +164,8 @@
       element("export-message").textContent = current.has_export ? "" : "이번 배포에 분석 자료가 없습니다. 다음 자동 실행 상태를 확인해 주세요.";
       element("login").hidden = true; element("workspace").hidden = false; element("logout").hidden = false;
       filter();
-    } catch (_) {
-      if (session === generation) element("message").textContent = "비밀번호가 맞지 않거나 자료를 열 수 없습니다.";
+    } catch (error) {
+      if (session === generation) element("message").textContent = error.kind ? error.message : "자료를 열 수 없습니다. 페이지를 새로고침해 주세요.";
     } finally { element("submit").disabled = false; }
   });
   element("logout").addEventListener("click", lock);

@@ -17,12 +17,15 @@
     <section id="login" class="card narrow">
       <h2>관리자 전용</h2>
       <p>일반 사이트와 다른 관리자 비밀번호를 입력하세요. 이력은 이 비밀번호로 별도 암호화되어 있습니다.</p>
-      <form id="login-form">
+      <form id="login-form" autocomplete="off">
+        <!-- 같은 주소(github.io)의 일반 사이트 비밀번호가 자동으로 채워지지 않게: 다른 사용자 이름 + new-password -->
+        <input type="text" name="username" value="go-monitor-admin" autocomplete="username" hidden>
         <label for="password">관리자 비밀번호</label>
-        <input id="password" type="password" autocomplete="current-password" required>
+        <input id="password" name="admin-password" type="password" autocomplete="new-password" required>
         <button id="submit" type="submit">이력 열기</button>
       </form>
       <p id="message" role="status" aria-live="polite"></p>
+      <p class="note">일반 사이트 비밀번호와 다릅니다. 브라우저가 비밀번호를 자동으로 채웠다면 지우고 관리자 비밀번호를 직접 입력하세요.</p>
       <p class="note">비밀번호와 열쇠는 이 브라우저에 저장하지 않습니다. 새로고침하거나 15분 동안 사용하지 않으면 다시 입력해야 합니다.</p>
     </section>
     <section id="workspace" hidden>

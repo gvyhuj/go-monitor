@@ -35,7 +35,7 @@ async function main() {
     await page.goto(`http://127.0.0.1:${server.address().port}/admin/`);
     await page.getByLabel("관리자 비밀번호").fill("public-site-password");
     await page.getByRole("button", { name: "이력 열기" }).click();
-    await page.getByText("비밀번호가 맞지 않거나 자료를 열 수 없습니다.").waitFor();
+    await page.getByText("관리자 비밀번호가 맞지 않습니다.", { exact: false }).waitFor();
     assert.equal(await page.locator("#workspace").isVisible(), false);
     await page.getByLabel("관리자 비밀번호").fill("admin-only-test-password-2026");
     await page.getByRole("button", { name: "이력 열기" }).click();
