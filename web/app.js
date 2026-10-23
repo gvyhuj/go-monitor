@@ -1615,17 +1615,16 @@
     function baselineBlock() {
       const b = d.baseline;
       if (!b) return "";
-      const tenth = (x) => { const v = Math.round(x * 100) / 10; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
       const NAMES = { pr: "그린광학 보도자료 날", disc: "주요 공시 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
       const rows = ["pr", "disc", "ext", "none"].map((k) => {
         const g = b.groups[k] || {};
         return `<tr${k === "none" ? ' class="muted"' : ""}><td>${NAMES[k]}</td><td class="num">${g.n || 0}일</td>
           <td class="num">${g.mean != null ? points(g.mean) : "-"}</td><td class="num">${g.median_abs != null ? (g.median_abs * 100).toFixed(2) + "%p" : "-"}</td>
-          <td class="num">${g.big_share != null ? `10일 중 ${tenth(g.big_share)}일꼴 <small class="muted">(${g.n}일 중 ${g.big_up + g.big_down}일 · 오름 ${g.big_up} 내림 ${g.big_down})</small>` : "-"}</td></tr>`;
+          <td class="num">${g.big_share != null ? `<b>${Math.round(g.big_share * 100)}%</b> <small class="muted">${g.n}일 중 ${g.big_up + g.big_down}일 (오름 ${g.big_up} · 내림 ${g.big_down})</small>` : "-"}</td></tr>`;
       }).join("");
       return `<details class="baseline"><summary>소식 없는 날과 비교 <small class="muted">${esc(b.from)} ~ ${esc(b.to)}</small></summary>
-        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>평균 예상 대비 차이</th><th>차이 크기 중앙값</th><th>크게 움직인 날</th></tr></thead><tbody>${rows}</tbody></table>
-        <p class="note">'크게 움직인 날'은 평소 예상과 ±${(b.cut * 100).toFixed(2)}%p 이상 차이 난 날입니다. 이 기준은 소식 없는 날 10일 중 1일만 넘도록 정했습니다. 그래서 소식 없는 날 줄은 늘 '10일 중 1일꼴'이고, 다른 줄과 견주어 보면 됩니다. 예를 들어 '10일 중 3일꼴'이면 그런 날엔 크게 움직이는 일이 평소보다 잦았다는 뜻입니다.
+        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>평균 예상 대비 차이</th><th>차이 크기 중앙값</th><th>크게 움직인 날 비율</th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="note">'크게 움직인 날'은 평소 예상보다 ${(b.cut * 100).toFixed(1)}%p 넘게 더 오르거나 더 내린 날입니다. 이 기준은 소식 없는 날 중 크게 움직인 날이 10%가 되도록 정했습니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄의 비율을 이 10%와 비교해 보면 됩니다.
         각 소식은 반응일과 다음 거래일을 함께 셉니다. 평소 관계(${esc(b.method)})는 소식 없는 날만으로 한 번 추정했습니다. 수집하지 못한 소식은 '소식 없는 날'에 섞여 있을 수 있습니다.</p></details>`;
     }
 
