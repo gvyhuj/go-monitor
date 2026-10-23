@@ -214,7 +214,7 @@ def build_static_site(now, log) -> dict:
     salt = site_salt(pw)
     checkpoint()
     n = sitebuild.build(SITE_DIR, pw, salt, items, repo=os.environ.get("GITHUB_REPOSITORY", ""))
-    build_admin(SITE_DIR, admin_password, history)
+    build_admin(SITE_DIR, admin_password, history, items=items)
     # 다음 실행으로 넘길 기록 (암호화)
     sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
     # data 브랜치 백업은 1시간에 한 번

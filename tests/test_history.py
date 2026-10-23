@@ -174,3 +174,49 @@ def test_refresh_archives_previous_and_latest_results_without_adding_public_hist
     assert not any("history" in key or "admin" in key for key, _, _ in items)
     sitebuild.refresh_items(datetime(2026, 10, 20, 17, 30), history=archive)
     assert len(archive.records()["article:one"]) == 2
+
+
+def test_admin_analysis_export_is_encrypted_and_reproducible(database):
+    import base64
+    import gzip
+
+    archive = history.History(ADMIN_PASSWORD)
+    with db.connect() as connection:
+        connection.execute("INSERT INTO daily_bars (symbol,date,close,volume) VALUES (?,?,?,?)",
+                           ("SAMPLE", "2026-10-20", 105.0, 1000))
+        connection.execute("INSERT INTO minute_bars (symbol,ts,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)",
+                           ("SAMPLE", "2026-10-20T11:00", 100.0, 106.0, 100.0, 105.0, 300))
+        connection.execute("INSERT INTO related_stocks (code,name,source) VALUES (?,?,?)",
+                           ("PEER", "비교종목", "업종"))
+        connection.execute("INSERT INTO system_state(key,value) VALUES (?,?)", ("secret-example", "DO_NOT_EXPORT"))
+    items = [
+        ("articles", json.dumps({"items": [{"id": "one"}]}), False),
+        ("article_details", json.dumps({"one": detail()}), False),
+        ("disclosures", json.dumps({"items": []}), False),
+        ("disclosure_details", "{}", False),
+    ]
+    output = database / "export-site"
+    sitebuild.build(output, "public-site-password", b"0123456789abcdef", [("live", "{}", False)])
+    history.build_admin(output, ADMIN_PASSWORD, archive, items=items)
+    config = json.loads((output / "admin" / "config.json").read_text())
+    assert config["has_export"] is True
+    encrypted = (output / "admin" / "analysis-export.bin").read_bytes()
+    admin_key = sitebuild.derive_key(ADMIN_PASSWORD, base64.b64decode(config["salt"]))
+    public_key = sitebuild.derive_key("public-site-password", base64.b64decode(config["salt"]))
+    with pytest.raises(Exception):
+        sitebuild.decrypt(public_key, encrypted)
+    exported = json.loads(gzip.decompress(sitebuild.decrypt(admin_key, encrypted)))
+    assert exported["format"] == "go-monitor-audit-v1"
+    assert exported["analysis_version"] == archive.version
+    assert exported["calculated"]["articles"]["items"][0]["id"] == "one"
+    assert exported["raw"]["daily_bars"][0]["close"] == 105
+    assert exported["raw"]["minute_bars"][0]["close"] == 105
+    assert exported["raw"]["related_stocks"][0]["code"] == "PEER"
+    assert "DO_NOT_EXPORT" not in json.dumps(exported)
+    assert not (output / "d" / "analysis-export.bin").exists()
+
+
+def test_audit_export_requires_all_current_results(database):
+    from core.audit_export import build_payload
+    with pytest.raises(ValueError, match="누락"):
+        build_payload([("articles", "{}", False)], "v1")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import hmac
 import json
@@ -88,7 +89,7 @@ class History:
         return grouped
 
 
-def build_admin(out: Path, password: str, history: History | None) -> None:
+def build_admin(out: Path, password: str, history: History | None, items: list[tuple[str, str, bool]] | None = None) -> None:
     import base64
     import shutil
 
@@ -100,6 +101,13 @@ def build_admin(out: Path, password: str, history: History | None) -> None:
         salt = secrets.token_bytes(16)
         key = derive_key(password, salt)
         config.update({"salt": base64.b64encode(salt).decode(), "iterations": 200_000})
+        if items is not None:
+            from .audit_export import build_payload
+            payload = build_payload(items, history.version)
+            serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+            compressed = gzip.compress(serialized, compresslevel=6)
+            (target / "analysis-export.bin").write_bytes(encrypt(key, compressed))
+            config["has_export"] = True
         index = []
         for entity, records in history.records().items():
             file_id = history._digest(entity)

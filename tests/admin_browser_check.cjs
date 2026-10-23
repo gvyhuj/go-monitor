@@ -29,6 +29,7 @@ async function main() {
       const response = await route.fetch();
       const config = JSON.parse((await response.text()).slice("window.GO_ADMIN=".length, -1));
       config.salt = Buffer.alloc(16, 1).toString("base64");
+      config.has_export = false;
       await route.fulfill({ response, body: `window.GO_ADMIN=${JSON.stringify(config)};` });
     });
     await page.goto(`http://127.0.0.1:${server.address().port}/admin/`);
@@ -43,6 +44,16 @@ async function main() {
     assert.match(await page.locator("#older-view").innerText(), /1\.00%p/);
     assert.match(await page.locator("#newer-view").innerText(), /2\.00%p/);
     assert.match(await page.locator("#differences").innerText(), /대표 값 \(계산 버전 확인\)/);
+    const exportButton = page.getByRole("button", { name: "분석용 데이터 내보내기 (JSON)", exact: true });
+    for (const attempt of [1, 2]) {
+      const downloadPromise = page.waitForEvent("download");
+      await exportButton.click();
+      const download = await downloadPromise;
+      const payload = JSON.parse(await fs.readFile(await download.path(), "utf8"));
+      assert.equal(payload.format, "go-monitor-audit-v1");
+      await page.getByText("분석용 JSON을 다운로드했습니다.", { exact: false }).waitFor();
+      assert.equal(await exportButton.isEnabled(), true);
+    }
     assert.equal(await page.locator("#entity img").count(), 0);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     await page.getByLabel("기사·주가 기록 찾기").fill("없는 검색어");

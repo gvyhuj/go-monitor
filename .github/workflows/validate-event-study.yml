@@ -10,6 +10,7 @@ on:
       - validate_backup.py
       - tests/test_eventstudy.py
       - core/history.py
+      - core/audit_export.py
       - core/sitebuild.py
       - cloud_job.py
       - tests/test_history.py

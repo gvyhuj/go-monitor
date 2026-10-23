@@ -3,7 +3,7 @@
   const config = window.GO_ADMIN || {};
   const element = (identity) => document.getElementById(identity);
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
-  let key = null, index = [], records = [], generation = 0, lastActivity = Date.now(), selection = 0;
+  let key = null, index = [], records = [], generation = 0, lastActivity = Date.now(), selection = 0, hasExport = false;
   const percent = (value) => typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "자료 없음";
   const points = (value) => typeof value === "number" ? `${(value * 100).toFixed(2)}%p` : "자료 없음";
 
@@ -15,11 +15,45 @@
     return JSON.parse(new TextDecoder().decode(plain));
   }
 
+  async function downloadAnalysis() {
+    if (!key || !hasExport) return;
+    const button = element("export-analysis"), status = element("export-message");
+    const session = generation;
+    button.disabled = true;
+    status.textContent = "암호화된 분석 데이터를 확인하는 중…";
+    try {
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error("이 브라우저는 압축 해제를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.");
+      }
+      const response = await fetch("analysis-export.bin", { cache: "no-store", credentials: "omit" });
+      if (!response.ok) throw new Error("분석 자료를 받지 못했습니다. 사이트 배포 상태를 확인해 주세요.");
+      const encrypted = new Uint8Array(await response.arrayBuffer());
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: encrypted.slice(0, 12) }, key, encrypted.slice(12));
+      if (session !== generation || !key) return;
+      const stream = new Blob([decrypted]).stream().pipeThrough(new DecompressionStream("gzip"));
+      const json = await new Response(stream).blob();
+      if (session !== generation || !key) return;
+      const file = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `go-monitor-analysis-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      status.textContent = "분석용 JSON을 다운로드했습니다. 원본 데이터가 포함되므로 안전하게 보관해 주세요.";
+    } catch (error) {
+      if (session === generation) status.textContent = `내보내기 실패: ${error.message}`;
+    } finally {
+      if (session === generation) button.disabled = !key || !hasExport;
+    }
+  }
+
   function lock() {
-    generation++; selection++; key = null; index = []; records = [];
+    generation++; selection++; key = null; index = []; records = []; hasExport = false;
     element("workspace").hidden = true; element("logout").hidden = true; element("login").hidden = false;
     for (const identity of ["entity", "older", "newer", "older-view", "newer-view", "differences"]) element(identity).replaceChildren();
     element("password").value = ""; element("search").value = ""; element("message").textContent = "";
+    element("export-analysis").disabled = true; element("export-message").textContent = "";
     element("password").focus();
   }
 
@@ -111,6 +145,9 @@
       const loaded = await openFile("index.bin", candidate);
       if (session !== generation) return;
       key = candidate; index = loaded; lastActivity = Date.now();
+      hasExport = !!current.has_export;
+      element("export-analysis").disabled = !hasExport;
+      element("export-message").textContent = current.has_export ? "" : "이번 배포에 분석 자료가 없습니다. 다음 자동 실행 상태를 확인해 주세요.";
       element("login").hidden = true; element("workspace").hidden = false; element("logout").hidden = false;
       filter();
     } catch (_) {
@@ -118,6 +155,7 @@
     } finally { element("submit").disabled = false; }
   });
   element("logout").addEventListener("click", lock);
+  element("export-analysis").addEventListener("click", downloadAnalysis);
   element("search").addEventListener("input", filter); element("entity").addEventListener("change", selectEntity);
   for (const name of ["older", "newer"]) element(name).addEventListener("change", compare);
   for (const name of ["pointerdown", "keydown"]) document.addEventListener(name, () => { lastActivity = Date.now(); });
