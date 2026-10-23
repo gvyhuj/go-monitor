@@ -863,11 +863,8 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .cal-d { font-size: 12.5px; color: var(--ink-2); }
 .cal-ch { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cal-marks { margin-top: auto; display: flex; gap: 4px; flex-wrap: wrap; }
-/* 모양으로 구분: 급등 ▲·급락 ▼(삼각형) / 보도자료 ●(채운 원) / 공시 ○(빈 원) / 외부 기사 ●(회색) — 급락 파랑과 보도자료 파랑이 헷갈리지 않게 */
+/* 달력 표시: 보도자료 ●(채운 원) / 공시 ○(빈 원) / 외부 기사 ●(회색). 급등·급락은 칸의 % 숫자로 봄 */
 .mk { display: inline-block; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
-.mk.ev { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
-.mk.ev.up { border-bottom: 9px solid var(--up); }
-.mk.ev.down { border-top: 9px solid var(--down); }
 .mk.pr { background: var(--brand-blue); }
 .mk.disc { background: none; border: 2px solid var(--navy); }
 .mk.ext { background: var(--muted); }
@@ -886,8 +883,6 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
   .cal-ch { font-size: 11px; }
   .cal-d { font-size: 11px; }
   .mk { width: 7px; height: 7px; }
-  .mk.ev { width: 0; height: 0; border-left-width: 4px; border-right-width: 4px; }
-  .mk.ev.up { border-bottom-width: 7px; } .mk.ev.down { border-top-width: 7px; }
   .mk.disc { border-width: 1.5px; }
   .cal-legend { margin-left: 0; width: 100%; }
 }

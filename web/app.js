@@ -551,7 +551,6 @@
     const months = [...new Set(daily.map((x) => x.date.slice(0, 7)))].sort();
     if (!calState.month || !months.includes(calState.month)) calState.month = months[months.length - 1];
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
-    const bigEv = (list) => (list || []).filter((e) => e.tier !== "관찰" && e.tier !== "요청");
 
     function grid() {
       const [y, m] = calState.month.split("-").map(Number);
@@ -564,12 +563,11 @@
         const px = price[ds], ch = px && px.change;
         const pr = (artDay[ds] || []).filter(isPr).length, ext = (artDay[ds] || []).filter((a) => !isPr(a)).length;
         const dc = (discDay[ds] || []).filter((x) => MAIN_DISC.has(x.pblntf || "")).length;
-        const big = bigEv(evDay[ds]);
         const tint = ch == null ? "" : `style="--tint:${Math.min(1, Math.abs(ch) / 0.1).toFixed(2)}"`;
         cells.push(`<button type="button" class="cal-cell${ch == null ? " closed" : ""}${ch > 0 ? " up" : ch < 0 ? " down" : ""}${ds === calState.sel ? " sel" : ""}" data-day="${ds}" ${tint}>
           <span class="cal-d">${d}</span>
           ${ch != null ? `<span class="cal-ch ${sgnCls(ch)}">${pct(ch, 1)}</span>` : ""}
-          <span class="cal-marks">${big.length ? `<i class="mk ev ${big[0].direction}" title="급등·급락 ${big.length}건"></i>` : ""}${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사 ${ext}건"></i>` : ""}</span>
+          <span class="cal-marks">${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사 ${ext}건"></i>` : ""}</span>
         </button>`);
       }
       const mi = months.indexOf(calState.month);
@@ -577,7 +575,7 @@
           <button type="button" class="btn small" data-mv="-1" ${mi <= 0 ? "disabled" : ""} aria-label="이전 달">‹</button>
           <b>${y}년 ${m}월</b>
           <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
-          <span class="cal-legend"><span><i class="mk ev up"></i>급등</span><span><i class="mk ev down"></i>급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
+          <span class="cal-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
         </div>
         <div class="cal-grid">${["일", "월", "화", "수", "목", "금", "토"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
     }
