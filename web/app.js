@@ -1569,7 +1569,25 @@
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
     groups.disc = discShown();
 
-    const renderScore = () => { $("#pr-score").innerHTML = baselineBlock(); };
+    const renderScore = () => { $("#pr-score").innerHTML = countLine(artState.cat) + baselineBlock(); };
+    // 지금 탭에 몇 건이 실렸는지 (같은 반응일 기사는 한 건으로 셈). 공시 탭은 켜 둔 종류만
+    const since = isoDate(new Date(Date.now() - 183 * 864e5));
+    function countLine(cat) {
+      const isDisc = cat === "disc";
+      const list = isDisc ? groups.disc : groups[cat];
+      const dayOf = (x) => (isDisc ? x.ts : x.day || (byId.get(x.lead) || {}).ts || "").slice(0, 10);
+      const recent = list.filter((x) => dayOf(x) >= since);
+      const first = list.map(dayOf).filter(Boolean).sort()[0];
+      const label = isDisc ? "선택한 종류 공시" : cat === "pr" ? "그린광학 보도자료" : "외부 기사";
+      const avgOut = recent.length ? recent.reduce((sum, x) => sum + (x.outlets || 1), 0) / recent.length : null;
+      return `<div class="score-line">
+        <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
+        <span><small>한 달 평균</small><b>${(recent.length / 6).toFixed(1)}건</b></span>
+        ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
+          : `<span><small>한 건당 실린 매체 (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
+        <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b></span>
+        <p class="score-note">${isDisc ? "위 종류 버튼으로 켠 공시만 셉니다." : "같은 날 나온 기사는 한 건으로 셉니다. 단순 언급·시황 기사는 외부 기사에서 뺍니다."}</p></div>`;
+    }
     // 소식 없는 날과 비교: 기사 하나는 잡음이 커도, 같은 종류 날을 모으면 차이가 보임
     function baselineBlock() {
       const b = d.baseline;
