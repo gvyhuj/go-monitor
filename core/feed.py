@@ -269,7 +269,7 @@ def sync_disclosures(code: str, n: int = 20) -> int:
             with connect() as conn:
                 first = conn.execute("SELECT MIN(date) FROM disclosures WHERE symbol=?", (code,)).fetchone()[0]
             since = min(since, date.fromisoformat(first)) if first else since
-        kind.fill_times(code, since, today)
+        kind.fill_times(code, since, today, add_exchange=dart.enabled())
     except Exception as e:                  # noqa: BLE001 - 시각이 없어도 공시 목록은 그대로
         print(f"::warning title=공시 시각::{type(e).__name__}: {str(e)[:150]}", flush=True)
     return added

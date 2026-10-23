@@ -1559,8 +1559,8 @@
       noise: events.filter((e) => e.kind === "ext" && e.noise),
     };
     const LABEL = { pr: "그린광학 보도자료", disc: "공시", ext: "외부 기사 · 반응 있음", all: "외부 기사 전체", noise: "단순 언급·시황" };
-    // 공시: 종류(DART 분류) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시만
-    if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C"]);
+    // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
+    if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
     groups.disc = discShown();
 
@@ -1718,7 +1718,7 @@
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
     let d;
-    const isDisc = /^d\d+$/.test(id);
+    const isDisc = /^dK?\d+$/.test(id);
     try { d = await api(isDisc ? `/api/disclosures/${id}` : `/api/articles/${id}`); }
     catch (e) { box.innerHTML = `<div class="empty"><strong>불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
@@ -1727,7 +1727,7 @@
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
     let html = `<div class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}${artFlags(e)}</div>
       <h2 class="pr-title">${esc(a.title)}</h2>
-      <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">DART에서 원문 보기</a>` : ""}`
+      <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
         : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}</p>`;
     const notes = [];
     if (e.disclosure) {

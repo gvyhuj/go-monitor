@@ -421,7 +421,7 @@ def earlier_disclosure(symbol: str, title: str, ts: datetime) -> dict | None:
 
 def disclosure_rows(symbol: str) -> list[dict]:
     """공시 목록 (DART 접수번호 앞에 d를 붙여 기사 번호와 겹치지 않게). 시각을 모르면 그날 15:30으로 두고 untimed."""
-    from . import dart
+    from . import dart, kind
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT no, date, ts, title, kind, pblntf, filer, rm FROM disclosures WHERE symbol=? ORDER BY date DESC, no DESC",
@@ -430,7 +430,8 @@ def disclosure_rows(symbol: str) -> list[dict]:
         r["id"] = f"d{r['no']}"
         r["untimed"] = not r["ts"]
         r["ts"] = r["ts"] or f"{r['date']}T15:30"
-        r["url"] = dart.viewer_url(r["no"]) if r.get("pblntf") else ""
+        r["url"] = kind.viewer_url(r["no"][1:]) if r.get("pblntf") == "K" else \
+            dart.viewer_url(r["no"]) if r.get("pblntf") else ""
     return rows
 
 

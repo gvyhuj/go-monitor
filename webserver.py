@@ -484,7 +484,7 @@ def api_disclosures(_q):
                     "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session")},
                     "links": [x["id"] for x in links.get(r["id"], [])]})
     from core import dart
-    return {"items": out, "types": dart.TYPES, "source": "dart" if dart.enabled() else "naver"}
+    return {"items": out, "types": {**dart.TYPES, "K": "거래소 조치"}, "source": "dart" if dart.enabled() else "naver"}
 
 
 def api_disclosure_detail(_q, did):
@@ -545,7 +545,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/articles$"), api_articles),
     (re.compile(r"^/api/articles/(pr\d+|\d+)$"), api_article_detail),
     (re.compile(r"^/api/disclosures$"), api_disclosures),
-    (re.compile(r"^/api/disclosures/(d\d+)$"), api_disclosure_detail),
+    (re.compile(r"^/api/disclosures/(dK?\d+)$"), api_disclosure_detail),
     (re.compile(r"^/api/share$"), api_share),
     (re.compile(r"^/api/cloud$"), api_cloud),
 ]
