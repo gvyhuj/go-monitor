@@ -245,20 +245,31 @@ def sync_news(code: str, n: int = 20) -> int:
 
 
 def sync_disclosures(code: str, n: int = 20) -> int:
-    items = naver.fetch_disclosures(code, n)
-    now = kst_now().isoformat(timespec="minutes")
-    with connect() as conn:
-        before = conn.total_changes
-        conn.executemany(
-            "INSERT OR IGNORE INTO disclosures(no, symbol, date, title, kind, summary, first_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [(i["no"], code, i["date"], i["title"], i["kind"], i["summary"], now) for i in items],
-        )
-        added = conn.total_changes - before
+    """공시 목록: DART(비밀값 DART_API_KEY가 있으면) → 없으면 예전처럼 네이버. 시각은 KIND에서."""
+    from . import dart
+    full = False
+    if dart.enabled():
+        added, full = dart.sync(code)
+    else:
+        items = naver.fetch_disclosures(code, n)
+        now = kst_now().isoformat(timespec="minutes")
+        with connect() as conn:
+            before = conn.total_changes
+            conn.executemany(
+                "INSERT OR IGNORE INTO disclosures(no, symbol, date, title, kind, summary, first_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(i["no"], code, i["date"], i["title"], i["kind"], i["summary"], now) for i in items],
+            )
+            added = conn.total_changes - before
     try:                                    # 공시 접수 시각 (기사보다 먼저 나왔는지 보려고)
         from . import kind
         today = kst_now().date()
-        kind.fill_times(code, today - timedelta(days=400), today)
+        since = today - timedelta(days=400)
+        if full:                            # DART 전체 기록을 처음 받은 날: 시각도 가장 오래된 공시까지
+            with connect() as conn:
+                first = conn.execute("SELECT MIN(date) FROM disclosures WHERE symbol=?", (code,)).fetchone()[0]
+            since = min(since, date.fromisoformat(first)) if first else since
+        kind.fill_times(code, since, today)
     except Exception as e:                  # noqa: BLE001 - 시각이 없어도 공시 목록은 그대로
         print(f"::warning title=공시 시각::{type(e).__name__}: {str(e)[:150]}", flush=True)
     return added

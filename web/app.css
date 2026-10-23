@@ -761,12 +761,20 @@ details.art-group > button { padding-left: 24px; }
 .ktag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; margin-right: 6px; white-space: nowrap; }
 .ktag.k-pr { background: color-mix(in srgb, var(--brand-blue) 14%, transparent); color: var(--brand-blue); }
 .ktag.k-ext { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--ink-2); }
+.ktag.k-disc { background: color-mix(in srgb, var(--navy) 12%, transparent); color: var(--navy); }
+/* 공시 종류 버튼 (여러 개 켤 수 있음) */
+.disc-types { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
+.disc-types button { border: 1px solid var(--line-2); background: var(--surface); border-radius: 999px; padding: 5px 12px;
+  font-size: 13px; font-weight: 560; color: var(--ink-2); cursor: pointer; }
+.disc-types button small { color: var(--muted); font-size: 11px; margin-left: 2px; }
+.disc-types button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.disc-types button[aria-pressed="true"] small { color: var(--on-navy-2); }
 .al-meta .tier { margin-left: 6px; }
 .vb-note { margin-top: 6px; font-size: 13px; color: var(--ink-2); }
 .art-fix { margin: 10px 0 0; }
 .art-list button.sub { padding: 8px 14px 8px 24px; }
 .art-list button.sub .t { font-weight: 520; font-size: 13.5px; }
-@media (prefers-color-scheme: dark) { .ktag.k-pr { color: var(--lens); } }
+@media (prefers-color-scheme: dark) { .ktag.k-pr { color: var(--lens); } .ktag.k-disc { color: var(--ink); } }
 @media (max-width: 720px) {
   .art-detail table.ladder { display: block; max-width: 100%; overflow-x: auto; font-size: 12.5px; }
 }

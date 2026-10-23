@@ -229,7 +229,8 @@ _EVENT_MIGRATIONS = {
 _SNAPSHOT_MIGRATIONS = {"buy_top5": "INTEGER", "sell_top5": "INTEGER"}
 # 기사: 수집 출처(naver/google), 직접 고친 '우리 보도자료/외부 기사'(pr/ext)·악재 표시(-1/0)
 _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override": "INTEGER"}
-_DISCLOSURE_MIGRATIONS = {"ts": "TEXT"}          # 공시 시각 (네이버 공시 목록의 접수 시각)
+# 공시 시각(KIND 접수 시각), DART 공시 종류(A~J)·제출인·비고
+_DISCLOSURE_MIGRATIONS = {"ts": "TEXT", "pblntf": "TEXT", "filer": "TEXT", "rm": "TEXT"}
 _CAUSE_MIGRATIONS = {"move": "REAL"}            # 하루 원인: 원인을 넣은 시각의 전일 대비 등락
 
 

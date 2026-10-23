@@ -206,6 +206,14 @@
       if (!q.limit) return a;
       return { ...a, items: a.items.filter((x) => x.category !== "단순 언급").slice(0, +q.limit), summary: null };
     }
+    if (p === "/api/disclosures") return kv("disclosures");
+    m = p.match(/^\/api\/disclosures\/(.+)$/);
+    if (m) {
+      const all = await kv("disclosure_details");
+      const d = all[decodeURIComponent(m[1])];
+      if (!d) throw new Error("이 공시는 아직 사이트에 올라오지 않았습니다. 다음 자동 수집 때 반영됩니다.");
+      return d;
+    }
     m = p.match(/^\/api\/articles\/(.+)$/);
     if (m) {
       const all = await kv("article_details");
@@ -1488,7 +1496,7 @@
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">기사 영향 분석</h1>
-        <p class="page-sub" id="art-sub">우리 보도자료와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(고유 반응) 봅니다.</p></div></div>
+        <p class="page-sub" id="art-sub">그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(고유 반응) 봅니다.</p></div></div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div><span class="spacer"></span>
         <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 직접 등록</button></div>
@@ -1503,6 +1511,7 @@
         </div>
         <div class="form-msg" id="pr-msg" role="status"></div>
       </form>
+      <div class="disc-types" id="disc-types" role="group" aria-label="공시 종류" hidden></div>
       <div class="pr-layout art-layout">
         <ul class="art-list" id="art-list"><li class="loading">불러오는 중…</li></ul>
         <section id="pr-detail" class="art-detail"></section>
@@ -1528,10 +1537,13 @@
       } catch (e) { msg.className = "form-msg err"; msg.textContent = e.message; }
     };
 
-    let d;
-    try { d = await api("/api/articles"); }
+    let d, dd;
+    try { [d, dd] = await Promise.all([api("/api/articles"), api("/api/disclosures").catch(() => null)]); }
     catch (e) { $("#art-list").innerHTML = `<li class="empty"><strong>기사를 불러오지 못했습니다.</strong>${esc(e.message)}</li>`; return; }
     const items = d.items;
+    const discs = (dd && dd.items) || [];
+    const DTYPES = { ...((dd && dd.types) || {}) };
+    discById = new Map(discs.map((x) => [x.id, x]));
     const byId = new Map(items.map((a) => [a.id, a]));
     // 같은 반응일 = 한 사건 (엔진이 묶어 줌. 예전 자료면 기사 하나를 한 사건으로)
     const events = (d.events || items.map((a) => ({ day: a.effect && a.effect.reaction_day, lead: a.id, ids: [a.id],
@@ -1546,7 +1558,11 @@
       all: events.filter((e) => e.kind === "ext" && !e.noise),
       noise: events.filter((e) => e.kind === "ext" && e.noise),
     };
-    const LABEL = { pr: "우리 보도자료", ext: "외부 기사 · 반응 있음", all: "외부 기사 전체", noise: "단순 언급·시황" };
+    const LABEL = { pr: "그린광학 보도자료", disc: "공시", ext: "외부 기사 · 반응 있음", all: "외부 기사 전체", noise: "단순 언급·시황" };
+    // 공시: 종류(DART 분류) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시만
+    if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C"]);
+    const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
+    groups.disc = discShown();
 
     // 보도자료 성과 요약 (최근 6개월, 사건 기준)
     const since = isoDate(new Date(Date.now() - 183 * 864e5));
@@ -1554,34 +1570,87 @@
     const cls = (e) => (byId.get(e.lead).effect || {}).verdict_cls;
     const avgOut = recent.length ? recent.reduce((s, e) => s + (e.outlets || 1), 0) / recent.length : 0;
     // 사건별 고유 반응의 평균과 95% 범위 (t분포). 건수가 적으면 범위가 넓어져 '아직 모름'이 솔직하게 드러남
-    const xs = recent.map((e) => (byId.get(e.lead).effect || {}).measure).filter((m) => m && m.value != null).map((m) => m.value);
-    let ci = null;
-    if (xs.length >= 3) {
+    const ciOf = (xs) => {
+      if (xs.length < 3) return null;
       const n = xs.length, mean = xs.reduce((a, b) => a + b, 0) / n;
       const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
       const T = [12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09];
       const h = (n - 1 <= T.length ? T[n - 2] : 2.0) * sd / Math.sqrt(n);
-      ci = { n, mean, lo: mean - h, hi: mean + h };
+      return { n, mean, lo: mean - h, hi: mean + h };
+    };
+    const ciTxtOf = (c, what) => !c ? "" : c.lo > 0 ? `${what}가 나간 날 평균적으로 이 종목만 더 올랐다고 볼 근거가 있습니다.`
+      : c.hi < 0 ? `${what}가 나간 날 평균적으로 오히려 더 약했습니다.`
+      : `범위가 0을 포함해, 아직 ${what}에 평균적인 주가 효과가 있다고 말할 근거는 부족합니다.`;
+    const ci = ciOf(recent.map((e) => (byId.get(e.lead).effect || {}).measure).filter((m) => m && m.value != null).map((m) => m.value));
+    const ciTxt = ciTxtOf(ci, "보도자료");
+    // 공시 요약: 지금 켜 둔 종류의 공시만 (같은 반응일 공시는 주가 반응을 나눌 수 없어 한 번만 셈)
+    function discScore() {
+      const shown = groups.disc, seen = new Set(), xs = [];
+      shown.forEach((x) => {
+        const ef = x.effect || {};
+        if (ef.measure && ef.measure.value != null && !seen.has(ef.reaction_day)) { seen.add(ef.reaction_day); xs.push(ef.measure.value); }
+      });
+      const c = ciOf(xs);
+      return `<div class="score-line">
+      <span><small>선택한 종류 공시</small><b>${shown.length}건</b></span>
+      <span><small>평균 고유 반응${c ? ` (반응일 ${c.n}일)` : ""}</small><b class="${c ? sgnCls(c.mean) : ""}">${c ? pct(c.mean) : "-"}</b></span>
+      <span><small>95% 범위</small><b>${c ? `${pct(c.lo)} ~ ${pct(c.hi)}` : "-"}</b></span>
+      <span><small>시각을 아는 공시</small><b>${shown.filter((x) => !x.untimed).length}건</b></span>
+      <p class="score-note">${c ? ciTxtOf(c, "공시") : "반응을 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날 나온 공시는 한 번만 셉니다.</p></div>`;
     }
-    const ciTxt = !ci ? "" : ci.lo > 0 ? "보도자료가 나간 날 평균적으로 이 종목만 더 올랐다고 볼 근거가 있습니다."
-      : ci.hi < 0 ? "보도자료가 나간 날 평균적으로 오히려 더 약했습니다."
-      : "범위가 0을 포함해, 아직 보도자료에 평균적인 주가 효과가 있다고 말할 근거는 부족합니다.";
-    $("#pr-score").innerHTML = recent.length ? `<div class="score-line">
+    const prScore = recent.length ? `<div class="score-line">
       <span><small>최근 6개월 보도자료</small><b>${recent.length}건</b></span>
       <span><small>평균 고유 반응${ci ? ` (계산 ${ci.n}건)` : ""}</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? pct(ci.mean) : "-"}</b></span>
       <span><small>95% 범위</small><b>${ci ? `${pct(ci.lo)} ~ ${pct(ci.hi)}` : "-"}</b></span>
       <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
       ${ci ? `<p class="score-note">${ciTxt}</p>` : ""}</div>` : "";
+    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : prScore; };
 
-    if (!["pr", "ext", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
+    if (!["pr", "disc", "ext", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
     const seg = $("#art-cat");
-    seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small>${groups[v].length}</small></button>`).join("");
+    seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small>${v === "disc" ? discs.length : groups[v].length}</small></button>`).join("");
     seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); };
+    const typeBox = $("#disc-types");
+    const typeCount = (t) => discs.filter((x) => (x.pblntf || "?") === t).length;
+    const typeKeys = Object.keys(DTYPES).filter((t) => typeCount(t));
+    if (discs.some((x) => !x.pblntf)) { typeKeys.push("?"); DTYPES["?"] = "분류 없음"; }
+    function renderTypes() {
+      const allOn = typeKeys.every((t) => artState.discTypes.has(t));
+      typeBox.innerHTML = `<button type="button" data-t="*" aria-pressed="${allOn}">전체 <small>${discs.length}</small></button>`
+        + typeKeys.map((t) => `<button type="button" data-t="${t}" aria-pressed="${artState.discTypes.has(t)}">${esc(DTYPES[t])} <small>${typeCount(t)}</small></button>`).join("");
+    }
+    typeBox.onclick = (ev) => {
+      const b = ev.target.closest("button[data-t]"); if (!b) return;
+      const t = b.dataset.t, S = artState.discTypes;
+      if (t === "*") { if (typeKeys.every((k) => S.has(k))) S.clear(); else typeKeys.forEach((k) => S.add(k)); }
+      else if (S.has(t)) S.delete(t); else S.add(t);
+      groups.disc = discShown();
+      renderList();
+    };
 
     function renderList() {
       seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat)));
-      const list = groups[artState.cat];
+      typeBox.hidden = artState.cat !== "disc";
+      if (artState.cat === "disc") renderTypes();
+      renderScore();
       const ul = $("#art-list");
+      if (artState.cat === "disc") {
+        const list = groups.disc;
+        if (!list.length) {
+          ul.innerHTML = `<li class="empty"><strong>${discs.length ? "선택한 종류의 공시가 없습니다." : "아직 모인 공시가 없습니다."}</strong>${discs.length ? "위 종류 버튼을 눌러 다른 공시도 볼 수 있습니다." : "자동 수집이 돌면 DART에서 이 회사 공시를 모읍니다."}</li>`;
+          return;
+        }
+        ul.innerHTML = list.map((x) => {
+          const ef = x.effect || {}, m = ef.measure;
+          return `<li><button type="button" data-id="${esc(x.id)}" aria-current="${x.id === current}">
+          <span class="al-meta"><span class="ktag k-disc">공시</span>${catTag(x.kind || "공시")}<span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)}</span>${artFlags(ef)}</span>
+          <span class="t">${esc(x.title)}</span>
+          <span class="al-foot">${verdictTag(ef)}${m ? `<span class="num ${sgnCls(m.value)}">${pct(m.value)}</span>${m.basis ? `<span class="muted">${esc(m.basis)} 기준</span>` : ""}` : ""}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
+        }).join("");
+        ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
+        return;
+      }
+      const list = groups[artState.cat];
       if (!list.length) {
         ul.innerHTML = `<li class="empty"><strong>${artState.cat === "ext" ? "뚜렷하게 반응한 외부 기사가 없습니다." : "해당 기사가 없습니다."}</strong>${artState.cat === "ext" ? "'외부 기사 전체'에서 모두 볼 수 있습니다." : ""}</li>`;
         return;
@@ -1601,23 +1670,28 @@
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
     }
     let current = selId;
-    if (selId) {
+    if (selId && discById.has(selId)) {
+      artState.cat = "disc";
+      const x = discById.get(selId);
+      if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
+    } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
       if (ev) artState.cat = ev.kind === "pr" ? "pr" : ev.noise ? "noise" : (artState.cat === "ext" && reacted(ev)) ? "ext" : "all";
     }
-    if (!current) { const first = groups[artState.cat][0] || events[0]; current = first && first.lead; }
+    if (!current) { const first = (artState.cat === "disc" ? groups.disc[0] : groups[artState.cat][0]) || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length
-      ? `우리 보도자료와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(<b>고유 반응</b>)를 반응일(전일 종가 → 종가) 기준으로 봅니다. 같은 날 나온 기사는 한 사건으로 묶었습니다.`
+      ? `그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(<b>고유 반응</b>)를 반응일(전일 종가 → 종가) 기준으로 봅니다. 같은 날 나온 기사는 한 사건으로 묶었습니다.`
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
     if (!current) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
     loadPR(current);
   }
 
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : "k-ext"}">${a.kind === "pr" ? "우리 보도자료" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
+  let discById = new Map();     // 기사 영향 분석 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "그린광학 보도자료" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}`;
 
-  function decompBlock(dc, tm, d0, two) {
+  function decompBlock(dc, tm, d0, two, noun = "기사") {
     const p = (two && dc.d01) || dc.d0, sig = dc.sigma;
     const parts = p.parts || [];
     const rows = [
@@ -1625,17 +1699,17 @@
       { k: `시장 몫 <small>KOSDAQ ${pct(p.kosdaq)} × 민감도 ${dc.beta_market.toFixed(2)}</small>`, v: p.market },
       ...(parts.length ? parts.map((f) => ({ k: `분야 몫 · ${esc(f.name)} <small>${f.kind === "etf" ? "ETF" : "비교 종목 평균"} ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib }))
         : [{ k: `업종 몫 <small>${dc.method === "단순" ? "기록이 짧아 시장만 감안" : "비교 종목 시세 없음"}</small>`, v: p.sector }]),
-      { k: "기사(고유) 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>", v: p.abnormal, cls: "abn" },
+      { k: `${noun}(고유) 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>`, v: p.abnormal, cls: "abn" },
     ];
     const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
     const zTxt = p.z != null && sig ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
     const judge = p.rarity != null ? `${rarityTxt(p.rarity, p.n_null, two && dc.d01 ? "2일 고유 움직임" : "하루 고유 움직임")}.`
       : p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임입니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도입니다." : "평소에도 이 정도는 움직입니다.";
-    return `<h3 class="d-sec" style="margin-top:22px">기사 효과 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
+    return `<h3 class="d-sec" style="margin-top:22px">${noun} 효과 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
       <ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
         <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
-      <p class="flow-sum" style="margin-top:10px">${zTxt ? `기사(고유) 몫은 ${zTxt}입니다. ` : ""}${judge}</p>
+      <p class="flow-sum" style="margin-top:10px">${zTxt ? `${noun}(고유) 몫은 ${zTxt}입니다. ` : ""}${judge}</p>
       ${tm ? `<p class="flow-sum"><b>시간 순서</b> ${esc(tm.label)}</p>` : ""}
       <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·사업 분야를 몇 배로 따라 움직이는지). 평소 추세는 빼지 않고, 평소 고유 변동폭은 큰 사건 며칠에 흔들리지 않게 중앙값으로 잽니다.` : "기록이 짧아 시장을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
   }
@@ -1644,16 +1718,23 @@
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
     let d;
-    try { d = await api(`/api/articles/${id}`); }
+    const isDisc = /^d\d+$/.test(id);
+    try { d = await api(isDisc ? `/api/disclosures/${id}` : `/api/articles/${id}`); }
     catch (e) { box.innerHTML = `<div class="empty"><strong>불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
     if (!a.kind) a.kind = a.category === "회사 발표" || a.manual ? "pr" : "ext";
+    const noun = isDisc ? "공시" : "기사";
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
     let html = `<div class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}${artFlags(e)}</div>
       <h2 class="pr-title">${esc(a.title)}</h2>
-      <p class="pr-meta">${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}</p>`;
+      <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">DART에서 원문 보기</a>` : ""}`
+        : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}</p>`;
     const notes = [];
-    if (e.disclosure) notes.push(`같은 내용의 공시(「${esc(e.disclosure.title)}」)가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 공시 시각부터 쟀습니다.`);
+    if (e.disclosure) {
+      const dsc = [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title);
+      notes.push(`같은 내용의 공시(${dsc ? `<a href="#/pr/${esc(dsc.id)}">「${esc(e.disclosure.title)}」</a>` : `「${esc(e.disclosure.title)}」`})가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 공시 시각부터 쟀습니다.`);
+    }
+    if (isDisc && a.untimed) notes.push("DART에는 접수 날짜만 있고 거래소(KIND)에서도 시각을 찾지 못해, 그날 하루(전일 종가 → 종가)로 쟀습니다.");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day.slice(5).replace("-", "/")) : "다음 거래일"} 움직임으로 쟀습니다. 그 사이 다른 소식도 섞였을 수 있어 판정을 한 단계 낮췄습니다.${dl && dl.gap != null ? ` 시초가 갭 <b class="${sgnCls(dl.gap)}">${pct(dl.gap)}</b>.` : ""}`);
     if (e.late) notes.push("오후 늦게(14시 이후) 나와 그날 남은 거래 시간이 짧아, 반응일과 다음날 2일 누적으로 판정했습니다.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
@@ -1663,11 +1744,11 @@
       ${e.measure && e.measure.rarity != null ? `<div class="vb-note">${rarityTxt(e.measure.rarity, e.measure.n_null, { "60분": "60분 고유 움직임", "개장 1시간": "전일 종가→10:00 고유 움직임", "2일": "2일 고유 움직임" }[e.measure.basis] || "하루 고유 움직임")}.</div>` : ""}
       ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
-    // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 우리 보도자료)
-    if (!a.manual) {
+    // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    if (!a.manual && !isDisc) {
       const toKind = a.kind === "pr" ? "ext" : "pr";
       html += `<div class="ask-row editable art-fix">
-        <button class="btn small" type="button" data-kind="${toKind}">${toKind === "pr" ? "우리 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>
+        <button class="btn small" type="button" data-kind="${toKind}">${toKind === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>
         ${a.kind === "ext" ? `<button class="btn small" type="button" data-tone="${a.tone < 0 ? 0 : -1}">${a.tone < 0 ? "악재 표시 지우기" : "악재로 표시"}</button>` : ""}
         ${a.kind !== a.kind_auto && a.kind_auto ? `<button class="btn-link" type="button" data-kind="auto">자동 판정으로 되돌리기</button>` : ""}
         <span class="form-msg" id="art-fix-msg"></span></div>`;
@@ -1685,7 +1766,7 @@
         <span class="num v ${sgnCls(v)}">${pct(v)}</span></li>`).join("")}</ul>
         <p class="note" style="margin-top:6px">민감도는 아래 하루 계산과 같은 값을 씁니다. ${m60.start ? "장중에 나온 기사는" : "장 시작 전에 나온 기사는 밤사이 시초가에 반영되므로 전일 종가부터 개장 1시간까지로,"} 그날 오후 다른 일이 섞이지 않도록 짧은 구간으로 판정합니다. 얼마나 드문지는 평소 같은 구간에서 같은 방식으로 시장 몫을 뺀 움직임과 비교합니다.</p>`;
     }
-    if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late);
+    if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late, noun);
     if (dl) {
       const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;
       ev += `<h3 class="d-sec" style="margin-top:22px">일별 반응 <small class="muted">반응일 ${esc(e.reaction_day)} · 전날 종가 ${won(dl.prev_close)}원 기준</small></h3>
@@ -1706,19 +1787,30 @@
     if ((d.confounders || []).length) ev += `<h3 class="d-sec" style="margin-top:18px">함께 봐야 할 것</h3><ul class="notes" style="margin-top:0">${d.confounders.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
     if ((e.events || []).length) ev += `<div class="rule-full"><b>반응일에 감지된 이상변동</b><br>${e.events.map((x) => `<a href="#/events" data-ev="${x.id}">${hhmm(x.start_ts)} ${KIND[x.direction]} ${pct(x.peak_return_5m)}</a>`).join(", ")}</div>`;
 
+    // 공시: 같은 내용이라 이 공시 시각부터 잰 기사들
+    if (isDisc) {
+      const ls = a.links || [];
+      html += `<section class="outlet-list"><h3 class="d-sec">같은 내용의 보도자료·기사 <small class="muted">${ls.length}건</small></h3>
+        ${ls.length ? `<ul>${ls.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> <a href="#/pr/${esc(r.id)}">${esc(r.title)}</a>${r.kind === "pr" ? ' <span class="ktag k-pr">그린광학 보도자료</span>' : ""}</li>`).join("")}</ul>`
+          : `<p class="note">이 공시 뒤 36시간 안에 같은 내용(계약·실적·IR·증자·전환사채)으로 나온 기사가 없습니다.</p>`}</section>`;
+      html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
+      html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 공시 때문에 움직였다고 단정하지는 않습니다.</p>`;
+    }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
     const outlets = [{ id: a.id, manual: a.manual, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
     const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">중복이라 삭제</button>` : ""}</li>`;
-    html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
+    if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section>`;
-    html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
-    html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 기사 때문에 움직였다고 단정하지는 않습니다.</p>`;
-    html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
+    if (!isDisc) {
+      html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
+      html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 기사 때문에 움직였다고 단정하지는 않습니다.</p>`;
+      html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
+    }
     box.innerHTML = html;
 
     const draw = () => {

@@ -440,6 +440,87 @@ def api_article_detail(q, aid):
     return out
 
 
+def _disc_effect(sym, r, stamp):
+    """공시 반응: 기사와 같은 계산 (공시 자체가 원천이라 '먼저 나온 공시' 찾기는 안 함)."""
+    key = ("disc", r["id"], r["ts"], r["untimed"], stamp)
+    hit = _EFF_CACHE.get(key)
+    if hit is None:
+        hit = articles.effect(sym, datetime.fromisoformat(r["ts"]), 0, "공시", "", untimed=r["untimed"])
+        if hit.get("verdict"):
+            hit["verdict"] = hit["verdict"].replace("기사", "공시")
+        if len(_EFF_CACHE) > 3000:
+            _EFF_CACHE.clear()
+        _EFF_CACHE[key] = hit
+    return hit
+
+
+def _disc_links(sym, stamp) -> dict:
+    """공시 번호 → 같은 내용이라 공시 시각부터 잰 기사들 (기사의 '공시 먼저'를 거꾸로 이은 것)."""
+    by_key = {}
+    for a in articles.article_rows(sym):
+        e = _effect_cached(sym, a, stamp)
+        dsc = e.get("disclosure")
+        if dsc:
+            by_key.setdefault((dsc["ts"], dsc["title"]), []).append(
+                {"id": a["id"], "ts": a["ts"], "title": a["title"], "office": a["office"], "kind": a.get("kind")})
+    out = {}
+    with connect() as conn:
+        for r in conn.execute("SELECT no, ts, title FROM disclosures WHERE symbol=? AND ts IS NOT NULL", (sym,)):
+            if (r["ts"], r["title"]) in by_key:
+                out[f"d{r['no']}"] = by_key[(r["ts"], r["title"])]
+    return out
+
+
+def api_disclosures(_q):
+    s = load_settings()
+    sym = s["symbol"]
+    stamp = _data_stamp(sym)
+    links = _disc_links(sym, stamp)
+    out = []
+    for r in articles.disclosure_rows(sym):
+        e = _disc_effect(sym, r, stamp)
+        out.append({**{k: r.get(k) for k in ("id", "no", "date", "ts", "untimed", "title", "kind", "pblntf", "filer", "rm",
+                                              "url")},
+                    "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session")},
+                    "links": [x["id"] for x in links.get(r["id"], [])]})
+    from core import dart
+    return {"items": out, "types": dart.TYPES, "source": "dart" if dart.enabled() else "naver"}
+
+
+def api_disclosure_detail(_q, did):
+    s = load_settings()
+    sym = s["symbol"]
+    r = next((x for x in articles.disclosure_rows(sym) if x["id"] == did), None)
+    if not r:
+        raise LookupError("해당 공시를 찾을 수 없습니다.")
+    stamp = _data_stamp(sym)
+    e = _disc_effect(sym, r, stamp)
+    # 기사 상세 화면을 그대로 쓰도록 같은 모양으로 (구분 kind=disc)
+    a = {"id": r["id"], "ts": r["ts"], "untimed": r["untimed"], "title": r["title"], "office": r["filer"] or "",
+         "url": r["url"], "category": r["kind"] or "공시", "tone": 0, "kind": "disc", "pblntf": r.get("pblntf"),
+         "outlets_total": 1, "related_titles": [], "links": _disc_links(sym, stamp).get(r["id"], [])}
+    out = {"article": a, "effect": e, "confounders": []}
+    d0 = e.get("reaction_day")
+    if d0:
+        lo = (date.fromisoformat(d0) - timedelta(days=14)).isoformat()
+        hi = (date.fromisoformat(d0) + timedelta(days=14)).isoformat()
+        with connect() as conn:
+            out["daily_bars"] = [dict(x) for x in conn.execute(
+                "SELECT date, close, volume FROM daily_bars WHERE symbol=? AND date BETWEEN ? AND ? ORDER BY date", (sym, lo, hi))]
+            out["daily_kosdaq"] = [dict(x) for x in conn.execute(
+                "SELECT date, close FROM daily_bars WHERE symbol=? AND date BETWEEN ? AND ? ORDER BY date", (KOSDAQ, lo, hi))]
+    m = e.get("minute")
+    if m:
+        rs = datetime.fromisoformat(m["reaction_start"])
+        own = analysis.load_range(sym, rs - timedelta(minutes=30), rs + timedelta(minutes=120))
+        own = own[own["ts"].dt.date == rs.date()] if not own.empty else own
+        kq = analysis.load_range(KOSDAQ, rs - timedelta(minutes=30), rs + timedelta(minutes=120))
+        kq = kq[kq["ts"].dt.date == rs.date()] if not kq.empty else kq
+        out["bars"] = bars_payload(own)
+        out["kosdaq"] = bars_payload(kq, full=False)
+    return out
+
+
 def api_article_hide(aid, hidden: bool):
     with connect() as conn:
         conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if hidden else 0, aid, aid))
@@ -463,6 +544,8 @@ GET_ROUTES = [
     (re.compile(r"^/api/pr/(\d+)$"), api_pr_detail),
     (re.compile(r"^/api/articles$"), api_articles),
     (re.compile(r"^/api/articles/(pr\d+|\d+)$"), api_article_detail),
+    (re.compile(r"^/api/disclosures$"), api_disclosures),
+    (re.compile(r"^/api/disclosures/(d\d+)$"), api_disclosure_detail),
     (re.compile(r"^/api/share$"), api_share),
     (re.compile(r"^/api/cloud$"), api_cloud),
 ]

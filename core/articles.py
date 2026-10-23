@@ -419,18 +419,37 @@ def earlier_disclosure(symbol: str, title: str, ts: datetime) -> dict | None:
     return None
 
 
-def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: str = "") -> dict:
+def disclosure_rows(symbol: str) -> list[dict]:
+    """공시 목록 (DART 접수번호 앞에 d를 붙여 기사 번호와 겹치지 않게). 시각을 모르면 그날 15:30으로 두고 untimed."""
+    from . import dart
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT no, date, ts, title, kind, pblntf, filer, rm FROM disclosures WHERE symbol=? ORDER BY date DESC, no DESC",
+            (symbol,))]
+    for r in rows:
+        r["id"] = f"d{r['no']}"
+        r["untimed"] = not r["ts"]
+        r["ts"] = r["ts"] or f"{r['date']}T15:30"
+        r["url"] = dart.viewer_url(r["no"]) if r.get("pblntf") else ""
+    return rows
+
+
+def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: str = "",
+           untimed: bool = False) -> dict:
+    """untimed: 공개 시각을 모름(날짜만) → 그날(전일 종가 → 종가) 하루로만 잼."""
     from . import analysis
     days = trading_days(symbol)
     disc = earlier_disclosure(symbol, title, ts) if title else None
     if disc:                                # 공시가 먼저: 시장이 처음 안 시각부터 잼
         ts = datetime.fromisoformat(disc["ts"])
     d0 = reaction_day(ts, days)
+    if untimed and d0 != ts.date().isoformat():      # 날짜만 아는데 그날 거래가 없었음 (상장 전 등)
+        d0 = None
     # 장 마감 뒤나 휴장일에 나온 기사: 다음 거래일 움직임에 다른 요인이 섞일 수 있음
     # (같은 날 장 시작 전 기사는 그날 시초가부터 반영되므로 해당 없음)
     off = ts.time() > time(15, 30) or ts.date().isoformat() not in days
     # 14시 이후~장 마감 전 기사: 그날 남은 거래 시간이 짧아 반응일+다음날 2일 누적으로 봄
-    late = bool(d0) and not off and ts.time() >= time(14, 0)
+    late = bool(d0) and not off and ts.time() >= time(14, 0) and not untimed
     out = {"reaction_day": d0, "minute": None, "daily": None, "verdict": None, "verdict_cls": "none",
            "notes": [], "off_session": bool(d0) and off, "late": late, "base_ts": ts.isoformat(timespec="minutes"),
            "disclosure": {"ts": disc["ts"], "title": disc["title"], "kind": disc["kind"]} if disc else None}
@@ -438,7 +457,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
 
     # 분봉 반응 (최근 기록이 있을 때)
     r = analysis.analyze_pr(symbol, ts)
-    if r.ok and r.returns:
+    if r.ok and r.returns and not untimed:
         bench, bench_name = {}, "KOSDAQ"
         peer_avg = {}
         for h in r.returns:
@@ -495,7 +514,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
     #  - 장중(09:00~14:00) 기사: 공개 후 60분
     #  - 장 시작 전(같은 날 09:00 전) 기사: 전일 종가 → 10:00 (밤사이 반영되는 시초가 + 개장 1시간)
     dc = out.get("decomp")
-    if d0 and not off and not late and dc and dc.get("method") != "단순":
+    if d0 and not off and not late and not untimed and dc and dc.get("method") != "단순":
         try:
             if time(9, 0) <= ts.time() < time(14, 0) and r.ok and 60 in (r.returns or {}):
                 out["minute60"] = _window_split(symbol, dc, r.reaction_start, r.reaction_start + timedelta(minutes=60))
