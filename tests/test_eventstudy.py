@@ -251,7 +251,7 @@ def test_non_significance_does_not_claim_market_caused_the_drop():
     study = {"ok": True, "actual": -0.1, "expected": -0.1041, "ar": 0.0041,
              "p": 0.94, "ci_low": -0.08, "ci_high": 0.09, "n_est": 120}
     verdict, classification, measure = _verdict({"event_study": study}, 0, "공시")
-    assert classification == "flat" and "구별하기 어려움" in verdict
+    assert classification == "flat" and verdict == "평소 예상과 비슷함"
     assert "시장 영향" not in verdict and measure["own"] < 0 < measure["value"]
 
 
@@ -284,3 +284,12 @@ def test_encrypted_backup_validation_keeps_details_encrypted(tmp_path, monkeypat
     with pytest.raises(Exception):
         inspect_backup(backup, "wrong-password", tmp_path / "failed")
     assert not (tmp_path / "failed").exists()
+
+
+def test_non_significance_still_reports_direction():
+    from core.articles import _verdict
+
+    study = {"ok": True, "actual": 0.0819, "expected": 0.0456, "ar": 0.0362,
+             "p": 0.5, "ci_low": -0.0712, "ci_high": 0.1436, "n_est": 120}
+    verdict, classification, _ = _verdict({"event_study": study}, 0, "회사 발표")
+    assert classification == "flat" and "높은 편" in verdict and "확정은 아님" in verdict

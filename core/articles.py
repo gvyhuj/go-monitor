@@ -560,7 +560,11 @@ def _verdict(eff: dict, tone: int, category: str):
         return "평소 예상보다 높음 (95% 범위에서 0 제외)", "up", measure
     if study["ci_high"] < 0:
         return "평소 예상보다 낮음 (95% 범위에서 0 제외)", "down", measure
-    return "평소 변동과 구별하기 어려움", "flat", measure
+    # 95% 범위가 0을 포함해도 방향은 알려 줌 (확정이 아닐 뿐 '없음'은 아님). 1%p 미만은 비슷한 수준으로 봄
+    if abs(study["ar"]) < 0.01:
+        return "평소 예상과 비슷함", "flat", measure
+    side = "높은" if study["ar"] > 0 else "낮은"
+    return f"평소 예상보다 {side} 편 (95% 범위가 0을 포함해 확정은 아님)", "flat", measure
 
 
 def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[str]:
