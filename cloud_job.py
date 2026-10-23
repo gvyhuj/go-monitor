@@ -185,9 +185,9 @@ def restore_state(log) -> str:
     return "새로 시작"
 
 
-def site_salt(password: str) -> bytes:
+def site_salt(password: str, state_key: str = "site:salt") -> bytes:
     fp = hashlib.sha256(("go-fp:" + password).encode("utf-8")).hexdigest()
-    st = get_state("site:salt")
+    st = get_state(state_key)
     try:
         cur = json.loads(st["value"]) if st and st.get("value") else {}
     except ValueError:
@@ -195,7 +195,7 @@ def site_salt(password: str) -> bytes:
     if cur.get("salt") and cur.get("fp") == fp:
         return base64.b64decode(cur["salt"])
     salt = secrets.token_bytes(16)
-    set_state("site:salt", json.dumps({"salt": base64.b64encode(salt).decode(), "fp": fp}))
+    set_state(state_key, json.dumps({"salt": base64.b64encode(salt).decode(), "fp": fp}))
     return salt
 
 
@@ -214,7 +214,9 @@ def build_static_site(now, log) -> dict:
     salt = site_salt(pw)
     checkpoint()
     n = sitebuild.build(SITE_DIR, pw, salt, items, repo=os.environ.get("GITHUB_REPOSITORY", ""))
-    build_admin(SITE_DIR, admin_password, history, items=items)
+    # 관리자 salt도 배포마다 바꾸지 않음: CDN(10분 캐시)이 config.json과 index.bin을 서로 다른 배포판으로 줄 수 있음
+    admin_salt = site_salt(admin_password, "site:admin_salt") if admin_password else None
+    build_admin(SITE_DIR, admin_password, history, items=items, salt=admin_salt)
     # 다음 실행으로 넘길 기록 (암호화)
     sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
     # data 브랜치 백업은 1시간에 한 번

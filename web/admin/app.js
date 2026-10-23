@@ -6,9 +6,11 @@
   let key = null, index = [], records = [], generation = 0, lastActivity = Date.now(), selection = 0, hasExport = false;
   const percent = (value) => typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "자료 없음";
   const points = (value) => typeof value === "number" ? `${(value * 100).toFixed(2)}%p` : "자료 없음";
+  // GitHub Pages CDN은 10분 캐시라 no-store만으로는 옛 배포판이 올 수 있음 → 주소를 매번 다르게
+  const fresh = (filename) => `${filename}?t=${Date.now()}`;
 
   async function openFile(filename, candidate) {
-    const response = await fetch(filename, { cache: "no-store", credentials: "omit" });
+    const response = await fetch(fresh(filename), { cache: "no-store", credentials: "omit" });
     if (!response.ok) throw new Error("자료 파일을 받지 못했습니다. 페이지를 새로고침해 주세요.");
     const buffer = new Uint8Array(await response.arrayBuffer());
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buffer.slice(0, 12) }, candidate, buffer.slice(12));
@@ -25,7 +27,7 @@
       if (typeof DecompressionStream === "undefined") {
         throw new Error("이 브라우저는 압축 해제를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.");
       }
-      const response = await fetch("analysis-export.bin", { cache: "no-store", credentials: "omit" });
+      const response = await fetch(fresh("analysis-export.bin"), { cache: "no-store", credentials: "omit" });
       if (!response.ok) throw new Error("분석 자료를 받지 못했습니다. 사이트 배포 상태를 확인해 주세요.");
       const encrypted = new Uint8Array(await response.arrayBuffer());
       const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: encrypted.slice(0, 12) }, key, encrypted.slice(12));
@@ -136,7 +138,7 @@
     element("submit").disabled = true; element("message").textContent = "비밀번호 확인 중…";
     try {
       const password = element("password").value; element("password").value = "";
-      const response = await fetch("config.json", { cache: "no-store", credentials: "omit" });
+      const response = await fetch(fresh("config.json"), { cache: "no-store", credentials: "omit" });
       if (!response.ok) throw new Error("관리자 설정을 받지 못했습니다.");
       const current = await response.json();
       const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);

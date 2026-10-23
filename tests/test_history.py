@@ -145,6 +145,23 @@ def test_admin_files_require_admin_password_and_do_not_enter_public_data(databas
     assert ADMIN_PASSWORD not in (output / "admin/config.js").read_text()
 
 
+def test_admin_salt_stays_same_across_builds_when_given(database):
+    import base64
+
+    archive = history.History(ADMIN_PASSWORD)
+    archive.record("article:one", detail(), "2026-10-20T10:30")
+    salt = b"fixed-admin-salt"
+    keys = []
+    for name in ("first", "second"):
+        output = database / name
+        history.build_admin(output, ADMIN_PASSWORD, archive, salt=salt)
+        config = json.loads((output / "admin/config.json").read_text())
+        assert base64.b64decode(config["salt"]) == salt
+        keys.append((output / "admin/index.bin").read_bytes())
+    # 앞 배포판의 index.bin을 뒤 배포판 설정(salt)으로 풀 수 있어야 함 (CDN이 섞어 줘도 로그인 가능)
+    assert json.loads(sitebuild.decrypt(sitebuild.derive_key(ADMIN_PASSWORD, salt), keys[0]))
+
+
 def test_admin_disabled_does_not_export_history(database):
     output = database / "site"
     history.build_admin(output, "", None)

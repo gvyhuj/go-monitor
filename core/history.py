@@ -89,7 +89,8 @@ class History:
         return grouped
 
 
-def build_admin(out: Path, password: str, history: History | None, items: list[tuple[str, str, bool]] | None = None) -> None:
+def build_admin(out: Path, password: str, history: History | None, items: list[tuple[str, str, bool]] | None = None,
+                salt: bytes | None = None) -> None:
     import base64
     import shutil
 
@@ -98,7 +99,7 @@ def build_admin(out: Path, password: str, history: History | None, items: list[t
     shutil.copytree(source, target)
     config = {"enabled": history is not None}
     if history is not None:
-        salt = secrets.token_bytes(16)
+        salt = salt or secrets.token_bytes(16)
         key = derive_key(password, salt)
         config.update({"salt": base64.b64encode(salt).decode(), "iterations": 200_000})
         if items is not None:
