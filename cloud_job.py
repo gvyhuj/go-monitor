@@ -201,11 +201,17 @@ def site_salt(password: str) -> bytes:
 
 def build_static_site(now, log) -> dict:
     from core import sitebuild
+    from core.history import History, build_admin
     pw = _site_password()
-    items = sitebuild.refresh_items(now, log.info)
+    admin_password = os.environ.get("GO_ADMIN_PASSWORD", "")
+    history = History(admin_password, (pw, _data_key())) if admin_password else None
+    if history is None:
+        log.info("관리자 비밀번호 설정 전이라 분석 이력 보관은 아직 시작하지 않습니다.")
+    items = sitebuild.refresh_items(now, log.info, history=history)
     salt = site_salt(pw)
     checkpoint()
     n = sitebuild.build(SITE_DIR, pw, salt, items, repo=os.environ.get("GITHUB_REPOSITORY", ""))
+    build_admin(SITE_DIR, admin_password, history)
     # 다음 실행으로 넘길 기록 (암호화)
     sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
     # data 브랜치 백업은 1시간에 한 번

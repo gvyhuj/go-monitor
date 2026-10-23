@@ -9,6 +9,12 @@ on:
       - validate_event_study.py
       - validate_backup.py
       - tests/test_eventstudy.py
+      - core/history.py
+      - core/sitebuild.py
+      - cloud_job.py
+      - tests/test_history.py
+      - web/admin/**
+      - .github/workflows/monitor.yml
 
 permissions:
   contents: read

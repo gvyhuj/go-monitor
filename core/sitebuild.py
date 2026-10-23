@@ -136,23 +136,31 @@ def _market_hours(now: datetime) -> bool:
     return now.weekday() < 5 and 850 <= hm <= 1600
 
 
-def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
+def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str, bool]]:
     """사이트에 올릴 자료 전체. 무거운 것(이벤트 상세·지난 날짜·기사 상세)은 필요할 때만 다시 계산해 기록에 보관."""
     from . import cloud
     import webserver as ws
     from .db import connect
+    from .history import capture
 
     stamp = now.isoformat(timespec="seconds")
     with connect() as conn:
         conn.execute(_TABLE)
         cached = {r["key"]: dict(r) for r in conn.execute("SELECT key, value, b64, built_at FROM site_items")}
+        previous_version = conn.execute("SELECT value FROM system_state WHERE key='history:analysis_version'").fetchone()
+    version_changed = history is not None and (not previous_version or previous_version[0] != history.version)
+    for key, item in cached.items():
+        capture(history, key, item["value"], item["built_at"], seed=True)
+    failed = False
 
     def keep(key, fn, need: bool):
+        nonlocal failed
         if not need and key in cached:
             return
         try:
             v = cloud._dump(fn())
         except Exception as e:            # noqa: BLE001 - 한 항목이 실패해도 나머지는 올림
+            failed = True
             if log:
                 log(f"사이트 자료 {key} 만들기 실패: {e}")
             import traceback
@@ -160,6 +168,7 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
             where = next((ln.strip() for ln in reversed(tb) if ln.strip().startswith("File ")), "")
             print(f"::warning title=사이트 자료::{key} 만들기 실패: {type(e).__name__}: {str(e)[:150]} @ {where[-120:]}", flush=True)
             return
+        capture(history, key, v, stamp)
         cached[key] = {"key": key, "value": v, "b64": 0, "built_at": stamp}
         fresh.add(key)
 
@@ -179,7 +188,7 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
         key = f"event:{e['id']}"
         want.add(key)
         c = cached.get(key)
-        need = full or c is None or e["start_ts"][:10] >= recent or \
+        need = version_changed or full or c is None or e["start_ts"][:10] >= recent or \
             (e["cause_updated_at"] or "") > c["built_at"] or (e["last_ts"] or "") > c["built_at"]
         keep(key, lambda i=e["id"]: ws.api_event_detail({}, i), need)
 
@@ -194,7 +203,7 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
     # 기사·공시 목록과 상세: 장중 30분, 장 외는 실행할 때마다
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
     c = cached.get("articles")
-    stale = c is None or not _market_hours(now) or \
+    stale = version_changed or c is None or not _market_hours(now) or \
         (now - datetime.fromisoformat(c["built_at"])).total_seconds() > 1800 or \
         "disclosures" not in cached or "disclosure_details" not in cached      # 공시 자료가 아직 없으면 바로
     if stale:
@@ -232,6 +241,9 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
         gone = [k for k in cached if k not in want]
         for k in gone:
             conn.execute("DELETE FROM site_items WHERE key=?", (k,))
+        if history is not None and not failed:
+            conn.execute("INSERT OR REPLACE INTO system_state(key,value) VALUES ('history:analysis_version',?)",
+                         (history.version,))
     if log:
         log(f"사이트 자료: 새로 계산 {len(fresh)}건, 보관본 사용 {len(want) - len(fresh)}건"
             + (" (하루 한 번 전체 갱신)" if full else ""))
