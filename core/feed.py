@@ -79,7 +79,9 @@ def update_quotes(code: str):
 
 
 def purge_old_bars(keep_days: int):
-    """오래된 분봉 정리. 이상변동 전후 구간은 이벤트 분석용으로 남김."""
+    """오래된 분봉 정리. 이상변동 전후 구간은 이벤트 분석용으로 남김. keep_days가 0 이하면 지우지 않음(영구 보관)."""
+    if keep_days <= 0:
+        return
     cutoff = (kst_now() - timedelta(days=keep_days)).isoformat(timespec="minutes")
     with connect() as conn:
         conn.execute(

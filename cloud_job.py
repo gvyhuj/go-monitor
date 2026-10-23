@@ -452,7 +452,7 @@ def main(argv) -> int:
 
         last = get_state("job:last_purge")
         if not last or last.get("value") != now.date().isoformat():
-            feed.purge_old_bars(int(settings.get("keep_bars_days", 120)))
+            feed.purge_old_bars(int(settings.get("keep_bars_days", 0)))
             feed.purge_related_bars(code)
             set_state("job:last_purge", now.date().isoformat())
     except Exception as e:  # noqa: BLE001 - 수집이 실패해도 사이트와 기록은 저장

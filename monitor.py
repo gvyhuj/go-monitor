@@ -359,7 +359,7 @@ def main():
                                    fetch=collector.fetch if collector else None, log=log)
             today = feed.kst_now().date()
             if last_purge != today:
-                feed.purge_old_bars(int(settings.get("keep_bars_days", 120)))
+                feed.purge_old_bars(int(settings.get("keep_bars_days", 0)))
                 feed.purge_related_bars(settings["symbol"])
                 last_purge = today
             set_state("monitor_status", "running")

@@ -4,7 +4,7 @@
   "ui_port": 8501,
   "data_source": "naver",
   "skip_detection_from": "15:20",
-  "keep_bars_days": 120,
+  "keep_bars_days": 0,
   "extra_peers": [],
   "event_move_pct": 5.0,
   "event_watch_pct": 3.0,
