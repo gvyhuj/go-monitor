@@ -52,10 +52,95 @@ def _p_txt(p):
 
 # ------------------------------------------------------------------ ① 대체: 사건연구 (업종 ETF 기록 부족 시)
 
+NEWS_DISC_TYPES = ("A", "B", "C", "I", "K")     # 정기(실적)·주요사항·발행·거래소 공시·거래소 조치 (지분 보고 등은 뺌)
+NOISE_CATEGORIES = ("단순 언급", "시황·특징주")
+_NEWS_CACHE: dict = {}
+
+
+def _first_session(calendar: list[str], ts: str) -> int:
+    """공개 시각이 처음 반영되는 거래일 위치 (장 마감 15:30 뒤면 다음 거래일)."""
+    import bisect
+    d = ts[:10]
+    i = bisect.bisect_left(calendar, d)
+    if i < len(calendar) and calendar[i] == d and ts[11:16] > "15:30":
+        i += 1
+    return i
+
+
+def news_days(symbol: str) -> dict[str, set]:
+    """소식이 있던 거래일 {pr: 회사 보도자료·회사 관련 보도, disc: 주요 공시, ext: 외부 기사}.
+    각 소식의 반응일과 다음 거래일 (발표 다음 날까지 반응이 이어질 수 있어서)."""
+    with connect() as conn:
+        sig = tuple(tuple(r) for r in conn.execute(
+            "SELECT (SELECT COUNT(*)||MAX(ts) FROM articles WHERE symbol=?), "
+            "(SELECT COUNT(*)||MAX(ts) FROM disclosures WHERE symbol=?), "
+            "(SELECT COUNT(*)||MAX(published_ts) FROM pr_events), "
+            "(SELECT MAX(date) FROM daily_bars WHERE symbol=?)", (symbol, symbol, KOSDAQ)))
+        if _NEWS_CACHE.get("key") == (symbol, sig):
+            return _NEWS_CACHE["value"]
+        calendar = [r[0] for r in conn.execute("SELECT date FROM daily_bars WHERE symbol=? ORDER BY date", (KOSDAQ,))]
+        arts = conn.execute("SELECT ts, category, kind_override FROM articles WHERE symbol=? AND hidden=0",
+                            (symbol,)).fetchall()
+        prs = [r[0] for r in conn.execute("SELECT published_ts FROM pr_events")]
+        discs = [r[0] or r[1] + "T15:30" for r in conn.execute(
+            "SELECT ts, date FROM disclosures WHERE symbol=? AND (pblntf IS NULL OR pblntf IN (%s))"
+            % ",".join("?" * len(NEWS_DISC_TYPES)), (symbol, *NEWS_DISC_TYPES))]
+    out = {"pr": set(), "disc": set(), "ext": set()}
+
+    def add(kind, ts):
+        i = _first_session(calendar, ts)
+        out[kind].update(calendar[i:i + 2])
+    for ts, category, override in arts:
+        if override == "pr" or (category == "회사 발표" and override != "ext"):
+            add("pr", ts)
+        elif category not in NOISE_CATEGORIES:
+            add("ext", ts)
+    for ts in prs:
+        add("pr", ts)
+    for ts in discs:
+        add("disc", ts)
+    _NEWS_CACHE.update(key=(symbol, sig), value=out)
+    return out
+
+
+def estimation_exclusions(symbol: str) -> set:
+    """평소 관계를 추정할 때 뺄 날: 회사 보도자료·회사 관련 보도·주요 공시가 있던 날 (외부 기사는 거의 매일이라 둠)."""
+    try:
+        n = news_days(symbol)
+    except Exception:
+        return set()
+    return n["pr"] | n["disc"]
+
+
+def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
+    """소식 종류별 날의 예상 대비 차이를 '소식 없는 날'과 나란히 비교."""
+    from .eventstudy import baseline_by_group, returns_from_prices
+    hi = date.today().isoformat()
+    lo = (date.today() - timedelta(days=int(365 * years) + 10)).isoformat()
+    market_prices = {row[0]: row[2] for row in _daily(KOSDAQ, lo, hi)}
+    calendar = sorted(market_prices)
+    own = returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar)
+    mkt = returns_from_prices(market_prices, calendar)
+    with connect() as conn:
+        peer_codes = [row[0] for row in conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?)",
+                                                  (symbol, KOSDAQ))]
+    peer_returns = [returns_from_prices({row[0]: row[2] for row in _daily(code, lo, hi)}, calendar)
+                    for code in peer_codes]
+    sector = {day: sum(s[day] for s in peer_returns) / len(peer_returns)
+              for day in mkt if peer_returns and all(day in s for s in peer_returns)}
+    n = news_days(symbol)
+    days = sorted(own)
+    pr = n["pr"]
+    disc = n["disc"] - pr
+    ext = n["ext"] - pr - disc
+    quiet = set(days) - pr - disc - ext
+    return baseline_by_group(own, mkt, days, {"pr": pr, "disc": disc, "ext": ext, "none": quiet}, "none", sector)
+
+
 def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict | None:
     from .eventstudy import analyze_returns, returns_from_prices
 
-    lo = (date.fromisoformat(d0) - timedelta(days=400)).isoformat()
+    lo = (date.fromisoformat(d0) - timedelta(days=520)).isoformat()
     hi = (date.fromisoformat(d0) + timedelta(days=14)).isoformat()
     market_prices = {row[0]: row[2] for row in _daily(KOSDAQ, lo, hi)}
     calendar = sorted(market_prices)
@@ -68,7 +153,7 @@ def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict
                     for code in peer_codes]
     sector = {day: sum(series[day] for series in peer_returns) / len(peer_returns)
               for day in mkt if peer_returns and all(day in series for series in peer_returns)}
-    out = analyze_returns(own, mkt, d0, sector, est_len, gap, calendar[1:])
+    out = analyze_returns(own, mkt, d0, sector, est_len, gap, calendar[1:], exclude=estimation_exclusions(symbol))
     if not out or not out.get("ok"):
         return out
     vols = {r[0]: r[3] for r in _daily(symbol, lo, hi)}
@@ -302,7 +387,7 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
     결과의 d0은 반응일 하루, d01은 반응일+다음날 2일 누적.
     """
     day0 = date.fromisoformat(d0)
-    lo, hi = (day0 - timedelta(days=int(est_len * 1.6) + 40)).isoformat(), (day0 + timedelta(days=10)).isoformat()
+    lo, hi = (day0 - timedelta(days=int(est_len * 2.4) + 40)).isoformat(), (day0 + timedelta(days=10)).isoformat()
     own, mkt = _rets(symbol, lo, hi), _rets(KOSDAQ, lo, hi)
     facs = [(n, r, "seg") for n, r in _segment_rets(lo, hi).items()]
     facs += [(f["name"], _rets(f["code"], lo, hi), "etf") for f in (etfs or [])]
@@ -310,7 +395,8 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
     if d0 not in dates:
         return None
     i0 = dates.index(d0)
-    est_all = dates[max(0, i0 - gap - est_len):max(0, i0 - gap)]
+    from .eventstudy import estimation_days
+    est_all = estimation_days(dates, i0, est_len, gap, estimation_exclusions(symbol))   # 기사·공시 날은 건너뜀
     # 추정 기간의 80% 이상 시세가 있는 분야만 씀 (최근 상장 종목뿐인 분야는 뺌)
     facs = [f for f in facs if est_all and sum(d in f[1] for d in est_all) >= 0.8 * len(est_all) and d0 in f[1]]
     est = [d for d in est_all if all(d in f[1] for f in facs)]

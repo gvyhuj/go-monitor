@@ -55,15 +55,26 @@ def returns_from_prices(prices: dict, calendar: list[str]) -> dict:
                    for item in (previous, day))}
 
 
+def estimation_days(dates: list[str], event_index: int, est_len: int, gap: int,
+                    exclude: set | None = None) -> list[str]:
+    """반응일 gap거래일 전까지의 est_len거래일. 기사·공시가 있던 날은 건너뛰고 그만큼 더 앞에서 채움
+    (그날들의 큰 움직임이 '평소 변동'을 부풀리지 않게)."""
+    if not exclude:
+        return dates[max(0, event_index - gap - est_len):max(0, event_index - gap)]
+    usable = [day for day in dates[:max(0, event_index - gap)] if day not in exclude]
+    return usable[-est_len:]
+
+
 def analyze_returns(own: dict, market: dict, day: str, sector: dict | None = None,
-                    est_len: int = 120, gap: int = 10, calendar: list[str] | None = None) -> dict | None:
+                    est_len: int = 120, gap: int = 10, calendar: list[str] | None = None,
+                    exclude: set | None = None) -> dict | None:
     if est_len < 50 or gap < 5:
         raise ValueError("추정 기간은 50거래일 이상, 간격은 5거래일 이상이어야 합니다.")
     dates = sorted(set(calendar)) if calendar is not None else sorted(market)
     if day not in dates or day not in own or day not in market:
         return None
     event_index = dates.index(day)
-    candidates = dates[max(0, event_index - gap - est_len):max(0, event_index - gap)]
+    candidates = estimation_days(dates, event_index, est_len, gap, exclude)
     estimation = [day for day in candidates if day in own and day in market
                   and np.isfinite(own[day]) and np.isfinite(market[day])]
     if len(estimation) < 50:
@@ -135,5 +146,39 @@ def analyze_returns(own: dict, market: dict, day: str, sector: dict | None = Non
             **{key: current[key] for key in ("se", "t", "p", "ci_low", "ci_high")},
             "car": windows, "pending_windows": pending,
             "pre_drift": bool(pre and pre["p"] < 0.05 and pre["car"] * current["car"] > 0),
+            "excluded_news_days": len([d for d in dates[:max(0, event_index - gap)]
+                                       if exclude and d in exclude and d >= estimation[0]]),
             "basis": "일별 종가로 계산하므로 기사 공개 전의 당일 움직임도 포함합니다.",
             "assumptions": "오차가 서로 독립이고 분산이 일정한 정규분포라고 가정한 검정입니다. 여러 구간의 p값은 다중 검정 보정 전입니다."}
+
+
+def baseline_by_group(own: dict, market: dict, days: list[str], groups: dict[str, set],
+                      quiet: str, sector: dict | None = None, top: float = 0.9) -> dict | None:
+    """날을 '소식 종류'로 나눠 예상 대비 차이를 비교. 평소 관계는 소식 없는 날(quiet)만으로 한 번 추정.
+    '큰 움직임' 기준은 소식 없는 날 차이 크기의 상위 (1-top) 경계 → 소식 없는 날은 정의상 약 10%."""
+    days = [d for d in days if d in own and d in market and np.isfinite(own[d]) and np.isfinite(market[d])]
+    use_sector = bool(sector) and sum(d in sector for d in days) >= 0.8 * len(days)
+    if use_sector:
+        days = [d for d in days if d in sector and np.isfinite(sector[d])]
+
+    def design(d):
+        return [1.0, market[d]] + ([sector[d]] if use_sector else [])
+
+    quiet_days = [d for d in days if d in groups[quiet]]
+    if len(quiet_days) < 60:
+        return None
+    x = np.array([design(d) for d in quiet_days])
+    if np.linalg.matrix_rank(x) < x.shape[1]:
+        return None
+    coef = np.linalg.lstsq(x, np.array([own[d] for d in quiet_days]), rcond=None)[0]
+    ar = {d: float(own[d] - np.array(design(d)) @ coef) for d in days}
+    cut = float(np.quantile([abs(ar[d]) for d in quiet_days], top))
+    rows = {}
+    for name, members in groups.items():
+        xs = [ar[d] for d in days if d in members]
+        rows[name] = {"n": len(xs), "mean": float(np.mean(xs)) if xs else None,
+                      "median_abs": float(np.median(np.abs(xs))) if xs else None,
+                      "big_share": sum(abs(v) >= cut for v in xs) / len(xs) if xs else None,
+                      "big_up": sum(v >= cut for v in xs), "big_down": sum(v <= -cut for v in xs)}
+    return {"from": days[0], "to": days[-1], "cut": cut, "top": top, "groups": rows,
+            "method": "시장·비교 종목 회귀" if use_sector else "시장 회귀"}

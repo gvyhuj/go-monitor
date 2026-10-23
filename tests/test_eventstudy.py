@@ -294,3 +294,68 @@ def test_computed_effect_has_numbers_but_no_verdict_text():
     verdict, classification, measure = _verdict({"event_study": study}, 0, "회사 발표")
     assert verdict is None and classification == "flat"
     assert (measure["own"], measure["expected"], measure["value"]) == (0.0819, 0.0456, 0.0362)
+
+
+def test_news_days_are_skipped_and_backfilled_in_estimation():
+    dates, own, market, sector = sample(size=260)
+    day = dates[240]
+    plain = analyze_returns(own, market, day, sector)
+    news = set(dates[150:200:5])
+    shocked = dict(own)
+    for d in news:
+        shocked[d] += 0.15            # 기사 날 큰 움직임이 평소 변동을 부풀림
+    inflated = analyze_returns(shocked, market, day, sector)
+    cleaned = analyze_returns(shocked, market, day, sector, exclude=news)
+    assert cleaned["n_est"] == plain["n_est"] == 120
+    assert cleaned["est_from"] < plain["est_from"]        # 뺀 날만큼 더 앞에서 채움
+    assert cleaned["sigma"] == pytest.approx(plain["sigma"], rel=0.25) and inflated["sigma"] > 2 * cleaned["sigma"]
+    assert cleaned["excluded_news_days"] == len(news)
+
+
+def test_baseline_compares_news_days_with_quiet_days():
+    from core.eventstudy import baseline_by_group
+
+    dates, own, market, sector = sample(size=300)
+    news = set(dates[20:300:10])
+    for d in news:
+        own[d] += 0.03
+    quiet = set(dates) - news
+    b = baseline_by_group(own, market, dates, {"pr": news, "none": quiet}, "none", sector)
+    assert b["groups"]["none"]["big_share"] == pytest.approx(0.1, abs=0.02)
+    assert b["groups"]["pr"]["big_share"] > 0.8 and b["groups"]["pr"]["mean"] == pytest.approx(0.03, abs=0.005)
+    json.dumps(b, allow_nan=False)
+
+
+def test_news_days_from_database_feed_exclusion_and_baseline(tmp_path, monkeypatch):
+    from core import causal, db
+
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
+    db.init_db()
+    causal._NEWS_CACHE.clear()
+    dates, own, market, _ = sample(size=200)
+    with db.connect() as connection:
+        for code, returns in (("X", own), ("KOSDAQ", market)):
+            price = 100.0
+            for day in dates:
+                price *= 1 + returns[day]
+                connection.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)",
+                                   (code, day, price, price, price, price, 1000))
+        rows = [("a1", dates[100] + "T10:00", "회사 발표", None), ("a2", dates[110] + "T16:00", "회사 발표", None),
+                ("a3", dates[120] + "T10:00", "언론 분석", None), ("a4", dates[130] + "T10:00", "시황·특징주", None),
+                ("a5", dates[140] + "T10:00", "회사 발표", "ext"), ("a6", dates[150] + "T10:00", "리서치", "pr")]
+        for aid, ts, category, override in rows:
+            connection.execute("INSERT INTO articles(id,symbol,ts,title,category,kind_override) VALUES (?,?,?,?,?,?)",
+                               (aid, "X", ts, aid, category, override))
+        connection.execute("INSERT INTO disclosures(no,symbol,date,ts,pblntf) VALUES ('1','X',?,?, 'B')",
+                           (dates[90], dates[90] + "T09:30"))
+        connection.execute("INSERT INTO disclosures(no,symbol,date,ts,pblntf) VALUES ('2','X',?,?, 'D')",
+                           (dates[95], dates[95] + "T09:30"))
+    n = causal.news_days("X")
+    assert n["pr"] == {dates[100], dates[101], dates[111], dates[112], dates[150], dates[151]}   # 장 마감 뒤 → 다음 거래일부터
+    assert n["ext"] == {dates[120], dates[121], dates[140], dates[141]}                         # 시황·특징주는 소식으로 안 셈
+    assert n["disc"] == {dates[90], dates[91]}                                                   # 지분 보고(D)는 뺌
+    study = causal.event_study("X", dates[190])
+    assert study["ok"] and study["excluded_news_days"] == 8
+    baseline = causal.news_baseline("X")
+    assert baseline and baseline["groups"]["pr"]["n"] == 6 and baseline["groups"]["none"]["n"] > 150

@@ -409,8 +409,13 @@ def api_articles(q):
     with connect() as conn:
         first = conn.execute("SELECT MIN(date) FROM daily_bars WHERE symbol=?", (sym,)).fetchone()[0]
     from core.eventstudy import summary_critical_values
+    from core import causal
+    try:
+        baseline = causal.news_baseline(sym) if not limit else None
+    except Exception:
+        baseline = None
     return {"items": out, "events": events, "categories": articles.CATEGORIES, "daily_since": first,
-            "summary_critical_values": summary_critical_values(len(out))}
+            "summary_critical_values": summary_critical_values(len(out)), "baseline": baseline}
 
 
 def api_article_detail(q, aid):

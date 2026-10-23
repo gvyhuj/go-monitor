@@ -1610,7 +1610,23 @@
       <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
       <p class="score-note">${ci ? "" : "시각 확인·중복 검토 중인 날을 제외한 계산 가능 반응일이 3일 이상이어야 평균을 냅니다."} 시각 확인 필요 ${recent.filter((x) => x.time_check).length}일, 기존 정보 재보도 ${recent.filter((x) => x.followup_of).length}일, 후속 보도 가능성 검토 ${recent.filter((x) => x.followup_candidate_of).length}일은 평균에서 제외합니다. 일별 독립을 가정하며 인과관계를 입증하지 않습니다.</p></div>` : "";
     }
-    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat); };
+    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat) + baselineBlock(); };
+    // 소식 없는 날과 비교: 기사 하나는 잡음이 커도, 같은 종류 날을 모으면 차이가 보임
+    function baselineBlock() {
+      const b = d.baseline;
+      if (!b) return "";
+      const NAMES = { pr: "그린광학 보도자료 날", disc: "주요 공시 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
+      const rows = ["pr", "disc", "ext", "none"].map((k) => {
+        const g = b.groups[k] || {};
+        return `<tr${k === "none" ? ' class="muted"' : ""}><td>${NAMES[k]}</td><td class="num">${g.n || 0}일</td>
+          <td class="num">${g.mean != null ? points(g.mean) : "-"}</td><td class="num">${g.median_abs != null ? (g.median_abs * 100).toFixed(2) + "%p" : "-"}</td>
+          <td class="num">${g.big_share != null ? `${(g.big_share * 100).toFixed(0)}% <small class="muted">(↑${g.big_up} ↓${g.big_down})</small>` : "-"}</td></tr>`;
+      }).join("");
+      return `<details class="baseline"><summary>소식 없는 날과 비교 <small class="muted">${esc(b.from)} ~ ${esc(b.to)}</small></summary>
+        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>평균 예상 대비 차이</th><th>차이 크기 중앙값</th><th>큰 움직임 비율</th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="note">'큰 움직임'은 소식 없는 날 차이 크기의 상위 ${Math.round((1 - b.top) * 100)}% 경계(±${(b.cut * 100).toFixed(2)}%p) 이상인 날입니다. 그래서 소식 없는 날은 늘 약 ${Math.round((1 - b.top) * 100)}%이고, 다른 줄이 이보다 크면 그런 날에 크게 움직인 경우가 더 많았다는 뜻입니다.
+        각 소식은 반응일과 다음 거래일을 함께 셉니다. 평소 관계(${esc(b.method)})는 소식 없는 날만으로 한 번 추정했습니다. 수집하지 못한 소식은 '소식 없는 날'에 섞여 있을 수 있습니다.</p></details>`;
+    }
 
     if (!["pr", "ext", "disc"].includes(artState.cat)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
@@ -1782,8 +1798,8 @@
       ${study.pre_drift ? "공개 이전에도 같은 방향으로 이례적으로 움직인 흔적이 있습니다." : "사전 구간도 함께 살펴보세요. 사전 반응이 뚜렷하지 않아도 정보가 미리 반영되지 않았다고 확정할 수는 없습니다."}</p>
       ${study.pending_windows.length ? `<p class="note">시세가 부족하거나 아직 지나지 않아 계산하지 않은 구간: ${study.pending_windows.map(esc).join(", ")}.</p>` : ""}
       <details><summary>계산 근거 보기</summary><p class="note">${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일.
-      반응일 직전 ${study.gap}거래일은 평소 관계 추정에서 제외했습니다. 평소 추세와 시장 민감도를 추정하고, 계수 추정 오차도 범위에 반영했습니다.
-      ${esc(study.assumptions)} 대표 숫자와 판정은 반응일 하루의 차이와 95% 범위를 사용합니다. 기사 원인을 확정하는 판정은 아닙니다.</p></details></section>`;
+      반응일 직전 ${study.gap}거래일은 평소 관계 추정에서 제외했습니다.${study.excluded_news_days ? ` 그 앞 기간 중 회사 보도자료·주요 공시가 있던 ${study.excluded_news_days}일도 빼고 그만큼 더 앞의 날로 채웠습니다.` : ""} 평소 추세와 시장 민감도를 추정하고, 계수 추정 오차도 범위에 반영했습니다.
+      ${esc(study.assumptions)} 대표 숫자는 반응일 하루의 차이와 95% 범위를 사용합니다. 기사 원인을 확정하는 판정은 아닙니다.</p></details></section>`;
   }
 
   async function loadPR(id) {

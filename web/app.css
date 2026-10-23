@@ -809,3 +809,7 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .quote-change .ah { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 500; color: var(--on-navy-3); }
 .quote-change .ah .up { color: #FFB3BC; } .quote-change .ah .down { color: #B9CEFF; }
 .day-total-ah { font-size: 12px; }
+.baseline { margin: -6px 0 16px; font-size: 14px; }
+.baseline summary { cursor: pointer; font-weight: 650; padding: 4px 0; }
+.baseline .ladder td.num, .baseline .ladder th { white-space: nowrap; }
+@media (max-width: 640px) { .baseline table.ladder { display: block; max-width: 100%; overflow-x: auto; font-size: 12.5px; } }
