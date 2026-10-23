@@ -95,3 +95,33 @@ def test_google_batchexecute_response_parsing():
     assert gnews.parse_batch(text) == "https://www.cctimes.kr/news/articleView.html?idxno=1"
     assert gnews.parse_batch("garbage") is None
     assert gnews.is_google("https://news.google.com/rss/articles/x") and not gnews.is_google("https://n.news.naver.com/a")
+
+
+def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
+    from core import articles, db
+    from core.article_integrity import time_quality
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,source) VALUES "
+                     "('g','X','2026-10-20T17:00','t','https://news.google.com/rss/articles/CBMiabc','google')")
+    orig = "https://www.todayenergy.kr/news/articleView.html?idxno=304388"
+    page = '<meta property="article:published_time" content="2026-10-20T09:26:32+09:00"> 임자성 기자 lim@todayenergy.kr'
+    reporters.fill("X", fetch=lambda u: page, resolve=lambda u: orig)
+    with db.connect() as conn:
+        row = dict(zip(("ts", "time_from"), conn.execute("SELECT ts, time_from FROM articles").fetchone()))
+    assert row == {"ts": "2026-10-20T09:26", "time_from": "page"}
+    assert time_quality({"source": "google", **row}) == "reported"
+    assert time_quality({"source": "google", "ts": "2026-10-20T17:00"}) == "check_time"
+
+
+@pytest.mark.parametrize("page, want", [
+    ('<meta content="2026-10-20T11:00:00+09:00" property="article:published_time">', "2026-10-20T11:00"),
+    ('"datePublished": "2026-06-19T01:40:09Z"', "2026-06-19T10:40"),
+    ("입력 2026.10.19 18:43 수정 2026.10.20", "2026-10-19T18:43"),
+    ("시각 없음", None),
+])
+def test_parse_time_formats(page, want):
+    assert reporters.parse_time(page) == want

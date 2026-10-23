@@ -9,7 +9,7 @@ from __future__ import annotations
 import html as _html
 import re
 import time as _time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from .db import connect
 
@@ -25,6 +25,12 @@ PATTERNS = [
     re.compile(r"(?:Biz|뉴스|TV|YTN|KBS|MBC|SBS|MBN|JTBC|채널A|연합뉴스TV)\s+" + NAME + r"입니다"),
 ]
 STOP = {"이번", "관련", "해당", "담당", "전문", "증권", "취재", "사진", "영상", "편집", "그래픽", "기자", "본지", "온라인", "디지털"}
+TIME_PATTERNS = [
+    re.compile(r'property="article:published_time"\s+content="([^"]+)"'),
+    re.compile(r'content="([^"]+)"\s+property="article:published_time"'),
+    re.compile(r'"datePublished"\s*:\s*"([^"]+)"'),
+    re.compile(r'(?:입력|등록|승인)\s*:?\s*(20\d\d[.-]\d\d[.-]\d\d\s+\d\d:\d\d)'),
+]
 BATCH = 15             # 실행 한 번에 여는 기사 수 (새 기사 먼저, 남으면 지난 기사)
 
 
@@ -37,6 +43,23 @@ def parse(page: str) -> str | None:
             name = m.group(1)
             if name not in STOP:
                 return name
+    return None
+
+
+def parse_time(page: str) -> str | None:
+    """원문 페이지의 게시 시각 (한국 시각 'YYYY-MM-DDTHH:MM'). 못 찾으면 None."""
+    for pat in TIME_PATTERNS:
+        m = pat.search(page)
+        if not m:
+            continue
+        raw = re.sub(r"(\d{4})[.](\d\d)[.](\d\d)", r"\1-\2-\3", m.group(1).strip()).replace(" ", "T")
+        try:
+            t = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if t.tzinfo:
+            t = t.astimezone(timezone(timedelta(hours=9))).replace(tzinfo=None)
+        return t.isoformat(timespec="minutes")
     return None
 
 
@@ -55,11 +78,11 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
     resolve = resolve or gnews.resolve
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        rows = conn.execute("SELECT id, url FROM articles WHERE symbol=? AND (reporter_at IS NULL OR "
+        rows = conn.execute("SELECT id, url, ts, source FROM articles WHERE symbol=? AND (reporter_at IS NULL OR "
                             "(url LIKE '%news.google.com/%' AND resolved_at IS NULL)) ORDER BY ts DESC",
                             (symbol,)).fetchall()
     found, tried = 0, 0
-    for aid, url in rows:
+    for aid, url, ts, source in rows:
         if tried >= limit:
             break
         name = None
@@ -78,7 +101,13 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
         if fetchable(url):
             tried += 1
             try:
-                name = parse(fetch(url))
+                page = fetch(url)
+                name = parse(page)
+                if source == "google":      # 구글 뉴스 시각은 날짜만 맞고 16:00·17:00으로 나오기도 함 → 원문 게시 시각
+                    t = parse_time(page)
+                    if t and ts and abs((datetime.fromisoformat(t) - datetime.fromisoformat(ts[:16])).days) <= 2:
+                        with connect() as conn:
+                            conn.execute("UPDATE articles SET ts=?, time_from='page' WHERE id=?", (t, aid))
             except Exception as e:      # noqa: BLE001 - 한 기사가 안 열려도 계속
                 if log:
                     log(f"기자명 읽기 실패: {e}")
