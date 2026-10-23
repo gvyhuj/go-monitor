@@ -34,11 +34,9 @@ jobs:
         with:
           persist-credentials: false
       - name: 암호화 백업 가져오기
-        uses: actions/checkout@v4
-        with:
-          ref: data
-          path: validation-source
-          persist-credentials: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download latest-backup -p monitor.db.enc -D validation-source -R "$GITHUB_REPOSITORY"
       - name: Python 준비
         uses: actions/setup-python@v5
         with:

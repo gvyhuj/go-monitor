@@ -4,7 +4,7 @@
   분석 자료(JSON)는 사이트 비밀번호로 암호화해 d/*.bin 으로 올립니다.
 - 브라우저가 비밀번호로 열쇠를 만들어 풀어 봅니다 (비밀번호가 틀리면 아무것도 볼 수 없음).
 - 암호: AES-256-GCM, 열쇠 = PBKDF2-HMAC-SHA256(비밀번호, salt, 200,000회). 브라우저 WebCrypto와 같은 방식.
-- 기록(SQLite) 백업도 같은 방식으로 암호화해 저장소 data 브랜치에 둡니다.
+- 기록(SQLite) 백업은 빈자리를 정리하고 xz로 압축한 뒤 같은 방식으로 암호화해 릴리스에 둡니다.
 """
 from __future__ import annotations
 
@@ -96,14 +96,50 @@ def salt_for(meta_path: Path, password: str) -> bytes:
     return salt
 
 
-def backup_db(db: Path, out: Path, password: str):
+SQLITE_MAGIC = b"SQLite format 3\x00"
+XZ_MAGIC = b"\xfd7zXZ\x00"
+
+
+def compact_db(db: Path) -> bytes:
+    """지운 자리를 비운 사본(VACUUM INTO). SQLite 파일이 아니면 그대로."""
+    import sqlite3
+    import tempfile
+    raw_head = db.read_bytes()[:16] if db.exists() else b""
+    if raw_head != SQLITE_MAGIC:
+        return db.read_bytes()
+    with tempfile.TemporaryDirectory(prefix="go-backup-") as tmp:
+        copy = Path(tmp) / "compact.db"
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("VACUUM INTO ?", (str(copy),))
+        finally:
+            conn.close()
+        return copy.read_bytes()
+
+
+def unpack_db(data: bytes) -> bytes:
+    """복호화한 백업 → SQLite 파일 내용. 압축한 백업(xz)과 예전 백업(압축 없음) 모두 읽음."""
+    if data[:6] == XZ_MAGIC:
+        import lzma
+        return lzma.decompress(data)
+    return data
+
+
+def backup_db(db: Path, out: Path, password: str) -> dict:
+    """기록 백업: 빈자리 정리 → xz 압축(빠른 단계) → 암호화. 크기(바이트)를 돌려줌."""
+    import lzma
+    compact = compact_db(db)
+    packed = lzma.compress(compact, preset=1)
     salt = secrets.token_bytes(16)
-    blob = encrypt(derive_key(password, salt), db.read_bytes())
+    blob = encrypt(derive_key(password, salt), packed)
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.db.enc"):          # 예전 이름의 기록 파일은 지움
         if old.name != "monitor.db.enc":
             old.unlink()
     (out / "monitor.db.enc").write_bytes(salt + blob)
+    wal = db.with_name(db.name + "-wal")
+    size = db.stat().st_size + (wal.stat().st_size if wal.exists() else 0)
+    return {"db": size, "compact": len(compact), "backup": len(salt) + len(blob)}
 
 
 def find_backup(src: Path) -> Path | None:
@@ -117,7 +153,7 @@ def restore_db(src: Path, db: Path, password: str) -> bool:
         return False
     raw = f.read_bytes()
     try:
-        data = decrypt(derive_key(password, raw[:16]), raw[16:])
+        data = unpack_db(decrypt(derive_key(password, raw[:16]), raw[16:]))
     except Exception:
         return False
     db.parent.mkdir(parents=True, exist_ok=True)

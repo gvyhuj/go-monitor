@@ -81,3 +81,35 @@ def test_weekly_mark_is_inside_the_record_handed_to_next_run(fresh_db, monkeypat
     assert r["weekly"] == "2026-10-23"
     assert seen["mark_when_carried"] == "2026-10-23"
     assert (tmp_path / "weekly" / "monitor-2026-10-23.db.enc").exists()
+
+
+def test_backup_is_compacted_compressed_and_restorable(tmp_path):
+    """백업은 지운 자리를 비우고 압축함. 아직 체크포인트 안 된 WAL 내용도 빠지지 않아야 함."""
+    import sqlite3
+    from core import sitebuild
+    db_file = tmp_path / "live.db"
+    conn = sqlite3.connect(db_file)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE t(v TEXT)")
+    conn.executemany("INSERT INTO t VALUES (?)", [("x" * 500,)] * 4000)
+    conn.commit()
+    conn.execute("DELETE FROM t WHERE rowid > 10")
+    conn.commit()
+    sizes = sitebuild.backup_db(db_file, tmp_path / "out", "key")
+    conn.close()
+    assert sizes["backup"] < sizes["compact"] < sizes["db"]
+    assert sitebuild.restore_db(tmp_path / "out", tmp_path / "back.db", "key")
+    back = sqlite3.connect(tmp_path / "back.db")
+    assert back.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 10
+    back.close()
+
+
+def test_old_uncompressed_backup_still_restores(tmp_path):
+    from core import sitebuild
+    import secrets
+    raw = b"SQLite format 3\x00" + b"\x00" * 100
+    salt = secrets.token_bytes(16)
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "monitor.db.enc").write_bytes(salt + sitebuild.encrypt(sitebuild.derive_key("key", salt), raw))
+    assert sitebuild.restore_db(tmp_path / "old", tmp_path / "back.db", "key")
+    assert (tmp_path / "back.db").read_bytes() == raw

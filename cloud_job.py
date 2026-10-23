@@ -152,8 +152,8 @@ def checkpoint():
 
 # ------------------------------------------------------------------ GitHub Pages 방식
 STATE_DIR = Path(os.environ.get("GO_STATE_DIR", "state"))        # actions/cache 로 다음 실행에 넘김 (암호화)
-RESTORE_DIR = Path(os.environ.get("GO_RESTORE_DIR", "restore"))  # data 브랜치의 백업 (암호화)
-BACKUP_DIR = Path(os.environ.get("GO_BACKUP_DIR", "backup"))     # 이번에 data 브랜치에 올릴 백업
+RESTORE_DIR = Path(os.environ.get("GO_RESTORE_DIR", "restore"))  # 릴리스(없으면 예전 data 브랜치)의 백업 (암호화)
+BACKUP_DIR = Path(os.environ.get("GO_BACKUP_DIR", "backup"))     # 이번에 '최신 백업' 릴리스에 올릴 백업 (1시간마다 덮어씀)
 WEEKLY_DIR = Path(os.environ.get("GO_WEEKLY_DIR", "weekly"))     # 이번에 '주간 백업' 릴리스에 붙일 백업 (날짜별로 26주 보관)
 SITE_DIR = Path(os.environ.get("GO_SITE_DIR", "_site"))
 
@@ -176,7 +176,7 @@ def restore_state(log) -> str:
     if DB_PATH.exists():
         return "기존 파일"
     key = _data_key()
-    for src, label in ((STATE_DIR, "직전 실행"), (RESTORE_DIR, "data 브랜치 백업")):
+    for src, label in ((STATE_DIR, "직전 실행"), (RESTORE_DIR, "최신 백업")):
         if sitebuild.restore_db(src, DB_PATH, key):
             log.info("지난 기록을 이어 씁니다 (%s, %.1f MB)", label, DB_PATH.stat().st_size / 1e6)
             return label
@@ -236,8 +236,29 @@ def build_static_site(now, log) -> dict:
         set_state("site:last_backup", now.replace(tzinfo=None).isoformat(timespec="seconds"))
         checkpoint()
         sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
-        sitebuild.backup_db(DB_PATH, BACKUP_DIR, _data_key())
+        sizes = sitebuild.backup_db(DB_PATH, BACKUP_DIR, _data_key())
+        log.info("백업 크기: 기록 %.1f MB → 정리 %.1f MB → 압축·암호화 %.1f MB", sizes["db"] / 1e6,
+                 sizes["compact"] / 1e6, sizes["backup"] / 1e6)
+        summary(f"- 백업 크기: 기록 {sizes['db'] / 1e6:.1f} MB → 정리 {sizes['compact'] / 1e6:.1f} MB"
+                f" → 압축·암호화 {sizes['backup'] / 1e6:.1f} MB")
+        summary("- 표별 크기: " + table_sizes())
     return {"files": n, "backup": due, "weekly": weekly}
+
+
+def table_sizes() -> str:
+    """표마다 줄 수와 차지하는 크기(dbstat이 있을 때). 백업이 왜 큰지 보려고."""
+    with connect() as conn:
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        try:
+            size = dict(conn.execute("SELECT name, SUM(pgsize) FROM dbstat GROUP BY name").fetchall())
+        except Exception:  # noqa: BLE001 - dbstat 없는 SQLite
+            size = {}
+        rows = []
+        for t in tables:
+            n = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+            rows.append((size.get(t, 0), t, n))
+    rows.sort(reverse=True)
+    return ", ".join(f"{t} {n:,}줄" + (f" {b / 1e6:.1f}MB" if b else "") for b, t, n in rows)
 
 
 def weekly_backup_due(now) -> str | None:
@@ -494,7 +515,7 @@ def main(argv) -> int:
                 owner, name = repo.split("/", 1)
                 summary(f"### 사이트 주소\nhttps://{owner.lower()}.github.io/{name}/\n")
             summary(f"- 사이트 자료 {r['files']}개 (암호화), 기록 이어쓰기: {restored}"
-                    + (", data 브랜치 백업" if r["backup"] else "") + (", 주간 백업" if r.get("weekly") else "") + (f", 사이트 요청 {inbox_n}건 반영" if inbox_n else ""))
+                    + (", 최신 백업" if r["backup"] else "") + (", 주간 백업" if r.get("weekly") else "") + (f", 사이트 요청 {inbox_n}건 반영" if inbox_n else ""))
         except Exception as e:
             log.error("사이트 만들기 실패: %s", e)
             summary(f"- 사이트 만들기 실패: {e}")

@@ -9,7 +9,7 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
-from core.sitebuild import decrypt, derive_key, encrypt
+from core.sitebuild import decrypt, derive_key, encrypt, unpack_db
 from validate_event_study import validate
 
 
@@ -18,7 +18,7 @@ def inspect_backup(backup: Path, password: str, output: Path) -> dict:
     original_hash = hashlib.sha256(encrypted).hexdigest()
     with tempfile.TemporaryDirectory(prefix="event-study-") as temporary:
         database = Path(temporary) / "monitor.db"
-        database.write_bytes(decrypt(derive_key(password, encrypted[:16]), encrypted[16:]))
+        database.write_bytes(unpack_db(decrypt(derive_key(password, encrypted[:16]), encrypted[16:])))
         database_hash = hashlib.sha256(database.read_bytes()).hexdigest()
         with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
             row = connection.execute("SELECT value FROM system_state WHERE key='private_config'").fetchone()
