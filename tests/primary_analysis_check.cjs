@@ -23,10 +23,6 @@ vm.createContext(context);
 vm.runInContext(formatters + counts + summary, context);
 const measure = { method: "event-study-v2", own: -0.05, expected: -0.0541, value: 0.0041,
   ci_low: -0.08, ci_high: 0.09, label: "반응일 예상 대비 차이" };
-const detail = context.measureTxt(measure);
-assert.match(detail, /실제 등락.*-5\.00%/);
-assert.match(detail, /0\.41%p/);
-assert.doesNotMatch(detail, /단정할 수 없습니다/);                 // 설명은 계산 방법 탭으로
 assert.match(context.measureList(measure), /반응일 실제<\/span><span class="num ">-5\.00%/);
 assert.doesNotMatch(context.measureList(measure), /예상 대비|%p/);          // 목록에는 실제 등락만 (분석 숫자는 상세 아래쪽)
 assert.equal(context.measureList({ value: 0.9 }), "");
@@ -42,7 +38,6 @@ assert.doesNotMatch(box, /<details|평균 예상 대비 차이|class="note"/);
 assert.match(box, /±5\.2%p 넘게 차이/);
 context.d.baseline = null;
 assert.equal(context.baselineBlock(), "");
-assert.match(context.measureTxt({ value: 0.9 }), /다시 계산/);
 // 피벗 표: 매체별/묶음 단위 세기와 합계
 const piv = source.slice(source.indexOf("  const PIV_DIMS ="), source.indexOf("  async function pagePivot("));
 const pctx = {};

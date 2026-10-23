@@ -402,6 +402,11 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
     hit = reaction(event_day + "T10:00")
     assert hit["kind"] == "session" and hit["start"] == event_day + "T10:00" and hit["end"] == event_day + "T10:30"
     assert hit["abnormal"] > 0.04 and hit["rarity"] < 0.02 and hit["n_null"] > 100
+    # 시간대별 표: 모두 같은 방식(시장 몫 + 업종 몫 + 고유), 30분 줄은 대표 숫자와 같음
+    assert [r["minutes"] for r in hit["rows"]] == [5, 15, 30, 60, 120]
+    thirty = next(r for r in hit["rows"] if r["minutes"] == 30)
+    assert thirty["abnormal"] == pytest.approx(hit["abnormal"]) and thirty["own"] == pytest.approx(hit["own"])
+    assert all(r["own"] == pytest.approx(r["market"] + r["sector"] + r["abnormal"]) for r in hit["rows"])
     before_open = reaction(event_day + "T08:00")
     assert before_open["kind"] == "open" and before_open["start"] is None and before_open["end"] == event_day + "T09:30"
     assert reaction(event_day + "T10:00", time_ok=False) is None        # 공개 시각 확인 필요

@@ -519,7 +519,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
     return out
 
 
-def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> dict | None:
+def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rarity: bool = True) -> dict | None:
     """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 분야 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
     from . import causal
     day = t1.date()
@@ -539,7 +539,9 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> d
             used += 1
     market = dc["beta_market"] * kq
     abn = own - market - sector
-    if t0 is None:
+    if not rarity:                  # 시간대별 표의 다른 줄: 평소 비교(무거운 계산)는 대표 30분에만
+        rr = None
+    elif t0 is None:
         rr = causal.abnormal_rarity(symbol, day, abn, dc["beta_market"], minutes=None, until=t1.time())
     else:
         rr = causal.abnormal_rarity(symbol, day, abn, dc["beta_market"], minutes=int((t1 - t0).total_seconds() // 60))
@@ -550,6 +552,7 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> d
             "basis": f"{int((t1 - t0).total_seconds() // 60)}분" if t0 else "개장 후 " + t1.strftime("%H:%M") + "까지"}
 
 INTRADAY_MINUTES = 30
+INTRADAY_STEPS = (5, 15, 30, 60, 120)      # 상세 화면 시간대별 표 (모두 같은 방식: 시장 몫 + 업종 몫 + 고유 움직임)
 
 
 def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
@@ -574,7 +577,17 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
     w = _window_split(symbol, dc, t0, t1)
     if not w or w.get("rarity") is None:
         return None
-    return {**w, "kind": kind, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
+    start = t0 or open_t
+    rows = []
+    for m in INTRADAY_STEPS:
+        end = start + timedelta(minutes=m)
+        if end.time() > time(15, 30):
+            break
+        x = w if m == INTRADAY_MINUTES else _window_split(symbol, dc, t0, end, rarity=False)
+        if x:
+            rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"),
+                         **{k: x[k] for k in ("own", "market", "sector", "abnormal", "kosdaq")}})
+    return {**w, "rows": rows, "kind": kind, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
                                                                              if p.get("kind") == "seg"])}
 
 
@@ -615,16 +628,15 @@ def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[
             "SELECT id, start_ts, direction, peak_return_5m FROM events WHERE symbol=? AND substr(start_ts,1,10)=? ORDER BY start_ts",
             (symbol, d0))]
     if others:
-        out.append(f"같은 시기 이 종목 기사 {len(others)}건이 더 있어 효과가 섞였을 수 있습니다: "
+        out.append(f"같은 시기 이 종목 기사 {len(others)}건 더: "
                    + ", ".join(f"「{o['title'][:28]}」({o['category']})" for o in others[:3]))
     hot = [t for t in themes if abs(t["change_rate"]) >= 2]
     if hot:
-        out.append("이날 이 종목 테마가 크게 움직였습니다: " + ", ".join(f"{t['name']} {t['change_rate']:+.1f}%" for t in hot[:3])
-                   + " — 업종 평균과 비교한 '초과 반응'을 함께 보세요.")
+        out.append("이날 이 종목 테마 등락: " + ", ".join(f"{t['name']} {t['change_rate']:+.1f}%" for t in hot[:3]))
     d = eff.get("daily") or {}
     kq = (d.get("kosdaq") or {}).get("d0")
     if kq is not None and abs(kq) >= 0.02:
-        out.append(f"이날 KOSDAQ 자체가 {kq * 100:+.1f}% 움직였습니다.")
+        out.append(f"이날 KOSDAQ {kq * 100:+.1f}%")
     eff["events"] = evs
     return out
 

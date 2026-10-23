@@ -984,3 +984,5 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 @media (max-width: 720px) {
   .dash-grid, .dash-two { grid-template-columns: minmax(0, 1fr); }
 }
+.intraday-box .ladder, .verdict-box .ladder { margin-top: 8px; }
+.ladder tr.iw-main td { font-weight: 700; background: var(--canvas); }
