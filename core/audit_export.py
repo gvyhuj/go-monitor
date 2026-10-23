@@ -16,7 +16,7 @@ MARKET_QUERIES = {
     "daily_bars": "SELECT symbol, date, open, high, low, close, volume FROM daily_bars ORDER BY symbol, date",
     "minute_bars": "SELECT symbol, ts, open, high, low, close, volume, source FROM minute_bars ORDER BY symbol, ts",
     "related_stocks": "SELECT code, name, market, source, updated_at FROM related_stocks ORDER BY code",
-    "articles_raw": "SELECT id, symbol, ts, office, title, body, url, outlets, category, tone, mention, story, first_seen, hidden FROM articles ORDER BY ts, id",
+    "articles_raw": "SELECT id, symbol, ts, office, title, body, url, outlets, category, tone, mention, story, first_seen, hidden, source, kind_override, tone_override FROM articles ORDER BY ts, id",
     "pr_events_raw": "SELECT id, title, published_ts, url, pr_type, created_at FROM pr_events ORDER BY published_ts, id",
     "disclosures_raw": "SELECT no, symbol, date, title, kind, summary, first_seen, ts, pblntf, filer, rm FROM disclosures ORDER BY date, no",
 }

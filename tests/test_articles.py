@@ -38,7 +38,7 @@ def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
         _art(conn, "c", "2026-09-18T06:10", f"{NAME}, 외형 커졌지만 재고 부담도")
         _art(conn, "d", "2026-09-20T10:00", f"{NAME}, 유상증자 결정 소식")
     rows = {a["id"]: a for a in articles.article_rows("X")}
-    assert rows["a"]["kind"] == "pr" and rows["a"]["tone"] == 0        # 보도자료는 호재·악재 표시 안 함
+    assert rows["a"]["kind"] == "company" and rows["a"]["tone"] == 0  # 3개 매체여도 자체 배포 확정 불가
     assert rows["c"]["kind"] == "ext" and rows["c"]["tone"] == 0       # 뚜렷한 악재 단어 없으면 표시 안 함
     assert rows["d"]["tone"] == -1                                     # 유상증자 → 악재
     with db.connect() as conn:
@@ -200,3 +200,33 @@ def test_manual_duplicate_of_crawled_article_removed_once(tmpdb):
     rows = articles.article_rows("X")
     assert not any(a.get("manual") and "광학미러" in a["title"] for a in rows)
     assert articles.drop_manual_duplicates("X") == 0          # 한 번만
+
+
+def test_reported_time_quality_and_followup_flags():
+    from core.article_integrity import time_quality, likely_followup
+    assert time_quality({"ts": "2026-06-19T16:00", "source": "google"}) == "check_time"
+    assert time_quality({"ts": "2026-06-19T16:00", "source": "naver"}) == "reported"
+    assert time_quality({"ts": "2026-06-19T10:00", "source": "google"}) == "reported"
+    assert time_quality({"ts": "2026-06-19T16:00", "source": "google", "manual": True}) == "manually_entered"
+    a = {"ts": "2026-02-25T10:38", "title": "그린광학, 美 우주군 프로젝트 참여"}
+    b = {"ts": "2026-02-25T17:00", "title": "그린광학, 미 우주군 프로젝트 국내 유일 선정"}
+    # Same publication date can still produce DIFFERENT event-study dates.
+    assert likely_followup(a, b)
+    b["ts"] = "2026-03-20T17:00"
+    assert not likely_followup(a, b)
+
+
+def test_kind_pr_is_confirmed_only_and_same_story_followup_is_not_another_independent_event(tmpdb):
+    with db.connect() as c:
+        _art(c, "a", "2026-06-19T10:00", f"{NAME}, 위성용 광학부품 계약", 5)
+    rows = articles.article_rows("X")
+    assert rows[0]["kind"] == "company"
+    def item(identity, published, reaction):
+        return {"id": identity, "ts": published, "story": "same",
+                "kind": "company", "time_quality": "reported", "category": "회사 발표",
+                "title": f"{NAME}, 위성용 광학부품 계약",
+                "effect": {"reaction_day": reaction}}
+    events = articles.group_events([item("a", "2026-06-19T10:00", "2026-06-19"),
+                                   item("b", "2026-06-19T16:00", "2026-06-22")])
+    later = next(e for e in events if e["day"] == "2026-06-22")
+    assert later["followup_of"] == "a"

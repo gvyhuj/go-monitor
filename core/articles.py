@@ -641,15 +641,13 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
         lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
         out.append(lead)
-    # 우리 보도자료: 직접 등록했거나, '회사 발표' 기사가 같은 날 3개 매체 이상 실렸으면 (보도자료 배포의 모양)
-    per_day: dict[str, int] = {}
+    # '회사 발표'는 기사 내용의 유형일 뿐, 그린광학이 배포한 보도자료의 증거가 아닙니다.
+    # 자체 배포는 직접 등록 또는 담당자가 pr로 명시한 경우만 확정 분류합니다.
+    from .article_integrity import time_quality
     for a in out:
-        if a["category"] == "회사 발표":
-            per_day[a["ts"][:10]] = per_day.get(a["ts"][:10], 0) + a["outlets_total"]
-    for a in out:
-        auto = bool(a.get("manual")) or (a["category"] == "회사 발표" and per_day.get(a["ts"][:10], 0) >= 3)
-        a["kind_auto"] = "pr" if auto else "ext"
-        a["kind"] = a.get("kind_override") or a["kind_auto"]
+        a["kind_auto"] = "company" if a["category"] == "회사 발표" else "ext"
+        a["kind"] = a.get("kind_override") or ("pr" if a.get("manual") else a["kind_auto"])
+        a["time_quality"] = time_quality(a)
         # 호재·악재: 보도자료는 표시하지 않고, 외부 기사는 뚜렷한 악재 단어가 있을 때만 '악재'
         auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in (a["title"] or "") for w in STRONG_NEG) else 0)
         a["tone"] = a["tone_override"] if a.get("tone_override") is not None else auto_tone
@@ -668,12 +666,43 @@ def group_events(items: list[dict]) -> list[dict]:
     for day, g in by_day.items():
         g.sort(key=lambda a: a["ts"])
         main = [a for a in g if a["category"] not in ("단순 언급", "시황·특징주")] or g
-        lead = next((a for a in main if a["kind"] == "pr"), main[0])
+        lead = next((a for a in main if a["kind"] == "pr"),
+                    next((a for a in main if a["kind"] == "company"), main[0]))
+        kind = "pr" if any(a["kind"] == "pr" for a in main) else \
+               "company" if any(a["kind"] == "company" for a in main) else "ext"
         out.append({"day": None if day.startswith("x") else day, "lead": lead["id"],
-                    "kind": "pr" if any(a["kind"] == "pr" for a in main) else "ext",
-                    "ids": [a["id"] for a in g], "outlets": sum(a.get("outlets_total") or 1 for a in main),
+                    "kind": kind, "ids": [a["id"] for a in g],
+                    "outlets": sum(a.get("outlets_total") or 1 for a in main),
                     "n_pr": sum(1 for a in main if a["kind"] == "pr"),
-                    "noise": all(a["category"] in ("단순 언급", "시황·특징주") for a in g)})
+                    "noise": all(a["category"] in ("단순 언급", "시황·특징주") for a in g),
+                    "time_check": all(a.get("time_quality") == "check_time" for a in main),
+                    "followup_of": None, "followup_candidate_of": None})
+    # One day's price move must not count repeatedly for a story copied to another day.
+    # Fuzzy similarity only creates review flags; it must not silently merge new information.
+    from .article_integrity import likely_followup
+    ordered = sorted(out, key=lambda e: e["day"] or "9999")
+    by_id = {a["id"]: a for a in items}
+    seen_stories = {}
+    preceding = []
+    for ev in ordered:
+        articles_here = [by_id[i] for i in ev["ids"] if i in by_id
+                         and by_id[i]["category"] not in ("단순 언급", "시황·특징주")]
+        if not articles_here:
+            articles_here = [by_id[i] for i in ev["ids"] if i in by_id]
+        stories = {a.get("story") or a["id"] for a in articles_here}
+        if stories and all(s in seen_stories for s in stories):
+            ev["followup_of"] = min((seen_stories[s] for s in stories), key=lambda e: e["day"] or "9999")["lead"]
+        elif ev["day"] and not ev["noise"]:
+            for older in reversed(preceding):
+                if older["day"] == ev["day"]:
+                    continue
+                if likely_followup(by_id[older["lead"]], by_id[ev["lead"]]):
+                    ev["followup_candidate_of"] = older["lead"]
+                    break
+        for s in stories:
+            seen_stories.setdefault(s, ev)
+        if ev["day"] and not ev["noise"]:
+            preceding.append(ev)
     out.sort(key=lambda e: max(a["ts"] for a in by_day[e["day"] or f"x{e['lead']}"]), reverse=True)
     return out
 

@@ -397,7 +397,8 @@ def api_articles(q):
             continue
         e = _effect_cached(sym, a, stamp)
         out.append({**{k: a.get(k) for k in ("id", "ts", "office", "title", "url", "category", "tone", "mention",
-                                              "outlets_total", "manual", "hidden", "kind", "kind_auto")},
+                                              "outlets_total", "manual", "hidden", "kind", "kind_auto",
+                                              "story", "source", "time_quality")},
                     "n_related": len(a.get("related_titles") or []),
                     "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session",
                                                      "disclosure")},
@@ -419,6 +420,8 @@ def api_article_detail(q, aid):
     if not a:
         raise LookupError("해당 기사를 찾을 수 없습니다.")
     e = articles.effect(sym, datetime.fromisoformat(a["ts"]), a["tone"], a["category"], a["title"])
+    # Display the publication-time uncertainty in the detailed article too.
+    e["time_quality"] = a.get("time_quality")
     conf = articles.confounders(sym, e, a["id"], a.get("story"))
     out = {"article": a, "effect": e, "confounders": conf}
     m = e.get("minute")

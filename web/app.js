@@ -1556,14 +1556,15 @@
     const byId = new Map(items.map((a) => [a.id, a]));
     // 같은 반응일 = 한 사건 (엔진이 묶어 줌. 예전 자료면 기사 하나를 한 사건으로)
     const events = (d.events || items.map((a) => ({ day: a.effect && a.effect.reaction_day, lead: a.id, ids: [a.id],
-      kind: a.kind || (a.category === "회사 발표" || a.manual ? "pr" : "ext"), outlets: a.outlets_total || 1,
+      kind: a.kind || (a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"), outlets: a.outlets_total || 1,
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
-    items.forEach((a) => { if (!a.kind) a.kind = a.category === "회사 발표" || a.manual ? "pr" : "ext"; });
+    items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
       pr: events.filter((e) => e.kind === "pr"),
-      all: events.filter((e) => e.kind === "ext" && !e.noise),
+      company: events.filter((e) => e.kind === "company"),
+      all: events.filter((e) => !e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", disc: "공시", all: "외부 기사 전체" };
+    const LABEL = { pr: "자체 보도자료(확인)", company: "회사 관련 보도", all: "기사 전체", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
     if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
@@ -1600,21 +1601,22 @@
       <p class="score-note">${c ? ciTxtOf(c, "공시") : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
     }
     function articleScore(kind) {
-      const label = kind === "pr" ? "보도자료" : "외부 기사";
+      const label = kind === "pr" ? "확인된 보도자료" : kind === "company" ? "회사 관련 보도" : "기사 전체";
       const recent = groups[kind].filter((event) => (event.day || "") >= since);
-      const summaryMeasures = recent.map((event) => (byId.get(event.lead).effect || {}).measure).filter((measure) => measure && measure.method === "event-study-v2" && measure.value != null);
+      const eligible = recent.filter((event) => !event.time_check && !event.followup_of && !event.followup_candidate_of);
+      const summaryMeasures = eligible.map((event) => (byId.get(event.lead).effect || {}).measure).filter((measure) => measure && measure.method === "event-study-v2" && measure.value != null);
       const ci = ciOf(summaryMeasures.map((measure) => measure.value), d.summary_critical_values);
       const avgOut = recent.length ? recent.reduce((sum, event) => sum + (event.outlets || 1), 0) / recent.length : 0;
       return recent.length ? `<div class="score-line">
       <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
-      <span><small>평균 예상 대비 차이 (계산 ${summaryMeasures.length}일 / 미계산 ${recent.length - summaryMeasures.length}일)</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? points(ci.mean) : "-"}</b></span>
+      <span><small>평균 예상 대비 차이 (계산 ${summaryMeasures.length}일 / 미확인·자료 부족 ${recent.length - summaryMeasures.length}일)</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? points(ci.mean) : "-"}</b></span>
       <span><small>평균 차이의 95% 범위</small><b>${ci ? `${points(ci.lo)} ~ ${points(ci.hi)}` : "-"}</b></span>
       <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
-      <p class="score-note">${ci ? ciTxtOf(ci, label) : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 반응일은 한 번만 세고, 반응일 간 독립을 가정합니다. 다른 기사·공시가 겹친 날도 포함되므로 ${label}만의 효과를 입증하지는 않습니다.</p></div>` : "";
+      <p class="score-note">${ci ? ciTxtOf(ci, label) : "시각 확인·중복 검토 중인 날을 제외한 계산 가능 반응일이 3일 이상이어야 평균을 냅니다."} 시각 확인 필요 ${recent.filter((x) => x.time_check).length}일, 기존 정보 재보도 ${recent.filter((x) => x.followup_of).length}일, 후속 보도 가능성 검토 ${recent.filter((x) => x.followup_candidate_of).length}일은 평균에서 제외합니다. 일별 독립을 가정하며 인과관계를 입증하지 않습니다.</p></div>` : "";
     }
     const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat); };
 
-    if (!["pr", "disc", "all"].includes(artState.cat)) artState.cat = "pr";
+    if (!["pr", "company", "disc", "all"].includes(artState.cat)) artState.cat = "all";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
@@ -1697,7 +1699,7 @@
         const a = byId.get(e.lead), ef = a.effect || {}, m = ef.measure;
         const others = e.ids.filter((x) => x !== e.lead && byId.has(x)).map((x) => byId.get(x));
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
-          <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef)}</span>
+          <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
           <span class="t">${esc(a.title)}</span>
           <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
           ${others.length ? `<details class="art-group"${others.some((x) => x.id === current) ? " open" : ""}><summary>같은 날 기사 ${others.length}건 더</summary>${others.map(sub).join("")}</details>` : ""}</li>`;
@@ -1742,8 +1744,8 @@
   }
 
   let discById = new Map();     // 기사 영향 분석 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "그린광학 보도자료" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
-  const artFlags = (ef) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}`;
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
+  const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two, noun = "기사") {
     const p = (two && dc.d01) || dc.d0, sig = dc.sigma;
@@ -1796,7 +1798,7 @@
     try { d = await api(isDisc ? `/api/disclosures/${id}` : `/api/articles/${id}`); }
     catch (e) { box.innerHTML = `<div class="empty"><strong>불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
-    if (!a.kind) a.kind = a.category === "회사 발표" || a.manual ? "pr" : "ext";
+    if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
     let html = `<div class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}${artFlags(e)}</div>
@@ -1811,6 +1813,7 @@
     if (isDisc && a.untimed) notes.push("DART에는 접수 날짜만 있고 거래소(KIND)에서도 시각을 찾지 못해, 그날 하루(전일 종가 → 종가)로 쟀습니다.");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}을 반응일로 봅니다. 그 사이 다른 소식도 섞였을 수 있습니다.`);
     if (e.late) notes.push("오후 늦게 공개됐습니다. 대표 숫자는 다른 기사와 동일하게 반응일 하루 기준이며, 공개 전 움직임도 포함하므로 아래 여러 날의 누적 차이도 함께 보세요.");
+    if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("구글 뉴스 공개 시각이 16:00 또는 17:00으로 표시됩니다. 원문 공개 시각과 최초 공개 여부를 확인하기 전에는 반응일·초과수익률을 잠정치로 보세요.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
     html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
