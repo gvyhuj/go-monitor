@@ -1402,18 +1402,39 @@
     const L = [];
     L.push(`아래는 '${name}' 주가 움직임에 대해 내 사이트가 자동으로 모은 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
     L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
+    L.push("[몫 나누기]의 이 종목 고유 몫이 평소에도 흔한 크기(아래 '드문 정도'가 5% 이상)라면 이 종목만의 원인은 따로 없을 수 있어. 그때는 ①② 시장·업종이 그날 왜 움직였는지를 먼저 밝히고, ③ 종목 소식은 고유 몫을 설명할 근거가 있을 때만 원인으로 써줘.");
     L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
-    L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
-    L.push(`[움직임] ${e.start_ts.replace("T", " ")}${isDaily(e) ? " (하루, 전일 종가→종가)" : `~${hhmm(e.last_ts)}`} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}`);
+    L.push("검색한 자료는 아래 거래일 날짜와 맞는지 꼭 확인하고, 검색으로 확인한 지수·등락률이 아래 숫자와 다르면 다르다고 적어줘.");
+    L.push("답의 첫 줄은 '한 줄 요약'으로 써줘. 한국어 존댓말로.", "");
+    const ca = c.causal || {};
+    const recent = (ca.recent || []).filter((x) => x.own != null);
+    const md = (s) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`;
+    const day = e.start_ts.slice(0, 10);
+    const prev = recent.length ? recent[recent.length - 1].date : null;
+    const ti = ca.intensity;
+    const valX = ti && ti.value_x != null ? `직전 20거래일 평균의 ${ti.value_x.toFixed(1)}배` : null;
+    L.push(isDaily(e)
+      ? `[움직임] ${day} 하루 (${prev ? md(prev) : "전일"} 종가 → ${md(day)} 종가) ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` (${valX})` : ""}`
+      : `[움직임] ${e.start_ts.replace("T", " ")}~${hhmm(e.last_ts)} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` · 그날 하루 거래대금 ${valX}` : ""}`);
+    if (recent.length) L.push(`[직전 ${recent.length}거래일] ${recent.map((x) => `${md(x.date)} ${pct(x.own)}(KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)})`).join(", ")}`);
     const sp = c.split;
-    if (sp && sp.own != null) L.push(`[몫 나누기] 실제 ${pct(sp.own)} = 시장 ${pct(sp.market)} + 업종 ${pct(sp.sector)} + 이 종목 고유 ${pct(sp.specific)}`);
+    if (sp && sp.own != null) {
+      const kq = sp.kosdaq != null ? sp.kosdaq : e.kosdaq_change;
+      const mk = sp.beta_market != null && kq != null ? ` (KOSDAQ ${pct(kq)} × 이 종목의 평소 시장 민감도 ${sp.beta_market.toFixed(2)})` : "";
+      L.push(`[몫 나누기] 실제 ${pct(sp.own)} = 시장 ${pct(sp.market)}${mk} + 업종 ${pct(sp.sector)} + 이 종목 고유 ${pct(sp.specific)}`);
+      const parts = (sp.factor_parts || []).slice(1).filter((p) => p.contrib != null && Math.abs(p.contrib) >= 0.0005);
+      if (sp.method === "분야별 회귀") L.push(`[업종 몫 계산법] 비교 종목 평균을 그대로 더한 값이 아님. 분야별 등락에서 시장과 같이 움직인 부분을 빼고, 이 종목이 평소 그 분야와 얼마나 같이 움직였는지(직전 약 120거래일)를 곱한 합${parts.length ? ` — ${parts.map((p) => `${p.name} ${pct(p.contrib)}(분야 등락 ${pct(p.factor)})`).join(", ")}` : ""}`);
+      if (sp.rarity != null) L.push(`[고유 몫 드문 정도] 평소 ${sp.n_null}거래일의 고유 움직임 중 이만큼 이상 컸던 날 ${(sp.rarity * 100).toFixed(0)}%`);
+      else if (sp.z != null) L.push(`[고유 몫 크기] 평소 하루 고유 변동폭의 ${Math.abs(sp.z).toFixed(1)}배`);
+    }
     const f = c.flows;
     if (f) {
       const r = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${x.net >= 0 ? "+" : ""}${int(x.net)}주`;
       L.push(`[창구] 순매수 상위: ${(f.top_buyers || []).map(r).join(", ") || "-"} / 순매도 상위: ${(f.top_sellers || []).map(r).join(", ") || "-"} / 외국계 합계 ${int(f.foreign_net || 0)}주`);
-    }
+    } else L.push("[창구] 사이트에 이 시간대 거래원 기록 없음 (없다는 뜻이 아니라 수집되지 않음)");
     const inv = c.investor_day;
     if (inv) L.push(`[투자자별 확정치] 외국인 ${int(inv.foreign_net || 0)}주, 기관 ${int(inv.organ_net || 0)}주, 개인 ${int(inv.individual_net || 0)}주`);
+    else L.push("[투자자별 확정치] 사이트에 기록 없음 (수집되지 않음, 직접 확인 필요)");
     const b = c.buyer;
     if (b) {
       (b.lines || []).filter((l) => ["업종 묶음", "개별 관심", "업종 일부", "연속성", "외국인 확정치"].includes(l.kind))
@@ -1428,8 +1449,12 @@
       Object.entries(g).forEach(([k, ms]) => L.push(`[비교 종목: ${k}] 평균 ${pct(ms.reduce((a, x) => a + x.change, 0) / ms.length)} — ${ms.sort((a, x) => a.change - x.change).slice(0, 6).map((x) => `${x.name} ${pct(x.change)}`).join(", ")}`));
     }
     const ac = c.articles;
-    if (ac) (ac.lead || []).slice(0, 5).forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」`));
-    (c.disclosures || []).slice(0, 5).forEach((x) => L.push(`[공시] ${x.date} ${x.title}`));
+    const lead = (ac && ac.lead) || [];
+    if (lead.length) lead.slice(0, 5).forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」`));
+    else L.push("[이 종목 기사] 사이트가 모은 기사 없음 (직접 검색 필요)");
+    const ds = c.disclosures || [];
+    if (ds.length) ds.slice(0, 5).forEach((x) => L.push(`[공시] ${x.date} ${x.title}`));
+    else L.push("[공시] 사이트 기록상 당일·직전 거래일 공시 없음 (사이트 수집 누락일 수 있으니 DART 확인 필요)");
     let text = L.filter((x) => x !== undefined).join("\n");
     if (text.length > 5500) text = text.slice(0, 5500) + "\n…(일부 생략)";
     return `${text}\n\n[질문] ${question}`;

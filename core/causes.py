@@ -25,7 +25,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "16"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로)
+CAUSE_VERSION = "17"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -925,6 +925,10 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
         causal["intensity"] = _causal.trading_intensity(symbol, day.isoformat())
     except Exception:
         causal["intensity"] = None
+    try:
+        causal["recent"] = _causal.recent_days(symbol, day.isoformat())
+    except Exception:
+        causal["recent"] = None
     es = None
     if daily and not (split and split.get("method") in ("팩터", "분야별 회귀")):
         try:

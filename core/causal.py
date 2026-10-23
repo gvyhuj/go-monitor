@@ -399,6 +399,14 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
     return out
 
 
+def recent_days(symbol: str, d0: str, n: int = 5) -> list[dict]:
+    """반응일 직전 n거래일의 이 종목·KOSDAQ 하루 등락 (원인 질문에 최근 흐름으로 붙임)."""
+    lo = (date.fromisoformat(d0) - timedelta(days=n * 2 + 20)).isoformat()
+    own, mkt = _rets(symbol, lo, d0), _rets(KOSDAQ, lo, d0)
+    ds = [d for d in sorted(own) if d < d0][-n:]
+    return [{"date": d, "own": own[d], "kosdaq": mkt.get(d)} for d in ds]
+
+
 # ------------------------------------------------------------------ ③ 거래 강도
 
 def trading_intensity(symbol: str, d0: str, n: int = 20) -> dict | None:
