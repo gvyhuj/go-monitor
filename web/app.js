@@ -1554,9 +1554,8 @@
     const groups = {
       pr: events.filter((e) => e.kind === "pr"),
       all: events.filter((e) => e.kind === "ext" && !e.noise),
-      noise: events.filter((e) => e.kind === "ext" && e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", disc: "공시", all: "외부 기사 전체", noise: "단순 언급·시황" };
+    const LABEL = { pr: "그린광학 보도자료", disc: "공시", all: "외부 기사 전체" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
     if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
@@ -1604,7 +1603,7 @@
       ${ci ? `<p class="score-note">${ciTxt}</p>` : ""}</div>` : "";
     const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : prScore; };
 
-    if (!["pr", "disc", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
+    if (!["pr", "disc", "all"].includes(artState.cat)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
@@ -1701,7 +1700,7 @@
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" ? "pr" : ev.noise ? "noise" : "all";
+      if (ev) artState.cat = ev.kind === "pr" ? "pr" : "all";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length
