@@ -90,7 +90,10 @@ def news_days(symbol: str) -> dict[str, set]:
     def add(kind, ts):
         i = _first_session(calendar, ts)
         out[kind].update(calendar[i:i + 2])
+    from .articles import COVERAGE_FROM
     for ts, category, override in arts:
+        if ts < COVERAGE_FROM and override != "pr":      # 구분 미확인 (기사를 모으기 전): 소식으로 세지 않음
+            continue
         if override == "pr" or (category == "회사 발표" and override != "ext"):
             add("pr", ts)
         elif category not in NOISE_CATEGORIES:
@@ -114,12 +117,14 @@ def estimation_exclusions(symbol: str) -> set:
 
 def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
     """소식 종류별 날의 예상 대비 차이를 '소식 없는 날'과 나란히 비교."""
+    from .articles import COVERAGE_FROM
     from .eventstudy import baseline_by_group, returns_from_prices
     hi = date.today().isoformat()
     lo = (date.today() - timedelta(days=int(365 * years) + 10)).isoformat()
     with connect() as conn:
         # 기사를 모으기 시작한 날 전은 기사가 없어서 '소식 없는 날'로 잘못 섞이므로 비교에서 뺌
-        first = conn.execute("SELECT MIN(substr(ts,1,10)) FROM articles WHERE symbol=? AND hidden=0", (symbol,)).fetchone()[0]
+        first = conn.execute("SELECT MIN(substr(ts,1,10)) FROM articles WHERE symbol=? AND hidden=0 AND ts >= ?",
+                             (symbol, COVERAGE_FROM)).fetchone()[0]
     start = max(lo, first) if first else lo
     market_prices = {row[0]: row[2] for row in _daily(KOSDAQ, lo, hi)}
     calendar = sorted(market_prices)

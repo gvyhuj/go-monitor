@@ -108,7 +108,8 @@ def build(articles: list[dict], disclosures: list[dict], company: str = "그린�
         out.append({"id": f"c{items[0]['id']}", "start": items[0]["ts"], "end": items[-1]["ts"],
                     "title": lead["title"], "lead": lead["id"],
                     "kind": "pr" if any(i["kind"] == "pr" for i in arts) else
-                            "company" if any(i["kind"] == "company" for i in arts) else "ext",
+                            "company" if any(i["kind"] == "company" for i in arts) else
+                            "unknown" if all(i["kind"] == "unknown" for i in arts) else "ext",
                     "partner": max(c["_partners"], key=len) if c["_partners"] else None,
                     "amount": max(c["_amounts"]) if c["_amounts"] else None,
                     "topic": next(iter(sorted(c["_topics"])), None),

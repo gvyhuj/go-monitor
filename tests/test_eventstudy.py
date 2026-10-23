@@ -327,8 +327,9 @@ def test_baseline_compares_news_days_with_quiet_days():
 
 
 def test_news_days_from_database_feed_exclusion_and_baseline(tmp_path, monkeypatch):
-    from core import causal, db
+    from core import articles, causal, db
 
+    monkeypatch.setattr(articles, "COVERAGE_FROM", "2025-01-01")     # 예시 날짜(2025년)도 수집 기간 안으로
     monkeypatch.setattr(db, "DATA_DIR", tmp_path)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
     db.init_db()
@@ -407,3 +408,26 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
     assert reaction(event_day + "T15:10") is None                       # 30분을 채울 수 없음 → 하루 단위
     assert reaction(dates[100] + "T10:00") is None                      # 분봉 없는 옛 기사
     json.dumps(hit, allow_nan=False)
+
+
+def test_articles_before_coverage_are_unknown_and_not_counted(tmp_path, monkeypatch):
+    from core import articles, causal, db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
+    db.init_db()
+    causal._NEWS_CACHE.clear()
+    monkeypatch.setattr(articles, "COVERAGE_FROM", "2025-03-01")
+    dates, own, market, _ = sample(size=120)
+    with db.connect() as connection:
+        for code, returns in (("X", own), ("KOSDAQ", market)):
+            for day in dates:
+                connection.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)",
+                                   (code, day, 100, 100, 100, 100 * (1 + returns[day]), 1000))
+        connection.execute("INSERT INTO articles(id,symbol,ts,title,category) VALUES ('old','X',?,'그린광학 공급계약','회사 발표')",
+                           (dates[5] + "T10:00",))
+        connection.execute("INSERT INTO articles(id,symbol,ts,title,category) VALUES ('new','X',?,'그린광학 공급계약 2','회사 발표')",
+                           (dates[80] + "T10:00",))
+    n = causal.news_days("X")
+    assert dates[5] not in n["pr"] and dates[80] in n["pr"]
+    kinds = {a["id"]: a["kind"] for a in articles.article_rows("X")}
+    assert kinds == {"old": "unknown", "new": "company"}

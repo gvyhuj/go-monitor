@@ -557,7 +557,9 @@
     const count = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) m[d] = (m[d] || 0) + 1; }); return m; };
     const shown = (a) => !a.hidden && a.category !== "단순 언급" && a.ts;
     const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
-    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company"), (a) => a.ts.slice(0, 10));
+    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company" && a.kind !== "unknown"), (a) => a.ts.slice(0, 10));
+    const unkN = count(arts.filter((a) => shown(a) && a.kind === "unknown"), (a) => a.ts.slice(0, 10));
+    const hasUnk = Object.keys(unkN).length > 0;
     const discN = count(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf)), (x) => x.ts.slice(0, 10));
     const rows = daily.slice().reverse();
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
@@ -566,23 +568,23 @@
         <button type="button" class="btn" id="days-csv">엑셀로 내려받기</button></div>
       <div class="table-wrap"><table class="days-table"><thead><tr>
         <th>날짜</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>등락</th><th>거래량</th><th>KOSDAQ</th>
-        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th><th>주요 공시</th></tr></thead><tbody>
+        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th>${hasUnk ? "<th>구분 미확인</th>" : ""}<th>주요 공시</th></tr></thead><tbody>
         ${rows.map((x) => `<tr><td><a href="#/calendar" data-day="${esc(x.date)}">${esc(x.date)}</a></td>
           <td class="num">${won(x.open)}</td><td class="num">${won(x.high)}</td><td class="num">${won(x.low)}</td><td class="num">${won(x.close)}</td>
           <td class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</td><td class="num">${won(x.volume)}</td>
           <td class="num ${sgnCls(x.kosdaq)}">${x.kosdaq == null ? "-" : pct(x.kosdaq)}</td>
           <td class="num">${net(x.foreign)}</td><td class="num">${net(x.organ)}</td><td class="num">${net(x.individual)}</td>
-          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td><td class="num">${discN[x.date] || ""}</td></tr>`).join("")}
+          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td>${hasUnk ? `<td class="num">${unkN[x.date] || ""}</td>` : ""}<td class="num">${discN[x.date] || ""}</td></tr>`).join("")}
       </tbody></table></div>`;
     box.querySelector(".days-table").onclick = (ev) => {
       const a = ev.target.closest("a[data-day]"); if (!a) return;
       calState.month = a.dataset.day.slice(0, 7); calState.sel = a.dataset.day;
     };
     $("#days-csv").onclick = () => csvDownloadRows("일별기록",
-      ["날짜", "시가", "고가", "저가", "종가", "등락(%)", "거래량", "KOSDAQ(%)", "외국인 순매수", "기관 순매수", "개인 순매수", "보도자료", "외부 기사", "주요 공시"],
+      ["날짜", "시가", "고가", "저가", "종가", "등락(%)", "거래량", "KOSDAQ(%)", "외국인 순매수", "기관 순매수", "개인 순매수", "보도자료", "외부 기사", "구분 미확인", "주요 공시"],
       rows.map((x) => [x.date, x.open, x.high, x.low, x.close, x.change == null ? "" : (x.change * 100).toFixed(2), x.volume,
         x.kosdaq == null ? "" : (x.kosdaq * 100).toFixed(2), x.foreign ?? "", x.organ ?? "", x.individual ?? "",
-        prN[x.date] || 0, extN[x.date] || 0, discN[x.date] || 0]));
+        prN[x.date] || 0, extN[x.date] || 0, unkN[x.date] || 0, discN[x.date] || 0]));
   }
 
   // 달력: 날마다 등락(색)과 그날 소식(보도자료·공시·외부 기사)·급등·급락을 한 화면에. 날짜를 누르면 아래에 그날 내용
@@ -992,7 +994,7 @@
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
     const discs = extra.discs || [];
     const news = [...discs.map((x) => ({ tag: '<span class="ktag k-disc">공시</span>', title: x.title })),
-      ...dayArts.map((a) => ({ tag: `<span class="ktag ${a.kind === "pr" || a.kind === "company" ? "k-pr" : "k-ext"}">${a.kind === "pr" || a.kind === "company" ? "보도자료" : "외부"}</span>`, title: a.title }))];
+      ...dayArts.map((a) => ({ tag: `<span class="ktag ${a.kind === "pr" || a.kind === "company" ? "k-pr" : "k-ext"}">${a.kind === "pr" || a.kind === "company" ? "보도자료" : a.kind === "unknown" ? "미확인" : "외부"}</span>`, title: a.title }))];
     const what = news.length
       ? `${news[0].tag}<span class="day-fold-title">${esc(news[0].title)}</span>${news.length > 1 ? `<span class="muted"> 외 ${news.length - 1}건</span>` : ""}`
       : `<span class="muted">소식 없음</span>`;
@@ -1724,6 +1726,7 @@
       ${sec("articles", "소식", `
         <h3>탭과 건수</h3>
         <ul>
+          <li><b>구분 미확인</b>: 기사를 빠짐없이 모으기 시작한 2026년 1월 1일 전의 기사입니다(구글 뉴스로 2025년 9월부터 거슬러 채움). 회사가 직접 낸 보도자료인지 알 수 없어 보도자료로 판정하지 않고, 소식 없는 날 비교와 평소 관계 추정에도 넣지 않습니다. 기록으로만 남깁니다.</li>
           <li><b>사건</b>: 시간이 떨어진 기사·공시를 같은 일로 묶은 것입니다. 제목에서 상대 회사와 금액(억 원)을 읽어, 같은 상대나 같은 금액이 14일 안에 다시 나오면 한 사건으로 묶습니다. 둘 다 없으면 같은 날, 같은 대표 주제일 때만 묶습니다. 같은 종류의 공시(계약·실적·IR·증자·전환사채)가 첫 기사보다 36시간 안에 먼저 나왔으면 그 공시가 사건의 시작입니다. 본문은 저장하지 않고 제목만 봅니다.</li>
           <li><b>건수</b>: '건'은 같은 내용 묶음(같은 반응일)을 하나로 센 수이고, '매체 기사'는 같은 내용이라도 실은 매체마다 하나로 센 수입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
@@ -1833,7 +1836,7 @@
     const out = [];
     for (const a of items) {
       if (a.hidden) continue;
-      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : "외부 기사";
+      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : a.kind === "unknown" ? "구분 미확인" : "외부 기사";
       const base = { kind, category: a.category || "-", lead: a.id };
       out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
         url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
@@ -1990,9 +1993,10 @@
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
       pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
-      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
+      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && e.kind !== "unknown" && !e.noise),
+      unknown: events.filter((e) => e.kind === "unknown" && !e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시", case: "사건" };
+    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시", case: "사건", ...(groups.unknown.length ? { unknown: "구분 미확인" } : {}) };
     // 사건: 시간이 떨어진 기사·공시를 같은 일로 묶은 것 (엔진이 제목의 상대 회사·금액·주제로 묶음)
     groups.case = d.cases || [];
     const caseById = new Map(groups.case.map((c) => [c.id, c]));
@@ -2010,7 +2014,7 @@
       const dayOf = (x) => (isDisc ? x.ts : isCase ? x.start : x.day || (byId.get(x.lead) || {}).ts || "").slice(0, 10);
       const recent = list.filter((x) => dayOf(x) >= since);
       const first = list.map(dayOf).filter(Boolean).sort()[0];
-      const label = isDisc ? "선택한 종류 공시" : isCase ? "사건" : cat === "pr" ? "그린광학 보도자료" : "외부 기사";
+      const label = isDisc ? "선택한 종류 공시" : isCase ? "사건" : cat === "pr" ? "그린광학 보도자료" : cat === "unknown" ? "구분 미확인 기사" : "외부 기사";
       const outs = (x) => (isCase ? x.n_outlets : x.outlets) || 1;
       const avgOut = recent.length ? recent.reduce((sum, x) => sum + outs(x), 0) / recent.length : null;
       const media = list.reduce((sum, x) => sum + outs(x), 0);
@@ -2024,7 +2028,7 @@
     }
     function baselineBlock() { return baselineHtml(d.baseline); }
 
-    if (!["pr", "ext", "disc", "case"].includes(artState.cat)) artState.cat = "pr";
+    if (!["pr", "ext", "disc", "case", "unknown"].includes(artState.cat) || (artState.cat === "unknown" && !groups.unknown.length)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
@@ -2138,7 +2142,7 @@
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
+      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : ev.kind === "unknown" ? "unknown" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length ? ""
@@ -2181,7 +2185,7 @@
   }
 
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : a.kind === "unknown" ? "구분 미확인" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two, noun = "기사") {
