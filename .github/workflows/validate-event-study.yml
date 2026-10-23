@@ -46,6 +46,20 @@ jobs:
         env:
           VALIDATION_DATA_KEY: ${{ secrets.DATA_KEY || secrets.SITE_PASSWORD }}
         run: python validate_backup.py
+      - name: 관리자 설정 사전 확인
+        env:
+          CHECK_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          CHECK_SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          CHECK_BACKUP_PASSWORD: ${{ secrets.DATA_KEY || secrets.SITE_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          password = os.environ.get('CHECK_ADMIN_PASSWORD', '')
+          others = (os.environ.get('CHECK_SITE_PASSWORD', ''), os.environ.get('CHECK_BACKUP_PASSWORD', ''))
+          if len(password) < 8 or password in others:
+              raise SystemExit('관리자 비밀번호 설정을 확인하세요. 8자 이상이며 일반·백업 비밀번호와 달라야 합니다.')
+          print('관리자 비밀번호 설정 조건 확인 완료. 비밀번호는 출력하지 않았습니다.')
+          PY
       - name: 결과 보관
         uses: actions/upload-artifact@v4
         with:

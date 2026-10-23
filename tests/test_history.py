@@ -71,6 +71,14 @@ def test_existing_cache_is_seeded_only_once(database):
     assert len(archive.records()["article:one"]) == 2
 
 
+def test_eight_character_admin_password_is_supported(database):
+    with pytest.raises(ValueError):
+        history.History("1234567")
+    archive = history.History("test1234", ("different-public-password",))
+    archive.record("article:one", detail(), "2026-10-20T10:30")
+    assert len(archive.records()["article:one"]) == 1
+
+
 def test_admin_files_require_admin_password_and_do_not_enter_public_data(database):
     archive = history.History(ADMIN_PASSWORD)
     archive.record("article:one", detail(), "2026-10-20T10:30")

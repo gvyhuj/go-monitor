@@ -37,8 +37,8 @@ def capture(history, key: str, raw: str, recorded_at: str, seed: bool = False) -
 
 class History:
     def __init__(self, password: str, other_passwords: tuple[str, ...] = ()):
-        if len(password) < 16 or password in other_passwords:
-            raise ValueError("관리자 비밀번호는 일반·백업 비밀번호와 다르게 16자 이상으로 설정해야 합니다.")
+        if len(password) < 8 or password in other_passwords:
+            raise ValueError("관리자 비밀번호는 일반·백업 비밀번호와 다르게 8자 이상으로 설정해야 합니다.")
         with connect() as connection:
             connection.execute("CREATE TABLE IF NOT EXISTS analysis_history (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                                "entity_digest TEXT NOT NULL, result_digest TEXT NOT NULL, payload BLOB NOT NULL)")
