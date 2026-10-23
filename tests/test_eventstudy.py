@@ -35,6 +35,40 @@ def test_new_information_shock_and_sector_adjustment():
     json.dumps(result, allow_nan=False)
 
 
+def test_summary_uses_exact_student_t_for_sample_size():
+    from scipy.stats import t as student_t
+    from core.eventstudy import summary_critical_values
+
+    values = summary_critical_values(23)
+    assert values[:2] == [None, None]
+    assert values[3] == pytest.approx(student_t.ppf(0.975, 2))
+    assert values[21] == pytest.approx(student_t.ppf(0.975, 20))
+
+
+def test_export_guard_rejects_legacy_values_and_inconsistent_list():
+    from core.articles import _verdict
+    from core.eventstudy import validate_primary_exports
+
+    study = {"ok": True, "actual": -0.05, "expected": -0.02, "ar": -0.03,
+             "p": 0.01, "ci_low": -0.05, "ci_high": -0.01, "n_est": 120}
+    verdict, _, measure = _verdict({"event_study": study}, 0, "공시")
+    effect = {"event_study": study, "measure": measure, "verdict": verdict}
+    listing = {"items": [{"id": "one", "effect": {"measure": measure, "verdict": verdict}}]}
+    details = {"one": {"effect": effect}}
+
+    def exports():
+        return [("articles", json.dumps(listing), False), ("article_details", json.dumps(details), False),
+                ("disclosures", '{"items": []}', False), ("disclosure_details", "{}", False)]
+
+    assert validate_primary_exports(exports())["articles"]["calculated"] == 1
+    listing["items"][0]["effect"]["measure"] = {"value": 0.0041}
+    with pytest.raises(ValueError):
+        validate_primary_exports(exports())
+    effect["measure"] = listing["items"][0]["effect"]["measure"]
+    with pytest.raises(ValueError):
+        validate_primary_exports(exports())
+
+
 def test_estimation_never_uses_event_or_later_data():
     dates, own, market, sector = sample()
     day = dates[160]
@@ -159,8 +193,66 @@ def test_daily_study_reaches_article_detail_with_peer_data(tmp_path, monkeypatch
     study = result["event_study"]
     assert study["ok"] and study["beta_sector"] is not None
     assert len(study["car"]) == 5 and study["est_to"] < dates[160]
+    assert result["measure"]["value"] == study["ar"]
+    assert result["measure"]["method"] == "event-study-v2"
     assert "기사 효과" not in result["verdict"]
     json.dumps(result, allow_nan=False)
+    import webserver
+    monkeypatch.setattr(webserver, "load_settings", lambda: {"symbol": "X"})
+    article = {"id": "integration", "ts": dates[160] + "T11:00", "tone": 0, "category": "회사 발표",
+               "title": "새 계산식 연결 검사", "kind": "pr", "office": "검사"}
+    monkeypatch.setattr(articles, "article_rows", lambda *args, **kwargs: [article])
+    webserver._EFF_CACHE.clear()
+    listing = webserver.api_articles({})
+    detailed = webserver.api_article_detail({}, "integration")
+    assert listing["items"][0]["effect"]["measure"] == detailed["effect"]["measure"]
+    assert detailed["effect"]["measure"]["value"] == detailed["effect"]["event_study"]["ar"]
+    monkeypatch.setattr(articles, "disclosure_rows", lambda symbol: [
+        {"id": "dK1", "ts": dates[160] + "T11:00", "untimed": False, "title": "공시 연결 검사", "pblntf": "K"}])
+    disclosure_list = webserver.api_disclosures({})
+    assert disclosure_list["items"][0]["effect"]["measure"]["value"] == study["ar"]
+    with db.connect() as connection:
+        connection.execute("DELETE FROM daily_bars WHERE symbol='X' AND date=?", (dates[160],))
+    missing = articles.effect("X", datetime.fromisoformat(dates[160] + "T11:00"))
+    assert missing["reaction_day"] == dates[160] and missing["measure"] is None
+    from core import feed
+    monkeypatch.setattr(feed, "kst_now", lambda: datetime.fromisoformat(dates[160] + "T12:00"))
+    pending = articles.effect("X", datetime.fromisoformat(dates[160] + "T11:00"))
+    assert pending["event_study"]["pending"] and pending["measure"] is None
+
+
+def test_primary_verdict_uses_new_model_not_legacy_or_intraday():
+    from core.articles import _verdict
+
+    study = {"ok": True, "actual": -0.05, "expected": -0.02, "ar": -0.03,
+             "p": 0.01, "ci_low": -0.05, "ci_high": -0.01, "n_est": 120}
+    effect = {"event_study": study, "decomp": {"d0": {"abnormal": 0.0041}},
+              "minute60": {"abnormal": 0.08}, "late": True, "off_session": True}
+    verdict, classification, measure = _verdict(effect, 1, "공시")
+    assert classification == "down" and "예상보다 낮음" in verdict
+    assert measure["value"] == -0.03 and measure["own"] == -0.05
+    assert measure["expected"] == -0.02 and measure["ci_high"] == -0.01
+    assert measure["basis"] == "반응일"
+
+
+@pytest.mark.parametrize("study", [None, {"ok": False, "reason": "평소 기록 부족"}])
+def test_unavailable_new_model_never_falls_back_to_old_value(study):
+    from core.articles import _verdict
+
+    verdict, classification, measure = _verdict(
+        {"event_study": study, "decomp": {"d0": {"abnormal": 0.0041}}}, 0, "회사 발표")
+    assert classification == "none" and measure is None
+    assert "부족" in verdict
+
+
+def test_non_significance_does_not_claim_market_caused_the_drop():
+    from core.articles import _verdict
+
+    study = {"ok": True, "actual": -0.1, "expected": -0.1041, "ar": 0.0041,
+             "p": 0.94, "ci_low": -0.08, "ci_high": 0.09, "n_est": 120}
+    verdict, classification, measure = _verdict({"event_study": study}, 0, "공시")
+    assert classification == "flat" and "구별하기 어려움" in verdict
+    assert "시장 영향" not in verdict and measure["own"] < 0 < measure["value"]
 
 
 def test_encrypted_backup_validation_keeps_details_encrypted(tmp_path, monkeypatch):

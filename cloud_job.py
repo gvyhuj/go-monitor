@@ -208,6 +208,9 @@ def build_static_site(now, log) -> dict:
     if history is None:
         log.info("관리자 비밀번호 설정 전이라 분석 이력 보관은 아직 시작하지 않습니다.")
     items = sitebuild.refresh_items(now, log.info, history=history)
+    from core.eventstudy import validate_primary_exports
+    counts = validate_primary_exports(items)
+    log.info("새 사건연구 대표 값 검증 완료: %s", json.dumps(counts, ensure_ascii=False))
     salt = site_salt(pw)
     checkpoint()
     n = sitebuild.build(SITE_DIR, pw, salt, items, repo=os.environ.get("GITHUB_REPOSITORY", ""))

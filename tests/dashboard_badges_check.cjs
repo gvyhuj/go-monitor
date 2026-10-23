@@ -10,6 +10,7 @@ const context = {
   dayChange: () => -0.03, isDaily: (event) => event.event_type === "daily", kindOf: () => "하락",
   tierTag: () => "", dayLabel: () => "10월 23일", sgnCls: () => "down-t", pct: (value) => `${value * 100}%`,
   liveFor: () => null, hhmm: (timestamp) => timestamp.slice(11, 16), compareLine: () => "구간 안 -3% · KOSDAQ -1%",
+  measureList: () => "",
   esc: (value) => String(value).replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 };
 vm.createContext(context);

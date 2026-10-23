@@ -439,7 +439,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
            untimed: bool = False) -> dict:
     """untimed: 공개 시각을 모름(날짜만) → 그날(전일 종가 → 종가) 하루로만 잼."""
     from . import analysis
-    days = trading_days(symbol)
+    days = trading_days(KOSDAQ)
     disc = earlier_disclosure(symbol, title, ts) if title else None
     if disc:                                # 공시가 먼저: 시장이 처음 안 시각부터 잼
         ts = datetime.fromisoformat(disc["ts"])
@@ -502,29 +502,12 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
             }
 
     if d0:
-        try:
-            out["decomp"] = decompose(symbol, d0, peers)
-        except Exception as e:          # 보조 분석
-            out["notes"].append(f"분해 계산 실패: {e}")
         from . import causal
         out["event_study"] = causal.event_study(symbol, d0)
-    if out.get("minute"):
-        try:
-            out["timing"] = timing(symbol, datetime.fromisoformat(out["minute"]["reaction_start"]), peers)
-        except Exception as e:
-            out["notes"].append(f"시간 순서 계산 실패: {e}")
-    # 짧은 구간으로 판정 (그날 오후 다른 일이 섞이지 않게), 하루와 같은 계수로 나눔
-    #  - 장중(09:00~14:00) 기사: 공개 후 60분
-    #  - 장 시작 전(같은 날 09:00 전) 기사: 전일 종가 → 10:00 (밤사이 반영되는 시초가 + 개장 1시간)
-    dc = out.get("decomp")
-    if d0 and not off and not late and not untimed and dc and dc.get("method") != "단순":
-        try:
-            if time(9, 0) <= ts.time() < time(14, 0) and r.ok and 60 in (r.returns or {}):
-                out["minute60"] = _window_split(symbol, dc, r.reaction_start, r.reaction_start + timedelta(minutes=60))
-            elif ts.time() < time(9, 0) and ts.date().isoformat() == d0:
-                out["minute60"] = _window_split(symbol, dc, None, datetime.combine(ts.date(), time(10, 0)))
-        except Exception as e:          # noqa: BLE001 - 보조 계산
-            out["notes"].append(f"짧은 구간 계산 실패: {e}")
+        from .feed import kst_now
+        now = kst_now()
+        if d0 >= now.date().isoformat() and (d0 > now.date().isoformat() or now.time().replace(tzinfo=None) <= time(15, 30)):
+            out["event_study"] = {"ok": False, "pending": True, "reason": "반응일 장 마감 후 종가가 있어야 계산합니다."}
     out["verdict"], out["verdict_cls"], out["measure"] = _verdict(out, tone, category)
     return out
 
@@ -560,54 +543,24 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> d
             "basis": "60분" if t0 else "개장 1시간"}
 
 def _verdict(eff: dict, tone: int, category: str):
-    """모든 기사를 같은 잣대로: 반응일(전일 종가 → 종가) 이 종목 움직임에서 시장·업종 몫을 뺀 고유 반응.
-    분봉(공개 후 N분)은 보조 자료로만 보여주고 판정에는 쓰지 않음.
-    장 시간 밖(장 마감 뒤·주말) 공개는 다음 거래일에 다른 요인이 섞일 수 있어 판정을 한 단계 낮춤."""
-    d, dc = eff.get("daily"), eff.get("decomp")
-    vol = d.get("vol_ratio") if d else None
-    measure = None
-    two = bool(eff.get("late"))
-    if dc and dc.get("d01" if two else "d0"):
-        part = dc["d01" if two else "d0"]
-        measure = {"label": "반응일+다음날 고유 반응" if two else "반응일 고유 반응", "value": part["abnormal"],
-                   "z": part.get("z"), "rarity": part.get("rarity"), "n_null": part.get("n_null"),
-                   "basis": "2일" if two else "하루", "vol_ratio": vol,
-                   "own": part["own"], "market": part["market"], "sector": part["sector"]}
-    elif d and d["excess"].get("d1" if two else "d0") is not None:
-        k = "d1" if two else "d0"
-        measure = {"label": f"{'반응일+다음날' if two else '반응일'} 초과 반응 ({d['bench_name']} 대비)",
-                   "value": d["excess"][k], "vol_ratio": vol, "own": d.get(k), "basis": "2일" if two else "하루"}
-    m60 = eff.get("minute60")
-    if m60 and m60.get("abnormal") is not None:          # 장중 기사: 공개 후 60분 고유 반응이 기사 효과에 더 가까움
-        pre = m60.get("basis") == "개장 1시간"
-        measure = {"label": "전일 종가→10:00 고유 반응" if pre else "공개 후 60분 고유 반응", "value": m60["abnormal"],
-                   "rarity": m60.get("rarity"), "n_null": m60.get("n_null"), "basis": m60.get("basis", "60분"), "vol_ratio": vol, "own": m60["own"],
-                   "market": m60["market"], "sector": m60["sector"]}
-    if measure is None:
-        return "반응 계산 불가", "none", None
+    """대표 수치와 판정은 반응일 사건연구의 예상 대비 차이와 95% 범위만 사용."""
+    study = eff.get("event_study")
+    if not study or not study.get("ok"):
+        reason = (study or {}).get("reason") or "반응일 또는 평소 시세 기록이 부족합니다."
+        return f"{'분석 대기' if (study or {}).get('pending') else '계산 자료 부족'}: {reason}", "none", None
+    measure = {"label": "반응일 예상 대비 차이", "value": study["ar"], "method": "event-study-v2",
+               "basis": "반응일", "own": study["actual"], "expected": study["expected"],
+               "ci_low": study["ci_low"], "ci_high": study["ci_high"], "p": study["p"],
+               "n_est": study["n_est"], "vol_ratio": (eff.get("daily") or {}).get("vol_ratio")}
     if category == "시황·특징주":
         return "주가 움직임을 다룬 기사", "result", measure
     if category == "단순 언급":
         return "이름만 언급된 기사 (효과 판단 제외)", "mention", measure
-    # 얼마나 드문지: 평소 같은 길이 고유 움직임 중 이번 이상이 상위 5% 안이면 뚜렷, 15% 안이면 약함
-    x, z, rr = measure["value"], measure.get("z"), measure.get("rarity")
-    big, mid = {"60분": (0.01, 0.005), "개장 1시간": (0.015, 0.0075)}.get(measure.get("basis"), (0.02, 0.01))
-    if rr is not None:
-        strong, weak = abs(x) >= big and rr <= 0.05, abs(x) >= mid and rr <= 0.15
-    else:
-        strong = abs(x) >= big and (z is None or abs(z) >= 2)
-        weak = abs(x) >= mid and (z is None or abs(z) >= 1)
-    if eff.get("off_session"):
-        strong, weak = False, strong
-    if tone < 0 and (strong or weak) and x > 0:
-        return "기사 방향과 반대로 움직임", "opposite", measure
-    if strong:
-        return ("공개 무렵 뚜렷한 고유 상승" if x > 0 else "공개 무렵 뚜렷한 고유 하락"), ("up" if x > 0 else "down"), measure
-    if weak:
-        return ("공개 무렵 약한 고유 상승" if x > 0 else "공개 무렵 약한 고유 하락"), ("up-weak" if x > 0 else "down-weak"), measure
-    if measure.get("own") is not None and abs(measure["own"]) >= 0.03:
-        return "업종·시장 영향이 대부분", "flat", measure
-    return "공개 무렵 뚜렷한 고유 반응을 확인하지 못함", "flat", measure
+    if study["ci_low"] > 0:
+        return "평소 예상보다 높음 (95% 범위에서 0 제외)", "up", measure
+    if study["ci_high"] < 0:
+        return "평소 예상보다 낮음 (95% 범위에서 0 제외)", "down", measure
+    return "평소 변동과 구별하기 어려움", "flat", measure
 
 
 def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[str]:

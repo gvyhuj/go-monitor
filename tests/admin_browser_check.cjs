@@ -42,7 +42,7 @@ async function main() {
     await page.getByText("2개 기록을 비교할 수 있습니다.").waitFor();
     assert.match(await page.locator("#older-view").innerText(), /1\.00%p/);
     assert.match(await page.locator("#newer-view").innerText(), /2\.00%p/);
-    assert.match(await page.locator("#differences").innerText(), /판정에 사용한 고유 움직임/);
+    assert.match(await page.locator("#differences").innerText(), /대표 값 \(계산 버전 확인\)/);
     assert.equal(await page.locator("#entity img").count(), 0);
     assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
     await page.getByLabel("기사·주가 기록 찾기").fill("없는 검색어");

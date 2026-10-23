@@ -407,7 +407,9 @@ def api_articles(q):
     events = articles.group_events(out) if not limit else None
     with connect() as conn:
         first = conn.execute("SELECT MIN(date) FROM daily_bars WHERE symbol=?", (sym,)).fetchone()[0]
-    return {"items": out, "events": events, "categories": articles.CATEGORIES, "daily_since": first}
+    from core.eventstudy import summary_critical_values
+    return {"items": out, "events": events, "categories": articles.CATEGORIES, "daily_since": first,
+            "summary_critical_values": summary_critical_values(len(out))}
 
 
 def api_article_detail(q, aid):
@@ -484,7 +486,9 @@ def api_disclosures(_q):
                     "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session")},
                     "links": [x["id"] for x in links.get(r["id"], [])]})
     from core import dart
-    return {"items": out, "types": {**dart.TYPES, "K": "거래소 조치"}, "source": "dart" if dart.enabled() else "naver"}
+    from core.eventstudy import summary_critical_values
+    return {"items": out, "types": {**dart.TYPES, "K": "거래소 조치"}, "source": "dart" if dart.enabled() else "naver",
+            "summary_critical_values": summary_critical_values(len(out))}
 
 
 def api_disclosure_detail(_q, did):

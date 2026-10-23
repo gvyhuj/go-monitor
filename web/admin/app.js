@@ -29,7 +29,7 @@
     const values = [["보관 시각", record.recorded_at], ["계산 버전", record.version],
       ["반응일", effect.reaction_day || (data.event || {}).start_ts || "-"], ["판정", effect.verdict || "-"],
       ["실제 움직임 (일별)", percent(study.actual)], ["평소 예상 (일별)", percent(study.expected)],
-      ["예상과의 차이 (일별)", points(study.ar)], ["화면 판정에 사용한 고유 움직임", points(measure.value)]];
+      ["예상과의 차이 (일별)", points(study.ar)], [measure.method === "event-study-v2" ? "대표 예상 대비 차이 (새 모델)" : "당시 대표 값 (기존 모델)", points(measure.value)]];
     return `<table><tbody>${values.map(([label, value]) => `<tr><th>${escape(label)}</th><td>${escape(value)}</td></tr>`).join("")}</tbody></table>
       <details><summary>전체 보관 내용 보기</summary><pre>${escape(JSON.stringify(data, null, 2))}</pre></details>`;
   }
@@ -52,7 +52,7 @@
     element("comparison-note").textContent = older.version === newer.version
       ? "같은 계산 버전입니다. 새 시세나 기사 정정 등 자료가 바뀌면서 결과가 달라질 수 있습니다."
       : "계산 버전이 다릅니다. 그 사이 입력 자료도 바뀌었을 수 있어 차이 전부를 계산법의 개선으로 볼 수는 없습니다.";
-    const labels = { "effect.verdict": "판정", "effect.reaction_day": "반응일", "effect.measure.value": "판정에 사용한 고유 움직임",
+    const labels = { "effect.verdict": "판정", "effect.reaction_day": "반응일", "effect.measure.value": "대표 값 (계산 버전 확인)",
       "effect.event_study.actual": "실제 움직임 (일별)", "effect.event_study.expected": "평소 예상 (일별)",
       "effect.event_study.ar": "예상과의 차이 (일별)", "effect.event_study.ci_low": "불확실성 범위 아래쪽",
       "effect.event_study.ci_high": "불확실성 범위 위쪽", "effect.event_study.pre_drift": "사전 움직임 흔적" };

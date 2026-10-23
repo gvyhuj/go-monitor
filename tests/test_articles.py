@@ -58,11 +58,11 @@ def test_group_events_by_reaction_day():
     assert next(e for e in ev if e["day"] == "2026-06-01")["noise"]
 
 
-def test_off_session_lowers_verdict_one_step():
-    eff = {"daily": {"excess": {"d0": 0.05}, "bench_name": "KOSDAQ", "d0": 0.05},
-           "decomp": {"d0": {"abnormal": 0.05, "z": 3.0, "own": 0.06, "market": 0.01, "sector": 0.0}}}
+def test_off_session_keeps_statistical_verdict_without_arbitrary_downgrade():
+    eff = {"event_study": {"ok": True, "ar": 0.05, "actual": 0.06, "expected": 0.01,
+                           "ci_low": 0.02, "ci_high": 0.08, "p": 0.01, "n_est": 120}}
     assert articles._verdict(eff, 0, "회사 발표")[1] == "up"
-    assert articles._verdict({**eff, "off_session": True}, 0, "회사 발표")[1] == "up-weak"
+    assert articles._verdict({**eff, "off_session": True}, 0, "회사 발표")[1] == "up"
 
 
 def test_earlier_disclosure_moves_base_time(tmpdb):
@@ -113,26 +113,28 @@ def test_day_split_uses_related_segment_not_noise_and_no_alpha(tmpdb):
     assert 0.045 < sp["d0"]["abnormal"] < 0.06 and sp["d0"]["z"] > 5
 
 
-def test_late_article_judged_on_two_days():
+def test_late_article_does_not_mix_two_days_into_daily_summary():
     dc = {"d0": {"abnormal": 0.005, "z": 0.5, "own": 0.01, "market": 0.0, "sector": 0.0},
           "d01": {"abnormal": 0.06, "z": 4.0, "own": 0.07, "market": 0.0, "sector": 0.0}}
-    assert articles._verdict({"decomp": dc}, 0, "회사 발표")[1] == "flat"
-    v = articles._verdict({"decomp": dc, "late": True}, 0, "회사 발표")
-    assert v[1] == "up" and v[2]["label"] == "반응일+다음날 고유 반응"
+    study = {"ok": True, "ar": 0.005, "actual": 0.01, "expected": 0.005,
+             "ci_low": -0.02, "ci_high": 0.03, "p": 0.7, "n_est": 120}
+    v = articles._verdict({"decomp": dc, "event_study": study, "late": True}, 0, "회사 발표")
+    assert v[1] == "flat" and v[2]["value"] == 0.005 and v[2]["basis"] == "반응일"
 
 
-def test_verdict_uses_empirical_rarity_and_60min_thresholds():
+def test_verdict_uses_model_uncertainty_not_legacy_rarity():
     def v(x, rr, basis="하루"):
         part = {"abnormal": x, "z": 9.0, "rarity": rr, "own": x, "market": 0.0, "sector": 0.0}
-        eff = {"decomp": {"d0": part}}
+        eff = {"decomp": {"d0": part}, "event_study": {"ok": True, "ar": x, "actual": x, "expected": 0.0,
+               "ci_low": x - 0.02, "ci_high": x + 0.02, "p": 0.01, "n_est": 120}}
         if basis == "60분":
             eff["minute60"] = {**part, "abnormal": x}
         return articles._verdict(eff, 0, "회사 발표")
     assert v(0.03, 0.03)[1] == "up"
-    assert v(0.03, 0.10)[1] == "up-weak"
-    assert v(0.03, 0.30)[1] == "flat"           # z가 커도 평소 기록상 흔하면 효과 없음
+    assert v(0.03, 0.10)[1] == "up"
+    assert v(0.03, 0.30)[1] == "up"
     m = v(0.012, 0.02, "60분")
-    assert m[1] == "up" and m[2]["basis"] == "60분"
+    assert m[1] == "flat" and m[2]["basis"] == "반응일"
 
 
 def test_abnormal_rarity_market_adjusted_and_premarket(tmpdb):

@@ -206,10 +206,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
     def details():
         out = {}
         for a in lst.get("items") or []:
-            try:
-                out[a["id"]] = ws.api_article_detail({}, a["id"])
-            except Exception:
-                continue
+            out[a["id"]] = ws.api_article_detail({}, a["id"])
         return out
     keep("article_details", details, True)
     dl = {}
@@ -220,12 +217,11 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
     def disc_details():
         out = {}
         for r in dl.get("items") or []:
-            try:
-                out[r["id"]] = ws.api_disclosure_detail({}, r["id"])
-            except Exception:
-                continue
+            out[r["id"]] = ws.api_disclosure_detail({}, r["id"])
         return out
     keep("disclosure_details", disc_details, True)
+    if not {"articles", "article_details", "disclosures", "disclosure_details"}.issubset(fresh):
+        raise RuntimeError("기사·공시 재계산 실패: 이전 계산값으로 새 사이트를 배포하지 않습니다.")
 
     with connect() as conn:
         for k in fresh:

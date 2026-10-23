@@ -17,6 +17,7 @@ on:
       - web/app.js
       - tests/dashboard_badges_check.cjs
       - tests/public_refresh_check.cjs
+      - tests/primary_analysis_check.cjs
       - .github/workflows/monitor.yml
 
 permissions:
@@ -48,6 +49,7 @@ jobs:
       - name: 화면 코드와 원인 배지 검사
         run: |
           node --check web/app.js
+          node tests/primary_analysis_check.cjs
           node --check web/admin/app.js
           node tests/dashboard_badges_check.cjs
       - name: 백업 복원 및 읽기 전용 검증

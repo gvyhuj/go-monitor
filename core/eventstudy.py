@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 from scipy.stats import t as student_t
 
@@ -11,6 +13,39 @@ WINDOWS = {
     "이후 3일 [0,+2]": (0, 2),
     "후속 3일 [+1,+3]": (1, 3),
 }
+
+
+def summary_critical_values(count: int) -> list:
+    return [None, None] + [float(student_t.ppf(0.975, size - 1)) for size in range(2, count + 1)]
+
+
+def validate_primary_exports(items: list) -> dict:
+    payloads = {key: json.loads(raw) for key, raw, _ in items
+                if key in ("articles", "article_details", "disclosures", "disclosure_details")}
+    counts = {}
+    for kind, details_key in (("articles", "article_details"), ("disclosures", "disclosure_details")):
+        rows = payloads[kind].get("items") or []
+        details = payloads[details_key]
+        if len(rows) != len(details):
+            raise ValueError("목록과 상세 분석의 개수가 다릅니다.")
+        calculated = 0
+        for row in rows:
+            effect = details[str(row["id"])]["effect"]
+            measure = effect.get("measure")
+            study = effect.get("event_study") or {}
+            if row["effect"].get("measure") != measure or row["effect"].get("verdict") != effect.get("verdict"):
+                raise ValueError("목록과 상세 분석의 대표 값 또는 판정이 다릅니다.")
+            if study.get("ok"):
+                if not measure or measure.get("method") != "event-study-v2" or any(
+                    measure.get(destination) != study[source] for destination, source in
+                    (("value", "ar"), ("own", "actual"), ("expected", "expected"),
+                     ("ci_low", "ci_low"), ("ci_high", "ci_high"))):
+                    raise ValueError("대표 값이 새 사건연구 결과와 다릅니다.")
+                calculated += 1
+            elif measure is not None:
+                raise ValueError("새 모델을 계산하지 못한 자료에 기존 대표 값이 남아 있습니다.")
+        counts[kind] = {"total": len(rows), "calculated": calculated, "unavailable": len(rows) - calculated}
+    return counts
 
 
 def returns_from_prices(prices: dict, calendar: list[str]) -> dict:

@@ -99,6 +99,25 @@ def test_eight_character_admin_password_is_supported(database):
     assert len(archive.records()["article:one"]) == 1
 
 
+def test_refresh_failure_never_publishes_old_article_calculation(database, monkeypatch):
+    import webserver
+    from core import cloud
+
+    monkeypatch.setattr(webserver, "api_intraday", lambda query: {"dates": []})
+    monkeypatch.setattr(webserver, "api_articles", lambda query: {"items": [{"id": "one"}]})
+    monkeypatch.setattr(webserver, "api_disclosures", lambda query: {"items": []})
+    monkeypatch.setattr(cloud, "_live_item", lambda: ("live", "{}", False))
+    monkeypatch.setattr(webserver, "api_article_detail", lambda query, identity: detail())
+    sitebuild.refresh_items(datetime(2026, 10, 23, 10))
+
+    def failed_detail(query, identity):
+        raise ValueError("계산 실패 재현")
+
+    monkeypatch.setattr(webserver, "api_article_detail", failed_detail)
+    with pytest.raises(RuntimeError, match="이전 계산값"):
+        sitebuild.refresh_items(datetime(2026, 10, 23, 10, 3))
+
+
 def test_admin_files_require_admin_password_and_do_not_enter_public_data(database):
     archive = history.History(ADMIN_PASSWORD)
     archive.record("article:one", detail(), "2026-10-20T10:30")

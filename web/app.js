@@ -23,6 +23,7 @@
   const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
   const int = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
   const pct = (v, d = 2) => (v == null ? "-" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(d)}%`);
+  const points = (value) => value == null ? "-" : `${pct(value)}p`;
   const pctRaw = (v, d = 2) => (v == null ? "-" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`);
   const sgnCls = (v) => (v == null ? "" : v > 0 ? "up-t" : v < 0 ? "down-t" : "");
   const parseT = (t) => { const [d, hm] = t.split("T"); const [y, m, dd] = d.split("-").map(Number); const [h, mi] = (hm || "00:00").split(":").map(Number); return { y, m, d: dd, h, mi }; };
@@ -873,7 +874,7 @@
       : (!dailyEv ? `<p class="day-calm">${isLatest ? "오늘은 아직 급등·급락이 없습니다." : "이날은 급등·급락이 없었습니다."}</p>` : "");
     const artsHtml = dayArts.length ? `<div class="day-arts"><h3>이날 기사${dayArts.length > 3 ? ` <span class="muted">${dayArts.length}건 중 3건</span>` : ""}</h3>
       <ul class="mini-arts">${dayArts.slice(0, 3).map((a) => `<li><a href="#/pr/${esc(a.id)}">
-        <span class="al-meta">${a.manual ? '<span class="tier watch">직접 등록</span>' : ""}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${hhmm(a.ts)}</span>${a.effect && a.effect.measure ? `<span class="num ${sgnCls(a.effect.measure.value)}">초과 반응 ${pct(a.effect.measure.value)}</span>` : ""}</span>
+        <span class="al-meta">${a.manual ? '<span class="tier watch">직접 등록</span>' : ""}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${hhmm(a.ts)}</span>${measureList(a.effect && a.effect.measure)}</span>
         <span class="t">${esc(a.title)}</span></a></li>`).join("")}</ul></div>` : "";
     return dayTotal + chart + list + artsHtml;
   }
@@ -1481,9 +1482,17 @@
   const verdictTag = (e) => (e && e.verdict ? `<span class="vtag v-${e.verdict_cls}">${esc(e.verdict)}</span>` : "");
   const artState = { cat: "main" };
 
+  function measureList(measure) {
+    if (!measure || measure.method !== "event-study-v2") return "";
+    return `<span class="muted">실제 ${pct(measure.own)} · 예상 대비</span><span class="num ${sgnCls(measure.value)}">${points(measure.value)}</span><span class="muted">반응일 기준</span>`;
+  }
+
   function measureTxt(m) {
     if (!m) return "";
-    return `${esc(m.label)} <b class="${sgnCls(m.value)}">${pct(m.value)}</b>${m.vol_ratio ? `, 거래량 평소의 ${m.vol_ratio.toFixed(1)}배` : ""}`;
+    if (m.method === "event-study-v2") return `반응일 실제 등락 <b class="${sgnCls(m.own)}">${pct(m.own)}</b> · 평소 예상 ${pct(m.expected)}<br>
+      ${esc(m.label)} <b class="${sgnCls(m.value)}">${points(m.value)}</b> · 95% 범위 ${points(m.ci_low)} ~ ${points(m.ci_high)}
+      <div class="vb-note">양수는 실제 상승이 아니라 예상보다 높았다는 뜻입니다. 이 차이 전체를 기사·공시의 효과로 단정할 수 없습니다.</div>`;
+    return "새 계산 방식으로 다시 계산한 뒤 표시합니다.";
   }
   // 평소 기록과 비교한 드문 정도 (정규분포 가정 없이: 평소 같은 길이 고유 움직임 중 이번 이상이었던 비율)
   function rarityTxt(rr, n, unit) {
@@ -1495,7 +1504,7 @@
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">기사 영향 분석</h1>
-        <p class="page-sub" id="art-sub">그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(고유 반응) 봅니다.</p></div></div>
+        <p class="page-sub" id="art-sub">기사·공시 반응일의 실제 등락과 과거 자료로 추정한 평소 예상을 비교합니다. 일별 사건연구로 차이와 불확실성 범위를 계산합니다.</p></div></div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span class="spacer"></span>
@@ -1562,45 +1571,48 @@
 
     // 보도자료 성과 요약 (최근 6개월, 사건 기준)
     const since = isoDate(new Date(Date.now() - 183 * 864e5));
-    const recent = groups.pr.filter((e) => (e.day || "") >= since);
-    const cls = (e) => (byId.get(e.lead).effect || {}).verdict_cls;
-    const avgOut = recent.length ? recent.reduce((s, e) => s + (e.outlets || 1), 0) / recent.length : 0;
     // 사건별 고유 반응의 평균과 95% 범위 (t분포). 건수가 적으면 범위가 넓어져 '아직 모름'이 솔직하게 드러남
-    const ciOf = (xs) => {
+    const ciOf = (xs, criticalValues) => {
       if (xs.length < 3) return null;
       const n = xs.length, mean = xs.reduce((a, b) => a + b, 0) / n;
       const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
-      const T = [12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09];
-      const h = (n - 1 <= T.length ? T[n - 2] : 2.0) * sd / Math.sqrt(n);
+      const critical = (criticalValues || [])[n];
+      if (!Number.isFinite(critical)) return null;
+      const h = critical * sd / Math.sqrt(n);
       return { n, mean, lo: mean - h, hi: mean + h };
     };
-    const ciTxtOf = (c, what) => !c ? "" : c.lo > 0 ? `${what}가 나간 날 평균적으로 이 종목만 더 올랐다고 볼 근거가 있습니다.`
-      : c.hi < 0 ? `${what}가 나간 날 평균적으로 오히려 더 약했습니다.`
-      : `범위가 0을 포함해, 아직 ${what}에 평균적인 주가 효과가 있다고 말할 근거는 부족합니다.`;
-    const ci = ciOf(recent.map((e) => (byId.get(e.lead).effect || {}).measure).filter((m) => m && m.value != null).map((m) => m.value));
-    const ciTxt = ciTxtOf(ci, "보도자료");
+    const ciTxtOf = (c, what) => !c ? "" : c.lo > 0 ? `${what} 반응일에는 평균적으로 평소 예상보다 높았습니다. 실제 주가 상승이나 인과관계가 입증됐다는 뜻은 아닙니다.`
+      : c.hi < 0 ? `${what} 반응일에는 평균적으로 평소 예상보다 낮았습니다. 이것만으로 원인을 확정할 수는 없습니다.`
+      : "범위가 0을 포함해, 평균 차이가 평소 변동과 구별된다고 보기 어렵습니다.";
     // 공시 요약: 지금 켜 둔 종류의 공시만 (같은 반응일 공시는 주가 반응을 나눌 수 없어 한 번만 셈)
     function discScore() {
       const shown = groups.disc, seen = new Set(), xs = [];
       shown.forEach((x) => {
         const ef = x.effect || {};
-        if (ef.measure && ef.measure.value != null && !seen.has(ef.reaction_day)) { seen.add(ef.reaction_day); xs.push(ef.measure.value); }
+        if (ef.measure && ef.measure.method === "event-study-v2" && ef.measure.value != null && !seen.has(ef.reaction_day)) { seen.add(ef.reaction_day); xs.push(ef.measure.value); }
       });
-      const c = ciOf(xs);
+      const c = ciOf(xs, dd && dd.summary_critical_values);
       return `<div class="score-line">
       <span><small>선택한 종류 공시</small><b>${shown.length}건</b></span>
-      <span><small>평균 고유 반응${c ? ` (반응일 ${c.n}일)` : ""}</small><b class="${c ? sgnCls(c.mean) : ""}">${c ? pct(c.mean) : "-"}</b></span>
-      <span><small>95% 범위</small><b>${c ? `${pct(c.lo)} ~ ${pct(c.hi)}` : "-"}</b></span>
+      <span><small>평균 예상 대비 차이 (계산 ${xs.length}일)</small><b class="${c ? sgnCls(c.mean) : ""}">${c ? points(c.mean) : "-"}</b></span>
+      <span><small>평균 차이의 95% 범위</small><b>${c ? `${points(c.lo)} ~ ${points(c.hi)}` : "-"}</b></span>
       <span><small>시각을 아는 공시</small><b>${shown.filter((x) => !x.untimed).length}건</b></span>
-      <p class="score-note">${c ? ciTxtOf(c, "공시") : "반응을 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날 나온 공시는 한 번만 셉니다.</p></div>`;
+      <p class="score-note">${c ? ciTxtOf(c, "공시") : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
     }
-    const prScore = recent.length ? `<div class="score-line">
-      <span><small>최근 6개월 보도자료</small><b>${recent.length}건</b></span>
-      <span><small>평균 고유 반응${ci ? ` (계산 ${ci.n}건)` : ""}</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? pct(ci.mean) : "-"}</b></span>
-      <span><small>95% 범위</small><b>${ci ? `${pct(ci.lo)} ~ ${pct(ci.hi)}` : "-"}</b></span>
+    function articleScore(kind) {
+      const label = kind === "pr" ? "보도자료" : "외부 기사";
+      const recent = groups[kind].filter((event) => (event.day || "") >= since);
+      const summaryMeasures = recent.map((event) => (byId.get(event.lead).effect || {}).measure).filter((measure) => measure && measure.method === "event-study-v2" && measure.value != null);
+      const ci = ciOf(summaryMeasures.map((measure) => measure.value), d.summary_critical_values);
+      const avgOut = recent.length ? recent.reduce((sum, event) => sum + (event.outlets || 1), 0) / recent.length : 0;
+      return recent.length ? `<div class="score-line">
+      <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
+      <span><small>평균 예상 대비 차이 (계산 ${summaryMeasures.length}일 / 미계산 ${recent.length - summaryMeasures.length}일)</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? points(ci.mean) : "-"}</b></span>
+      <span><small>평균 차이의 95% 범위</small><b>${ci ? `${points(ci.lo)} ~ ${points(ci.hi)}` : "-"}</b></span>
       <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
-      ${ci ? `<p class="score-note">${ciTxt}</p>` : ""}</div>` : "";
-    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : prScore; };
+      <p class="score-note">${ci ? ciTxtOf(ci, label) : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 반응일은 한 번만 세고, 반응일 간 독립을 가정합니다. 다른 기사·공시가 겹친 날도 포함되므로 ${label}만의 효과를 입증하지는 않습니다.</p></div>` : "";
+    }
+    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat); };
 
     if (!["pr", "disc", "all"].includes(artState.cat)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
@@ -1668,7 +1680,7 @@
           return `<li><button type="button" data-id="${esc(x.id)}" aria-current="${x.id === current}">
           <span class="al-meta"><span class="ktag k-disc">공시</span>${catTag(x.kind || "공시")}<span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)}</span>${artFlags(ef)}</span>
           <span class="t">${esc(x.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${m ? `<span class="num ${sgnCls(m.value)}">${pct(m.value)}</span>${m.basis ? `<span class="muted">${esc(m.basis)} 기준</span>` : ""}` : ""}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
+          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
         }).join("");
         ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
         return;
@@ -1687,7 +1699,7 @@
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
           <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef)}</span>
           <span class="t">${esc(a.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${m ? `<span class="num ${sgnCls(m.value)}">${pct(m.value)}</span>${m.basis ? `<span class="muted">${esc(m.basis)} 기준</span>` : ""}` : ""}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
+          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
           ${others.length ? `<details class="art-group"${others.some((x) => x.id === current) ? " open" : ""}><summary>같은 날 기사 ${others.length}건 더</summary>${others.map(sub).join("")}</details>` : ""}</li>`;
       }).join("");
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
@@ -1703,7 +1715,7 @@
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length
-      ? `그린광학 보도자료·공시와 외부 기사가 나간 뒤, 시장·업종 흐름을 빼고 이 종목만 얼마나 더 움직였는지(<b>고유 반응</b>)를 반응일(전일 종가 → 종가) 기준으로 봅니다. 같은 날 나온 기사는 한 사건으로 묶었습니다.`
+      ? `기사·공시 반응일의 실제 등락을 과거 자료로 추정한 평소 예상과 비교합니다 (<b>일별 사건연구</b>). 대표 숫자는 반응일 하루의 차이(%p)이며, 여러 날의 누적 차이와 95% 범위도 함께 봅니다. 실제 상승률이나 기사만의 효과가 아닙니다. 같은 반응일은 한 번만 셉니다.`
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
     if (CLOUD) {
@@ -1768,12 +1780,12 @@
       <table class="ladder"><thead><tr><th>살펴본 기간</th><th>예상보다 더 움직인 부분</th><th>95% 불확실성 범위</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="note">0은 반응일입니다. 여러 날의 숫자는 각 날의 차이를 더한 값이며, 실제 투자 수익률과는 다릅니다.
       범위에 0이 들어가면, 이 모형으로는 평소 변동과 구별하기 어렵습니다. 범위에 0이 없어도 기사 원인이 확정되지는 않습니다.</p>
-      <p class="note">${esc(study.basis)} 당일 장중 기사라면 위의 짧은 구간 반응과 함께 봐야 합니다.
+      <p class="note">${esc(study.basis)} 당일 장중 기사라면 아래 공개 직후 실제 움직임도 함께 보세요.
       ${study.pre_drift ? "공개 이전에도 같은 방향으로 이례적으로 움직인 흔적이 있습니다." : "사전 구간도 함께 살펴보세요. 사전 반응이 뚜렷하지 않아도 정보가 미리 반영되지 않았다고 확정할 수는 없습니다."}</p>
       ${study.pending_windows.length ? `<p class="note">시세가 부족하거나 아직 지나지 않아 계산하지 않은 구간: ${study.pending_windows.map(esc).join(", ")}.</p>` : ""}
       <details><summary>계산 근거 보기</summary><p class="note">${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일.
       반응일 직전 ${study.gap}거래일은 평소 관계 추정에서 제외했습니다. 평소 추세와 시장 민감도를 추정하고, 계수 추정 오차도 범위에 반영했습니다.
-      ${esc(study.assumptions)} 이 결과를 모든 기사 판정의 확정 기준으로 사용하지 않습니다.</p></details></section>`;
+      ${esc(study.assumptions)} 대표 숫자와 판정은 반응일 하루의 차이와 95% 범위를 사용합니다. 기사 원인을 확정하는 판정은 아닙니다.</p></details></section>`;
   }
 
   async function loadPR(id) {
@@ -1797,13 +1809,12 @@
       notes.push(`같은 내용의 공시(${dsc ? `<a href="#/pr/${esc(dsc.id)}">「${esc(e.disclosure.title)}」</a>` : `「${esc(e.disclosure.title)}」`})가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 공시 시각부터 쟀습니다.`);
     }
     if (isDisc && a.untimed) notes.push("DART에는 접수 날짜만 있고 거래소(KIND)에서도 시각을 찾지 못해, 그날 하루(전일 종가 → 종가)로 쟀습니다.");
-    if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day.slice(5).replace("-", "/")) : "다음 거래일"} 움직임으로 쟀습니다. 그 사이 다른 소식도 섞였을 수 있어 판정을 한 단계 낮췄습니다.${dl && dl.gap != null ? ` 시초가 갭 <b class="${sgnCls(dl.gap)}">${pct(dl.gap)}</b>.` : ""}`);
-    if (e.late) notes.push("오후 늦게(14시 이후) 나와 그날 남은 거래 시간이 짧아, 반응일과 다음날 2일 누적으로 판정했습니다.");
+    if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}을 반응일로 봅니다. 그 사이 다른 소식도 섞였을 수 있습니다.`);
+    if (e.late) notes.push("오후 늦게 공개됐습니다. 대표 숫자는 다른 기사와 동일하게 반응일 하루 기준이며, 공개 전 움직임도 포함하므로 아래 여러 날의 누적 차이도 함께 보세요.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
     html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
       <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
-      ${e.measure && e.measure.rarity != null ? `<div class="vb-note">${rarityTxt(e.measure.rarity, e.measure.n_null, { "60분": "60분 고유 움직임", "개장 1시간": "전일 종가→10:00 고유 움직임", "2일": "2일 고유 움직임" }[e.measure.basis] || "하루 고유 움직임")}.</div>` : ""}
       ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
@@ -1817,18 +1828,6 @@
     }
 
     let ev = eventStudyBlock(e.event_study);
-    const m60 = e.minute60;
-    if (m60) {
-      const r6 = [["이 종목 실제 변동", m60.own, "me"], [`시장 몫 <small>KOSDAQ ${pct(m60.kosdaq)} × 민감도 ${e.decomp.beta_market.toFixed(2)}</small>`, m60.market],
-        [`분야 몫 <small>${m60.segments_used ? `분야 ${m60.segments_used}곳의 같은 60분` : "분야 분봉 없음"}</small>`, m60.sector], ["설명되지 않은 고유 움직임", m60.abnormal, "abn"]];
-      const mx = Math.max(0.003, ...r6.map((x) => Math.abs(x[1] || 0)));
-      ev += `<h3 class="d-sec" style="margin-top:22px">${m60.start ? `공개 후 60분 나누기 <small class="muted">${hhmm(m60.start)}부터 · 판정 기준</small>` : `전일 종가→10:00 나누기 <small class="muted">장 시작 전 공개 · 시초가 + 개장 1시간 · 판정 기준</small>`}</h3>
-        <ul class="rel decomp">${r6.map(([k, v, c]) => `<li class="${c || ""}"><span class="nm">${k}</span>
-        <span class="dbar"><i class="${(v || 0) >= 0 ? "b" : "s"}" style="${(v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / mx) * 50}%`};width:${(Math.abs(v || 0) / mx) * 50}%"></i></span>
-        <span class="num v ${sgnCls(v)}">${pct(v)}</span></li>`).join("")}</ul>
-        <p class="note" style="margin-top:6px">민감도는 아래 하루 계산과 같은 값을 씁니다. ${m60.start ? "장중에 나온 기사는" : "장 시작 전에 나온 기사는 밤사이 시초가에 반영되므로 전일 종가부터 개장 1시간까지로,"} 그날 오후 다른 일이 섞이지 않도록 짧은 구간으로 판정합니다. 얼마나 드문지는 평소 같은 구간에서 같은 방식으로 시장 몫을 뺀 움직임과 비교합니다.</p>`;
-    }
-    if (e.decomp && e.decomp.d0) ev += decompBlock(e.decomp, e.timing, e.reaction_day, e.late, noun);
     if (dl) {
       const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;
       ev += `<h3 class="d-sec" style="margin-top:22px">일별 반응 <small class="muted">반응일 ${esc(e.reaction_day)} · 전날 종가 ${won(dl.prev_close)}원 기준</small></h3>
