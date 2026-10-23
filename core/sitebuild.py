@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 ITER = 200_000
-SITE_FILES = ["index.html", "app.js", "app.css", "app.ico", "vendor/lightweight-charts.standalone.production.js",
+SITE_FILES = ["index.html", "app.js", "app.css", "app.ico", "brand-mark.png", "vendor/lightweight-charts.standalone.production.js",
               "vendor/LICENSE-lightweight-charts.txt", "fonts/PretendardVariable.woff2", "fonts/LICENSE-Pretendard.txt"]
 
 

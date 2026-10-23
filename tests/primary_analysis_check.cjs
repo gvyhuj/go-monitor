@@ -47,15 +47,22 @@ assert.match(context.measureTxt({ value: 0.9 }), /다시 계산/);
 const piv = source.slice(source.indexOf("  const PIV_DIMS ="), source.indexOf("  async function pagePivot("));
 const pctx = {};
 vm.createContext(pctx);
-vm.runInContext(piv + "; this.pivotRows = pivotRows; this.pivotTable = pivotTable;", pctx);
+vm.runInContext(piv + "; this.pivotRows = pivotRows; this.dashAgg = dashAgg;", pctx);
 const arts = [{ id: "a", ts: "2026-10-08T09:00", office: "A", reporter: "홍", title: "t", kind: "company", category: "회사 발표", topic: "수주·계약",
-  related: [{ id: "b", ts: "2026-10-08T10:00", office: "B", title: "t2" }] }, { id: "c", ts: "2026-09-01T09:00", office: "A", title: "t3", kind: "ext", topic: "기타", hidden: true }];
+  related: [{ id: "b", ts: "2026-10-08T10:00", office: "B", title: "t2" }] }, { id: "c", ts: "2026-09-01T09:00", office: "A", title: "t3", kind: "ext", topic: "기타", hidden: true },
+  { id: "d", ts: "2025-12-01T09:00", office: "A", reporter: "홍", title: "t4", kind: "unknown", topic: "기타" }];
 const outlet = pctx.pivotRows(arts, "outlet");
-assert.equal(outlet.length, 2);
+assert.equal(outlet.length, 3);
 assert.equal(outlet[1].kind, "그린광학 보도자료");
+assert.equal(outlet[2].kind, "구분 미확인");
 assert.equal(outlet[1].topic, "수주·계약");
-assert.equal(pctx.pivotRows(arts, "story").length, 1);
-const tb = pctx.pivotTable(outlet, "reporter", "month");
-assert.deepEqual([...tb.rowKeys].sort(), ["(미확인)", "홍"]);
-assert.equal(tb.total, 2);
-console.log("새 대표 분석 화면 검증 통과: 실제 등락 분리·%p 단위·기존 값 제외·소식 없는 날 비교 상자");
+assert.equal(pctx.pivotRows(arts, "story").length, 2);
+// 대시보드 막대: 기자는 '이름 · 언론사'로, 기자명 없는 기사는 빠짐 / 구분별 건수 / 월은 시간 순
+const rep = pctx.dashAgg(outlet, "reporter");
+assert.equal(rep.length, 1);
+assert.equal(rep[0].key, "홍 · A");
+assert.equal(rep[0].n, 2);
+assert.equal(rep[0].by["그린광학 보도자료"], 1);
+assert.equal(JSON.stringify(pctx.dashAgg(outlet, "month").map((x) => x.key)), JSON.stringify(["2025-12", "2026-10"]));
+assert.equal(JSON.stringify(pctx.dashAgg(outlet, "office").map((x) => [x.key, x.n])), JSON.stringify([["A", 2], ["B", 1]]));
+console.log("새 대표 분석 화면 검증 통과: 실제 등락 분리·%p 단위·기존 값 제외·소식 없는 날 비교 상자·기사 대시보드 집계");
