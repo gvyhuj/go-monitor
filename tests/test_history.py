@@ -106,6 +106,10 @@ def test_admin_files_require_admin_password_and_do_not_enter_public_data(databas
     sitebuild.build(output, "public-site-password", b"0123456789abcdef", [("live", '{"latest": true}', False)])
     history.build_admin(output, ADMIN_PASSWORD, archive)
     config = json.loads((output / "admin/config.js").read_text()[len("window.GO_ADMIN="):-1])
+    assert json.loads((output / "admin/config.json").read_text()) == config
+    html = (output / "admin/index.html").read_text(encoding="utf-8")
+    for filename in ("app.js", "config.js", "app.css"):
+        assert f'"{filename}?v=' in html
     import base64
 
     admin_key = sitebuild.derive_key(ADMIN_PASSWORD, base64.b64decode(config["salt"]))

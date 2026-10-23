@@ -102,9 +102,12 @@
     element("submit").disabled = true; element("message").textContent = "비밀번호 확인 중…";
     try {
       const password = element("password").value; element("password").value = "";
+      const response = await fetch("config.json", { cache: "no-store", credentials: "omit" });
+      if (!response.ok) throw new Error("관리자 설정을 받지 못했습니다.");
+      const current = await response.json();
       const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-      const salt = Uint8Array.from(atob(config.salt), (character) => character.charCodeAt(0));
-      const candidate = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: config.iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+      const salt = Uint8Array.from(atob(current.salt), (character) => character.charCodeAt(0));
+      const candidate = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: current.iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
       const loaded = await openFile("index.bin", candidate);
       if (session !== generation) return;
       key = candidate; index = loaded; lastActivity = Date.now();

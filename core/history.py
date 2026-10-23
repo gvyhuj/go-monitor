@@ -111,3 +111,10 @@ def build_admin(out: Path, password: str, history: History | None) -> None:
             (target / f"{file_id}.bin").write_bytes(encrypt(key, json.dumps(records, ensure_ascii=False).encode("utf-8")))
         (target / "index.bin").write_bytes(encrypt(key, json.dumps(index, ensure_ascii=False).encode("utf-8")))
     (target / "config.js").write_text("window.GO_ADMIN=" + json.dumps(config) + ";", encoding="utf-8")
+    (target / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    version = hashlib.sha256((target / "app.js").read_bytes() + (target / "app.css").read_bytes()
+                             + (target / "config.js").read_bytes()).hexdigest()[:16]
+    html = (target / "index.html").read_text(encoding="utf-8")
+    for filename in ("app.js", "config.js", "app.css"):
+        html = html.replace(f'"{filename}"', f'"{filename}?v={version}"')
+    (target / "index.html").write_text(html, encoding="utf-8")

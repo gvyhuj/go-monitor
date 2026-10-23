@@ -37,6 +37,9 @@ async function main() {
     await page.getByPlaceholder("비밀번호", { exact: true }).fill("public-site-password");
     await page.getByRole("button", { name: "들어가기", exact: true }).click();
     await page.locator("#pr-detail .verdict-box").waitFor();
+    const adminLink = page.getByRole("link", { name: "관리자", exact: true });
+    assert.equal(await adminLink.isVisible(), true);
+    assert.equal(await adminLink.getAttribute("href"), "admin/");
     await page.getByLabel("기사·공시 검색").focus();
     updated = true;
     await page.clock.fastForward(31000);

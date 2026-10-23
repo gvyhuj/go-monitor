@@ -11,7 +11,9 @@ async function main() {
       const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
       const filename = path.resolve(root, `.${pathname}${pathname.endsWith("/") ? "index.html" : ""}`);
       if (!filename.startsWith(root + path.sep)) throw new Error("잘못된 경로");
-      const content = await fs.readFile(filename);
+      const content = pathname === "/admin/config.json"
+        ? Buffer.from((await fs.readFile(path.join(root, "admin/config.js"), "utf8")).slice("window.GO_ADMIN=".length, -1))
+        : await fs.readFile(filename);
       const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".bin": "application/octet-stream" };
       response.writeHead(200, { "Content-Type": mime[path.extname(filename)] || "application/octet-stream" });
       response.end(content);
@@ -23,6 +25,12 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/admin/config.js", async (route) => {
+      const response = await route.fetch();
+      const config = JSON.parse((await response.text()).slice("window.GO_ADMIN=".length, -1));
+      config.salt = Buffer.alloc(16, 1).toString("base64");
+      await route.fulfill({ response, body: `window.GO_ADMIN=${JSON.stringify(config)};` });
+    });
     await page.goto(`http://127.0.0.1:${server.address().port}/admin/`);
     await page.getByLabel("관리자 비밀번호").fill("public-site-password");
     await page.getByRole("button", { name: "이력 열기" }).click();
