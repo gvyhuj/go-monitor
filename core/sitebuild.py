@@ -195,7 +195,8 @@ def refresh_items(now: datetime, log=None) -> list[tuple[str, str, bool]]:
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
     c = cached.get("articles")
     stale = c is None or not _market_hours(now) or \
-        (now - datetime.fromisoformat(c["built_at"])).total_seconds() > 1800
+        (now - datetime.fromisoformat(c["built_at"])).total_seconds() > 1800 or \
+        "disclosures" not in cached or "disclosure_details" not in cached      # 공시 자료가 아직 없으면 바로
     if stale:
         lst = ws.api_articles({})
         keep("articles", lambda: lst, True)

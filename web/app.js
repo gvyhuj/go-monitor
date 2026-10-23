@@ -1609,7 +1609,7 @@
     if (!["pr", "disc", "ext", "all", "noise"].includes(artState.cat)) artState.cat = "pr";
     const seg = $("#art-cat");
     seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small>${v === "disc" ? discs.length : groups[v].length}</small></button>`).join("");
-    seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); };
+    seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); followTab(); };
     const typeBox = $("#disc-types");
     const typeCount = (t) => discs.filter((x) => (x.pblntf || "?") === t).length;
     const typeKeys = Object.keys(DTYPES).filter((t) => typeCount(t));
@@ -1626,7 +1626,18 @@
       else if (S.has(t)) S.delete(t); else S.add(t);
       groups.disc = discShown();
       renderList();
+      followTab();
     };
+    // 탭·종류를 바꾸면 오른쪽 상세도 그 목록의 맨 위 항목으로 (지금 보던 항목이 목록에 있으면 그대로)
+    function followTab() {
+      const ids = artState.cat === "disc" ? groups.disc.map((x) => x.id) : groups[artState.cat].flatMap((e) => e.ids);
+      if (current && ids.includes(current)) return;
+      current = ids.length ? (artState.cat === "disc" ? ids[0] : groups[artState.cat][0].lead) : null;
+      history.replaceState(null, "", current ? `#/pr/${current}` : "#/pr");
+      renderList();
+      if (current) loadPR(current);
+      else $("#pr-detail").innerHTML = `<div class="empty"><strong>${artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong></div>`;
+    }
 
     function renderList() {
       seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat)));
@@ -1637,7 +1648,8 @@
       if (artState.cat === "disc") {
         const list = groups.disc;
         if (!list.length) {
-          ul.innerHTML = `<li class="empty"><strong>${discs.length ? "선택한 종류의 공시가 없습니다." : "아직 모인 공시가 없습니다."}</strong>${discs.length ? "위 종류 버튼을 눌러 다른 공시도 볼 수 있습니다." : "자동 수집이 돌면 DART에서 이 회사 공시를 모읍니다."}</li>`;
+          ul.innerHTML = !dd ? `<li class="empty"><strong>공시 자료를 불러오지 못했습니다.</strong>사이트에 아직 올라오지 않았으면 다음 자동 수집 때 반영됩니다.</li>`
+            : `<li class="empty"><strong>${discs.length ? "선택한 종류의 공시가 없습니다." : "아직 모인 공시가 없습니다."}</strong>${discs.length ? "위 종류 버튼을 눌러 다른 공시도 볼 수 있습니다." : "자동 수집이 돌면 DART에서 이 회사 공시를 모읍니다."}</li>`;
           return;
         }
         ul.innerHTML = list.map((x) => {
