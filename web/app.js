@@ -1569,48 +1569,7 @@
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
     groups.disc = discShown();
 
-    // 보도자료 성과 요약 (최근 6개월, 사건 기준)
-    const since = isoDate(new Date(Date.now() - 183 * 864e5));
-    // 사건별 고유 반응의 평균과 95% 범위 (t분포). 건수가 적으면 범위가 넓어져 '아직 모름'이 솔직하게 드러남
-    const ciOf = (xs, criticalValues) => {
-      if (xs.length < 3) return null;
-      const n = xs.length, mean = xs.reduce((a, b) => a + b, 0) / n;
-      const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
-      const critical = (criticalValues || [])[n];
-      if (!Number.isFinite(critical)) return null;
-      const h = critical * sd / Math.sqrt(n);
-      return { n, mean, lo: mean - h, hi: mean + h };
-    };
-    // 공시 요약: 지금 켜 둔 종류의 공시만 (같은 반응일 공시는 주가 반응을 나눌 수 없어 한 번만 셈)
-    function discScore() {
-      const shown = groups.disc, seen = new Set(), xs = [];
-      shown.forEach((x) => {
-        const ef = x.effect || {};
-        if (ef.measure && ef.measure.method === "event-study-v2" && ef.measure.value != null && !seen.has(ef.reaction_day)) { seen.add(ef.reaction_day); xs.push(ef.measure.value); }
-      });
-      const c = ciOf(xs, dd && dd.summary_critical_values);
-      return `<div class="score-line">
-      <span><small>선택한 종류 공시</small><b>${shown.length}건</b></span>
-      <span><small>평균 예상 대비 차이 (계산 ${xs.length}일)</small><b class="${c ? sgnCls(c.mean) : ""}">${c ? points(c.mean) : "-"}</b></span>
-      <span><small>평균 차이의 95% 범위</small><b>${c ? `${points(c.lo)} ~ ${points(c.hi)}` : "-"}</b></span>
-      <span><small>시각을 아는 공시</small><b>${shown.filter((x) => !x.untimed).length}건</b></span>
-      <p class="score-note">${c ? "" : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
-    }
-    function articleScore(kind) {
-      const label = kind === "pr" ? "그린광학 보도자료" : "외부 기사";
-      const recent = groups[kind].filter((event) => (event.day || "") >= since);
-      const eligible = recent.filter((event) => !event.time_check && !event.followup_of && !event.followup_candidate_of);
-      const summaryMeasures = eligible.map((event) => (byId.get(event.lead).effect || {}).measure).filter((measure) => measure && measure.method === "event-study-v2" && measure.value != null);
-      const ci = ciOf(summaryMeasures.map((measure) => measure.value), d.summary_critical_values);
-      const avgOut = recent.length ? recent.reduce((sum, event) => sum + (event.outlets || 1), 0) / recent.length : 0;
-      return recent.length ? `<div class="score-line">
-      <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
-      <span><small>평균 예상 대비 차이 (계산 ${summaryMeasures.length}일 / 미확인·자료 부족 ${recent.length - summaryMeasures.length}일)</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? points(ci.mean) : "-"}</b></span>
-      <span><small>평균 차이의 95% 범위</small><b>${ci ? `${points(ci.lo)} ~ ${points(ci.hi)}` : "-"}</b></span>
-      <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
-      <p class="score-note">${ci ? "" : "시각 확인·중복 검토 중인 날을 제외한 계산 가능 반응일이 3일 이상이어야 평균을 냅니다."} 시각 확인 필요 ${recent.filter((x) => x.time_check).length}일, 기존 정보 재보도 ${recent.filter((x) => x.followup_of).length}일, 후속 보도 가능성 검토 ${recent.filter((x) => x.followup_candidate_of).length}일은 평균에서 제외합니다. 일별 독립을 가정하며 인과관계를 입증하지 않습니다.</p></div>` : "";
-    }
-    const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat) + baselineBlock(); };
+    const renderScore = () => { $("#pr-score").innerHTML = baselineBlock(); };
     // 소식 없는 날과 비교: 기사 하나는 잡음이 커도, 같은 종류 날을 모으면 차이가 보임
     function baselineBlock() {
       const b = d.baseline;
@@ -1619,13 +1578,13 @@
       const rows = ["pr", "disc", "ext", "none"].map((k) => {
         const g = b.groups[k] || {};
         return `<tr${k === "none" ? ' class="muted"' : ""}><td>${NAMES[k]}</td><td class="num">${g.n || 0}일</td>
-          <td class="num">${g.mean != null ? points(g.mean) : "-"}</td><td class="num">${g.median_abs != null ? (g.median_abs * 100).toFixed(2) + "%p" : "-"}</td>
-          <td class="num">${g.big_share != null ? `<b>${Math.round(g.big_share * 100)}%</b> <small class="muted">${g.n}일 중 ${g.big_up + g.big_down}일 (오름 ${g.big_up} · 내림 ${g.big_down})</small>` : "-"}</td></tr>`;
+          <td class="num">${g.big_share != null ? `<b>${Math.round(g.big_share * 100)}%</b> <small class="muted">${g.n}일 중 ${g.big_up + g.big_down}일 (오름 ${g.big_up} · 내림 ${g.big_down})</small>` : "-"}</td>
+          <td class="num">${g.median_abs != null ? (g.median_abs * 100).toFixed(2) + "%p" : "-"}</td></tr>`;
       }).join("");
-      return `<details class="baseline"><summary>소식 없는 날과 비교 <small class="muted">${esc(b.from)} ~ ${esc(b.to)}</small></summary>
-        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>평균 예상 대비 차이</th><th>차이 크기 중앙값</th><th>크게 움직인 날 비율</th></tr></thead><tbody>${rows}</tbody></table>
+      return `<section class="baseline"><h3 class="baseline-title">소식 없는 날과 비교 <small class="muted">${esc(b.from)} ~ ${esc(b.to)}</small></h3>
+        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>크게 움직인 날 비율</th><th>평소 예상과 차이 크기 (중앙값)</th></tr></thead><tbody>${rows}</tbody></table>
         <p class="note">'크게 움직인 날'은 평소 예상보다 ${(b.cut * 100).toFixed(1)}%p 넘게 더 오르거나 더 내린 날입니다. 이 기준은 소식 없는 날 중 크게 움직인 날이 10%가 되도록 정했습니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄의 비율을 이 10%와 비교해 보면 됩니다.
-        각 소식은 반응일과 다음 거래일을 함께 셉니다. 평소 관계(${esc(b.method)})는 소식 없는 날만으로 한 번 추정했습니다. 수집하지 못한 소식은 '소식 없는 날'에 섞여 있을 수 있습니다.</p></details>`;
+        각 소식은 반응일과 다음 거래일을 함께 셉니다. 평소 관계(${esc(b.method)})는 소식 없는 날만으로 한 번 추정했습니다. 수집하지 못한 소식은 '소식 없는 날'에 섞여 있을 수 있습니다. 기사 자체의 효과가 아니라 소식이 있던 날과 없던 날의 차이이며, 같은 날의 다른 소식이나 사건 자체의 영향이 섞여 있습니다.</p></section>`;
     }
 
     if (!["pr", "ext", "disc"].includes(artState.cat)) artState.cat = "pr";
