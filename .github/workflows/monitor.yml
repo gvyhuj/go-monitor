@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       test_alert:
-        description: "알림 시험 메일 보내기"
+        description: "알림 시험 보내기"
         type: boolean
         default: false
   push:
@@ -56,11 +56,6 @@ jobs:
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}          # 선택: 국제·정치 이슈 기사 검색 (없으면 건너뜀)
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       DART_API_KEY: ${{ secrets.DART_API_KEY }}                # 공시 목록 (금융감독원 DART, 없으면 예전처럼 네이버)
-      ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}            # 선택: 급등·급락 알림을 받을 메일 (쉼표로 여러 개)
-      SMTP_USER: ${{ secrets.SMTP_USER }}                      # 보내는 메일 계정 (Gmail 주소)
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}              # Gmail 앱 비밀번호 (계정 비밀번호 아님)
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}                      # 선택: Gmail이 아니면 (기본 smtp.gmail.com)
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}                      # 선택: 기본 465
       GO_INTERVAL_MIN: "5"
       GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
       GITHUB_TOKEN: ${{ github.token }}

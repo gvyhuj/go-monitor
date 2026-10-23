@@ -438,13 +438,11 @@ def main(argv) -> int:
                 set_state("factor_ready", now.isoformat(timespec="minutes"))
                 log.info("업종 ETF 자료가 준비되어 이벤트를 다시 분석합니다")
         causes.refresh_pending(code, feed.kst_now(), fetch=c.fetch, log=log)
-        # 급등·급락 알림 (메일)
+        # 급등·급락 알림 (GitHub 앱 푸시: 저장소 주인 @언급)
         try:
             from core import alerts
-            if not alerts.email_enabled():
-                annotate("warning", "메일 알림 설정(ALERT_EMAIL_TO·SMTP_USER·SMTP_PASSWORD)이 없어 급등·급락 알림을 보내지 않습니다")
             if alerts.send_test(log.warning):
-                annotate("notice", "알림 시험 메일을 보냈습니다")
+                annotate("notice", "알림 시험 글을 보냈습니다")
             n_alert = alerts.send_new(code, log=log.info)
             if n_alert:
                 annotate("notice", f"급등·급락 알림 {n_alert}건 보냄")

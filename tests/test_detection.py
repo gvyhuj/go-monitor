@@ -25,7 +25,7 @@ def tmpdb(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
     db.init_db()
     sent = []
-    monkeypatch.setattr(alerts, "_notify", lambda title, body, log=None: sent.append(title))
+    monkeypatch.setattr(alerts, "_post_issue", lambda title, body: sent.append(title) or 1)
     return sent
 
 
