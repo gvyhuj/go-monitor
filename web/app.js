@@ -556,7 +556,7 @@
     function grid() {
       const [y, m] = calState.month.split("-").map(Number);
       const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
-      const lead = (first.getDay() + 6) % 7;                       // 월요일 시작
+      const lead = first.getDay();                                 // 일요일 시작
       const cells = [];
       for (let i = 0; i < lead; i++) cells.push(`<div class="cal-cell blank"></div>`);
       for (let d = 1; d <= days; d++) {
@@ -579,7 +579,7 @@
           <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
           <span class="cal-legend"><span><i class="mk ev up"></i>급등·급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
         </div>
-        <div class="cal-grid">${["월", "화", "수", "목", "금", "토", "일"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
+        <div class="cal-grid">${["일", "월", "화", "수", "목", "금", "토"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
     }
 
     function dayPanel(ds) {
@@ -1619,7 +1619,7 @@
     const sec = (id, title, body) => `<section class="method-sec" id="m-${id}"><h2>${title}</h2>${body}</section>`;
     const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사·공시 모음"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
-      <div class="page-head"><div><h1 class="page-title">계산 방법</h1>
+      <div class="page-head"><div><h1 class="page-title">README</h1>
         <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
       <nav class="method-toc" aria-label="목차">${toc.map(([id, t]) => `<a href="#/method" data-to="m-${id}">${t}</a>`).join("")}</nav>
       ${sec("words", "먼저 알아 둘 말", `
@@ -2328,7 +2328,7 @@
     else if (page === "calendar") { document.title = "달력 | 주가 모니터"; await pageDashboard("calendar"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
     else if (page === "pr") { document.title = "기사·공시 모음 | 주가 모니터"; await pagePR(parts[1] || null); }
-    else if (page === "method") { document.title = "계산 방법 | 주가 모니터"; pageMethod(); }
+    else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
   }
 
