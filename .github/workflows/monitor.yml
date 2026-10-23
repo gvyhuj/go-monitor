@@ -78,10 +78,13 @@ jobs:
           mkdir -p restore
           if gh release download latest-backup -p monitor.db.enc -D restore 2>/dev/null; then
             echo "최신 백업(릴리스)에서 이어 씁니다."
-          elif git fetch -q --depth=1 origin data 2>/dev/null; then
-            # 예전 방식 (data 브랜치) - 릴리스 백업이 생기기 전까지만
-            f=$(git ls-tree --name-only origin/data | grep '\.db\.enc$' | head -1)
-            [ -n "$f" ] && git show "origin/data:$f" > "restore/$f" && echo "data 브랜치 백업에서 이어 씁니다."
+          elif f=$(gh release view weekly-backup --json assets --jq '[.assets[].name] | sort | last' 2>/dev/null) && [ -n "$f" ] \
+               && gh release download weekly-backup -p "$f" -D restore 2>/dev/null; then
+            echo "최신 백업을 받지 못해 주간 백업($f)에서 이어 씁니다."
+          elif gh release view latest-backup >/dev/null 2>&1; then
+            # 백업이 있는데 받지 못함: 빈 기록으로 시작하면 백업을 덮어쓰므로 이번 실행은 멈춤
+            echo "::error::백업을 내려받지 못했습니다. 빈 기록으로 시작하지 않고 이번 실행을 멈춥니다."
+            exit 1
           else
             echo "백업이 없습니다 (첫 실행)."
           fi

@@ -152,14 +152,14 @@ def apply_inbox(item: dict, log):
 
 
 def checkpoint():
-    """기록 파일 하나로 정리 (data 브랜치에 저장하기 전에)."""
+    """기록 파일 하나로 정리 (백업하기 전에)."""
     with connect() as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 # ------------------------------------------------------------------ GitHub Pages 방식
 STATE_DIR = Path(os.environ.get("GO_STATE_DIR", "state"))        # actions/cache 로 다음 실행에 넘김 (암호화)
-RESTORE_DIR = Path(os.environ.get("GO_RESTORE_DIR", "restore"))  # 릴리스(없으면 예전 data 브랜치)의 백업 (암호화)
+RESTORE_DIR = Path(os.environ.get("GO_RESTORE_DIR", "restore"))  # 릴리스(최신 백업, 없으면 주간 백업)의 백업 (암호화)
 BACKUP_DIR = Path(os.environ.get("GO_BACKUP_DIR", "backup"))     # 이번에 '최신 백업' 릴리스에 올릴 백업 (1시간마다 덮어씀)
 WEEKLY_DIR = Path(os.environ.get("GO_WEEKLY_DIR", "weekly"))     # 이번에 '주간 백업' 릴리스에 붙일 백업 (날짜별로 26주 보관)
 SITE_DIR = Path(os.environ.get("GO_SITE_DIR", "_site"))
@@ -235,7 +235,7 @@ def build_static_site(now, log) -> dict:
         (WEEKLY_DIR / "monitor.db.enc").rename(WEEKLY_DIR / f"monitor-{weekly}.db.enc")
     # 다음 실행으로 넘길 기록 (암호화)
     sitebuild.backup_db(DB_PATH, STATE_DIR, _data_key())
-    # data 브랜치 백업은 1시간에 한 번
+    # 최신 백업(릴리스)은 1시간에 한 번
     last = get_state("site:last_backup")
     due = not last or not last.get("value") or \
         datetime.fromisoformat(last["value"]) < now.replace(tzinfo=None) - timedelta(minutes=55)
