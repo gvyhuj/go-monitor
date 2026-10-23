@@ -550,7 +550,7 @@
     const discDay = byDay(discs.filter((x) => x.ts), (x) => x.ts.slice(0, 10));
     const months = [...new Set(daily.map((x) => x.date.slice(0, 7)))].sort();
     if (!calState.month || !months.includes(calState.month)) calState.month = months[months.length - 1];
-    const isPr = (a) => a.kind === "pr";            // 그린광학 보도자료 = 직접 등록·담당자가 확인한 것만 ('회사 관련 보도'는 자동 분류라 외부 기사 쪽)
+    const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const bigEv = (list) => (list || []).filter((e) => e.tier !== "관찰" && e.tier !== "요청");
 
     function grid() {
@@ -569,7 +569,7 @@
         cells.push(`<button type="button" class="cal-cell${ch == null ? " closed" : ""}${ch > 0 ? " up" : ch < 0 ? " down" : ""}${ds === calState.sel ? " sel" : ""}" data-day="${ds}" ${tint}>
           <span class="cal-d">${d}</span>
           ${ch != null ? `<span class="cal-ch ${sgnCls(ch)}">${pct(ch, 1)}</span>` : ""}
-          <span class="cal-marks">${big.length ? `<i class="mk ev ${big[0].direction}" title="급등·급락 ${big.length}건"></i>` : ""}${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사·회사 관련 보도 ${ext}건"></i>` : ""}</span>
+          <span class="cal-marks">${big.length ? `<i class="mk ev ${big[0].direction}" title="급등·급락 ${big.length}건"></i>` : ""}${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사 ${ext}건"></i>` : ""}</span>
         </button>`);
       }
       const mi = months.indexOf(calState.month);
@@ -577,7 +577,7 @@
           <button type="button" class="btn small" data-mv="-1" ${mi <= 0 ? "disabled" : ""} aria-label="이전 달">‹</button>
           <b>${y}년 ${m}월</b>
           <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
-          <span class="cal-legend"><span><i class="mk ev up"></i>급등·급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사·회사 관련 보도</span></span>
+          <span class="cal-legend"><span><i class="mk ev up"></i>급등·급락</span><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
         </div>
         <div class="cal-grid">${["일", "월", "화", "수", "목", "금", "토"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
     }
@@ -589,7 +589,7 @@
         <div class="cal-day-head"><h3 class="d-sec">${dayLabel(ds)}</h3>
           ${px ? `<span>종가 ${won(px.close)}원 · <b class="${sgnCls(px.change)}">${pct(px.change)}</b> · KOSDAQ ${pct(px.kosdaq)} · 거래량 ${int(px.volume)}주</span>` : `<span class="muted">거래 없음</span>`}</div>
         ${ev.length ? `<h4 class="sub">급등·급락</h4><ul class="cal-list">${ev.map((e) => `<li><button type="button" class="btn-link" data-ev="${e.id}">${isDaily(e) ? "하루" : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)}`} ${e.direction === "up" ? "급등" : "급락"} ${pct(e.peak_return_5m)}${e.tier && e.tier !== "일반" ? ` · ${esc(e.tier)}` : ""}</button></li>`).join("")}</ul>` : ""}
-        ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : a.kind === "company" ? ' · <span class="ktag k-ext">회사 관련 보도</span>' : ""}`, a.title)).join("")}</ul>` : ""}
+        ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
         ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
         ${!ev.length && !ar.length && !dc.length ? `<p class="muted">이날 모인 급등·급락·기사·공시가 없습니다.</p>` : ""}
         <div class="ask-row">
@@ -1635,15 +1635,14 @@
       ${sec("articles", "기사·공시 모음", `
         <h3>탭과 건수</h3>
         <ul>
-          <li><b>그린광학 보도자료</b>: 직접 등록했거나, 목록에서 '그린광학 보도자료로 바꾸기'로 확인한 기사만입니다.</li>
+          <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 뺍니다.</li>
-          <li><b>회사 관련 보도</b>: 제목에 회사 이름과 계약·공급·참여·개발 같은 말이 함께 있어 자동으로 '회사 발표'로 분류된 기사입니다. 신문사가 직접 쓴 기사도 여기에 들어가므로, 우리가 낸 보도자료라는 뜻이 아닙니다. 외부 기사 탭에 이 표시를 달아 두며, 실제로 우리 보도자료면 '그린광학 보도자료로 바꾸기'를 누르면 됩니다.</li>
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
           <li>같은 반응일에 나온 기사는 주가 반응을 나눌 수 없어 한 건으로 셉니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
         </ul>
         <h3>소식 없는 날과 비교</h3>
         <ul>
-          <li>최근 2년의 거래일을 그날 있었던 소식으로 나눕니다: 그린광학 보도자료 날 → 주요 공시 날 → 회사 관련 보도 날 → 외부 기사만 있는 날 → 소식 없는 날 (한 날이 여러 종류면 앞의 것). 주요 공시는 정기(실적)·주요사항·발행·거래소 공시와 거래소 조치입니다.</li>
+          <li>최근 2년의 거래일을 그날 있었던 소식으로 나눕니다: 그린광학 보도자료 날 → 주요 공시 날 → 외부 기사만 있는 날 → 소식 없는 날 (한 날이 여러 종류면 앞의 것). 주요 공시는 정기(실적)·주요사항·발행·거래소 공시와 거래소 조치입니다.</li>
           <li>각 소식은 반응일과 그다음 거래일을 함께 셉니다. 반응이 다음 날까지 이어질 수 있어서입니다.</li>
           <li>평소 관계(코스닥·비교 종목과 함께 움직이는 정도)는 <b>소식 없는 날만으로</b> 한 번 추정하고, 모든 날의 예상 대비 차이를 구합니다.</li>
           <li><b>크게 움직인 날</b>의 기준은 소식 없는 날의 차이 크기를 작은 것부터 줄 세웠을 때 상위 10%가 시작되는 값입니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄을 이 10%와 견주어 봅니다. 기준값은 이 종목의 평소 출렁임에서 나오므로 자료가 쌓이면 조금씩 바뀝니다.
@@ -1659,7 +1658,7 @@
         </ul>
         <h3>하루 단위 (평소 예상과 비교 · 일별 사건연구)</h3>
         <ul>
-          <li>반응일 10거래일 전까지의 120거래일로 평소 관계를 추정합니다. 이 기간에 그린광학 보도자료·회사 관련 보도·주요 공시가 있던 날은 빼고 그만큼 더 앞의 날로 채웁니다. 그날들의 큰 움직임이 평소 출렁임을 부풀리지 않게 하려는 것입니다.</li>
+          <li>반응일 10거래일 전까지의 120거래일로 평소 관계를 추정합니다. 이 기간에 회사 보도자료·주요 공시가 있던 날은 빼고 그만큼 더 앞의 날로 채웁니다. 그날들의 큰 움직임이 평소 출렁임을 부풀리지 않게 하려는 것입니다.</li>
           <li>코스닥 등락과 비교 종목 평균 등락으로 회귀합니다. 비교 종목 기록이 모자라면 코스닥만 씁니다.</li>
           <li>95% 범위는 t분포로 구하고, 평소 관계를 추정할 때의 오차도 넣습니다. 오차가 서로 독립이고 크기가 일정하다고 가정합니다.</li>
           <li>살펴보는 구간: 공개 전 5일 [−5,−1], 반응일 [0,0], 전후 3일 [−1,+1], 이후 3일 [0,+2], 후속 3일 [+1,+3]. 여러 날은 각 날의 차이를 더한 값이고 실제 투자 수익률과 다릅니다. 여러 구간을 함께 보는 만큼 우연히 튀는 구간이 생길 수 있습니다(보정하지 않음).</li>
@@ -1781,8 +1780,8 @@
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
-      pr: events.filter((e) => e.kind === "pr"),                  // 직접 등록·담당자가 확인한 그린광학 보도자료만
-      ext: events.filter((e) => e.kind !== "pr" && !e.noise),     // 자동 분류한 '회사 관련 보도' 포함
+      pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
+      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
     const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
@@ -1812,8 +1811,8 @@
     function baselineBlock() {
       const b = d.baseline;
       if (!b) return "";
-      const NAMES = { pr: "그린광학 보도자료 날", disc: "주요 공시 날", company: "회사 관련 보도 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
-      const rows = ["pr", "disc", "company", "ext", "none"].filter((k) => b.groups[k]).map((k) => {
+      const NAMES = { pr: "그린광학 보도자료 날", disc: "주요 공시 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
+      const rows = ["pr", "disc", "ext", "none"].map((k) => {
         const g = b.groups[k] || {};
         return `<tr${k === "none" ? ' class="muted"' : ""}><td>${NAMES[k]}</td><td class="num">${g.n || 0}일</td>
           <td class="num">${g.big_share != null ? `<b>${Math.round(g.big_share * 100)}%</b> <small class="muted">${g.n}일 중 ${g.big_up + g.big_down}일 (오름 ${g.big_up} · 내림 ${g.big_down})</small>` : "-"}</td>
@@ -1920,7 +1919,7 @@
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" ? "pr" : "ext";
+      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length ? ""
@@ -1950,7 +1949,7 @@
   }
 
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "그린광학 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two, noun = "기사") {
@@ -1987,7 +1986,7 @@
       <table class="ladder"><thead><tr><th>살펴본 기간</th><th>예상보다 더 움직인 부분</th><th>95% 불확실성 범위</th></tr></thead><tbody>${rows}</tbody></table>
       ${study.pre_drift ? `<p class="note">공개 전 5일에도 같은 방향으로 이례적으로 움직였습니다.</p>` : ""}
       ${study.pending_windows.length ? `<p class="note">시세가 부족하거나 아직 지나지 않아 계산하지 않은 구간: ${study.pending_windows.map(esc).join(", ")}.</p>` : ""}
-      <p class="note">추정: ${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일 (반응일 직전 ${study.gap}거래일${study.excluded_news_days ? `, 보도자료·회사 관련 보도·주요 공시 날 ${study.excluded_news_days}일` : ""} 제외)</p></section>`;
+      <p class="note">추정: ${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일 (반응일 직전 ${study.gap}거래일${study.excluded_news_days ? `, 보도자료·주요 공시 날 ${study.excluded_news_days}일` : ""} 제외)</p></section>`;
   }
 
   async function loadPR(id) {

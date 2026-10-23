@@ -68,8 +68,7 @@ def _first_session(calendar: list[str], ts: str) -> int:
 
 
 def news_days(symbol: str) -> dict[str, set]:
-    """소식이 있던 거래일 {pr: 그린광학 보도자료(직접 등록·담당자가 확인), company: 회사 관련 보도(제목으로 자동 분류한
-    '회사 발표', 보도자료라는 증거는 아님), disc: 주요 공시, ext: 외부 기사}.
+    """소식이 있던 거래일 {pr: 회사 보도자료·회사 관련 보도, disc: 주요 공시, ext: 외부 기사}.
     각 소식의 반응일과 다음 거래일 (발표 다음 날까지 반응이 이어질 수 있어서)."""
     with connect() as conn:
         sig = tuple(tuple(r) for r in conn.execute(
@@ -86,16 +85,14 @@ def news_days(symbol: str) -> dict[str, set]:
         discs = [r[0] or r[1] + "T15:30" for r in conn.execute(
             "SELECT ts, date FROM disclosures WHERE symbol=? AND (pblntf IS NULL OR pblntf IN (%s))"
             % ",".join("?" * len(NEWS_DISC_TYPES)), (symbol, *NEWS_DISC_TYPES))]
-    out = {"pr": set(), "company": set(), "disc": set(), "ext": set()}
+    out = {"pr": set(), "disc": set(), "ext": set()}
 
     def add(kind, ts):
         i = _first_session(calendar, ts)
         out[kind].update(calendar[i:i + 2])
     for ts, category, override in arts:
-        if override == "pr":
+        if override == "pr" or (category == "회사 발표" and override != "ext"):
             add("pr", ts)
-        elif category == "회사 발표" and override != "ext":
-            add("company", ts)
         elif category not in NOISE_CATEGORIES:
             add("ext", ts)
     for ts in prs:
@@ -112,7 +109,7 @@ def estimation_exclusions(symbol: str) -> set:
         n = news_days(symbol)
     except Exception:
         return set()
-    return n["pr"] | n["company"] | n["disc"]
+    return n["pr"] | n["disc"]
 
 
 def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
@@ -135,11 +132,9 @@ def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
     days = sorted(own)
     pr = n["pr"]
     disc = n["disc"] - pr
-    company = n["company"] - pr - disc
-    ext = n["ext"] - pr - disc - company
-    quiet = set(days) - pr - disc - company - ext
-    return baseline_by_group(own, mkt, days, {"pr": pr, "disc": disc, "company": company, "ext": ext, "none": quiet},
-                             "none", sector)
+    ext = n["ext"] - pr - disc
+    quiet = set(days) - pr - disc - ext
+    return baseline_by_group(own, mkt, days, {"pr": pr, "disc": disc, "ext": ext, "none": quiet}, "none", sector)
 
 
 def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict | None:
