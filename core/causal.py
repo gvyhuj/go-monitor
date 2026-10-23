@@ -117,9 +117,14 @@ def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
     from .eventstudy import baseline_by_group, returns_from_prices
     hi = date.today().isoformat()
     lo = (date.today() - timedelta(days=int(365 * years) + 10)).isoformat()
+    with connect() as conn:
+        # 기사를 모으기 시작한 날 전은 기사가 없어서 '소식 없는 날'로 잘못 섞이므로 비교에서 뺌
+        first = conn.execute("SELECT MIN(substr(ts,1,10)) FROM articles WHERE symbol=? AND hidden=0", (symbol,)).fetchone()[0]
+    start = max(lo, first) if first else lo
     market_prices = {row[0]: row[2] for row in _daily(KOSDAQ, lo, hi)}
     calendar = sorted(market_prices)
-    own = returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar)
+    own = {d: r for d, r in returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar).items()
+           if d >= start}
     mkt = returns_from_prices(market_prices, calendar)
     with connect() as conn:
         peer_codes = [row[0] for row in conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?)",

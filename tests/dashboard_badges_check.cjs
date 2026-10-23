@@ -25,6 +25,10 @@ for (const html of [context.foldRow(data, []), context.dayCardHtml(data, [], tru
 }
 assert.match(context.dayCardHtml(data, [], true), /KOSDAQ -1%/);
 data.events.forEach((event) => { event.cause_headline = "확인한 원인 <안전하게 표시>"; });
-assert.match(context.foldRow(data, []), /확인한 원인 &lt;안전하게 표시&gt;/);
-assert.match(context.dayCardHtml(data, [], true), /확인한 원인 &lt;안전하게 표시&gt;/);
-console.log("원인 미입력 배지 제거 검증 통과: 접힌 카드·일별 카드·장중 행, 입력된 원인 유지");
+assert.doesNotMatch(context.foldRow(data, []), /확인한 원인/);                     // 접힌 줄에는 AI 글 대신 그날 소식
+assert.match(context.foldRow(data, [{ kind: "pr", title: "공급 계약" }], { kosdaq: -0.01 }), /KOSDAQ -1%.*보도자료.*공급 계약/s);
+assert.match(context.foldRow(data, []), /소식 없음/);
+const opened = context.dayCardHtml(data, [], true);
+assert.match(opened, /<details class="ai-memo"><summary>AI 메모<\/summary><span class="cause-text">확인한 원인 &lt;안전하게 표시&gt;/);
+assert.doesNotMatch(opened, /<button[^>]*day-total[^>]*>(?:(?!<\/button>).)*ai-memo/s);          // 메모는 상세 열기 버튼 밖
+console.log("일별 카드 검증 통과: 원인 미입력 배지 없음, 접힌 줄은 KOSDAQ·그날 소식, AI 메모는 접힘");

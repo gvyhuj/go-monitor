@@ -16,10 +16,13 @@
           <span class="brand-text"><strong>STOCK</strong> 주가 모니터</span>
         </a>
         <div class="tabs" role="tablist">
-          <a href="#/" data-route="dash">대시보드</a>
-          <a href="#/pr" data-route="pr">기사·공시 모음</a>
+          <a href="#/" data-route="dash">주가 기록</a>
+          <a href="#/pr" data-route="pr">소식</a>
           <a href="#/method" data-route="method">README</a>
         </div>
+        <form class="gsearch" id="gsearch" role="search" autocomplete="off">
+          <input type="search" id="gsearch-q" placeholder="전체 검색 (예: LIG, 4월, ZnS)" aria-label="기사·공시·사건·날짜 전체 검색">
+        </form>
         <div class="engine" id="engine" aria-live="polite">
           <span class="dot"></span><span class="engine-label">확인 중</span>
         </div>

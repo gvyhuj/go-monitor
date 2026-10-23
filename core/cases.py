@@ -109,7 +109,7 @@ def build(articles: list[dict], disclosures: list[dict], company: str = "그린�
                     "title": lead["title"], "lead": lead["id"],
                     "kind": "pr" if any(i["kind"] == "pr" for i in arts) else
                             "company" if any(i["kind"] == "company" for i in arts) else "ext",
-                    "partner": next(iter(sorted(c["_partners"], key=len)), None),
+                    "partner": max(c["_partners"], key=len) if c["_partners"] else None,
                     "amount": max(c["_amounts"]) if c["_amounts"] else None,
                     "topic": next(iter(sorted(c["_topics"])), None),
                     "n_articles": len(arts), "n_outlets": sum(i.get("outlets") or 1 for i in arts),

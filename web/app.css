@@ -906,3 +906,41 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .piv-n:hover { text-decoration: underline; }
 .pivot-drill { margin-top: 14px; padding: 16px 18px; }
 @media (max-width: 640px) { .pivot-controls .btn { margin-left: 0; } table.pivot { font-size: 13px; } table.pivot th, table.pivot td { padding: 6px 8px; } }
+
+/* 접힌 날짜 줄: KOSDAQ·그날 소식 / AI 메모(접힘) / 일별 표 */
+.day-fold-kq { font-size: 13px; white-space: nowrap; }
+.day-fold-kq:empty { display: none; }
+.day-fold-what .ktag { margin-right: 6px; }
+.day-fold-title { color: var(--ink); }
+.day-total-cause { white-space: normal; padding: 0 16px 6px; }
+.ai-memo { font-size: 14px; }
+.ai-memo summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.ai-memo .cause-text { display: block; margin-top: 6px; font-weight: 500; }
+.days-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.days-table th, .days-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.days-table th { position: sticky; top: 0; background: var(--surface); text-align: right; font-weight: 600; }
+.days-table th:first-child, .days-table td:first-child { text-align: left; }
+.case-items { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.case-items li a { display: block; padding: 10px 2px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.case-items li a:hover { background: var(--canvas); }
+.case-items .t { display: block; margin-top: 3px; color: var(--ink); }
+.measure-detail { margin: 0 0 12px; }
+
+/* 전체 검색 */
+.gsearch { margin-left: auto; }
+.gsearch input { width: 230px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--on-navy-line);
+  background: rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 14px; }
+.gsearch input::placeholder { color: rgba(255, 255, 255, 0.6); }
+.search-sec { margin-top: 22px; }
+.search-sec h2 { font-size: 16px; margin: 0 0 8px; }
+.search-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.search-list li a { display: block; padding: 10px 2px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.search-list li a:hover { background: var(--canvas); }
+.search-list .t { display: block; margin-top: 3px; color: var(--ink); }
+@media (max-width: 720px) {
+  .gsearch { order: 4; width: 100%; margin: 0 0 8px; }
+  .gsearch input { width: 100%; }
+}
+.gsearch + .engine { margin-left: 0; }
+.tabs a { white-space: nowrap; }
+@media (max-width: 1100px) and (min-width: 721px) { .gsearch input { width: 170px; } }

@@ -230,19 +230,25 @@ def api_events(q):
 
 
 def api_daily(_q):
-    """달력용: 날마다 종가·전일 대비 등락·KOSDAQ 등락·거래량 (일봉 전체)."""
+    """달력·일별 표용: 날마다 시가·고가·저가·종가·전일 대비 등락·거래량·KOSDAQ 등락·투자자별 순매수 (일봉 전체)."""
     sym = load_settings()["symbol"]
     with connect() as conn:
-        own = conn.execute("SELECT date, close, volume FROM daily_bars WHERE symbol=? AND close > 0 ORDER BY date",
-                           (sym,)).fetchall()
+        own = conn.execute("SELECT date, close, volume, open, high, low FROM daily_bars WHERE symbol=? AND close > 0 "
+                           "ORDER BY date", (sym,)).fetchall()
         kq = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND close > 0", (KOSDAQ,)).fetchall())
+        inv = {r[0]: r[1:] for r in conn.execute(
+            "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
+            (sym,))}
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
-    for i, (d, c, v) in enumerate(own):
+    for i, (d, c, v, o, h, lo) in enumerate(own):
         prev = own[i - 1][1] if i else None
-        days.append({"date": d, "close": c, "volume": v, "change": c / prev - 1 if prev else None,
-                     "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None})
+        f = inv.get(d) or inv.get(d.replace("-", "")) or (None, None, None, None)
+        days.append({"date": d, "close": c, "volume": v, "open": o, "high": h, "low": lo,
+                     "change": c / prev - 1 if prev else None,
+                     "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None,
+                     "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3]})
     return {"days": days}
 
 

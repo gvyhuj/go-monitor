@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8");
 const formatters = source.slice(source.indexOf("  function measureList("), source.indexOf("  // 평소 기록과 비교한 드문 정도"));
 const counts = source.slice(source.indexOf("    const since = isoDate("), source.indexOf("    function baselineBlock("));
-const summary = source.slice(source.indexOf("    function baselineBlock("), source.indexOf("    if (![\"pr\", \"ext\", \"disc\"]"));
+const summary = source.slice(source.indexOf("    function baselineBlock("), source.indexOf("    if (![\"pr\", \"ext\", \"disc\", \"case\"]"));
 const context = {
   esc: (value) => String(value), sgnCls: () => "", pct: (value) => `${(value * 100).toFixed(2)}%`,
   points: (value) => `${(value * 100).toFixed(2)}%p`,
@@ -27,7 +27,8 @@ const detail = context.measureTxt(measure);
 assert.match(detail, /실제 등락.*-5\.00%/);
 assert.match(detail, /0\.41%p/);
 assert.doesNotMatch(detail, /단정할 수 없습니다/);                 // 설명은 계산 방법 탭으로
-assert.match(context.measureList(measure), /실제 -5\.00%/);
+assert.match(context.measureList(measure), /반응일 실제<\/span><span class="num ">-5\.00%/);
+assert.doesNotMatch(context.measureList(measure), /예상 대비|%p/);          // 목록에는 실제 등락만 (분석 숫자는 상세 아래쪽)
 assert.equal(context.measureList({ value: 0.9 }), "");
 const prCount = context.countLine("pr");
 assert.match(prCount, /최근 6개월 그린광학 보도자료<\/small><b>2건/);

@@ -358,7 +358,9 @@ def test_news_days_from_database_feed_exclusion_and_baseline(tmp_path, monkeypat
     study = causal.event_study("X", dates[190])
     assert study["ok"] and study["excluded_news_days"] == 8
     baseline = causal.news_baseline("X")
-    assert baseline and baseline["groups"]["pr"]["n"] == 6 and baseline["groups"]["none"]["n"] > 150
+    assert baseline and baseline["groups"]["pr"]["n"] == 6 and baseline["groups"]["none"]["n"] > 60
+    assert baseline["from"] >= dates[100]          # 첫 기사 전(기사를 모으지 않던 때)은 비교에서 뺌
+    assert sum(g["n"] for g in baseline["groups"].values()) <= len(dates) - 100
 
 
 def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeypatch):
