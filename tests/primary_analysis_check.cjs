@@ -26,7 +26,7 @@ const measure = { method: "event-study-v2", own: -0.05, expected: -0.0541, value
 const detail = context.measureTxt(measure);
 assert.match(detail, /실제 등락.*-5\.00%/);
 assert.match(detail, /0\.41%p/);
-assert.match(detail, /실제 상승이 아니라/);
+assert.doesNotMatch(detail, /단정할 수 없습니다/);                 // 설명은 계산 방법 탭으로
 assert.match(context.measureList(measure), /실제 -5\.00%/);
 assert.equal(context.measureList({ value: 0.9 }), "");
 const prCount = context.countLine("pr");
@@ -37,7 +37,8 @@ assert.match(context.countLine("disc"), /시각을 아는 공시 \(6개월\)<\/s
 const box = context.baselineBlock();
 assert.match(box, /소식 없는 날과 비교/);
 assert.match(box, /<b>30%<\/b>.*40일 중 12일/s);
-assert.doesNotMatch(box, /<details|평균 예상 대비 차이/);
+assert.doesNotMatch(box, /<details|평균 예상 대비 차이|class="note"/);
+assert.match(box, /±5\.2%p 넘게 차이/);
 context.d.baseline = null;
 assert.equal(context.baselineBlock(), "");
 assert.match(context.measureTxt({ value: 0.9 }), /다시 계산/);

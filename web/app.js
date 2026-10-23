@@ -1091,8 +1091,7 @@
       const pre = (es.car || []).find((x) => x.window.startsWith("사전"));
       rows.push(`<li><div class="ch">${verdict(sig, sig ? "이례적" : "평소 범위")}<b>${esc(es.method || "시장 회귀")}</b><small>추정에 사용한 ${es.n_est}거래일</small></div>
         <p>평소 관계로 예상되는 등락 ${pct(es.expected)} 대비 실제 ${pct(es.actual)} → 비정상수익률 <b>${pct(es.ar)}</b> (모형 가정에 따른 양측 p=${es.p.toFixed(3)}).
-        ${sig ? "통계적으로 평소에 보기 드문 움직임입니다." : "평소에도 나올 수 있는 크기라, 특별한 원인이 없었을 수도 있습니다."}
-        ${pre ? ` 직전 5일 비정상수익률 합계 ${pct(pre.car)}(p=${pre.p.toFixed(2)})${pre.p < 0.05 ? " — 미리 움직인 흔적이 있습니다." : " — 미리 움직인 흔적을 확인하지 못했습니다."}` : ""}
+        ${pre ? ` 직전 5일 비정상수익률 합계 ${pct(pre.car)}(p=${pre.p.toFixed(2)})` : ""}
         ${es.vol_ratio ? ` 거래량은 평소의 ${es.vol_ratio.toFixed(1)}배.` : ""}</p></li>`);
     } else if (es) rows.push(`<li><div class="ch">${verdict(null, "자료 부족")}<b>시장만 감안한 계산</b></div><p>${esc(es.reason || "")}</p></li>`);
     const fa = ca.factor;
@@ -1100,7 +1099,7 @@
       const sig = fa.p != null && fa.p < 0.05;
       rows.push(`<li><div class="ch">${verdict(sig, sig ? "고유 움직임 큼" : "평소 범위")}<b>① 몫 나누기 계산식</b><small>시장(KOSDAQ) + 업종 ETF 회귀, 직전 ${fa.n_est}거래일</small></div>
         <p>${fa.parts.map((x) => `${esc(x.name)} ${pct(x.contrib)}`).join(" + ")} + 고유 <b>${pct(fa.specific)}</b> = 실제 ${pct(fa.actual)}.
-        고유 몫은 평소 고유 변동(하루 ±${(fa.sigma * 100).toFixed(1)}%)의 ${Math.abs(fa.z).toFixed(1)}배(p=${fa.p.toFixed(3)}). 이 모형이 평소 이 종목 움직임을 설명하는 비율(R²)은 ${(fa.r2 * 100).toFixed(0)}%입니다${fa.r2 < 0.2 ? " — 시장·업종보다 개별 요인으로 움직이는 종목이라는 뜻입니다" : ""}.</p></li>`);
+        고유 몫은 평소 고유 변동(하루 ±${(fa.sigma * 100).toFixed(1)}%)의 ${Math.abs(fa.z).toFixed(1)}배(p=${fa.p.toFixed(3)}). 설명 비율(R²) ${(fa.r2 * 100).toFixed(0)}%.</p></li>`);
     }
     const ti = ca.intensity;
     if (ti && ti.vol_x) {
@@ -1108,11 +1107,10 @@
       rows.push(`<li><div class="ch">${verdict(heavy ? true : thin ? false : null, heavy ? "많은 거래 동반" : thin ? "얇은 호가" : "보통")}<b>③ 거래 강도</b><small>20일 평균 대비 거래량 · 같은 돈 대비 움직임</small></div>
         <p>거래량 ${int(ti.volume)}주로 20일 평균의 <b>${ti.vol_x.toFixed(1)}배</b>, 거래대금 ${eok(ti.value)}(평균 ${eok(ti.adval)}).
         ${ti.impact_x ? `같은 거래대금 대비 주가 움직임은 평소의 ${ti.impact_x.toFixed(1)}배입니다.` : ""}
-        ${heavy ? "실제로 많은 매매가 실린 움직임이라 '확신 있는 매수·매도'에 가깝습니다." : thin ? "평소보다 적은 돈으로 크게 움직였습니다. 호가가 얇아 소수 주문만으로 생긴 움직임일 수 있습니다." : ""}</p></li>`);
+</p></li>`);
     }
     if (!rows.length) return "";
-    return `<details class="causal-more"><summary>계산 근거 자세히 보기</summary><ul class="causal">${rows.join("")}</ul>
-      <p class="note">p값은 '우연히 이만큼 나올 확률'입니다. 0.05보다 작으면 우연으로 보기 어렵다고 판단합니다.</p></details>`;
+    return `<details class="causal-more"><summary>계산 근거 자세히 보기</summary><ul class="causal">${rows.join("")}</ul></details>`;
   }
 
   // 숫자로 본 움직임 (자동 기록). 원인 결론·후보는 싣지 않음 — 원인은 직접 붙여넣은 글로
@@ -1244,8 +1242,7 @@
       const max = Math.max(1, ...parts.map((p) => Math.abs(p[1] || 0)));
       html += `<h4 class="sub">그날 하루 투자자별 순매수 (거래소 확정치)</h4><ul class="inv">${parts.map(([k, v]) => `
         <li><span class="nm">${k}</span><span class="dbar"><i class="${v >= 0 ? "b" : "s"}" style="${v >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / max) * 50}%`};width:${(Math.abs(v) / max) * 50}%"></i></span>
-        <span class="num v ${v >= 0 ? "up-t" : "down-t"}">${v >= 0 ? "+" : "−"}${int(Math.abs(v || 0))}주</span></li>`).join("")}</ul>
-        <p class="note">투자자 유형별 순매수는 거래소가 장 마감 후 확정하는 공식 수치입니다. 위의 증권사 창구 숫자와 다를 수 있습니다(외국계 창구를 국내 투자자가 쓰기도 합니다).</p>`;
+        <span class="num v ${v >= 0 ? "up-t" : "down-t"}">${v >= 0 ? "+" : "−"}${int(Math.abs(v || 0))}주</span></li>`).join("")}</ul>`;
     } else {
       html += `<p class="note">그날 투자자별(외국인·기관·개인) 확정 순매수는 장 마감 후 자동으로 추가됩니다.</p>`;
     }
@@ -1255,7 +1252,7 @@
   function verifyBlock(f) {
     const cc = f.crosscheck, eod = f.eod || {};
     let rows = [`<li><b>출처</b> ${esc(f.source || "")}</li>`,
-      `<li><b>읽는 법</b> 매수·매도 각각 상위 5개 증권사만 공개됩니다. '미집계'는 0주가 아니라 5위 밖이라 보이지 않는다는 뜻이고, '5위 밖·멈춤'은 순위에서 밀려난 뒤의 거래가 반영되지 않은 값입니다. 그래서 순매수 앞에 '최소'를 붙였습니다.</li>`];
+];
     if (cc) {
       const ok = cc.compared && cc.matched === cc.compared && cc.foreign_sum.same;
       rows.push(`<li><b>교차 검증</b> ${esc(cc.ts.slice(11))}에 다음 금융과 대조: 두 곳 모두 상위 5위 안인 값 ${cc.compared}개 중 ${cc.matched}개 일치, 외국계 합계 ${cc.foreign_sum.same ? "일치" : `불일치(네이버 ${int(cc.foreign_sum.naver[0])} / 다음 ${int(cc.foreign_sum.daum[0])})`}${(cc.diffs || []).length ? `. 차이: ${cc.diffs.map((d) => `${esc(d.name)} ${d.side} 네이버 ${int(d.naver)} / 다음 ${int(d.daum)}`).join(", ")} (두 곳을 받은 몇 초 사이 체결로 생길 수 있음)` : ""}${(cc.missing_in_naver || []).length ? `<br>네이버 목록에 빠진 상위 창구를 다음 금융 값으로 보충했습니다: ${cc.missing_in_naver.map((m) => `${esc(m.name)} 매수 ${int(m.buy)} / 매도 ${int(m.sell)}`).join(", ")}` : ""}${(cc.frozen_diffs || []).length ? `<br><span class="muted">참고: 5위 밖에서 멈춘 값은 멈춘 시점에 따라 두 곳이 다를 수 있어 판정에서 뺐습니다 (${cc.frozen_diffs.map((d) => `${esc(d.name)} ${d.side} ${int(d.naver)}/${int(d.daum)}`).join(", ")}).</span>` : ""}</li>`);
@@ -1298,7 +1295,7 @@
           const lk = sg && sg.link != null ? `<span class="muted"> · 평소 연동성 ${sg.link.toFixed(2)}${sg.link_lo != null ? ` (95% 범위 ${sg.link_lo.toFixed(2)}~${sg.link_hi.toFixed(2)}, ${esc(sg.link_label)})` : ""}</span>` : "";
           return `<div class="seg-group"><div class="seg-head"><b>${esc(n)}${lk}</b><span class="num ${sgnCls(a)}">평균 ${pct(a)}</span></div>
           <ul class="rel">${ms.map((r) => `<li><span class="nm">${esc(r.name)}</span>${bar(r.change)}<span class="num v ${sgnCls(r.change)}">${pct(r.change)}</span></li>`).join("")}</ul></div>`; }).join("")}
-        <p class="note">${e_isDailyNote(c)} 비교 종목은 이 종목 사업 분야별 고객사·동종업체입니다. '평소 연동성'은 과거 약 110~120거래일 동안 시장(KOSDAQ) 영향을 뺀 뒤 이 종목과 그 분야가 함께 움직인 정도(상관계수)입니다. 95% 범위의 아래쪽 값이 0보다 커야(우연으로 보기 어려울 때만) 원인 판단에 씁니다.</p>`
+        ${e_isDailyNote(c) ? `<p class="note">${e_isDailyNote(c)}</p>` : ""}`
         : `<p class="note">이 시간대 비교 종목 시세가 없습니다.</p>`}`;
   }
   const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
@@ -1490,21 +1487,118 @@
   function measureTxt(m) {
     if (!m) return "";
     if (m.method === "event-study-v2") return `반응일 실제 등락 <b class="${sgnCls(m.own)}">${pct(m.own)}</b> · 평소 예상 ${pct(m.expected)}<br>
-      ${esc(m.label)} <b class="${sgnCls(m.value)}">${points(m.value)}</b> · 95% 범위 ${points(m.ci_low)} ~ ${points(m.ci_high)}
-      <div class="vb-note">양수는 실제 상승이 아니라 예상보다 높았다는 뜻입니다. 이 차이 전체를 기사·공시의 효과로 단정할 수 없습니다.</div>`;
+      ${esc(m.label)} <b class="${sgnCls(m.value)}">${points(m.value)}</b> · 95% 범위 ${points(m.ci_low)} ~ ${points(m.ci_high)}`;
     return "새 계산 방식으로 다시 계산한 뒤 표시합니다.";
   }
   // 평소 기록과 비교한 드문 정도 (정규분포 가정 없이: 평소 같은 길이 고유 움직임 중 이번 이상이었던 비율)
   function rarityTxt(rr, n, unit) {
     if (rr == null) return "";
     const p = rr * 100;
-    return `평소 ${unit} ${n ? `${n}개 중` : ""} 이만큼 이상 움직인 경우가 ${p < 1 ? "1% 미만" : `${p.toFixed(p < 10 ? 1 : 0)}%`} — ${rr <= 0.05 ? "드문 크기입니다" : rr <= 0.15 ? "다소 드문 크기입니다" : "평소에도 흔한 크기입니다"}`;
+    return `평소 ${unit} ${n ? `${n}개 중` : ""} 이만큼 이상 움직인 경우 ${p < 1 ? "1% 미만" : `${p.toFixed(p < 10 ? 1 : 0)}%`}`;
+  }
+
+  const METHOD_LINK = `숫자를 어떻게 계산했는지는 <a href="#/method">계산 방법</a> 탭에 모아 두었습니다.`;
+
+  // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
+  function pageMethod() {
+    const sec = (id, title, body) => `<section class="method-sec" id="m-${id}"><h2>${title}</h2>${body}</section>`;
+    const toc = [["words", "먼저 알아 둘 말"], ["articles", "기사 영향 분석"], ["events", "이벤트 기록 (주가 분석)"], ["limits", "한계"]];
+    main.innerHTML = `<div class="wrap method">
+      <div class="page-head"><div><h1 class="page-title">계산 방법</h1>
+        <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
+      <nav class="method-toc" aria-label="목차">${toc.map(([id, t]) => `<a href="#/method" data-to="m-${id}">${t}</a>`).join("")}</nav>
+      ${sec("words", "먼저 알아 둘 말", `
+        <dl>
+          <dt>반응일</dt><dd>기사·공시가 주가에 처음 반영될 수 있는 거래일입니다. 장 마감(15:30) 뒤나 휴장일에 나왔으면 다음 거래일입니다. 같은 내용의 공시가 36시간 안에 먼저 나왔으면 공시 시각부터 잽니다.</dd>
+          <dt>평소 예상</dt><dd>그날 코스닥과 비교 종목이 움직인 만큼, 이 종목이 평소 관계대로라면 움직였을 값입니다. 평소 관계는 과거 주가로 추정합니다.</dd>
+          <dt>예상 대비 차이 (%p)</dt><dd>실제 등락 − 평소 예상. 양수는 실제로 올랐다는 뜻이 아니라 예상보다 높았다는 뜻입니다.</dd>
+          <dt>고유 움직임</dt><dd>실제 등락에서 시장 몫과 업종(분야) 몫을 뺀 나머지입니다. 회사 소식, 수급, 그 밖의 이유가 모두 섞여 있습니다.</dd>
+          <dt>95% 범위</dt><dd>평소 주가의 출렁임을 감안했을 때 차이가 있을 만한 범위입니다. 범위에 0이 들어가면 차이를 확정할 수 없다는 뜻이지, 영향이 없었다는 뜻은 아닙니다. 하루 주가는 출렁임이 커서 기사 하나로는 범위가 넓게 나옵니다. 0이 없어도 원인이 확정되지는 않습니다.</dd>
+          <dt>평소 같은 구간 중 이보다 크게 움직인 비율</dt><dd>최근 같은 길이 구간들의 고유 움직임 중 이번 이상으로 컸던 비율입니다. 3%면 평소 그런 구간 100개 중 3개꼴이라는 뜻입니다. 정규분포를 가정하지 않고 실제 기록과 바로 비교합니다.</dd>
+          <dt>p값</dt><dd>평소 관계가 그대로라면 이만큼 차이가 우연히 나올 확률입니다. 작을수록 드뭅니다. 여러 구간을 동시에 보면 우연히 작게 나오는 구간도 생깁니다.</dd>
+        </dl>`)}
+      ${sec("articles", "기사 영향 분석", `
+        <h3>탭과 건수</h3>
+        <ul>
+          <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
+          <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 뺍니다.</li>
+          <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
+          <li>같은 반응일에 나온 기사는 주가 반응을 나눌 수 없어 한 건으로 셉니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
+        </ul>
+        <h3>소식 없는 날과 비교</h3>
+        <ul>
+          <li>최근 2년의 거래일을 그날 있었던 소식으로 나눕니다: 그린광학 보도자료 날 → 주요 공시 날 → 외부 기사만 있는 날 → 소식 없는 날 (한 날이 여러 종류면 앞의 것). 주요 공시는 정기(실적)·주요사항·발행·거래소 공시와 거래소 조치입니다.</li>
+          <li>각 소식은 반응일과 그다음 거래일을 함께 셉니다. 반응이 다음 날까지 이어질 수 있어서입니다.</li>
+          <li>평소 관계(코스닥·비교 종목과 함께 움직이는 정도)는 <b>소식 없는 날만으로</b> 한 번 추정하고, 모든 날의 예상 대비 차이를 구합니다.</li>
+          <li><b>크게 움직인 날</b>의 기준은 소식 없는 날의 차이 크기를 작은 것부터 줄 세웠을 때 상위 10%가 시작되는 값입니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄을 이 10%와 견주어 봅니다. 기준값(예: ±6.7%p)은 이 종목의 평소 출렁임에서 나오므로 자료가 쌓이면 조금씩 바뀝니다.</li>
+          <li>기사 자체의 효과가 아니라 '소식이 있던 날'과 '없던 날'의 차이입니다. 사건(예: 계약) 자체의 영향, 같은 날의 다른 소식, 수집하지 못한 소식이 섞여 있습니다.</li>
+        </ul>
+        <h3>발표 직후 30분 반응 (기사 상세 맨 위)</h3>
+        <ul>
+          <li>공개 시각이 확실하고 분봉이 있는 기사에만 나옵니다. 장중(15:00까지) 공개면 공개 시각부터 30분, 장 시작 전·전날 장 마감 뒤 공개면 전날 종가부터 09:30까지입니다.</li>
+          <li>나오지 않는 경우: 공개 시각 확인 필요 기사, 시각 미상 공시, 15시 넘어 공개된 기사, 분봉 기록이 없는 옛 기사.</li>
+          <li>고유 움직임 = 이 종목 등락 − 시장 몫(코스닥 × 민감도) − 업종 몫. 같은 시간대 업종 분봉이 없으면 시장 몫만 뺍니다.</li>
+          <li>비교 대상은 최근 약 45일의 같은 길이 구간(장 시작 전 공개면 같은 시각까지의 움직임)입니다. 짧은 구간이라 다른 요인이 끼어들 틈이 적지만, 장 시작 전 공개는 밤사이 다른 소식이 섞일 수 있습니다.</li>
+        </ul>
+        <h3>하루 단위 (평소 예상과 비교 · 일별 사건연구)</h3>
+        <ul>
+          <li>반응일 10거래일 전까지의 120거래일로 평소 관계를 추정합니다. 이 기간에 회사 보도자료·주요 공시가 있던 날은 빼고 그만큼 더 앞의 날로 채웁니다. 그날들의 큰 움직임이 평소 출렁임을 부풀리지 않게 하려는 것입니다.</li>
+          <li>코스닥 등락과 비교 종목 평균 등락으로 회귀합니다. 비교 종목 기록이 모자라면 코스닥만 씁니다.</li>
+          <li>95% 범위는 t분포로 구하고, 평소 관계를 추정할 때의 오차도 넣습니다. 오차가 서로 독립이고 크기가 일정하다고 가정합니다.</li>
+          <li>살펴보는 구간: 공개 전 5일 [−5,−1], 반응일 [0,0], 전후 3일 [−1,+1], 이후 3일 [0,+2], 후속 3일 [+1,+3]. 여러 날은 각 날의 차이를 더한 값이고 실제 투자 수익률과 다릅니다. 여러 구간을 함께 보는 만큼 우연히 튀는 구간이 생길 수 있습니다(보정하지 않음).</li>
+          <li>일별 종가 기준이라 장중 기사는 공개 전의 그날 움직임도 포함합니다.</li>
+        </ul>
+        <h3>몫 나누기 (기사 상세 · 이벤트 기록 공통)</h3>
+        <ul>
+          <li>하루 등락 = 시장 몫 + 분야별 몫 + 고유 움직임. 분야는 이 종목의 사업 분야별 비교 종목 묶음(업종 ETF가 설정돼 있으면 함께)입니다.</li>
+          <li>민감도는 반응일 5거래일 전까지의 120거래일로 추정합니다(기사·공시 날은 빼고 채움). 분야에서 시장과 겹치는 부분을 먼저 뺍니다.</li>
+          <li>큰 사건 며칠에 끌려가지 않도록 추정할 때만 극단값을 누르고(중앙값 ± 4×MAD), 분야 민감도는 기록이 짧거나 연관이 약하면 작게 반영합니다(축소 추정). 평소 추세는 빼지 않습니다.</li>
+          <li>평소 고유 변동폭은 중앙값 기반으로 재고, 드문 정도는 실제 기록과 비교합니다. 기록이 40거래일보다 짧으면 시장 1배로 단순 비교합니다.</li>
+        </ul>
+        <h3>기사 표시</h3>
+        <ul>
+          <li><b>공개 시각 확인 필요</b>: 구글 뉴스 시각이 16:00·17:00으로 반복 표시되는 기사입니다. 오류가 확정된 것은 아니지만, 원문 시각을 확인하기 전에는 반응일과 숫자를 잠정치로 보세요.</li>
+          <li><b>장 외 공개</b>: 장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 그 사이 다른 소식이 섞일 수 있습니다.</li>
+          <li><b>오후 늦게 공개</b>(14시 이후): 남은 거래 시간이 짧아 반응이 다음 날까지 이어질 수 있으니 여러 날 구간도 함께 보세요.</li>
+          <li><b>시황·특징주</b>: 주가가 움직인 뒤 그 움직임을 다룬 기사라 원인보다 결과에 가깝습니다. <b>단순 언급</b>: 이름만 나오는 기사라 그날 움직임을 기사 효과로 보기 어렵습니다.</li>
+          <li><b>거래량 급증</b>: 반응일 거래량이 직전 60거래일 중 상위 5% 안입니다.</li>
+        </ul>`)}
+      ${sec("events", "이벤트 기록 (주가 분석)", `
+        <h3>감지 기준</h3>
+        <ul>
+          <li>전일 종가 대비 ±3%는 관찰(알림 없음), ±5%는 급등·급락(알림), ±10%는 대형으로 기록합니다. 장중 30분 안의 빠른 움직임도 따로 잡습니다.</li>
+          <li>5거래일 누적 ±10%는 하루하루가 기준 밑이어도 알립니다. 같은 날 같은 방향은 한 번만 알리고, ±3% 안으로 회복했다가 다시 넘으면 한 번 더 알립니다.</li>
+        </ul>
+        <h3>계산 근거</h3>
+        <ul>
+          <li><b>몫 나누기</b>: 위 '몫 나누기'와 같은 계산입니다. 업종 자료가 모자라면 시장만 감안한 사건연구로 대신합니다.</li>
+          <li><b>팩터 분해</b>: 코스닥과 업종 ETF로 최대 250거래일 회귀합니다. R²는 이 모형이 평소 이 종목 움직임을 설명하는 비율이고, 낮으면(20% 미만) 시장·업종보다 개별 요인으로 움직이는 종목이라는 뜻입니다.</li>
+          <li><b>거래 강도</b>: 거래량·거래대금이 20거래일 평균의 몇 배인지(2배 이상이면 많은 매매가 실린 움직임), 같은 거래대금으로 평소보다 얼마나 크게 움직였는지(Amihud 지표, 2.5배 이상이고 거래량이 적으면 호가가 얇아 소수 주문으로 움직였을 수 있음)를 봅니다.</li>
+          <li><b>비교 종목 평소 연동성</b>: 과거 약 110~120거래일 동안 코스닥 영향을 뺀 뒤 이 종목과 그 분야가 함께 움직인 정도(상관계수)입니다. 95% 범위의 아래쪽 값이 0보다 클 때만 원인 판단에 씁니다.</li>
+        </ul>
+        <h3>수급 숫자 읽는 법</h3>
+        <ul>
+          <li><b>증권사 창구</b>: 매수·매도 각각 상위 5개 증권사만 공개됩니다. '미집계'는 0주가 아니라 5위 밖이라 보이지 않는다는 뜻이고, '5위 밖·멈춤'은 순위에서 밀려난 뒤의 거래가 반영되지 않은 값입니다. 그래서 순매수 앞에 '최소'를 붙입니다. 네이버와 다음 금융 값을 대조해 검증합니다.</li>
+          <li><b>투자자별 순매수</b>(외국인·기관·개인): 거래소가 장 마감 후 확정하는 공식 수치입니다. 창구 숫자와 다를 수 있습니다(외국계 창구를 국내 투자자가 쓰기도 함).</li>
+        </ul>`)}
+      ${sec("limits", "한계", `
+        <ul>
+          <li>모든 숫자는 시간상·업종 대비 연관성을 보여 줄 뿐, 그 기사·공시 때문에 움직였다고 증명하지 않습니다.</li>
+          <li>수집하지 못한 소식(다른 매체, 커뮤니티, 큰손 매매)은 반영되지 않습니다.</li>
+          <li>시세는 네이버 증권 화면 자료로 모읍니다. 형식이 바뀌면 일부 수집이 멈출 수 있지만, 이미 모은 기록은 그대로 남습니다.</li>
+        </ul>`)}
+    </div>`;
+    main.querySelector(".method-toc").onclick = (ev) => {
+      const a = ev.target.closest("a[data-to]"); if (!a) return;
+      ev.preventDefault();
+      document.getElementById(a.dataset.to).scrollIntoView({ behavior: "smooth", block: "start" });
+    };
   }
 
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">기사 영향 분석</h1>
-        <p class="page-sub" id="art-sub">기사·공시 반응일의 실제 등락과 과거 자료로 추정한 평소 예상을 비교합니다. 일별 사건연구로 차이와 불확실성 범위를 계산합니다.</p></div></div>
+        <p class="page-sub" id="art-sub"></p></div></div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span class="spacer"></span>
@@ -1585,8 +1679,7 @@
         <span><small>한 달 평균</small><b>${(recent.length / 6).toFixed(1)}건</b></span>
         ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
           : `<span><small>한 건당 실린 매체 (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
-        <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b></span>
-        <p class="score-note">${isDisc ? "위 종류 버튼으로 켠 공시만 셉니다." : "같은 날 나온 기사는 한 건으로 셉니다. 단순 언급·시황 기사는 외부 기사에서 뺍니다."}</p></div>`;
+        <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b></span></div>`;
     }
     // 소식 없는 날과 비교: 기사 하나는 잡음이 커도, 같은 종류 날을 모으면 차이가 보임
     function baselineBlock() {
@@ -1600,9 +1693,7 @@
           <td class="num">${g.median_abs != null ? (g.median_abs * 100).toFixed(2) + "%p" : "-"}</td></tr>`;
       }).join("");
       return `<section class="baseline"><h3 class="baseline-title">소식 없는 날과 비교 <small class="muted">${esc(b.from)} ~ ${esc(b.to)}</small></h3>
-        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>크게 움직인 날 비율</th><th>평소 예상과 차이 크기 (중앙값)</th></tr></thead><tbody>${rows}</tbody></table>
-        <p class="note">'크게 움직인 날'은 평소 예상보다 ${(b.cut * 100).toFixed(1)}%p 넘게 더 오르거나 더 내린 날입니다. 이 기준은 소식 없는 날 중 크게 움직인 날이 10%가 되도록 정했습니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄의 비율을 이 10%와 비교해 보면 됩니다.
-        각 소식은 반응일과 다음 거래일을 함께 셉니다. 평소 관계(${esc(b.method)})는 소식 없는 날만으로 한 번 추정했습니다. 수집하지 못한 소식은 '소식 없는 날'에 섞여 있을 수 있습니다. 기사 자체의 효과가 아니라 소식이 있던 날과 없던 날의 차이이며, 같은 날의 다른 소식이나 사건 자체의 영향이 섞여 있습니다.</p></section>`;
+        <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>크게 움직인 날 비율 <small class="muted">(예상과 ±${(b.cut * 100).toFixed(1)}%p 넘게 차이)</small></th><th>평소 예상과 차이 크기 (중앙값)</th></tr></thead><tbody>${rows}</tbody></table></section>`;
     }
 
     if (!["pr", "ext", "disc"].includes(artState.cat)) artState.cat = "pr";
@@ -1705,8 +1796,7 @@
       if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
-    $("#art-sub").innerHTML = items.length
-      ? `기사·공시 반응일의 실제 등락을 과거 자료로 추정한 평소 예상과 비교합니다 (<b>일별 사건연구</b>). 대표 숫자는 반응일 하루의 차이(%p)이며, 여러 날의 누적 차이와 95% 범위도 함께 봅니다. 실제 상승률이나 기사만의 효과가 아닙니다. 같은 반응일은 한 번만 셉니다.`
+    $("#art-sub").innerHTML = items.length ? METHOD_LINK
       : "아직 모인 기사가 없습니다. 자동 수집이 돌면 네이버·구글 뉴스에서 이 종목 기사를 모읍니다.";
     renderList();
     if (CLOUD) {
@@ -1748,15 +1838,14 @@
     ];
     const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
     const zTxt = p.z != null && sig ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
-    const judge = p.rarity != null ? `${rarityTxt(p.rarity, p.n_null, two && dc.d01 ? "2일 고유 움직임" : "하루 고유 움직임")}.`
-      : p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임입니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도입니다." : "평소에도 이 정도는 움직입니다.";
+    const judge = p.rarity != null ? `${rarityTxt(p.rarity, p.n_null, two && dc.d01 ? "2일 고유 움직임" : "하루 고유 움직임")}.` : "";
     return `<h3 class="d-sec" style="margin-top:22px">공개 무렵 주가 움직임 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
       <ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
         <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
-      <p class="flow-sum" style="margin-top:10px">${zTxt ? `고유 움직임은 ${zTxt}입니다. ` : ""}${judge} 이 부분에는 다른 소식이나 수급도 포함될 수 있습니다.</p>
+      <p class="flow-sum" style="margin-top:10px">${zTxt ? `고유 움직임은 ${zTxt}입니다. ` : ""}${judge}</p>
       ${tm ? `<p class="flow-sum"><b>시간 순서</b> ${esc(tm.label)}</p>` : ""}
-      <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·사업 분야를 몇 배로 따라 움직이는지). 평소 추세는 빼지 않고, 평소 고유 변동폭은 큰 사건 며칠에 흔들리지 않게 중앙값으로 잽니다.` : "기록이 짧아 시장을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
+      <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도 추정: ${esc(dc.window[0])}~${esc(dc.window[1])}, ${dc.n_obs}거래일` : "기록이 짧아 시장 1배로 단순 비교"}</p>`;
   }
 
   function eventStudyBlock(study) {
@@ -1767,16 +1856,11 @@
       <td class="num">${points(item.car)}</td><td class="num">${points(item.ci_low)} ~ ${points(item.ci_high)}</td></tr>`).join("");
     return `<section class="evidence"><h3 class="evidence-title">평소 예상과 비교 — 일별 이벤트 연구</h3>
       <p>반응일 실제 주가는 <b>${pct(study.actual)}</b>, 평소 시장${study.beta_sector != null ? "·비교 종목" : ""}과의 관계로 예상한 움직임은 <b>${pct(study.expected)}</b>입니다.
-      차이는 <b>${points(study.ar)}</b>입니다. 이 차이 전체가 기사 때문이라는 뜻은 아닙니다.</p>
+      차이는 <b>${points(study.ar)}</b>입니다.</p>
       <table class="ladder"><thead><tr><th>살펴본 기간</th><th>예상보다 더 움직인 부분</th><th>95% 불확실성 범위</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">0은 반응일입니다. 여러 날의 숫자는 각 날의 차이를 더한 값이며, 실제 투자 수익률과는 다릅니다.
-      범위에 0이 들어가도 영향이 없었다는 뜻은 아닙니다. 평소보다 더 오르거나 내린 건 맞지만, 하루 주가는 원래 출렁임이 커서 이 차이를 확정할 만큼은 아니라는 뜻입니다. 범위에 0이 없어도 기사 원인이 확정되지는 않습니다.</p>
-      <p class="note">${esc(study.basis)} 당일 장중 기사라면 아래 공개 직후 실제 움직임도 함께 보세요.
-      ${study.pre_drift ? "공개 이전에도 같은 방향으로 이례적으로 움직인 흔적이 있습니다." : "사전 구간도 함께 살펴보세요. 사전 반응이 뚜렷하지 않아도 정보가 미리 반영되지 않았다고 확정할 수는 없습니다."}</p>
+      ${study.pre_drift ? `<p class="note">공개 전 5일에도 같은 방향으로 이례적으로 움직였습니다.</p>` : ""}
       ${study.pending_windows.length ? `<p class="note">시세가 부족하거나 아직 지나지 않아 계산하지 않은 구간: ${study.pending_windows.map(esc).join(", ")}.</p>` : ""}
-      <details><summary>계산 근거 보기</summary><p class="note">${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일.
-      반응일 직전 ${study.gap}거래일은 평소 관계 추정에서 제외했습니다.${study.excluded_news_days ? ` 그 앞 기간 중 회사 보도자료·주요 공시가 있던 ${study.excluded_news_days}일도 빼고 그만큼 더 앞의 날로 채웠습니다.` : ""} 평소 추세와 시장 민감도를 추정하고, 계수 추정 오차도 범위에 반영했습니다.
-      ${esc(study.assumptions)} 대표 숫자는 반응일 하루의 차이와 95% 범위를 사용합니다. 기사 원인을 확정하는 판정은 아닙니다.</p></details></section>`;
+      <p class="note">추정: ${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일 (반응일 직전 ${study.gap}거래일${study.excluded_news_days ? `, 보도자료·주요 공시 날 ${study.excluded_news_days}일` : ""} 제외)</p></section>`;
   }
 
   async function loadPR(id) {
@@ -1799,12 +1883,10 @@
       const dsc = [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title);
       notes.push(`같은 내용의 공시(${dsc ? `<a href="#/pr/${esc(dsc.id)}">「${esc(e.disclosure.title)}」</a>` : `「${esc(e.disclosure.title)}」`})가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 공시 시각부터 쟀습니다.`);
     }
-    if (isDisc && a.untimed) notes.push("DART에는 접수 날짜만 있고 거래소(KIND)에서도 시각을 찾지 못해, 그날 하루(전일 종가 → 종가)로 쟀습니다.");
-    if (e.off_session) notes.push(`장 마감 뒤·휴장일에 나와 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}을 반응일로 봅니다. 그 사이 다른 소식도 섞였을 수 있습니다.`);
-    if (e.late && !d.intraday) notes.push("오후 늦게 공개됐습니다. 대표 숫자는 다른 기사와 동일하게 반응일 하루 기준이며, 공개 전 움직임도 포함하므로 아래 여러 날의 누적 차이도 함께 보세요.");
-    if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("구글 뉴스 공개 시각이 16:00 또는 17:00으로 표시됩니다. 원문 공개 시각과 최초 공개 여부를 확인하기 전에는 반응일·초과수익률을 잠정치로 보세요.");
-    if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
-    if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
+    if (isDisc && a.untimed) notes.push("접수 시각 미상 → 그날 하루(전일 종가 → 종가)로 계산");
+    if (e.off_session) notes.push(`장 마감 뒤·휴장일 공개 → 반응일 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}`);
+    if (e.late && !d.intraday) notes.push("오후 늦게(14시 이후) 공개");
+    if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("공개 시각 확인 필요: 구글 뉴스 시각이 16:00 또는 17:00으로 표시됨");
     // 공개 시각이 확실하고 분봉이 있으면 발표 직후 30분을 대표로 (다른 요인이 끼어들 틈이 적음), 하루 숫자는 그 아래
     const iw = d.intraday;
     if (iw) {
@@ -1816,12 +1898,12 @@
           <span><small>시장·업종 몫</small><b>${points(iw.market + iw.sector)}</b></span>
           <span><small>고유 움직임</small><b class="${sgnCls(iw.abnormal)}">${points(iw.abnormal)}</b></span>
           <span><small>평소 같은 구간 중 이보다 크게 움직인 비율</small><b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b></span></div>
-        <div class="vb-note">고유 움직임 = 이 종목 등락 − 시장(KOSDAQ) 몫${iw.segments_used ? " − 업종 몫" : ""}. 비교 대상은 최근 약 두 달의 ${iw.kind === "open" ? "같은 시각(전날 종가 → 09:30) 움직임" : `${iw.minutes}분 구간`} ${iw.n_null}개입니다.${iw.segments_used ? "" : " 같은 시간대 업종 분봉이 없어 시장 몫만 뺐습니다."}${iw.kind === "open" ? " 밤사이 다른 소식이 섞였을 수 있습니다." : ""}</div></div>
-        <h3 class="d-sec" style="margin-top:18px">하루 전체 <small class="muted">반응일 종가 기준 · 공개 전 움직임과 그날 다른 소식도 포함</small></h3>`;
+        <div class="vb-note">비교 대상: 최근 ${iw.kind === "open" ? "같은 시각(전날 종가 → 09:30) 움직임" : `${iw.minutes}분 구간`} ${iw.n_null}개${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}</div></div>
+        <h3 class="d-sec" style="margin-top:18px">하루 전체 <small class="muted">반응일 종가 기준</small></h3>`;
     }
     html += `<div class="verdict-box v-${e.verdict_cls}">${e.verdict ? `<div class="vb-head">${esc(e.verdict)}</div>` : ""}
       <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
-      ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}
+      ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
     if (!a.manual && !isDisc) {
@@ -1861,7 +1943,6 @@
         ${ls.length ? `<ul>${ls.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> <a href="#/pr/${esc(r.id)}">${esc(r.title)}</a>${r.kind === "pr" ? ' <span class="ktag k-pr">그린광학 보도자료</span>' : ""}</li>`).join("")}</ul>`
           : `<p class="note">이 공시 뒤 36시간 안에 같은 내용(계약·실적·IR·증자·전환사채)으로 나온 기사가 없습니다.</p>`}</section>`;
       html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
-      html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 공시 때문에 움직였다고 단정하지는 않습니다.</p>`;
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
     const outlets = [{ id: a.id, manual: a.manual, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
@@ -1875,7 +1956,6 @@
 </section>`;
     if (!isDisc) {
       html += `<section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 일별·분별 반응 · 차트</span></h3>${ev}</section>`;
-      html += `<p class="note">시간상·업종 대비 연관성을 보여주는 것이며, 이 기사 때문에 움직였다고 단정하지는 않습니다.</p>`;
       html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
     }
     box.innerHTML = html;
@@ -2120,6 +2200,7 @@
     if (page === "events") { document.title = "이벤트 기록 | 주가 모니터"; await pageEvents(); if (parts[1]) openEvent(+parts[1]); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
     else if (page === "pr") { document.title = "기사 영향 분석 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "method") { document.title = "계산 방법 | 주가 모니터"; pageMethod(); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
   }
 
