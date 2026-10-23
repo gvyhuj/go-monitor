@@ -248,6 +248,11 @@ def sync_articles(code: str, pages: int = 1) -> int:
     group_stories(code)
     drop_manual_duplicates(code)
     try:
+        from . import reporters
+        reporters.fill(code)
+    except Exception as e:      # noqa: BLE001 - 기자명은 부가 정보라 실패해도 수집은 그대로
+        print(f"::warning title=기자명::{type(e).__name__}: {str(e)[:150]}", flush=True)
+    try:
         n += sync_google(code)
     except Exception as e:      # noqa: BLE001 - 구글이 막혀도 네이버 수집은 그대로
         print(f"::warning title=구글 뉴스 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
@@ -651,6 +656,8 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     by_story = {}
     for a in arts:
         by_story.setdefault(a.get("story") or a["id"], []).append(a)
+    from . import topics
+    table = topics.rules()
     out = []
     for sid, group in by_story.items():
         group.sort(key=lambda a: (not a.get("manual"), a["ts"]))      # 직접 등록한 기사가 있으면 그것이 대표
@@ -664,7 +671,9 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["outlets_total"] = max(max(int(g.get("outlets") or 1) for g in group),
                                     len({_key_office(g.get("office")) for g in group}))
         lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "ts": g["ts"], "office": g["office"],
-                                   "title": g["title"], "url": g["url"]} for g in group[1:]]
+                                   "title": g["title"], "url": g["url"], "reporter": g.get("reporter"),
+                                   "topic": topics.classify(g["title"], g.get("body") or "", table)[0]}
+                                  for g in group[1:]]
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
         lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
         out.append(lead)
@@ -675,6 +684,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         a["kind_auto"] = "company" if a["category"] == "회사 발표" else "ext"
         a["kind"] = a.get("kind_override") or ("pr" if a.get("manual") else a["kind_auto"])
         a["time_quality"] = time_quality(a)
+        a["topic"], a["topics"] = topics.classify(a["title"], a.get("body") or "", table)
         # 호재·악재: 보도자료는 표시하지 않고, 외부 기사는 뚜렷한 악재 단어가 있을 때만 '악재'
         auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in (a["title"] or "") for w in STRONG_NEG) else 0)
         a["tone"] = a["tone_override"] if a.get("tone_override") is not None else auto_tone

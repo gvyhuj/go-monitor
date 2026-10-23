@@ -415,7 +415,9 @@ def api_articles(q):
         e = _effect_cached(sym, a, stamp)
         out.append({**{k: a.get(k) for k in ("id", "ts", "office", "title", "url", "category", "tone", "mention",
                                               "outlets_total", "manual", "hidden", "kind", "kind_auto",
-                                              "story", "source", "time_quality")},
+                                              "story", "source", "time_quality", "reporter", "topic", "topics")},
+                    "related": [{k: r.get(k) for k in ("id", "ts", "office", "reporter", "title", "url", "topic")}
+                                for r in a.get("related_titles") or []],
                     "n_related": len(a.get("related_titles") or []),
                     "effect": {k: e.get(k) for k in ("reaction_day", "verdict", "verdict_cls", "measure", "off_session",
                                                      "disclosure")},

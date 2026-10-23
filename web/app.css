@@ -886,3 +886,23 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
   .mk.disc { border-width: 1.5px; }
   .cal-legend { margin-left: 0; width: 100%; }
 }
+/* 기사 피벗 표 */
+.view-seg a { display: inline-block; padding: 7px 16px; font-size: 14px; font-weight: 600; color: var(--ink-2); text-decoration: none; }
+.view-seg a + a { border-left: 1px solid var(--line-2); }
+.view-seg a[aria-pressed="true"] { background: var(--navy); color: #fff; }
+.pivot-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 14px 16px; margin-bottom: 14px; }
+.pivot-controls .field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.pivot-controls select { font: inherit; font-size: 14px; color: var(--ink); padding: 6px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); }
+.pivot-controls .check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; padding-bottom: 6px; }
+.pivot-controls .btn { margin-left: auto; }
+.pivot-panel { padding: 0; overflow: hidden; }
+table.pivot { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.pivot th, table.pivot td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+table.pivot thead th { position: sticky; top: 0; background: var(--canvas); font-size: 13px; color: var(--muted); font-weight: 650; }
+table.pivot td.num, table.pivot th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.pivot tbody th { font-weight: 600; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
+table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700; background: var(--canvas); }
+.piv-n { border: 0; background: none; font: inherit; font-weight: inherit; color: var(--brand-blue); cursor: pointer; padding: 0; }
+.piv-n:hover { text-decoration: underline; }
+.pivot-drill { margin-top: 14px; padding: 16px 18px; }
+@media (max-width: 640px) { .pivot-controls .btn { margin-left: 0; } table.pivot { font-size: 13px; } table.pivot th, table.pivot td { padding: 6px 8px; } }

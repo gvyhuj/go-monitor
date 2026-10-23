@@ -1638,6 +1638,13 @@
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
           <li>같은 반응일에 나온 기사는 주가 반응을 나눌 수 없어 한 건으로 셉니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
         </ul>
+        <h3>피벗 표</h3>
+        <ul>
+          <li>기사를 행·열 기준(주제, 언론사, 기자, 분류, 구분, 월·분기·연도)으로 세어 엑셀 피벗처럼 봅니다. 숫자를 누르면 해당 기사 목록이 나오고, '엑셀로 내려받기'로 지금 조건의 기사 전체를 받아 엑셀에서 직접 피벗할 수 있습니다.</li>
+          <li><b>세는 단위</b>: '매체별 기사'는 같은 내용이라도 실은 매체마다 1건, '같은 내용 묶음'은 묶음당 1건입니다. 기본으로 단순 언급·시황 기사는 뺍니다.</li>
+          <li><b>주제</b>: 제목(없으면 요약 앞부분)에 들어 있는 단어로 자동 분류합니다. 순서대로 먼저 걸린 것이 대표 주제입니다: 실적 → 수주·계약 → 자금·주식 → 정부·기관 지원 → 방산 → 우주·위성 → 반도체 → 기술·제품 → 전시·IR·행사 → 주가·시황 → 기타. 여러 주제에 걸리면 내려받은 파일의 '걸린 주제 전부'에 모두 적습니다.</li>
+          <li><b>기자</b>: 기사 원문을 한 번 열어 본문의 기자 표기(예: [매체 홍길동 기자], 홍길동 기자 이메일, ○○ 홍길동입니다)에서 읽습니다. 자동 수집 때마다 15건씩 새 기사부터 채우고, 지난 기사도 차례로 채웁니다. 구글 뉴스로만 모은 기사와 표기가 없는 기사는 '(미확인)'입니다.</li>
+        </ul>
         <h3>소식 없는 날과 비교</h3>
         <ul>
           <li>최근 2년의 거래일을 그날 있었던 소식으로 나눕니다: 그린광학 보도자료 날 → 주요 공시 날 → 외부 기사만 있는 날 → 소식 없는 날 (한 날이 여러 종류면 앞의 것). 주요 공시는 정기(실적)·주요사항·발행·거래소 공시와 거래소 조치입니다.</li>
@@ -1719,10 +1726,118 @@
     };
   }
 
+  const artViewSeg = (pivot) => `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${!pivot}">목록</a><a href="#/pivot" aria-pressed="${pivot}">피벗 표</a></div>`;
+
+  // 피벗 표: 기사를 주제·언론사·기자·분류·구분·기간으로 엑셀 피벗처럼 세어 봄. 칸을 누르면 그 기사 목록
+  const pivotState = { row: "topic", col: "none", range: "all", unit: "outlet", kind: "all", noise: false };
+  const PIV_DIMS = { topic: "주제", office: "언론사", reporter: "기자", category: "분류", kind: "구분", month: "월", quarter: "분기", year: "연도" };
+  const PIV_TIME = new Set(["month", "quarter", "year"]);
+  // 기사 목록(대표 + 같은 내용을 실은 매체들)을 한 줄 = 기사 하나로 펼침
+  function pivotRows(items, unit) {
+    const out = [];
+    for (const a of items) {
+      if (a.hidden) continue;
+      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : "외부 기사";
+      const base = { kind, category: a.category || "-", lead: a.id };
+      out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
+        url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
+      if (unit === "outlet") for (const r of a.related || []) out.push({ ...base, id: r.id, ts: r.ts || a.ts || "",
+        office: r.office || "-", reporter: r.reporter || "", title: r.title, url: r.url || "", topic: r.topic || a.topic || "기타", topics: r.topic || "" });
+    }
+    return out;
+  }
+  const pivotKey = (r, dim) => {
+    const y = r.ts.slice(0, 4), m = +r.ts.slice(5, 7);
+    if (dim === "month") return r.ts.slice(0, 7) || "-";
+    if (dim === "quarter") return y ? `${y} ${Math.ceil(m / 3)}분기` : "-";
+    if (dim === "year") return y || "-";
+    if (dim === "reporter") return r.reporter || "(미확인)";
+    return r[dim] || "-";
+  };
+  function pivotTable(rows, rowDim, colDim) {
+    const cells = new Map(), rowTot = new Map(), colTot = new Map();
+    for (const r of rows) {
+      const rk = pivotKey(r, rowDim), ck = colDim === "none" ? "건수" : pivotKey(r, colDim);
+      cells.set(rk + "\u0001" + ck, (cells.get(rk + "\u0001" + ck) || 0) + 1);
+      rowTot.set(rk, (rowTot.get(rk) || 0) + 1);
+      colTot.set(ck, (colTot.get(ck) || 0) + 1);
+    }
+    const order = (dim, tot) => [...tot.keys()].sort((x, y) => PIV_TIME.has(dim) ? (x < y ? 1 : -1) : (tot.get(y) - tot.get(x)) || (x < y ? -1 : 1));
+    const colKeys = colDim === "none" ? ["건수"] : order(colDim, colTot).sort((x, y) => PIV_TIME.has(colDim) ? (x < y ? -1 : 1) : 0);
+    return { rowKeys: order(rowDim, rowTot), colKeys, cells, rowTot, colTot, total: rows.length };
+  }
+
+  async function pagePivot() {
+    main.innerHTML = `<div class="wrap">
+      <div class="page-head"><div><h1 class="page-title">기사·공시 모음</h1></div>${artViewSeg(true)}</div>
+      <div class="panel pivot-controls" id="piv-ctl"></div>
+      <div class="panel pivot-panel"><div class="table-wrap" id="piv-table"><p class="loading" style="padding:20px">불러오는 중…</p></div></div>
+      <section class="panel pivot-drill" id="piv-drill" hidden></section></div>`;
+    let items;
+    try { items = (await api("/api/articles")).items || []; }
+    catch (e) { $("#piv-table").innerHTML = `<div class="empty" style="padding:20px"><strong>기사를 불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
+    const sel = (key, label, opts) => `<label class="field"><span>${label}</span><select data-k="${key}">${opts.map(([v, t]) =>
+      `<option value="${v}"${pivotState[key] === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>`;
+    const dimOpts = Object.entries(PIV_DIMS);
+    $("#piv-ctl").innerHTML = `${sel("row", "행", dimOpts)}${sel("col", "열", [["none", "없음 (건수만)"], ...dimOpts])}
+      ${sel("range", "기간", [["all", "전체"], ["365", "최근 1년"], ["183", "최근 6개월"], ["92", "최근 3개월"], ["31", "최근 1개월"]])}
+      ${sel("kind", "구분", [["all", "전체"], ["그린광학 보도자료", "그린광학 보도자료"], ["외부 기사", "외부 기사"]])}
+      ${sel("unit", "세는 단위", [["outlet", "매체별 기사 (같은 내용도 매체마다 1건)"], ["story", "같은 내용 묶음 (1건)"]])}
+      <label class="check"><input type="checkbox" data-k="noise"${pivotState.noise ? " checked" : ""}> 단순 언급·시황 포함</label>
+      <button class="btn" type="button" id="piv-csv">엑셀로 내려받기</button>`;
+    let rows = [], t = null;
+    function draw() {
+      const since = pivotState.range === "all" ? "" : isoDate(new Date(Date.now() - +pivotState.range * 864e5));
+      rows = pivotRows(items, pivotState.unit).filter((r) => (!since || r.ts.slice(0, 10) >= since)
+        && (pivotState.kind === "all" || r.kind === pivotState.kind)
+        && (pivotState.noise || !["단순 언급", "시황·특징주"].includes(r.category)));
+      t = pivotTable(rows, pivotState.row, pivotState.col);
+      if (!rows.length) { $("#piv-table").innerHTML = `<div class="empty" style="padding:20px"><strong>조건에 맞는 기사가 없습니다.</strong></div>`; return; }
+      const cell = (rk, ck) => { const n = t.cells.get(rk + "\u0001" + ck); return n ? `<button type="button" class="piv-n" data-r="${esc(rk)}" data-c="${esc(ck)}">${n}</button>` : ""; };
+      const multi = t.colKeys.length > 1;
+      $("#piv-table").innerHTML = `<table class="pivot"><thead><tr><th>${PIV_DIMS[pivotState.row]}${pivotState.col !== "none" ? ` / ${PIV_DIMS[pivotState.col]}` : ""}</th>
+        ${t.colKeys.map((c) => `<th class="num">${esc(c)}</th>`).join("")}${multi ? `<th class="num">합계</th>` : ""}</tr></thead>
+        <tbody>${t.rowKeys.map((rk) => `<tr><th>${esc(rk)}</th>${t.colKeys.map((ck) => `<td class="num">${cell(rk, ck)}</td>`).join("")}
+          ${multi ? `<td class="num tot"><button type="button" class="piv-n" data-r="${esc(rk)}">${t.rowTot.get(rk)}</button></td>` : ""}</tr>`).join("")}</tbody>
+        <tfoot><tr><th>합계 <small class="muted">${t.rowKeys.length}개 항목</small></th>${t.colKeys.map((ck) => `<td class="num"><button type="button" class="piv-n" data-c="${esc(ck)}">${t.colTot.get(ck)}</button></td>`).join("")}
+          ${multi ? `<td class="num tot">${t.total}</td>` : ""}</tr></tfoot></table>`;
+      $("#piv-drill").hidden = true;
+    }
+    draw();
+    $("#piv-ctl").onchange = (ev) => {
+      const k = ev.target.dataset.k; if (!k) return;
+      pivotState[k] = ev.target.type === "checkbox" ? ev.target.checked : ev.target.value;
+      draw();
+    };
+    $("#piv-table").onclick = (ev) => {
+      const b = ev.target.closest(".piv-n"); if (!b) return;
+      const rk = b.dataset.r, ck = b.dataset.c;
+      const hit = rows.filter((r) => (rk == null || pivotKey(r, pivotState.row) === rk)
+        && (ck == null || pivotState.col === "none" || pivotKey(r, pivotState.col) === ck)).sort((x, y) => (x.ts < y.ts ? 1 : -1));
+      const d = $("#piv-drill");
+      d.hidden = false;
+      d.innerHTML = `<h3 class="d-sec">${[rk, ck && ck !== "건수" ? ck : null].filter(Boolean).map(esc).join(" · ") || "전체"} <small class="muted">${hit.length}건</small></h3>
+        <ul class="cal-list">${hit.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)}</span>
+          <a href="#/pr/${esc(r.lead)}">${esc(r.title)}</a>${r.url ? ` <a class="muted" href="${esc(r.url)}" target="_blank" rel="noopener">원문</a>` : ""}</li>`).join("")}</ul>`;
+      d.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+    $("#piv-csv").onclick = () => {
+      const head = ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"];
+      const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [head.map(q).join(",")].concat(rows.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics,
+        r.office, r.reporter, r.title, r.url].map(q).join(",")));
+      const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `articles_${isoDate(new Date()).replace(/-/g, "")}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+    };
+  }
+
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">기사·공시 모음</h1>
-        <p class="page-sub" id="art-sub"></p></div></div>
+        <p class="page-sub" id="art-sub"></p></div>${artViewSeg(false)}</div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span class="spacer"></span>
@@ -2316,7 +2431,7 @@
     const parts = h.split("/").filter(Boolean);
     const page = parts[0] || "dash";
     document.querySelectorAll(".tabs a").forEach((a) => {
-      const on = a.dataset.route === (["dash", "calendar", "events"].includes(page) ? "dash" : page);
+      const on = a.dataset.route === (["dash", "calendar", "events"].includes(page) ? "dash" : page === "pivot" ? "pr" : page);
       if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
     const dashView = { dash: "recent", calendar: "calendar", events: "table" }[page];
@@ -2326,6 +2441,7 @@
     else if (page === "calendar") { document.title = "달력 | 주가 모니터"; await pageDashboard("calendar"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
     else if (page === "pr") { document.title = "기사·공시 모음 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "pivot") { document.title = "기사 피벗 표 | 주가 모니터"; await pagePivot(); }
     else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
   }
