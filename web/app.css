@@ -839,3 +839,4 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .method-sec dl { margin: 0 0 10px; font-size: 14.5px; line-height: 1.65; }
 .method-sec dt { font-weight: 700; margin-top: 10px; }
 .method-sec dd { margin: 2px 0 0; color: var(--ink-2); }
+.method-now { margin-top: 6px; padding: 8px 12px; background: var(--canvas); border-radius: var(--r-sm); font-size: 14px; color: var(--ink); }
