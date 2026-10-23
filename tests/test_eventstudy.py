@@ -352,13 +352,15 @@ def test_news_days_from_database_feed_exclusion_and_baseline(tmp_path, monkeypat
         connection.execute("INSERT INTO disclosures(no,symbol,date,ts,pblntf) VALUES ('2','X',?,?, 'D')",
                            (dates[95], dates[95] + "T09:30"))
     n = causal.news_days("X")
-    assert n["pr"] == {dates[100], dates[101], dates[111], dates[112], dates[150], dates[151]}   # 장 마감 뒤 → 다음 거래일부터
+    assert n["pr"] == {dates[150], dates[151]}                                  # 담당자가 그린광학 보도자료로 확인한 것만
+    assert n["company"] == {dates[100], dates[101], dates[111], dates[112]}     # 자동 '회사 발표' (장 마감 뒤 → 다음 거래일부터)
     assert n["ext"] == {dates[120], dates[121], dates[140], dates[141]}                         # 시황·특징주는 소식으로 안 셈
     assert n["disc"] == {dates[90], dates[91]}                                                   # 지분 보고(D)는 뺌
     study = causal.event_study("X", dates[190])
     assert study["ok"] and study["excluded_news_days"] == 8
     baseline = causal.news_baseline("X")
-    assert baseline and baseline["groups"]["pr"]["n"] == 6 and baseline["groups"]["none"]["n"] > 150
+    assert baseline and baseline["groups"]["pr"]["n"] == 2 and baseline["groups"]["company"]["n"] == 4
+    assert baseline["groups"]["none"]["n"] > 150
 
 
 def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeypatch):
