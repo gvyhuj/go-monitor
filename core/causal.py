@@ -90,10 +90,7 @@ def news_days(symbol: str) -> dict[str, set]:
     def add(kind, ts):
         i = _first_session(calendar, ts)
         out[kind].update(calendar[i:i + 2])
-    from .articles import COVERAGE_FROM
     for ts, category, override in arts:
-        if ts < COVERAGE_FROM and override != "pr":      # 구분 미확인 (기사를 모으기 전): 소식으로 세지 않음
-            continue
         if override == "pr" or (category == "회사 발표" and override != "ext"):
             add("pr", ts)
         elif category not in NOISE_CATEGORIES:

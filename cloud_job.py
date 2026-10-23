@@ -110,13 +110,6 @@ def apply_inbox(item: dict, log):
             val = kind if kind in ("pr", "ext") else None
             conn.execute("UPDATE articles SET kind_override=? WHERE id=? OR story=?", (val, aid, aid))
             log.info("사이트에서 기사 구분 변경: %s → %s", aid, val or "자동")
-        elif t == "case_move":                  # 사건 묶음 고치기: 항목들을 다른 항목의 사건으로 / 따로(self) / 자동(None)
-            from core import cases
-            ids = [str(x) for x in (item.get("items") or [])][:200]
-            to = item.get("to")
-            to = str(to) if to not in (None, "", "auto") else None
-            cases.save_override(ids, to)
-            log.info("사이트에서 사건 묶음 고침: %s → %s", ", ".join(ids), to or "자동")
         elif t == "article_tone":               # 악재(-1) / 표시 안 함(0) / 자동(auto)
             aid, tone = str(item.get("id") or ""), item.get("tone")
             val = int(tone) if tone in (-1, 0, "-1", "0") else None
@@ -396,6 +389,14 @@ def main(argv) -> int:
             inbox_n = cloud.pull_inbox(lambda item: apply_inbox(item, log), log.info)
         except Exception as e:
             log.warning("사이트 요청 확인 실패(계속 진행): %s", e)
+
+    # 한 번만: 거슬러 채웠던 2026년 전 기사('구분 미확인')는 필요 없어 지움
+    if not get_state("articles:purge_pre_coverage_v1"):
+        from core.articles import COVERAGE_FROM
+        with connect() as conn:
+            n_old = conn.execute("DELETE FROM articles WHERE ts < ?", (COVERAGE_FROM,)).rowcount
+        set_state("articles:purge_pre_coverage_v1", now.isoformat(timespec="minutes"))
+        annotate("notice", f"2026년 전 기사 {n_old}건 삭제")
 
     failed = None
     try:

@@ -920,10 +920,6 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .days-table th, .days-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .days-table th { position: sticky; top: 0; background: var(--surface); text-align: right; font-weight: 600; }
 .days-table th:first-child, .days-table td:first-child { text-align: left; }
-.case-items { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--line); }
-.case-items li a { display: block; padding: 10px 2px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
-.case-items li a:hover { background: var(--canvas); }
-.case-items .t { display: block; margin-top: 3px; color: var(--ink); }
 .measure-detail { margin: 0 0 12px; }
 
 /* 전체 검색 */
@@ -955,10 +951,6 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .status-dl dt { color: var(--muted); }
 .status-dl dd { margin: 0; }
 .panel + .panel { margin-top: 14px; }
-.case-items li { position: relative; }
-.case-split { font-size: 12.5px; margin: 0 0 8px 2px; }
-.case-fix { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.case-fix select { max-width: 100%; height: 32px; font: inherit; font-size: 13.5px; }
 
 /* 기사 대시보드 */
 .dash-kpi { margin: 12px 0; }
@@ -987,7 +979,6 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .k1 { background: var(--brand-blue); }
 .k2 { background: var(--line-2); }
-.k3 { background: var(--vol); }
 .dash-bar .track i:first-child { border-radius: 3px 0 0 3px; }
 .dash-bar .track i:last-child { border-radius: 0 3px 3px 0; }
 @media (max-width: 720px) {

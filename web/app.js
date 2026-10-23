@@ -555,9 +555,7 @@
     const count = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) m[d] = (m[d] || 0) + 1; }); return m; };
     const shown = (a) => !a.hidden && a.category !== "단순 언급" && a.ts;
     const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
-    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company" && a.kind !== "unknown"), (a) => a.ts.slice(0, 10));
-    const unkN = count(arts.filter((a) => shown(a) && a.kind === "unknown"), (a) => a.ts.slice(0, 10));
-    const hasUnk = Object.keys(unkN).length > 0;
+    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company"), (a) => a.ts.slice(0, 10));
     const discN = count(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf)), (x) => x.ts.slice(0, 10));
     const rows = daily.slice().reverse();
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
@@ -567,13 +565,13 @@
         <button type="button" class="btn" id="events-csv" title="감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록 전체">급등·급락 기록 내려받기</button></div>
       <div class="table-wrap"><table class="days-table"><thead><tr>
         <th>날짜</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>등락</th><th>거래량</th><th>KOSDAQ</th>
-        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th>${hasUnk ? "<th>구분 미확인</th>" : ""}<th>주요 공시</th></tr></thead><tbody>
+        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th><th>주요 공시</th></tr></thead><tbody>
         ${rows.map((x) => `<tr><td><a href="#/calendar" data-day="${esc(x.date)}">${esc(x.date)}</a></td>
           <td class="num">${won(x.open)}</td><td class="num">${won(x.high)}</td><td class="num">${won(x.low)}</td><td class="num">${won(x.close)}</td>
           <td class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</td><td class="num">${won(x.volume)}</td>
           <td class="num ${sgnCls(x.kosdaq)}">${x.kosdaq == null ? "-" : pct(x.kosdaq)}</td>
           <td class="num">${net(x.foreign)}</td><td class="num">${net(x.organ)}</td><td class="num">${net(x.individual)}</td>
-          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td>${hasUnk ? `<td class="num">${unkN[x.date] || ""}</td>` : ""}<td class="num">${discN[x.date] || ""}</td></tr>`).join("")}
+          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td><td class="num">${discN[x.date] || ""}</td></tr>`).join("")}
       </tbody></table></div>`;
     box.querySelector(".days-table").onclick = (ev) => {
       const a = ev.target.closest("a[data-day]"); if (!a) return;
@@ -581,10 +579,10 @@
     };
     $("#events-csv").onclick = async () => { try { csvDownload((await api("/api/events")).events || []); } catch (e) { alert(e.message); } };
     $("#days-csv").onclick = () => csvDownloadRows("일별기록",
-      ["날짜", "시가", "고가", "저가", "종가", "등락(%)", "거래량", "KOSDAQ(%)", "외국인 순매수", "기관 순매수", "개인 순매수", "보도자료", "외부 기사", "구분 미확인", "주요 공시"],
+      ["날짜", "시가", "고가", "저가", "종가", "등락(%)", "거래량", "KOSDAQ(%)", "외국인 순매수", "기관 순매수", "개인 순매수", "보도자료", "외부 기사", "주요 공시"],
       rows.map((x) => [x.date, x.open, x.high, x.low, x.close, x.change == null ? "" : (x.change * 100).toFixed(2), x.volume,
         x.kosdaq == null ? "" : (x.kosdaq * 100).toFixed(2), x.foreign ?? "", x.organ ?? "", x.individual ?? "",
-        prN[x.date] || 0, extN[x.date] || 0, unkN[x.date] || 0, discN[x.date] || 0]));
+        prN[x.date] || 0, extN[x.date] || 0, discN[x.date] || 0]));
   }
 
   // 달력: 날마다 등락(색)과 그날 소식(보도자료·공시·외부 기사)·급등·급락을 한 화면에. 날짜를 누르면 아래에 그날 내용
@@ -995,7 +993,7 @@
       (intra.length ? `<span class="tier watch">장중 ${intra.length}건</span>` : "");
     const discs = extra.discs || [];
     const news = [...discs.map((x) => ({ tag: '<span class="ktag k-disc">공시</span>', title: x.title })),
-      ...dayArts.map((a) => ({ tag: `<span class="ktag ${a.kind === "pr" || a.kind === "company" ? "k-pr" : "k-ext"}">${a.kind === "pr" || a.kind === "company" ? "보도자료" : a.kind === "unknown" ? "미확인" : "외부"}</span>`, title: a.title }))];
+      ...dayArts.map((a) => ({ tag: `<span class="ktag ${a.kind === "pr" || a.kind === "company" ? "k-pr" : "k-ext"}">${a.kind === "pr" || a.kind === "company" ? "보도자료" : "외부"}</span>`, title: a.title }))];
     const what = news.length
       ? `${news[0].tag}<span class="day-fold-title">${esc(news[0].title)}</span>${news.length > 1 ? `<span class="muted"> 외 ${news.length - 1}건</span>` : ""}`
       : `<span class="muted">소식 없음</span>`;
@@ -1608,8 +1606,6 @@
       ${sec("articles", "소식", `
         <h3>탭과 건수</h3>
         <ul>
-          <li><b>구분 미확인</b>: 기사를 빠짐없이 모으기 시작한 2026년 1월 1일 전의 기사입니다(구글 뉴스로 2025년 9월부터 거슬러 채움). 회사가 직접 낸 보도자료인지 알 수 없어 보도자료로 판정하지 않고, 소식 없는 날 비교와 평소 관계 추정에도 넣지 않습니다. 기록으로만 남깁니다.</li>
-          <li><b>사건</b>: 시간이 떨어진 기사·공시를 같은 일로 묶은 것입니다. 제목에서 상대 회사와 금액(억 원)을 읽어, 같은 상대나 같은 금액이 14일 안에 다시 나오면 한 사건으로 묶습니다. 둘 다 없으면 같은 날, 같은 대표 주제일 때만 묶습니다. 같은 종류의 공시(계약·실적·IR·증자·전환사채)가 첫 기사보다 36시간 안에 먼저 나왔으면 그 공시가 사건의 시작입니다. 본문은 저장하지 않고 제목만 봅니다.</li>
           <li><b>건수</b>: '건'은 같은 내용 묶음(같은 반응일)을 하나로 센 수이고, '매체 기사'는 같은 내용이라도 실은 매체마다 하나로 센 수입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 뺍니다.</li>
@@ -1720,7 +1716,7 @@
     const out = [];
     for (const a of items) {
       if (a.hidden) continue;
-      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : a.kind === "unknown" ? "구분 미확인" : "외부 기사";
+      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : "외부 기사";
       const base = { kind, category: a.category || "-", lead: a.id };
       out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
         url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
@@ -1738,7 +1734,7 @@
     return r[dim] || "-";
   };
   // 한 기준(dim)으로 세기: [{key, n, by: {구분: 건수}}] 많은 순 (시간 기준은 시간 순)
-  const DASH_KINDS = ["그린광학 보도자료", "외부 기사", "구분 미확인"];
+  const DASH_KINDS = ["그린광학 보도자료", "외부 기사"];
   const dashKey = (r, dim) => (dim === "reporter" ? (r.reporter ? `${r.reporter} · ${r.office}` : "") : pivotKey(r, dim));
   function dashAgg(rows, dim) {
     const m = new Map();
@@ -1780,7 +1776,7 @@
       <label class="check"><input type="checkbox" data-k="noise"${pivotState.noise ? " checked" : ""}> 단순 언급·시황 포함</label>`;
     const F = pivotState.f;
     const DIMS = { month: "월", topic: "주제", office: "언론사", reporter: "기자" };
-    const KCLS = { "그린광학 보도자료": "k1", "외부 기사": "k2", "구분 미확인": "k3" };
+    const KCLS = { "그린광학 보도자료": "k1", "외부 기사": "k2" };
     let base = [], shown = [];
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
       list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
@@ -1899,13 +1895,9 @@
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
       pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
-      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && e.kind !== "unknown" && !e.noise),
-      unknown: events.filter((e) => e.kind === "unknown" && !e.noise),
+      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시", case: "사건", ...(groups.unknown.length ? { unknown: "구분 미확인" } : {}) };
-    // 사건: 시간이 떨어진 기사·공시를 같은 일로 묶은 것 (엔진이 제목의 상대 회사·금액·주제로 묶음)
-    groups.case = d.cases || [];
-    const caseById = new Map(groups.case.map((c) => [c.id, c]));
+    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
     if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
     const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
@@ -1915,31 +1907,30 @@
     // 지금 탭에 몇 건이 실렸는지 (같은 반응일 기사는 한 건으로 셈). 공시 탭은 켜 둔 종류만
     const since = isoDate(new Date(Date.now() - 183 * 864e5));
     function countLine(cat) {
-      const isDisc = cat === "disc", isCase = cat === "case";
+      const isDisc = cat === "disc";
       const list = isDisc ? groups.disc : groups[cat];
-      const dayOf = (x) => (isDisc ? x.ts : isCase ? x.start : x.day || (byId.get(x.lead) || {}).ts || "").slice(0, 10);
+      const dayOf = (x) => (isDisc ? x.ts : x.day || (byId.get(x.lead) || {}).ts || "").slice(0, 10);
       const recent = list.filter((x) => dayOf(x) >= since);
       const first = list.map(dayOf).filter(Boolean).sort()[0];
-      const label = isDisc ? "선택한 종류 공시" : isCase ? "사건" : cat === "pr" ? "그린광학 보도자료" : cat === "unknown" ? "구분 미확인 기사" : "외부 기사";
-      const outs = (x) => (isCase ? x.n_outlets : x.outlets) || 1;
+      const label = isDisc ? "선택한 종류 공시" : cat === "pr" ? "그린광학 보도자료" : "외부 기사";
+      const outs = (x) => x.outlets || 1;
       const avgOut = recent.length ? recent.reduce((sum, x) => sum + outs(x), 0) / recent.length : null;
       const media = list.reduce((sum, x) => sum + outs(x), 0);
       return `<div class="score-line">
         <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
         <span><small>한 달 평균</small><b>${(recent.length / 6).toFixed(1)}건</b></span>
         ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
-          : `<span><small>${isCase ? "한 사건당 매체 기사" : "한 건당 실린 매체"} (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + (isCase ? "건" : "곳") : "-"}</b></span>`}
+          : `<span><small>한 건당 실린 매체 (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
         <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b>${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
           : ` <small>매체 기사 ${media}건</small>`}</span></div>`;
     }
     function baselineBlock() { return baselineHtml(d.baseline); }
 
-    if (!["pr", "ext", "disc", "case", "unknown"].includes(artState.cat) || (artState.cat === "unknown" && !groups.unknown.length)) artState.cat = "pr";
+    if (!["pr", "ext", "disc"].includes(artState.cat)) artState.cat = "pr";
     // 검색: 지금 탭 목록을 제목·매체(기사) / 제목·제출인·종류(공시)로 거름. 같은 날 묶인 기사 중 하나라도 맞으면 그 사건을 보여줌
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
     const shown = (cat) => cat === "disc" ? groups.disc.filter((x) => hit(x.title, x.filer, x.kind))
-      : cat === "case" ? groups.case.filter((c) => hit(c.partner, c.topic, ...c.items.map((i) => i.title), ...c.items.map((i) => i.office)))
       : groups[cat].filter((e) => e.ids.some((id) => { const a = byId.get(id); return a && hit(a.title, a.office, a.category); }));
     const qBox = $("#art-q");
     qBox.value = artState.q || "";
@@ -1968,14 +1959,13 @@
     // 탭·종류를 바꾸면 오른쪽 상세도 그 목록의 맨 위 항목으로 (지금 보던 항목이 목록에 있으면 그대로)
     function followTab() {
       const list = shown(artState.cat);
-      const flat = artState.cat === "disc" || artState.cat === "case";
+      const flat = artState.cat === "disc";
       const ids = flat ? list.map((x) => x.id) : list.flatMap((e) => e.ids);
       if (current && ids.includes(current)) return;
       current = ids.length ? (flat ? ids[0] : list[0].lead) : null;
       history.replaceState(null, "", current ? `#/pr/${current}` : "#/pr");
       renderList();
-      if (current && caseById.has(current)) showCase(caseById.get(current), groups.case);
-      else if (current) loadPR(current);
+      if (current) loadPR(current);
       else $("#pr-detail").innerHTML = `<div class="empty"><strong>${artState.q ? "검색에 맞는 항목이 없습니다." : artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong></div>`;
     }
 
@@ -1990,19 +1980,6 @@
       if (artState.cat === "disc") renderTypes();
       renderScore();
       const ul = $("#art-list");
-      if (artState.cat === "case") {
-        const list = shown("case");
-        if (!list.length) { ul.innerHTML = `<li class="empty"><strong>${artState.q ? "검색에 맞는 사건이 없습니다." : "아직 묶인 사건이 없습니다."}</strong></li>`; return; }
-        ul.innerHTML = list.map((c) => {
-          const nd = c.items.filter((i) => i.type === "disclosure").length;
-          return `<li><button type="button" data-id="${esc(c.id)}" aria-current="${c.id === current}">
-          <span class="al-meta">${kindTag({ kind: c.kind })}${c.topic ? catTag(c.topic) : ""}<span class="muted">${caseSpan(c)}</span></span>
-          <span class="t">${esc(c.title)}</span>
-          <span class="al-foot"><span class="muted">기사 ${c.n_articles}건 · 매체 기사 ${c.n_outlets}건${nd ? ` · 공시 ${nd}건` : ""}</span>${c.partner ? `<span class="muted">상대 ${esc(c.partner)}</span>` : ""}${c.amount ? `<span class="muted">${c.amount.toLocaleString("ko-KR")}억</span>` : ""}</span></button></li>`;
-        }).join("");
-        ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
-        return;
-      }
       if (artState.cat === "disc") {
         const list = shown("disc");
         if (!list.length) {
@@ -2041,14 +2018,13 @@
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
     }
     let current = selId;
-    if (selId && caseById.has(selId)) artState.cat = "case";
-    else if (selId && discById.has(selId)) {
+    if (selId && discById.has(selId)) {
       artState.cat = "disc";
       const x = discById.get(selId);
       if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : ev.kind === "unknown" ? "unknown" : "ext";
+      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length ? ""
@@ -2074,54 +2050,11 @@
       }, 30000));
     }
     if (!current) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
-    if (caseById.has(current)) { showCase(caseById.get(current), groups.case); return; }
     loadPR(current);
   }
 
-  const caseSpan = (c) => (c.start.slice(0, 10) === c.end.slice(0, 10) ? dayLabel(c.start) : `${dayLabel(c.start)} ~ ${dayLabel(c.end)} (${c.n_days}일)`);
-  // 사건 상세: 묶인 기사·공시를 시간 순으로 (각 항목을 누르면 그 기사·공시 상세)
-  // 관리자 고치기: 항목 '따로 떼기', 사건 전체 '다른 사건과 합치기', 고친 사건은 '자동으로 되돌리기'
-  // (요청은 다른 수정과 같이 GitHub 이슈로 가고, 저장소 주인이 만든 요청만 반영됨)
-  function caseDetail(c, all = []) {
-    const facts = [c.partner ? `상대 ${esc(c.partner)}` : "", c.amount ? `금액 ${c.amount.toLocaleString("ko-KR")}억 원` : "", c.topic ? `주제 ${esc(c.topic)}` : ""].filter(Boolean);
-    const t0 = Date.parse(c.start.slice(0, 10)), near = all.filter((x) => x.id !== c.id && Math.abs(Date.parse(x.start.slice(0, 10)) - t0) <= 45 * 864e5);
-    return `<div class="al-meta">${kindTag({ kind: c.kind })}<span class="ktag">사건</span>${c.manual ? '<span class="tier watch">직접 고침</span>' : ""}</div>
-      <h2 class="pr-title">${esc(c.title)}</h2>
-      <p class="pr-meta">${caseSpan(c)} · 기사 ${c.n_articles}건 · 매체 기사 ${c.n_outlets}건${facts.length ? ` · ${facts.join(" · ")}` : ""}</p>
-      <ul class="case-items">${c.items.map((i) => `<li><a href="#/pr/${esc(i.id)}">
-        <span class="al-meta">${i.type === "disclosure" ? '<span class="ktag k-disc">공시</span>' : kindTag({ kind: i.kind })}<span class="muted">${dayLabel(i.ts)} ${hhmm(i.ts)}${i.office ? ` · ${esc(i.office)}` : ""}${i.outlets > 1 ? ` · ${i.outlets}개 매체` : ""}</span></span>
-        <span class="t">${esc(i.title)}</span></a>${c.items.length > 1 ? `<button type="button" class="btn-link editable case-split" data-item="${esc(i.id)}">이 사건에서 따로 떼기</button>` : ""}</li>`).join("")}</ul>
-      <div class="ask-row editable case-fix">
-        ${near.length ? `<select id="case-merge-to" aria-label="합칠 사건"><option value="">다른 사건과 합치기…</option>${near.map((x) => `<option value="${esc(x.lead)}">${esc(x.start.slice(5, 10).replace("-", "/"))} ${esc(x.title.slice(0, 40))}</option>`).join("")}</select>
-          <button class="btn small" type="button" id="case-merge">합치기</button>` : ""}
-        ${c.manual ? `<button class="btn-link" type="button" id="case-auto">자동 묶음으로 되돌리기</button>` : ""}
-        <span class="form-msg" id="case-msg"></span></div>`;
-  }
-
-  function showCase(c, all) {
-    const box = $("#pr-detail");
-    box.innerHTML = caseDetail(c, all);
-    const msg = $("#case-msg");
-    const send = async (btn, items, to) => {
-      try {
-        msg.className = "form-msg";
-        msg.textContent = await sendInbox({ type: "case_move", items, to, title: c.title });
-        btn.disabled = true;
-      } catch (e) { msg.className = "form-msg err"; msg.textContent = e.message; }
-    };
-    box.querySelectorAll(".case-split").forEach((b) => b.addEventListener("click", () => send(b, [b.dataset.item], "self")));
-    const merge = $("#case-merge");
-    if (merge) merge.addEventListener("click", () => {
-      const to = $("#case-merge-to").value;
-      if (!to) { msg.className = "form-msg err"; msg.textContent = "합칠 사건을 먼저 고르세요."; return; }
-      send(merge, c.items.map((i) => i.id), to);
-    });
-    const auto = $("#case-auto");
-    if (auto) auto.addEventListener("click", () => send(auto, c.items.map((i) => i.id), "auto"));
-  }
-
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
-  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : a.kind === "unknown" ? "구분 미확인" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
+  const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two, noun = "기사") {
@@ -2560,7 +2493,6 @@
       for (const r of [a, ...(a.related || [])]) if (onDay(r.ts) || hit(r.title, r.office, r.reporter)) arts.push({ ...r, kind: a.kind, category: a.category });
     }
     const discs = (dd.items || []).filter((x) => onDay(x.ts) || hit(x.title, x.filer, x.kind));
-    const cases = (ad.cases || []).filter((c) => c.items.some((i) => onDay(i.ts)) || hit(c.partner, c.title, ...c.items.map((i) => i.title)));
     const days = mv ? daily.filter((x) => mv.test(x.change)).reverse() : dt ? daily.filter((x) => onDay(x.date)).reverse() : [];
     if (mv) {                          // 등락률 검색: 그날 소식도 함께 (날짜로 이어 봄)
       const set = new Set(days.map((x) => x.date));
@@ -2571,7 +2503,6 @@
     const li = (href, meta, title) => `<li><a href="${href}"><span class="al-meta">${meta}</span><span class="t">${esc(title)}</span></a></li>`;
     const sec = (title, n, body) => (n ? `<section class="search-sec"><h2>${title} <small class="muted">${n}건</small></h2><ul class="search-list">${body}</ul></section>` : "");
     const html = sec("날짜", days.length, days.slice(0, 300).map((x) => li(`#/calendar`, `<span class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</span><span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)} · 거래량 ${Math.round(x.volume || 0).toLocaleString("ko-KR")}주</span>`, `${x.date.slice(0, 4)}년 ${dayLabel(x.date)}`).replace('href="#/calendar"', `href="#/calendar" data-day="${esc(x.date)}"`)).join(""))
-      + sec("사건", cases.length, cases.slice(0, 40).map((c) => li(`#/pr/${esc(c.id)}`, `${kindTag({ kind: c.kind })}<span class="muted">${caseSpan(c)} · 기사 ${c.n_articles}건</span>`, c.title)).join(""))
       + sec("기사", arts.length, arts.slice(0, 80).map((a) => li(`#/pr/${esc(a.id)}`, `${kindTag({ kind: a.kind })}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)} · ${esc(a.office || "")}${a.reporter ? ` · ${esc(a.reporter)} 기자` : ""}</span>`, a.title)).join(""))
       + sec("공시", discs.length, discs.slice(0, 80).map((x) => li(`#/pr/${esc(x.id)}`, `<span class="ktag k-disc">공시</span><span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)} · ${esc(x.filer || "")}</span>`, x.title)).join(""));
     $("#search-sub").textContent = mv ? `하루 등락 ${mv.sign === "+" ? `+${(mv.v * 100).toFixed(1)}% 이상` : mv.sign === "-" ? `−${(mv.v * 100).toFixed(1)}% 이하` : `±${(mv.v * 100).toFixed(1)}% 이상`} · 그날 소식 포함` : `“${q}”`;

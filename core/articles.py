@@ -153,6 +153,7 @@ def _save(code: str, items: list[dict], source: str) -> int:
                 "SELECT title, office FROM articles WHERE symbol=? AND ts >= ?", (code, min(i["ts"] for i in items)[:10]))} \
                 if items else set()
             items = [i for i in items if _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
+        items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]     # 모으는 기간 전 기사는 넣지 않음
         rows = []
         for i in items:
             cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
@@ -167,16 +168,13 @@ def _save(code: str, items: list[dict], source: str) -> int:
 
 
 GOOGLE_FROM = date(2026, 1, 1)          # 기사를 빠짐없이 모으기 시작한 날 (이날부터 보도자료·외부 기사를 판정)
-BACKFILL_FROM = date(2025, 9, 1)        # 구글 뉴스로 지난 기사를 채우는 시작일 (상장 준비 무렵부터)
-# GOOGLE_FROM 전 기사는 회사가 직접 낸 보도자료인지 알 수 없어 '구분 미확인'(unknown):
-# 보도자료로 판정하지 않고, 소식 없는 날 비교·평소 관계 추정에서도 뺌 (기록으로만 남김)
-COVERAGE_FROM = GOOGLE_FROM.isoformat()
+COVERAGE_FROM = GOOGLE_FROM.isoformat()    # 이보다 앞선 기사는 모으지 않음 (지난 기사를 거슬러 채웠다가 필요 없어 지움)
 
 
 def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, log=None) -> int:
     """구글 뉴스에서 회사 이름으로 검색해 네이버 종목 뉴스에 빠진 기사(지역지·전문지 등)를 보충.
 
-    처음에는 BACKFILL_FROM부터 반달씩 나눠 지난 기사를 채우고(한 번에 max_queries개), 그 뒤로는 최근 7일만.
+    처음에는 GOOGLE_FROM부터 반달씩 나눠 지난 기사를 채우고(한 번에 max_queries개), 그 뒤로는 최근 7일만.
     """
     from . import newssearch
     from .db import get_state, set_state
@@ -187,7 +185,7 @@ def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, lo
     st = get_state("articles:google_backfill_v2")
     done = set(json.loads(st["value"])) if st and st.get("value") else set()
     queries, todo = [], []
-    d = BACKFILL_FROM
+    d = GOOGLE_FROM
     while d <= now.date():
         mid = d.replace(day=16)
         nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -685,7 +683,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     # 자체 배포는 직접 등록 또는 담당자가 pr로 명시한 경우만 확정 분류합니다.
     from .article_integrity import time_quality
     for a in out:
-        a["kind_auto"] = "unknown" if a["ts"] < COVERAGE_FROM else "company" if a["category"] == "회사 발표" else "ext"
+        a["kind_auto"] = "company" if a["category"] == "회사 발표" else "ext"
         a["kind"] = a.get("kind_override") or ("pr" if a.get("manual") else a["kind_auto"])
         a["time_quality"] = time_quality(a)
         a["topic"], a["topics"] = topics.classify(a["title"], a.get("body") or "", table)
@@ -710,8 +708,7 @@ def group_events(items: list[dict]) -> list[dict]:
         lead = next((a for a in main if a["kind"] == "pr"),
                     next((a for a in main if a["kind"] == "company"), main[0]))
         kind = "pr" if any(a["kind"] == "pr" for a in main) else \
-               "company" if any(a["kind"] == "company" for a in main) else \
-               "unknown" if all(a["kind"] == "unknown" for a in main) else "ext"
+               "company" if any(a["kind"] == "company" for a in main) else "ext"
         out.append({"day": None if day.startswith("x") else day, "lead": lead["id"],
                     "kind": kind, "ids": [a["id"] for a in g],
                     "outlets": sum(a.get("outlets_total") or 1 for a in main),

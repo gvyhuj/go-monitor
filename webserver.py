@@ -440,9 +440,6 @@ def api_articles(q):
                     "d0_excess": ((e.get("daily") or {}).get("excess") or {}).get("d0"),
                     "m60_excess": ((e.get("minute") or {}).get("excess") or {}).get("60")})
     events = articles.group_events(out) if not limit else None
-    from core import cases
-    case_list = cases.build(out, articles.disclosure_rows(sym), articles.company_name(), cases.load_overrides()) \
-        if not limit else None
     with connect() as conn:
         first = conn.execute("SELECT MIN(date) FROM daily_bars WHERE symbol=?", (sym,)).fetchone()[0]
     from core.eventstudy import summary_critical_values
@@ -451,7 +448,7 @@ def api_articles(q):
         baseline = causal.news_baseline(sym) if not limit else None
     except Exception:
         baseline = None
-    return {"items": out, "events": events, "cases": case_list, "categories": articles.CATEGORIES, "daily_since": first,
+    return {"items": out, "events": events, "categories": articles.CATEGORIES, "daily_since": first,
             "summary_critical_values": summary_critical_values(len(out)), "baseline": baseline}
 
 
