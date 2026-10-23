@@ -53,45 +53,28 @@ def _p_txt(p):
 # ------------------------------------------------------------------ ① 대체: 사건연구 (업종 ETF 기록 부족 시)
 
 def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict | None:
+    from .eventstudy import analyze_returns, returns_from_prices
+
     lo = (date.fromisoformat(d0) - timedelta(days=400)).isoformat()
-    hi = (date.fromisoformat(d0) + timedelta(days=7)).isoformat()
-    own, mkt = _rets(symbol, lo, hi), _rets(KOSDAQ, lo, hi)
-    dates = sorted(d for d in own if d in mkt)
-    if d0 not in dates:
-        return None
-    i0 = dates.index(d0)
-    est = dates[max(0, i0 - gap - est_len):max(0, i0 - gap)]
-    if len(est) < 50:
-        return {"ok": False, "reason": f"평소 관계를 계산할 기록이 부족합니다 ({len(est)}거래일)."}
-    y = np.array([own[d] for d in est])
-    x = np.array([mkt[d] for d in est])
-    X = np.column_stack([np.ones_like(x), x])
-    (a, b), *_ = np.linalg.lstsq(X, y, rcond=None)
-    resid = y - X @ np.array([a, b])
-    sig = float(np.sqrt((resid ** 2).sum() / (len(est) - 2)))
-
-    def ar(d):
-        return own[d] - (a + b * mkt[d])
-
-    out = {"ok": True, "n_est": len(est), "est_from": est[0], "est_to": est[-1], "alpha": float(a), "beta": float(b),
-           "sigma": sig, "actual": own[d0], "expected": float(a + b * mkt[d0]), "ar": ar(d0)}
-    out["t"] = out["ar"] / sig
-    out["p"] = _p_norm(out["t"])
-    windows = {"사전 5일 [-5,-1]": range(-5, 0), "전후 3일 [-1,+1]": range(-1, 2), "이후 3일 [0,+2]": range(0, 3)}
-    out["car"] = []
-    for name, rg in windows.items():
-        ds = [dates[i0 + k] for k in rg if 0 <= i0 + k < len(dates)]
-        if len(ds) != len(rg):
-            continue
-        car = sum(ar(d) for d in ds)
-        t = car / (sig * math.sqrt(len(ds)))
-        out["car"].append({"window": name, "car": car, "t": t, "p": _p_norm(t)})
+    hi = (date.fromisoformat(d0) + timedelta(days=14)).isoformat()
+    market_prices = {row[0]: row[2] for row in _daily(KOSDAQ, lo, hi)}
+    calendar = sorted(market_prices)
+    own = returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar)
+    mkt = returns_from_prices(market_prices, calendar)
+    with connect() as conn:
+        peer_codes = [row[0] for row in conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?)",
+                                                  (symbol, KOSDAQ))]
+    peer_returns = [returns_from_prices({row[0]: row[2] for row in _daily(code, lo, hi)}, calendar)
+                    for code in peer_codes]
+    sector = {day: sum(series[day] for series in peer_returns) / len(peer_returns)
+              for day in mkt if peer_returns and all(day in series for series in peer_returns)}
+    out = analyze_returns(own, mkt, d0, sector, est_len, gap, calendar[1:])
+    if not out or not out.get("ok"):
+        return out
     vols = {r[0]: r[3] for r in _daily(symbol, lo, hi)}
-    base = [vols[d] for d in est if vols.get(d)]
+    base = [vols[d] for d in sorted(vols) if out["est_from"] <= d <= out["est_to"] and vols.get(d)]
     if base and vols.get(d0):
         out["vol_ratio"] = vols[d0] / float(np.median(base))
-    pre = next((c for c in out["car"] if c["window"].startswith("사전")), None)
-    out["pre_drift"] = bool(pre and pre["p"] < 0.05 and pre["car"] * out["ar"] > 0)
     return out
 
 

@@ -1,0 +1,49 @@
+name: 기사 분석 검증 전용
+
+on:
+  push:
+    branches: [validation/pr-event-study]
+    paths:
+      - .github/workflows/validate-event-study.yml
+      - core/eventstudy.py
+      - validate_event_study.py
+      - validate_backup.py
+      - tests/test_eventstudy.py
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 검증 코드 가져오기
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 암호화 백업 가져오기
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: validation-source
+          persist-credentials: false
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 검증 라이브러리 설치
+        run: python -m pip install -r requirements.txt pytest
+      - name: 자동 테스트
+        run: python -m pytest tests -q
+      - name: 백업 복원 및 읽기 전용 검증
+        env:
+          VALIDATION_DATA_KEY: ${{ secrets.DATA_KEY || secrets.SITE_PASSWORD }}
+        run: python validate_backup.py
+      - name: 결과 보관
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-study-validation
+          path: validation-output/
+          if-no-files-found: error
+          retention-days: 7

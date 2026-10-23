@@ -1089,10 +1089,10 @@
     if (es && es.ok) {
       const sig = es.p < 0.05;
       const pre = (es.car || []).find((x) => x.window.startsWith("사전"));
-      rows.push(`<li><div class="ch">${verdict(sig, sig ? "이례적" : "평소 범위")}<b>시장만 감안한 계산</b><small>업종 ETF 기록이 모자라 대신 사용 · 직전 ${es.n_est}거래일</small></div>
-        <p>KOSDAQ 움직임으로 예상되는 등락 ${pct(es.expected)} 대비 실제 ${pct(es.actual)} → 비정상수익률 <b>${pct(es.ar)}</b> (평소 하루 ±${(es.sigma * 100).toFixed(1)}%의 ${Math.abs(es.t).toFixed(1)}배, p=${es.p.toFixed(3)}).
+      rows.push(`<li><div class="ch">${verdict(sig, sig ? "이례적" : "평소 범위")}<b>${esc(es.method || "시장 회귀")}</b><small>추정에 사용한 ${es.n_est}거래일</small></div>
+        <p>평소 관계로 예상되는 등락 ${pct(es.expected)} 대비 실제 ${pct(es.actual)} → 비정상수익률 <b>${pct(es.ar)}</b> (모형 가정에 따른 양측 p=${es.p.toFixed(3)}).
         ${sig ? "통계적으로 평소에 보기 드문 움직임입니다." : "평소에도 나올 수 있는 크기라, 특별한 원인이 없었을 수도 있습니다."}
-        ${pre ? ` 직전 5일 비정상수익률 합계 ${pct(pre.car)}(p=${pre.p.toFixed(2)})${pre.p < 0.05 ? " — 미리 움직인 흔적이 있습니다." : " — 미리 움직인 흔적은 없습니다."}` : ""}
+        ${pre ? ` 직전 5일 비정상수익률 합계 ${pct(pre.car)}(p=${pre.p.toFixed(2)})${pre.p < 0.05 ? " — 미리 움직인 흔적이 있습니다." : " — 미리 움직인 흔적을 확인하지 못했습니다."}` : ""}
         ${es.vol_ratio ? ` 거래량은 평소의 ${es.vol_ratio.toFixed(1)}배.` : ""}</p></li>`);
     } else if (es) rows.push(`<li><div class="ch">${verdict(null, "자료 부족")}<b>시장만 감안한 계산</b></div><p>${esc(es.reason || "")}</p></li>`);
     const fa = ca.factor;
@@ -1723,19 +1723,39 @@
       { k: `시장 몫 <small>KOSDAQ ${pct(p.kosdaq)} × 민감도 ${dc.beta_market.toFixed(2)}</small>`, v: p.market },
       ...(parts.length ? parts.map((f) => ({ k: `분야 몫 · ${esc(f.name)} <small>${f.kind === "etf" ? "ETF" : "비교 종목 평균"} ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib }))
         : [{ k: `업종 몫 <small>${dc.method === "단순" ? "기록이 짧아 시장만 감안" : "비교 종목 시세 없음"}</small>`, v: p.sector }]),
-      { k: `${noun}(고유) 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>`, v: p.abnormal, cls: "abn" },
+      { k: `설명되지 않은 고유 움직임 <small>= 실제 − 시장 몫 − 분야 몫</small>`, v: p.abnormal, cls: "abn" },
     ];
     const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
     const zTxt = p.z != null && sig ? `평소 이 종목 혼자 움직이는 폭(하루 ±${(sig * 100).toFixed(1)}%)의 ${Math.abs(p.z).toFixed(1)}배` : "";
     const judge = p.rarity != null ? `${rarityTxt(p.rarity, p.n_null, two && dc.d01 ? "2일 고유 움직임" : "하루 고유 움직임")}.`
       : p.z == null ? "" : Math.abs(p.z) >= 2 ? "평소보다 확실히 큰 움직임입니다." : Math.abs(p.z) >= 1 ? "평소보다 다소 큰 정도입니다." : "평소에도 이 정도는 움직입니다.";
-    return `<h3 class="d-sec" style="margin-top:22px">${noun} 효과 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
+    return `<h3 class="d-sec" style="margin-top:22px">공개 무렵 주가 움직임 나누기 <small class="muted">${two && dc.d01 ? `반응일 ${esc(d0)}+다음날 2일 누적` : `반응일 ${esc(d0)}`}</small></h3>
       <ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
         <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
         <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
-      <p class="flow-sum" style="margin-top:10px">${zTxt ? `${noun}(고유) 몫은 ${zTxt}입니다. ` : ""}${judge}</p>
+      <p class="flow-sum" style="margin-top:10px">${zTxt ? `고유 움직임은 ${zTxt}입니다. ` : ""}${judge} 이 부분에는 다른 소식이나 수급도 포함될 수 있습니다.</p>
       ${tm ? `<p class="flow-sum"><b>시간 순서</b> ${esc(tm.label)}</p>` : ""}
       <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도는 ${esc(dc.window[0])}~${esc(dc.window[1])} ${dc.n_obs}거래일의 일별 주가로 계산했습니다 (이 종목이 평소 시장·사업 분야를 몇 배로 따라 움직이는지). 평소 추세는 빼지 않고, 평소 고유 변동폭은 큰 사건 며칠에 흔들리지 않게 중앙값으로 잽니다.` : "기록이 짧아 시장을 1배로 단순 비교했습니다. 기록이 쌓이면 자동으로 정밀 계산으로 바뀝니다."}</p>`;
+  }
+
+  function eventStudyBlock(study) {
+    if (!study) return "";
+    if (!study.ok) return `<h3 class="d-sec">평소 예상과 비교</h3><p class="note">${esc(study.reason)}</p>`;
+    const points = (value) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%p`;
+    const rows = (study.car || []).map((item) => `<tr><td>${esc(item.window)}</td>
+      <td class="num">${points(item.car)}</td><td class="num">${points(item.ci_low)} ~ ${points(item.ci_high)}</td></tr>`).join("");
+    return `<section class="evidence"><h3 class="evidence-title">평소 예상과 비교 — 일별 이벤트 연구</h3>
+      <p>반응일 실제 주가는 <b>${pct(study.actual)}</b>, 평소 시장${study.beta_sector != null ? "·비교 종목" : ""}과의 관계로 예상한 움직임은 <b>${pct(study.expected)}</b>입니다.
+      차이는 <b>${points(study.ar)}</b>입니다. 이 차이 전체가 기사 때문이라는 뜻은 아닙니다.</p>
+      <table class="ladder"><thead><tr><th>살펴본 기간</th><th>예상보다 더 움직인 부분</th><th>95% 불확실성 범위</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note">0은 반응일입니다. 여러 날의 숫자는 각 날의 차이를 더한 값이며, 실제 투자 수익률과는 다릅니다.
+      범위에 0이 들어가면, 이 모형으로는 평소 변동과 구별하기 어렵습니다. 범위에 0이 없어도 기사 원인이 확정되지는 않습니다.</p>
+      <p class="note">${esc(study.basis)} 당일 장중 기사라면 위의 짧은 구간 반응과 함께 봐야 합니다.
+      ${study.pre_drift ? "공개 이전에도 같은 방향으로 이례적으로 움직인 흔적이 있습니다." : "사전 구간도 함께 살펴보세요. 사전 반응이 뚜렷하지 않아도 정보가 미리 반영되지 않았다고 확정할 수는 없습니다."}</p>
+      ${study.pending_windows.length ? `<p class="note">시세가 부족하거나 아직 지나지 않아 계산하지 않은 구간: ${study.pending_windows.map(esc).join(", ")}.</p>` : ""}
+      <details><summary>계산 근거 보기</summary><p class="note">${esc(study.method)} · ${esc(study.est_from)}~${esc(study.est_to)}, ${study.n_est}거래일.
+      반응일 직전 ${study.gap}거래일은 평소 관계 추정에서 제외했습니다. 평소 추세와 시장 민감도를 추정하고, 계수 추정 오차도 범위에 반영했습니다.
+      ${esc(study.assumptions)} 이 결과를 모든 기사 판정의 확정 기준으로 사용하지 않습니다.</p></details></section>`;
   }
 
   async function loadPR(id) {
@@ -1778,11 +1798,11 @@
         <span class="form-msg" id="art-fix-msg"></span></div>`;
     }
 
-    let ev = "";
+    let ev = eventStudyBlock(e.event_study);
     const m60 = e.minute60;
     if (m60) {
       const r6 = [["이 종목 실제 변동", m60.own, "me"], [`시장 몫 <small>KOSDAQ ${pct(m60.kosdaq)} × 민감도 ${e.decomp.beta_market.toFixed(2)}</small>`, m60.market],
-        [`분야 몫 <small>${m60.segments_used ? `분야 ${m60.segments_used}곳의 같은 60분` : "분야 분봉 없음"}</small>`, m60.sector], ["기사(고유) 몫", m60.abnormal, "abn"]];
+        [`분야 몫 <small>${m60.segments_used ? `분야 ${m60.segments_used}곳의 같은 60분` : "분야 분봉 없음"}</small>`, m60.sector], ["설명되지 않은 고유 움직임", m60.abnormal, "abn"]];
       const mx = Math.max(0.003, ...r6.map((x) => Math.abs(x[1] || 0)));
       ev += `<h3 class="d-sec" style="margin-top:22px">${m60.start ? `공개 후 60분 나누기 <small class="muted">${hhmm(m60.start)}부터 · 판정 기준</small>` : `전일 종가→10:00 나누기 <small class="muted">장 시작 전 공개 · 시초가 + 개장 1시간 · 판정 기준</small>`}</h3>
         <ul class="rel decomp">${r6.map(([k, v, c]) => `<li class="${c || ""}"><span class="nm">${k}</span>

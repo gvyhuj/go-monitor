@@ -506,6 +506,8 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
             out["decomp"] = decompose(symbol, d0, peers)
         except Exception as e:          # 보조 분석
             out["notes"].append(f"분해 계산 실패: {e}")
+        from . import causal
+        out["event_study"] = causal.event_study(symbol, d0)
     if out.get("minute"):
         try:
             out["timing"] = timing(symbol, datetime.fromisoformat(out["minute"]["reaction_start"]), peers)
@@ -600,12 +602,12 @@ def _verdict(eff: dict, tone: int, category: str):
     if tone < 0 and (strong or weak) and x > 0:
         return "기사 방향과 반대로 움직임", "opposite", measure
     if strong:
-        return ("뚜렷한 기사 효과 (상승)" if x > 0 else "뚜렷한 기사 효과 (하락)"), ("up" if x > 0 else "down"), measure
+        return ("공개 무렵 뚜렷한 고유 상승" if x > 0 else "공개 무렵 뚜렷한 고유 하락"), ("up" if x > 0 else "down"), measure
     if weak:
-        return ("약한 기사 효과 (상승)" if x > 0 else "약한 기사 효과 (하락)"), ("up-weak" if x > 0 else "down-weak"), measure
+        return ("공개 무렵 약한 고유 상승" if x > 0 else "공개 무렵 약한 고유 하락"), ("up-weak" if x > 0 else "down-weak"), measure
     if measure.get("own") is not None and abs(measure["own"]) >= 0.03:
         return "업종·시장 영향이 대부분", "flat", measure
-    return "뚜렷한 기사 효과 없음", "flat", measure
+    return "공개 무렵 뚜렷한 고유 반응을 확인하지 못함", "flat", measure
 
 
 def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[str]:
