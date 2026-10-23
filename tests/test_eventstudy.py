@@ -195,7 +195,7 @@ def test_daily_study_reaches_article_detail_with_peer_data(tmp_path, monkeypatch
     assert len(study["car"]) == 5 and study["est_to"] < dates[160]
     assert result["measure"]["value"] == study["ar"]
     assert result["measure"]["method"] == "event-study-v2"
-    assert "기사 효과" not in result["verdict"]
+    assert result["verdict"] is None
     json.dumps(result, allow_nan=False)
     import webserver
     monkeypatch.setattr(webserver, "load_settings", lambda: {"symbol": "X"})
@@ -229,7 +229,7 @@ def test_primary_verdict_uses_new_model_not_legacy_or_intraday():
     effect = {"event_study": study, "decomp": {"d0": {"abnormal": 0.0041}},
               "minute60": {"abnormal": 0.08}, "late": True, "off_session": True}
     verdict, classification, measure = _verdict(effect, 1, "공시")
-    assert classification == "down" and "예상보다 낮음" in verdict
+    assert classification == "down" and verdict is None
     assert measure["value"] == -0.03 and measure["own"] == -0.05
     assert measure["expected"] == -0.02 and measure["ci_high"] == -0.01
     assert measure["basis"] == "반응일"
@@ -251,8 +251,8 @@ def test_non_significance_does_not_claim_market_caused_the_drop():
     study = {"ok": True, "actual": -0.1, "expected": -0.1041, "ar": 0.0041,
              "p": 0.94, "ci_low": -0.08, "ci_high": 0.09, "n_est": 120}
     verdict, classification, measure = _verdict({"event_study": study}, 0, "공시")
-    assert classification == "flat" and verdict == "평소 예상과 비슷함"
-    assert "시장 영향" not in verdict and measure["own"] < 0 < measure["value"]
+    assert classification == "flat" and verdict is None
+    assert measure["own"] < 0 < measure["value"]
 
 
 def test_encrypted_backup_validation_keeps_details_encrypted(tmp_path, monkeypatch):
@@ -286,10 +286,11 @@ def test_encrypted_backup_validation_keeps_details_encrypted(tmp_path, monkeypat
     assert not (tmp_path / "failed").exists()
 
 
-def test_non_significance_still_reports_direction():
+def test_computed_effect_has_numbers_but_no_verdict_text():
     from core.articles import _verdict
 
     study = {"ok": True, "actual": 0.0819, "expected": 0.0456, "ar": 0.0362,
              "p": 0.5, "ci_low": -0.0712, "ci_high": 0.1436, "n_est": 120}
-    verdict, classification, _ = _verdict({"event_study": study}, 0, "회사 발표")
-    assert classification == "flat" and "높은 편" in verdict and "확정은 아님" in verdict
+    verdict, classification, measure = _verdict({"event_study": study}, 0, "회사 발표")
+    assert verdict is None and classification == "flat"
+    assert (measure["own"], measure["expected"], measure["value"]) == (0.0819, 0.0456, 0.0362)

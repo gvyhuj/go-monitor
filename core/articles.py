@@ -543,7 +543,7 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime) -> d
             "basis": "60분" if t0 else "개장 1시간"}
 
 def _verdict(eff: dict, tone: int, category: str):
-    """대표 수치와 판정은 반응일 사건연구의 예상 대비 차이와 95% 범위만 사용."""
+    """대표 수치는 반응일 사건연구의 예상 대비 차이와 95% 범위만 사용. 계산이 된 기사엔 판정 문구 없음."""
     study = eff.get("event_study")
     if not study or not study.get("ok"):
         reason = (study or {}).get("reason") or "반응일 또는 평소 시세 기록이 부족합니다."
@@ -556,15 +556,9 @@ def _verdict(eff: dict, tone: int, category: str):
         return "주가 움직임을 다룬 기사", "result", measure
     if category == "단순 언급":
         return "이름만 언급된 기사 (효과 판단 제외)", "mention", measure
-    if study["ci_low"] > 0:
-        return "평소 예상보다 높음 (95% 범위에서 0 제외)", "up", measure
-    if study["ci_high"] < 0:
-        return "평소 예상보다 낮음 (95% 범위에서 0 제외)", "down", measure
-    # 95% 범위가 0을 포함해도 방향은 알려 줌 (확정이 아닐 뿐 '없음'은 아님). 1%p 미만은 비슷한 수준으로 봄
-    if abs(study["ar"]) < 0.01:
-        return "평소 예상과 비슷함", "flat", measure
-    side = "높은" if study["ar"] > 0 else "낮은"
-    return f"평소 예상보다 {side} 편 (95% 범위가 0을 포함해 확정은 아님)", "flat", measure
+    # 판정 문구는 붙이지 않음: 숫자(실제·예상·차이·95% 범위)를 보고 사용자가 판단. 분류(색 표시)만 남김
+    cls = "up" if study["ci_low"] > 0 else "down" if study["ci_high"] < 0 else "flat"
+    return None, cls, measure
 
 
 def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[str]:

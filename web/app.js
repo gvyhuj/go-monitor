@@ -1581,10 +1581,6 @@
       const h = critical * sd / Math.sqrt(n);
       return { n, mean, lo: mean - h, hi: mean + h };
     };
-    const ciTxtOf = (c, what) => !c ? "" : c.lo > 0 ? `${what} 반응일에는 평균적으로 평소 예상보다 높았습니다. 실제 주가 상승이나 인과관계가 입증됐다는 뜻은 아닙니다.`
-      : c.hi < 0 ? `${what} 반응일에는 평균적으로 평소 예상보다 낮았습니다. 이것만으로 원인을 확정할 수는 없습니다.`
-      : Math.abs(c.mean) < 0.01 ? "평균적으로 평소 예상과 비슷했습니다."
-      : `${what} 반응일에는 평균적으로 평소 예상보다 ${c.mean > 0 ? "높은" : "낮은"} 편이었지만, 범위가 0을 포함해 확정할 수는 없습니다.`;
     // 공시 요약: 지금 켜 둔 종류의 공시만 (같은 반응일 공시는 주가 반응을 나눌 수 없어 한 번만 셈)
     function discScore() {
       const shown = groups.disc, seen = new Set(), xs = [];
@@ -1598,7 +1594,7 @@
       <span><small>평균 예상 대비 차이 (계산 ${xs.length}일)</small><b class="${c ? sgnCls(c.mean) : ""}">${c ? points(c.mean) : "-"}</b></span>
       <span><small>평균 차이의 95% 범위</small><b>${c ? `${points(c.lo)} ~ ${points(c.hi)}` : "-"}</b></span>
       <span><small>시각을 아는 공시</small><b>${shown.filter((x) => !x.untimed).length}건</b></span>
-      <p class="score-note">${c ? ciTxtOf(c, "공시") : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
+      <p class="score-note">${c ? "" : "새 모델로 계산한 날이 3일 이상이어야 평균과 범위를 냅니다."} 같은 날은 한 번만 셉니다. 반응일 간 독립을 가정한 단순 평균이며 다른 소식도 포함될 수 있습니다.</p></div>`;
     }
     function articleScore(kind) {
       const label = kind === "pr" ? "그린광학 보도자료" : "외부 기사";
@@ -1612,7 +1608,7 @@
       <span><small>평균 예상 대비 차이 (계산 ${summaryMeasures.length}일 / 미확인·자료 부족 ${recent.length - summaryMeasures.length}일)</small><b class="${ci ? sgnCls(ci.mean) : ""}">${ci ? points(ci.mean) : "-"}</b></span>
       <span><small>평균 차이의 95% 범위</small><b>${ci ? `${points(ci.lo)} ~ ${points(ci.hi)}` : "-"}</b></span>
       <span><small>평균 실린 매체</small><b>${avgOut.toFixed(1)}곳</b></span>
-      <p class="score-note">${ci ? ciTxtOf(ci, label) : "시각 확인·중복 검토 중인 날을 제외한 계산 가능 반응일이 3일 이상이어야 평균을 냅니다."} 시각 확인 필요 ${recent.filter((x) => x.time_check).length}일, 기존 정보 재보도 ${recent.filter((x) => x.followup_of).length}일, 후속 보도 가능성 검토 ${recent.filter((x) => x.followup_candidate_of).length}일은 평균에서 제외합니다. 일별 독립을 가정하며 인과관계를 입증하지 않습니다.</p></div>` : "";
+      <p class="score-note">${ci ? "" : "시각 확인·중복 검토 중인 날을 제외한 계산 가능 반응일이 3일 이상이어야 평균을 냅니다."} 시각 확인 필요 ${recent.filter((x) => x.time_check).length}일, 기존 정보 재보도 ${recent.filter((x) => x.followup_of).length}일, 후속 보도 가능성 검토 ${recent.filter((x) => x.followup_candidate_of).length}일은 평균에서 제외합니다. 일별 독립을 가정하며 인과관계를 입증하지 않습니다.</p></div>` : "";
     }
     const renderScore = () => { $("#pr-score").innerHTML = artState.cat === "disc" ? discScore() : articleScore(artState.cat); };
 
@@ -1816,7 +1812,7 @@
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("구글 뉴스 공개 시각이 16:00 또는 17:00으로 표시됩니다. 원문 공개 시각과 최초 공개 여부를 확인하기 전에는 반응일·초과수익률을 잠정치로 보세요.");
     if (a.category === "시황·특징주") notes.push("주가가 움직인 뒤 그 움직임을 다룬 기사라, 원인보다 결과에 가깝습니다.");
     if (a.category === "단순 언급") notes.push("이 종목 이름만 나오는 기사라 같은 날 움직임을 이 기사 효과로 보기 어렵습니다.");
-    html += `<div class="verdict-box v-${e.verdict_cls}"><div class="vb-head">${esc(e.verdict || "")}</div>
+    html += `<div class="verdict-box v-${e.verdict_cls}">${e.verdict ? `<div class="vb-head">${esc(e.verdict)}</div>` : ""}
       <div>${e.measure ? measureTxt(e.measure) : (e.reaction_day ? "" : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다.")}</div>
       ${dl && dl.vol_rank != null ? `<div class="vb-note">반응일 거래량 ${int(dl.volume)}주 — 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}${dl.vol_ratio ? ` (평소의 ${dl.vol_ratio.toFixed(1)}배)` : ""}${dl.vol_rank <= 0.05 ? " → <b>시장의 관심이 크게 몰렸습니다</b>" : dl.vol_rank <= 0.15 ? " → 관심이 다소 늘었습니다" : ""}</div>` : ""}
       ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</div>`;
