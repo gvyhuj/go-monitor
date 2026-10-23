@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 WINDOW = timedelta(days=14)
 DISC_BEFORE = timedelta(hours=36)
-NOISE = ("단순 언급", "시황·특징주")
+NOISE = ("단순 언급", "시황·특징주", "테마·수혜주")    # 업종·테마 기사는 회사의 '일'이 아니라 사건을 만들지 않음
 # '와/과' 앞에 오지만 상대 회사 이름이 아닌 말
 GENERIC = {"기업", "방산기업", "우주기업", "고객사", "정부", "기관", "업체", "회사", "기술", "협력", "공동", "글로벌",
            "국내", "해외", "대기업", "중소기업", "연구소", "대학", "지자체", "그린광학"}
@@ -45,14 +45,29 @@ def partner(title: str, company: str = "그린광학") -> str | None:
         name = m.group(1)
         if name not in GENERIC and not name.endswith(("기업", "업체")):
             return name
-    m = re.match(r"^([A-Za-z0-9가-힣]{2,20}),\s*(?:\(주\)|㈜)?\s*" + re.escape(company), t)   # '충북테크노파크, ㈜그린광학 …'
+    # '충북테크노파크, ㈜그린광학 …' · '경험 대신 데이터로…충북TP, 그린광학 …'
+    m = re.search(r"(?:^|[…·\s])([A-Za-z0-9가-힣]{2,20}),\s*(?:\(주\)|㈜)?\s*" + re.escape(company), t)
     if m and m.group(1) not in GENERIC:
         return m.group(1)
     return None
 
 
+ALIASES = (("테크노파크", "TP"), ("디펜스앤에어로스페이스", "디펜스"), ("에어로스페이스", "에어로"))
+
+
+def _norm_partner(name: str) -> str:
+    """같은 상대의 다른 표기를 맞춤 (충북테크노파크 = 충북TP, LIG디펜스앤에어로스페이스 = LIG디펜스)."""
+    n = name.upper()
+    for long, short in ALIASES:
+        n = n.replace(long.upper(), short)
+    return n
+
+
 def _same_partner(a: str | None, b: str | None) -> bool:
-    return bool(a and b) and (a == b or a.startswith(b) or b.startswith(a))
+    if not (a and b):
+        return False
+    a, b = _norm_partner(a), _norm_partner(b)
+    return a == b or a.startswith(b) or b.startswith(a)
 
 
 OVERRIDES_KEY = "cases:overrides"

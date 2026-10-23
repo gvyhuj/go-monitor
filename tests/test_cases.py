@@ -109,3 +109,11 @@ def test_case_move_request_from_site(tmp_path, monkeypatch):
     cloud_job.apply_inbox({"type": "case_move", "items": ["p2", "q2"], "to": "self"}, log)
     cloud_job.apply_inbox({"type": "case_move", "items": ["q2"], "to": "auto"}, log)
     assert cases.load_overrides() == {"p2": "self"}
+
+
+def test_partner_aliases_and_mid_title_partner_join_one_case():
+    rows = [art("a", "2026-10-19T09:00", "경험 대신 데이터로…충북TP, 그린광학 코팅 공정 정밀도 높였다", topic="정부·기관 지원", kind="ext"),
+            art("b", "2026-10-20T13:59", "충북테크노파크, ㈜그린광학 광학코팅 공정 고도화", topic="기술·제품", kind="ext"),
+            art("c", "2026-10-20T15:00", "우주항공·방산주 일제히 날았다…관련 수혜주는", topic="방산", kind="ext", category="테마·수혜주")]
+    got = cases.build(rows, [])
+    assert [ids(c) for c in got] == [["a", "b"]]          # 테마·수혜주 기사는 사건을 만들지 않음
