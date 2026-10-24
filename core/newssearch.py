@@ -8,7 +8,7 @@
 - 기본: 구글 뉴스 RSS (열쇠 필요 없음, 무료). 한국어 검색어 + 영어 검색어(로이터·블룸버그 등 외신)
     https://news.google.com/rss/search?q=...&hl=ko&gl=KR&ceid=KR:ko
   지난 날짜는 검색어에 'after:YYYY-MM-DD before:YYYY-MM-DD' 를 붙여 그 기간만 받음.
-- 선택: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 비밀값이 있으면 네이버 검색 API도 함께 사용.
+- 선택: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 비밀값이 있으면 네이버 검색 API도 함께 사용 (NAVER API HUB 키와 옛 개발자센터 키 모두).
 구글이 막거나 형식을 바꾸면 이 수집만 멈추고 나머지 감시는 계속됩니다.
 """
 from __future__ import annotations
@@ -28,7 +28,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from .db import connect
 
-API = "https://openapi.naver.com/v1/search/news.json"
+API = "https://openapi.naver.com/v1/search/news.json"                     # 옛 네이버 개발자센터 키 (2027-06까지)
+HUB_API = "https://naverapihub.apigw.ntruss.com/search/v1/news"           # NAVER API HUB 키 (2026-08 이후 새로 받는 키)
 KST = timezone(timedelta(hours=9))
 
 # 업종을 움직이는 이슈를 찾는 검색어 (settings.json 'driver_queries' 로 바꿀 수 있음)
@@ -200,25 +201,43 @@ def _id(link: str, original: str) -> str:
     return "s" + hashlib.md5((original or link).encode()).hexdigest()[:18]
 
 
+_ENDPOINT: list = []            # 키가 맞은 주소를 기억 (HUB 먼저, 안 되면 옛 개발자센터)
+
+
+def _request(query: str, start: int, display: int, hub: bool) -> urllib.request.Request:
+    q = f"query={urllib.parse.quote(query)}&display={display}&start={start}&sort=date"
+    cid, secret = os.environ.get("NAVER_CLIENT_ID", ""), os.environ.get("NAVER_CLIENT_SECRET", "")
+    if hub:
+        return urllib.request.Request(f"{HUB_API}?{q}&format=json",
+                                      headers={"X-NCP-APIGW-API-KEY-ID": cid, "X-NCP-APIGW-API-KEY": secret})
+    return urllib.request.Request(f"{API}?{q}", headers={"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": secret})
+
+
 def search(query: str, start: int = 1, display: int = 100) -> list[dict]:
-    url = f"{API}?query={urllib.parse.quote(query)}&display={display}&start={start}&sort=date"
-    req = urllib.request.Request(url, headers={"X-Naver-Client-Id": os.environ.get("NAVER_CLIENT_ID", ""),
-                                               "X-Naver-Client-Secret": os.environ.get("NAVER_CLIENT_SECRET", "")})
     last = None
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                d = json.loads(r.read().decode("utf-8"))
+    for hub in (_ENDPOINT or [True, False]):
+        req = _request(query, start, display, hub)
+        wrong_key = False
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    d = json.loads(r.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    wrong_key = True
+                    break
+                last = e
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+                last = e
+            _time.sleep(1.2 * (attempt + 1))
+        else:
+            raise RuntimeError(f"네이버 검색 API 접속 실패: {last}")
+        if not wrong_key:
+            _ENDPOINT[:] = [hub]
             break
-        except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
-                raise RuntimeError(f"네이버 검색 API 열쇠가 맞지 않습니다 (HTTP {e.code})")
-            last = e
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-            last = e
-        _time.sleep(1.2 * (attempt + 1))
     else:
-        raise RuntimeError(f"네이버 검색 API 접속 실패: {last}")
+        raise RuntimeError("네이버 검색 API 열쇠가 맞지 않습니다 (NAVER API HUB·개발자센터 둘 다 거부)")
     out = []
     for it in d.get("items") or []:
         try:
