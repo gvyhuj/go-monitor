@@ -46,3 +46,23 @@ def test_sync_and_coarse_api_only_for_days_without_minute_bars(database, monkeyp
     # 마지막 봉 뒤 15:30에 거래소 종가를 붙여 차트 끝 = 그날 등락 (1/12: 60분봉 끝 27,200 → 종가 27,550)
     last = days["2026-03-16"]["bars"][-1]
     assert last["t"] == "2026-03-16T15:30" and last["c"] == 11 and last["close_point"]
+
+
+def test_past_article_reaction_from_coarse_bars(database):
+    # 5분봉: 10:00~10:05 봉 종가 100 → 10:30 끝 봉 103 / 코스닥 1000 → 1010
+    with db.connect() as conn:
+        for sym, rows in (("X", [("2026-08-14T09:55", 100), ("2026-08-14T10:25", 103), ("2026-08-14T10:55", 104)]),
+                          ("KOSDAQ", [("2026-08-14T09:55", 1000), ("2026-08-14T10:25", 1010), ("2026-08-14T10:55", 1005)])):
+            for ts, c in rows:
+                conn.execute("INSERT INTO coarse_bars(symbol,interval,ts,open,high,low,close,volume) VALUES (?,5,?,?,?,?,?,1)",
+                             (sym, ts, c, c, c, c))
+    r = yahoo.reaction("X", "2026-08-14T10:00", "2026-08-14", 95, 990)
+    assert r["interval"] == 5 and r["kind"] == "session"
+    thirty = r["rows"][0]
+    assert thirty["minutes"] == 30 and thirty["own"] == pytest.approx(0.03) and thirty["kosdaq"] == pytest.approx(0.01)
+    assert thirty["diff"] == pytest.approx(0.02)
+    before_open = yahoo.reaction("X", "2026-08-14T07:30", "2026-08-14", 95, 990)
+    assert before_open["kind"] == "open"                                              # 전날 종가부터
+    assert before_open["rows"][0]["minutes"] == 60 and before_open["rows"][0]["own"] == pytest.approx(100 / 95 - 1)   # 09:30에 끝난 봉 없음 → +60분부터
+    assert yahoo.reaction("X", "2026-08-14T15:10", "2026-08-14", 95, 990) is None      # 15시 넘어 공개
+    assert yahoo.reaction("X", "2026-08-15T10:00", "2026-08-15", 95, 990) is None      # 봉 없는 날

@@ -511,13 +511,13 @@ def main(argv) -> int:
         elif not newssearch.enabled() and not get_state("naver_api:missing_noted"):
             annotate("notice", "네이버 검색 API 열쇠(NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)가 없습니다")
         # 야후 5분봉·60분봉 (1분봉이 없는 지난 날의 차트용): 하루 한 번, 장 마감 뒤
-        last_y = get_state("yahoo:last_sync")
+        last_y = get_state("yahoo:last_sync_v2")          # v2: 코스닥 지수 봉도 함께
         if (not last_y or last_y.get("value") != now.date().isoformat()) and now.strftime("%H:%M") >= "16:00":
             from core import collect_status, yahoo
             try:
                 added = yahoo.sync(code)
                 collect_status.mark("야후 5분봉·60분봉", True)
-                set_state("yahoo:last_sync", now.date().isoformat())
+                set_state("yahoo:last_sync_v2", now.date().isoformat())
                 annotate("notice", f"야후 분봉 새로 5분 {added.get(5, 0)}개 · 60분 {added.get(60, 0)}개")
             except Exception as e:  # noqa: BLE001 - 부가 자료라 실패해도 계속
                 collect_status.mark("야후 5분봉·60분봉", False, e)

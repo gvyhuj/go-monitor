@@ -2094,6 +2094,17 @@
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
 </section>`;
     }
+    // 1분봉이 없는 지난 기사: 야후 5분봉(없으면 60분봉)으로 +30·60·120분 (업종 분봉이 없어 KOSDAQ와만 비교)
+    const ic = !iw && d.intraday_coarse;
+    if (ic) {
+      const span = ic.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤` : `${hhmm(ic.start)} 공개부터`;
+      html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
+        <table class="ladder"><thead><tr><th></th><th style="text-align:right">이 종목</th><th style="text-align:right">KOSDAQ</th><th style="text-align:right">차이</th></tr></thead><tbody>
+        ${ic.rows.map((r) => `<tr${r.minutes === 30 ? ' class="iw-main"' : ""}><td class="h">+${r.minutes}분 <small class="muted">${hhmm(r.end)}</small></td>
+          <td class="v num ${sgnCls(r.own)}">${pct(r.own)}</td><td class="v num">${pct(r.kosdaq)}</td><td class="v num ${sgnCls(r.diff)}"><b>${points(r.diff)}</b></td></tr>`).join("")}
+        </tbody></table>
+        <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).</div></section>`;
+    }
     // 반응일 하루: 이 종목·같은 업종·KOSDAQ를 나란히, 초과는 업종 대비 (실제 값끼리 빼기만)
     if (dl) {
       const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;

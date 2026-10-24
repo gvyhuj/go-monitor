@@ -197,6 +197,21 @@ def _collect_status(sym: str) -> dict:
             "stored": collect_status.stored(sym)}
 
 
+def _coarse_reaction(sym: str, e: dict, time_ok: bool):
+    """1분봉이 없는 지난 기사: 야후 봉으로 +30·60·120분 (이 종목 · 코스닥 · 차이)."""
+    from core import yahoo
+    d0, base = e.get("reaction_day"), e.get("base_ts")
+    if not time_ok or not d0 or not base:
+        return None
+    try:
+        with connect() as conn:
+            pc = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (sym, d0)).fetchone()
+            pk = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (KOSDAQ, d0)).fetchone()
+        return yahoo.reaction(sym, base, d0, pc[0] if pc else None, pk[0] if pk else None)
+    except Exception:
+        return None
+
+
 def api_coarse(_q):
     """1분봉이 없는 날의 차트용 야후 5분봉·60분봉: {날짜: {interval, prev_close, bars}} (1분봉이 있는 날은 뺌)."""
     from core import yahoo
@@ -495,6 +510,7 @@ def api_article_detail(q, aid):
         out["intraday"] = articles.intraday_reaction(sym, e, a.get("time_quality") != "check_time")
     except Exception:
         out["intraday"] = None
+    out["intraday_coarse"] = None if out["intraday"] else _coarse_reaction(sym, e, a.get("time_quality") != "check_time")
     m = e.get("minute")
     if m:
         rs = datetime.fromisoformat(m["reaction_start"])
@@ -582,6 +598,7 @@ def api_disclosure_detail(_q, did):
         out["intraday"] = articles.intraday_reaction(sym, e, not r["untimed"])
     except Exception:
         out["intraday"] = None
+    out["intraday_coarse"] = None if out["intraday"] else _coarse_reaction(sym, e, not r["untimed"])
     d0 = e.get("reaction_day")
     if d0:
         lo = (date.fromisoformat(d0) - timedelta(days=14)).isoformat()

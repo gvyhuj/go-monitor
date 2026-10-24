@@ -18,8 +18,11 @@ RANGES = {5: "60d", 60: "730d"}
 KST = timezone(timedelta(hours=9))
 
 
+INDEX = "KOSDAQ"                # 기록 안 이름 (야후 ^KQ11 = 코스닥 종합지수)
+
+
 def ticker(code: str) -> str:
-    return f"{code}.KQ"
+    return "%5EKQ11" if code == INDEX else f"{code}.KQ"
 
 
 def parse(raw: bytes) -> list[dict]:
@@ -51,18 +54,73 @@ def fetch(code: str, interval: int) -> list[dict]:
 
 
 def sync(code: str, fetch_fn=None) -> dict:
-    """5분봉·60분봉을 받아 coarse_bars에 더함 (이미 있는 봉은 그대로). 넣은 개수."""
+    """이 종목과 코스닥 지수의 5분봉·60분봉을 받아 coarse_bars에 더함 (이미 있는 봉은 그대로). 이 종목에 넣은 개수."""
     fetch_fn = fetch_fn or fetch
     added = {}
-    for iv in RANGES:
-        bars = fetch_fn(code, iv)
-        with connect() as conn:
-            before = conn.total_changes
-            conn.executemany("INSERT OR IGNORE INTO coarse_bars(symbol, interval, ts, open, high, low, close, volume) "
-                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                             [(code, iv, b["ts"], b["open"], b["high"], b["low"], b["close"], b["volume"]) for b in bars])
-            added[iv] = conn.total_changes - before
+    for sym in (code, INDEX):
+        for iv in RANGES:
+            bars = fetch_fn(sym, iv)
+            with connect() as conn:
+                before = conn.total_changes
+                conn.executemany("INSERT OR IGNORE INTO coarse_bars(symbol, interval, ts, open, high, low, close, volume) "
+                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                 [(sym, iv, b["ts"], b["open"], b["high"], b["low"], b["close"], b["volume"]) for b in bars])
+                if sym == code:
+                    added[iv] = conn.total_changes - before
     return added
+
+
+def _price_at(rows: list[tuple], iv: int, t: datetime) -> float | None:
+    """t 시점에 끝난 마지막 봉의 종가 (봉 시작 + 간격 <= t)."""
+    best = None
+    for ts, close in rows:
+        if datetime.fromisoformat(ts) + timedelta(minutes=iv) <= t:
+            best = close
+        else:
+            break
+    return best
+
+
+def reaction(code: str, base_ts: str, day: str, prev_close: float | None, prev_index: float | None,
+             steps=(30, 60, 120)) -> dict | None:
+    """1분봉이 없는 지난 기사의 발표 직후 반응 (야후 5분봉, 없으면 60분봉): 이 종목·코스닥·차이.
+    장 시작 전 공개면 전날 종가부터 장 시작 뒤 각 시점까지."""
+    t0 = datetime.fromisoformat(base_ts)
+    open_t = datetime.fromisoformat(day + "T09:00")
+    with connect() as conn:
+        for iv in sorted(RANGES):
+            own = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
+                               (code, iv, day)).fetchall()
+            idx = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
+                               (INDEX, iv, day)).fetchall()
+            if own and idx:
+                break
+        else:
+            return None
+    if t0 < open_t:
+        start, b_own, b_idx, kind = open_t, prev_close, prev_index, "open"
+    elif t0.date().isoformat() == day and t0.time() <= datetime.strptime("15:00", "%H:%M").time():
+        start, kind = t0, "session"
+        b_own, b_idx = _price_at(own, iv, t0), _price_at(idx, iv, t0)
+        if b_own is None:           # 장 시작 직후 공개: 첫 봉 시가 대신 전날 종가
+            b_own, b_idx = prev_close, prev_index
+    else:
+        return None
+    if not b_own or not b_idx:
+        return None
+    rows = []
+    for m in steps:
+        if m < iv:
+            continue
+        end = start + timedelta(minutes=m)
+        if end.time() > datetime.strptime("15:30", "%H:%M").time():
+            break
+        p_own, p_idx = _price_at(own, iv, end), _price_at(idx, iv, end)
+        if p_own is None or p_idx is None:
+            continue
+        o, k = p_own / b_own - 1, p_idx / b_idx - 1
+        rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": o, "kosdaq": k, "diff": o - k})
+    return {"interval": iv, "kind": kind, "start": start.isoformat(timespec="minutes"), "rows": rows} if rows else None
 
 
 def day_bars(code: str, day: str) -> tuple[int | None, list[dict]]:
