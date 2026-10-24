@@ -659,7 +659,7 @@
     const st = {};
     function shell() {
       box.innerHTML = `<section class="panel rec-card">
-          <div class="rec-tabs" role="tablist">${REC_RANGES.map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
+          <div class="rec-tabs" role="tablist">${[["1d", "1일"], ...REC_RANGES].map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
         </section>
@@ -669,6 +669,7 @@
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
     function lineChart() {
       const el = $("#rec-chart");
+      if (calState.range === "1d") return;          // 1일 탭은 위 칸에 그날 1분 차트 (dayChart)
       const rows = inRange();
       const W = Math.max(320, Math.round(el.clientWidth || 760)), H = 280, L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
@@ -719,7 +720,7 @@
     // 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
     async function dayChart() {
       const seq = ++loadSeq, ds = calState.sel;
-      const el = $("#rec-daychart");
+      const el = calState.range === "1d" ? $("#rec-chart") : $("#rec-daychart");
       if (!el) return;
       if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
       el.innerHTML = `<p class="loading">불러오는 중…</p>`;
@@ -751,14 +752,31 @@
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
     }
 
+    // 고른 날 주요 숫자 (토스 '1일 범위·52주 범위'·투자자별, 네이버 시가·고가·저가·거래량 칸 참고)
+    function keyStats(ds, px) {
+      const from = new Date(new Date(ds).getTime() - 365 * 864e5).toISOString().slice(0, 10);
+      const yr = daily.filter((x) => x.date > from && x.date <= ds);
+      const hi52 = Math.max(...yr.map((x) => x.high || x.close)), lo52 = Math.min(...yr.map((x) => x.low || x.close));
+      const full = daily[0].date <= from;
+      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${int(v)}</span>`);
+      const cell = (k, v) => `<div><dt>${k}</dt><dd class="num">${v}</dd></div>`;
+      return `<dl class="key-stats">
+        ${cell("시가", won(px.open))}${cell("고가", won(px.high))}${cell("저가", won(px.low))}${cell("종가", won(px.close))}
+        ${cell("거래량", `${int(px.volume)}주`)}
+        ${cell(full ? "52주 최고" : "기록 중 최고", won(hi52))}${cell(full ? "52주 최저" : "기록 중 최저", won(lo52))}
+        ${px.foreign != null || px.organ != null || px.individual != null ? cell("개인·외국인·기관", `${signed(px.individual)} · ${signed(px.foreign)} · ${signed(px.organ)}`) : ""}
+      </dl>`;
+    }
+
     function dayPanel() {
       const ds = calState.sel, px = price[ds], ar = artDay[ds] || [], dc = discDay[ds] || [];
       const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
       $("#rec-day").innerHTML = `<section class="panel rec-daycard">
         <div class="rec-day-head"><h3>${dayLabel(ds)}</h3>
-          ${px ? `<b class="num ${sgnCls(px.change)}">${px.change == null ? "-" : pct(px.change)}</b><span class="muted">종가 ${won(px.close)}원 · KOSDAQ ${px.kosdaq == null ? "-" : pct(px.kosdaq)} · 거래량 ${int(px.volume)}주</span>` : ""}
+          ${px ? `<b class="num ${sgnCls(px.change)}">${px.change == null ? "-" : pct(px.change)}</b><span class="muted">KOSDAQ ${px.kosdaq == null ? "-" : pct(px.kosdaq)}</span>` : ""}
 </div>
-        <div id="rec-daychart" class="rec-daychart"></div>
+        ${px ? keyStats(ds, px) : ""}
+        ${calState.range === "1d" ? "" : `<div id="rec-daychart" class="rec-daychart"></div>`}
         ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
         ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
         ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}
@@ -774,7 +792,14 @@
     render();
     box.onclick = async (ev) => {
       const rb = ev.target.closest("[data-range]");
-      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); lineChart(); return; }
+      if (rb) {
+        const was = calState.range; calState.range = rb.dataset.range;
+        box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
+        if (calState.range === "1d") calState.sel = latest;
+        if (calState.range === "1d" || was === "1d") { if (calState.range !== "1d" && chart) { try { chart.remove(); } catch (_) {} chart = null; } lineChart(); dayPanel(); dayChart(); }
+        else lineChart();
+        return;
+      }
       const step = ev.target.closest("[data-step]");
       if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
       const pk = ev.target.closest("[data-pick]");
@@ -796,7 +821,8 @@
     recResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rec-chart")) lineChart(); }, 200); };
     window.addEventListener("resize", recResize);
     timers.push(setInterval(() => {          // 1일 탭에서 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인 입력 중이면 그대로)
-      if (calState.sel !== latest || !$("#rec-daychart") || $("#rec-daychart [data-range-form]:not([hidden])")) return;
+      const host = calState.range === "1d" ? "#rec-chart" : "#rec-daychart";
+      if (calState.sel !== latest || !$(host) || $(`${host} [data-range-form]:not([hidden])`)) return;
       dayChart();
     }, 30000));
   }
@@ -1031,7 +1057,7 @@
       : `<p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`;
     const list = rest.length
       ? `<ul class="timeline">${rest.map(row).join("")}</ul>`
-      : (!dailyEv ? `<p class="day-calm">${isLatest ? "오늘은 아직 급등·급락이 없습니다." : "이날은 급등·급락이 없었습니다."}</p>` : "");
+      : "";
     const artsHtml = dayArts.length ? `<div class="day-arts"><h3>이날 기사${dayArts.length > 3 ? ` <span class="muted">${dayArts.length}건 중 3건</span>` : ""}</h3>
       <ul class="mini-arts">${dayArts.slice(0, 3).map((a) => `<li><a href="#/pr/${esc(a.id)}">
         <span class="al-meta">${a.manual ? '<span class="tier watch">직접 등록</span>' : ""}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${hhmm(a.ts)}</span>${measureList(a.effect && a.effect.measure)}</span>

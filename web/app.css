@@ -1067,8 +1067,12 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rec-heat-head .seg button { padding: 5px 12px; font-size: 13px; }
 .rec-heat-head input:disabled { opacity: .45; }
 .rec-daychart { margin: 4px 0 14px; }
+.key-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px 16px; margin: 6px 0 12px; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.key-stats dt { font-size: 12px; color: var(--muted); }
+.key-stats dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; }
 .rec-daychart .rc-head { margin-bottom: 6px; }
-.rec-daychart .day-total { display: none; }          /* 날짜·등락은 위 '고른 날' 머리에 이미 있음 */
+.rec-daychart .day-total { display: none; }
+.rc-day.day-card { min-height: 0; }          /* 날짜·등락은 위 '고른 날' 머리에 이미 있음 */
 .rec-heat-head .mv-th { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .rec-heat-head .mv-th span { margin: 0; }
 .rec-cells { display: flex; flex-wrap: wrap; gap: 3px; }
