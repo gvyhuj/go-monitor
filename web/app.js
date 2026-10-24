@@ -1604,7 +1604,7 @@
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 뺍니다.</li>
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
-          <li>같은 반응일에 나온 기사는 주가 반응을 나눌 수 없어 한 건으로 셉니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
+          <li>목록 한 줄은 같은 내용 묶음(여러 매체가 같은 내용을 낸 것) 하나입니다. 같은 날이라도 내용이 다르면 따로 나옵니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
         </ul>
         <h3>대시보드</h3>
         <ul>
@@ -1888,8 +1888,8 @@
     const DTYPES = { ...((dd && dd.types) || {}) };
     discById = new Map(discs.map((x) => [x.id, x]));
     const byId = new Map(items.map((a) => [a.id, a]));
-    // 같은 반응일 = 한 사건 (엔진이 묶어 줌. 예전 자료면 기사 하나를 한 사건으로)
-    const events = (d.events || items.map((a) => ({ day: a.effect && a.effect.reaction_day, lead: a.id, ids: [a.id],
+    // 목록 한 줄 = 같은 내용 묶음 하나 (같은 날이라도 내용이 다르면 따로)
+    const events = (items.map((a) => ({ day: a.effect && a.effect.reaction_day, lead: a.id, ids: [a.id],
       kind: a.kind || (a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"), outlets: a.outlets_total || 1,
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
@@ -2003,17 +2003,12 @@
         ul.innerHTML = `<li class="empty"><strong>${artState.q ? "검색에 맞는 기사가 없습니다." : "해당 기사가 없습니다."}</strong></li>`;
         return;
       }
-      const sub = (a) => `<button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}" class="sub">
-        <span class="al-meta">${catTag(a.category)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)} · ${esc(a.office)}</span></span>
-        <span class="t">${esc(a.title)}</span></button>`;
       ul.innerHTML = list.map((e) => {
         const a = byId.get(e.lead), ef = a.effect || {}, m = ef.measure;
-        const others = e.ids.filter((x) => x !== e.lead && byId.has(x)).map((x) => byId.get(x));
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
           <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
           <span class="t">${esc(a.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button>
-          ${others.length ? `<details class="art-group"${others.some((x) => x.id === current) ? " open" : ""}><summary>같은 날 기사 ${others.length}건 더</summary>${others.map(sub).join("")}</details>` : ""}</li>`;
+          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button></li>`;
       }).join("");
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
     }
@@ -2115,7 +2110,7 @@
         </tbody></table>
         <div class="vb-note">+${iw.minutes}분 고유 움직임: 평소 같은 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}</div>
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
-        <div class="chart-legend" id="pr-legend" style="margin-top:12px"></div><div class="chart-box" id="pr-chart"></div></section>`;
+</section>`;
     }
     // 반응일 하루: 이 종목·같은 업종·KOSDAQ를 나란히, 초과는 업종 대비 (실제 값끼리 빼기만)
     if (dl) {
@@ -2125,7 +2120,7 @@
         ${row("d0", "반응일")}${e.late ? row("d1", "다음날까지") : ""}</tbody></table>
         <div class="vb-note">거래량 ${int(dl.volume)}주${dl.vol_ratio ? ` · 직전 20일 평균의 ${dl.vol_ratio.toFixed(1)}배` : ""}${dl.vol_rank != null ? ` · 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}` : ""}${dl.gap != null ? ` · 시초가 갭 ${pct(dl.gap)}` : ""}</div>
         ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}
-        ${iw ? "" : `<div class="chart-legend" id="pr-legend" style="margin-top:12px"></div><div class="chart-box" id="pr-chart"></div>`}</section>`;
+</section>`;
     } else {
       html += `<section class="verdict-box"><div>${e.reaction_day ? "반응일 시세 기록이 아직 없습니다." : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다."}</div>${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     }
@@ -2167,22 +2162,6 @@
     }
     box.innerHTML = html;
 
-    const draw = () => {
-      if (!$("#pr-chart")) return;
-      if (m && d.bars && d.bars.length) {
-        const kqBase = d.kosdaq.length ? (d.kosdaq.filter((b) => b.t < m.reaction_start).slice(-1)[0] || d.kosdaq[0]).c : null;
-        indexedChart($("#pr-chart"), $("#pr-legend"), d.bars, d.kosdaq, m.base_price, kqBase, m.reaction_start, m.outside_session ? "장 시작" : "공개");
-      } else if ((d.daily_bars || []).length && e.reaction_day) {
-        const own = d.daily_bars.map((r) => ({ t: r.date, c: r.close }));
-        const kq = (d.daily_kosdaq || []).map((r) => ({ t: r.date, c: r.close }));
-        const prev = d.daily_bars.filter((r) => r.date < e.reaction_day).slice(-1)[0];
-        const kprev = (d.daily_kosdaq || []).filter((r) => r.date < e.reaction_day).slice(-1)[0];
-        if (prev) indexedChart($("#pr-chart"), $("#pr-legend"), own, kq, prev.close, kprev ? kprev.close : null, e.reaction_day, "반응일", true);
-      } else {
-        $("#pr-chart").outerHTML = `<p class="note">차트를 그릴 시세 기록이 없습니다.</p>`;
-      }
-    };
-    draw();
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));
     box.querySelectorAll(".dup-del").forEach((b) => b.addEventListener("click", async () => {
