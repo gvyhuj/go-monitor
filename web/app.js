@@ -585,10 +585,10 @@
   }
 
   // 주가 기록 (로빈후드·토스 종목 화면 참고): 기간 탭이 있는 큰 차트가 주인공, 선 위에 그날 소식 점,
-  // 아래 한 줄 히트맵(한 칸 = 하루)과 등락 고르기, 맨 아래 고른 날 요약. 1일 탭 = 고른 날 1분 차트(구간 골라 원인 묻기)
+  // 아래 한 줄 히트맵(한 칸 = 하루)과 등락 고르기, 맨 아래 고른 날 요약 + 그날 1분 차트(구간 골라 원인 묻기)
   const calState = { range: "1m", sel: null, dir: "", th: 5 };
   const MAIN_DISC = new Set(["A", "B", "C", "I", "K"]);       // 정기(실적)·주요사항·발행·거래소 공시·거래소 조치
-  const REC_RANGES = [["1d", "1일", 1], ["1w", "1주", 5], ["1m", "1달", 22], ["3m", "3달", 66], ["1y", "1년", 250], ["all", "전체", 1e9]];
+  const REC_RANGES = [["1w", "1주", 5], ["1m", "1달", 22], ["3m", "3달", 66], ["1y", "1년", 250], ["all", "전체", 1e9]];
   async function viewCalendar() {
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
@@ -615,13 +615,13 @@
     const hitMove = (ch) => {
       if (!calState.dir || ch == null) return false;
       const v = calState.th / 100;
-      return calState.dir === "up" ? ch >= v : calState.dir === "down" ? ch <= -v : Math.abs(ch) >= v;
+      return calState.dir === "up" ? ch >= v : ch <= -v;
     };
     const news = (ds) => {
       const ar = artDay[ds] || [];
       return { pr: ar.filter(isPr).length, ext: ar.filter((a) => !isPr(a)).length, disc: (discDay[ds] || []).length };
     };
-    const inRange = () => { const n = REC_RANGES.find((r) => r[0] === calState.range)[2]; return calState.range === "1d" ? daily.slice(-22) : daily.slice(-n); };
+    const inRange = () => { const n = REC_RANGES.find((r) => r[0] === calState.range)[2]; return daily.slice(-n); };
 
     let chart = null, loadSeq = 0, coarseAll = null;
     const st = {};
@@ -633,8 +633,8 @@
         </section>
         <section class="panel rec-heat">
           <div class="rec-heat-head"><b>날마다 등락</b><span class="muted">한 칸 = 하루 · 빨강 오름 · 파랑 내림</span><span class="spacer"></span>
-            <label class="field"><span>등락 고르기</span><select id="mv-dir">${[["", "고르지 않음"], ["up", "오른 날"], ["down", "내린 날"], ["both", "오르든 내리든"]].map(([v, t]) => `<option value="${v}"${calState.dir === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
-            <label class="field"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(calState.th))}"></label></div>
+            <span class="muted">등락 고르기</span><div class="seg" role="group" aria-label="등락 고르기">${[["", "끄기"], ["up", "오른 날"], ["down", "내린 날"]].map(([v, t]) => `<button type="button" data-dir="${v}" aria-pressed="${calState.dir === v}">${t}</button>`).join("")}</div>
+            <label class="field mv-th"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(calState.th))}"${calState.dir ? "" : " disabled"}></label></div>
           <div id="rec-cells" class="rec-cells"></div><div id="rec-hits" class="mv-hits"></div>
         </section>
         <section id="rec-day"></section>`;
@@ -644,7 +644,6 @@
     function lineChart() {
       const el = $("#rec-chart");
       const rows = inRange();
-      if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
       const W = Math.max(320, Math.round(el.clientWidth || 760)), H = 280, L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
       const X = (i) => L + (rows.length > 1 ? (i * (W - L - R)) / (rows.length - 1) : (W - L - R) / 2);
@@ -691,10 +690,11 @@
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
     }
 
-    // 1일 탭: 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
+    // 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
     async function dayChart() {
       const seq = ++loadSeq, ds = calState.sel;
-      const el = $("#rec-chart");
+      const el = $("#rec-daychart");
+      if (!el) return;
       if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
       el.innerHTML = `<p class="loading">불러오는 중…</p>`;
       let d = null;
@@ -708,10 +708,10 @@
           if (c && c.bars.length) { d = { date: ds, bars: c.bars, kosdaq: [], events: [], prev_close: c.prev_close }; coarseIv = c.interval; }
         } catch (_) {}
       }
-      if (seq !== loadSeq || !$("#rec-chart") || calState.range !== "1d") return;
+      if (seq !== loadSeq || !el.isConnected) return;
       const i = daily.findIndex((x) => x.date === ds);
-      const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹</button>
-        <b>${dayLabel(ds)}</b><button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">›</button>
+      const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
+        <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
         ${coarseIv ? `<span class="muted">1분봉이 없어 야후 ${coarseIv}분봉</span>` : ""}</div>`;
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
@@ -726,7 +726,7 @@
     }
 
     function cells() {
-      const rows = calState.range === "1d" || calState.range === "1w" ? daily.slice(-22) : inRange();
+      const rows = calState.range === "1w" ? daily.slice(-22) : inRange();
       $("#rec-cells").innerHTML = rows.map((x) => {
         const ch = x.change, t = ch == null ? 0 : Math.min(1, Math.abs(ch) / 0.1);
         const cls = ch == null ? "" : ch > 0 ? "up" : ch < 0 ? "down" : "";
@@ -745,33 +745,34 @@
       $("#rec-day").innerHTML = `<section class="panel rec-daycard">
         <div class="rec-day-head"><h3>${dayLabel(ds)}</h3>
           ${px ? `<b class="num ${sgnCls(px.change)}">${px.change == null ? "-" : pct(px.change)}</b><span class="muted">종가 ${won(px.close)}원 · KOSDAQ ${px.kosdaq == null ? "-" : pct(px.kosdaq)} · 거래량 ${int(px.volume)}주</span>` : ""}
-          <span class="spacer"></span>${calState.range !== "1d" ? `<button type="button" class="btn small" id="rec-open-day">그날 1분 차트 보기</button>` : ""}</div>
+</div>
+        <div id="rec-daychart" class="rec-daychart"></div>
         ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
         ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
         ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}
         <div class="ask-row"><button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button><span class="form-msg" id="cal-msg" role="status"></span></div></section>`;
     }
 
-    function drawChart() { if (calState.range === "1d") dayChart(); else lineChart(); }
-    function render() { shell(); drawChart(); cells(); dayPanel(); }
+    function render() { shell(); lineChart(); cells(); dayPanel(); dayChart(); }
     function pick(ds) {
       if (!price[ds]) return;
       calState.sel = ds;
-      if (calState.range === "1d") dayChart(); else lineChart();
-      cells(); dayPanel();
+      lineChart(); cells(); dayPanel(); dayChart();
     }
     render();
     box.onclick = async (ev) => {
       const rb = ev.target.closest("[data-range]");
-      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); drawChart(); cells(); dayPanel(); return; }
+      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); lineChart(); cells(); return; }
       const step = ev.target.closest("[data-step]");
       if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
+      const dir = ev.target.closest("[data-dir]");
+      if (dir) {
+        calState.dir = dir.dataset.dir;
+        box.querySelectorAll("[data-dir]").forEach((b) => b.setAttribute("aria-pressed", String(b === dir)));
+        $("#mv-th").disabled = !calState.dir; cells(); return;
+      }
       const pk = ev.target.closest("[data-pick]");
       if (pk) { pick(pk.dataset.pick); return; }
-      if (ev.target.closest("#rec-open-day")) {
-        calState.range = "1d"; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === "1d")));
-        drawChart(); cells(); dayPanel(); $("#rec-chart").scrollIntoView({ behavior: "smooth", block: "start" }); return;
-      }
       const e = ev.target.closest("[data-id]");
       if (e && e.closest(".day-card") && !e.closest(".range-panel")) { openEvent(+e.dataset.id); return; }
       const del = ev.target.closest("[data-ev-del]");
@@ -783,19 +784,18 @@
         catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
       }
     };
-    box.onchange = (ev) => {
-      if (ev.target.id === "mv-dir") calState.dir = ev.target.value;
-      else if (ev.target.id === "mv-th") { const v = parseFloat(ev.target.value); if (!(v > 0)) return; calState.th = Math.round(v * 10) / 10; }
-      else return;
-      cells();
+    box.oninput = (ev) => {                  // 기준 숫자는 치는 즉시 반영
+      if (ev.target.id !== "mv-th") return;
+      const v = parseFloat(ev.target.value); if (!(v > 0)) return;
+      calState.th = Math.round(v * 10) / 10; cells();
     };
     renderQuote();
     if (recResize) window.removeEventListener("resize", recResize);
     let rz = null;
-    recResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rec-chart") && calState.range !== "1d") lineChart(); }, 200); };
+    recResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rec-chart")) lineChart(); }, 200); };
     window.addEventListener("resize", recResize);
     timers.push(setInterval(() => {          // 1일 탭에서 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인 입력 중이면 그대로)
-      if (calState.range !== "1d" || calState.sel !== latest || !$("#rec-chart") || $("#rec-chart [data-range-form]:not([hidden])")) return;
+      if (calState.sel !== latest || !$("#rec-daychart") || $("#rec-daychart [data-range-form]:not([hidden])")) return;
       dayChart();
     }, 30000));
   }
@@ -1565,7 +1565,7 @@
           <li><b>AI 메모</b>: AI가 쓴 원인 글입니다. 판단은 직접 하도록 접어 두었습니다. 숫자(KOSDAQ 같은 기간, 업종, 수급)는 메모와 따로 보입니다.</li>
           <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>급등·급락</b>: 감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
-          <li><b>검색</b>: 맨 위 검색창에 제목·매체·기자·상대 회사를 넣거나, 날짜(2026-04-22, 4/22, 4월), 하루 등락률(+6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날, 6.5%는 오르든 내리든 6.5% 이상)을 넣습니다. 등락률로 찾으면 그날 기사·공시도 함께 나옵니다.</li>
+          <li><b>검색</b>: 맨 위 검색창에 제목·매체·기자·상대 회사를 넣거나, 날짜(2026-04-22, 4/22, 4월), 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)을 넣습니다. 등락률로 찾으면 그날 기사·공시도 함께 나옵니다.</li>
         </ul>`)}
       ${sec("articles", "소식", `
         <h3>탭과 건수</h3>
@@ -2446,12 +2446,12 @@
 
   // ---------------------------------------------------------------- 전체 검색 (기사·공시·사건·날짜)
   // 날짜: 2026-04-22 · 4/22 · 4월 22일 · 4월 · 2026-04 처럼 쓰면 그 날짜(달)를 찾음. 나머지는 제목·매체·기자·제출인·상대 회사
-  // 등락률: +6.5% → 6.5% 이상 오른 날, -5% → 5% 이상 내린 날, 6.5% → 오르든 내리든 6.5% 이상 움직인 날
+  // 등락률: +6.5%·6.5% → 6.5% 이상 오른 날, -5% → 5% 이상 내린 날
   function searchMove(q) {
     const m = q.replace(/\s+/g, "").replace("−", "-").match(/^([+-]?)(\d+(?:\.\d+)?)%$/);
     if (!m) return null;
     const v = +m[2] / 100;
-    return { sign: m[1], v, test: (c) => c != null && (m[1] === "+" ? c >= v : m[1] === "-" ? c <= -v : Math.abs(c) >= v) };
+    return { sign: m[1], v, test: (c) => c != null && (m[1] === "-" ? c <= -v : c >= v) };
   }
 
   function searchDates(q) {
@@ -2502,7 +2502,7 @@
     const html = sec("날짜", days.length, days.slice(0, 300).map((x) => li(`#/calendar`, `<span class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</span><span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)} · 거래량 ${Math.round(x.volume || 0).toLocaleString("ko-KR")}주</span>`, `${x.date.slice(0, 4)}년 ${dayLabel(x.date)}`).replace('href="#/calendar"', `href="#/calendar" data-day="${esc(x.date)}"`)).join(""))
       + sec("기사", arts.length, arts.slice(0, 80).map((a) => li(`#/pr/${esc(a.id)}`, `${kindTag({ kind: a.kind })}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)} · ${esc(a.office || "")}${a.reporter ? ` · ${esc(a.reporter)} 기자` : ""}</span>`, a.title)).join(""))
       + sec("공시", discs.length, discs.slice(0, 80).map((x) => li(`#/pr/${esc(x.id)}`, `<span class="ktag k-disc">공시</span><span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)} · ${esc(x.filer || "")}</span>`, x.title)).join(""));
-    $("#search-sub").textContent = mv ? `하루 등락 ${mv.sign === "+" ? `+${(mv.v * 100).toFixed(1)}% 이상` : mv.sign === "-" ? `−${(mv.v * 100).toFixed(1)}% 이하` : `±${(mv.v * 100).toFixed(1)}% 이상`} · 그날 소식 포함` : `“${q}”`;
+    $("#search-sub").textContent = mv ? `하루 등락 ${mv.sign === "-" ? `−${(mv.v * 100).toFixed(1)}% 이하` : `+${(mv.v * 100).toFixed(1)}% 이상`} · 그날 소식 포함` : `“${q}”`;
     const out = $("#search-out");
     out.innerHTML = html || `<div class="empty"><strong>찾은 것이 없습니다.</strong>다른 말로 찾아보세요. 날짜는 2026-04-22, 4/22, 4월처럼 쓸 수 있습니다.</div>`;
     out.onclick = (ev) => {
