@@ -495,6 +495,21 @@ def main(argv) -> int:
             feed.purge_old_bars(int(settings.get("keep_bars_days", 0)))
             feed.purge_related_bars(code)
             set_state("job:last_purge", now.date().isoformat())
+        # 네이버 검색 API 열쇠 확인: 하루 한 번 회사 이름으로 한 번 불러 보고 결과를 남김 (수집 현황 · 실행 화면)
+        if newssearch.enabled() and (get_state("naver_api:checked") or {}).get("value") != now.date().isoformat():
+            from core import collect_status
+            from core.articles import company_name
+            try:
+                got = newssearch.search(company_name(), display=10)
+                where = "NAVER API HUB" if newssearch._ENDPOINT == [True] else "네이버 개발자센터"
+                collect_status.mark("네이버 검색 API", True)
+                annotate("notice", f"네이버 검색 API 정상 ({where} 열쇠, 시험 검색 {len(got)}건)")
+            except Exception as e:  # noqa: BLE001
+                collect_status.mark("네이버 검색 API", False, e)
+                annotate("warning", f"네이버 검색 API 실패: {e}")
+            set_state("naver_api:checked", now.date().isoformat())
+        elif not newssearch.enabled() and not get_state("naver_api:missing_noted"):
+            annotate("notice", "네이버 검색 API 열쇠(NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)가 없습니다")
         # 야후 5분봉·60분봉 (1분봉이 없는 지난 날의 차트용): 하루 한 번, 장 마감 뒤
         last_y = get_state("yahoo:last_sync")
         if (not last_y or last_y.get("value") != now.date().isoformat()) and now.strftime("%H:%M") >= "16:00":
