@@ -2162,10 +2162,8 @@
       const span = iw.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤` : `${hhmm(iw.start)} 공개부터`;
       const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, sector: iw.sector, abnormal: iw.abnormal }];
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
-        <table class="ladder"><thead><tr><th></th><th style="text-align:right">이 종목</th><th style="text-align:right">시장·업종 몫</th><th style="text-align:right">고유 움직임</th></tr></thead><tbody>
-        ${rows.map((r) => `<tr${r.minutes === iw.minutes ? ' class="iw-main"' : ""}><td class="h">+${r.minutes}분 <small class="muted">${hhmm(r.end || iw.end)}</small></td>
-          <td class="v num ${sgnCls(r.own)}">${pct(r.own)}</td><td class="v num">${points(r.market + r.sector)}</td><td class="v num ${sgnCls(r.abnormal)}"><b>${points(r.abnormal)}</b></td></tr>`).join("")}
-        </tbody></table>
+        ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
+        <div class="rx-steps">${rows.map((r) => `<span${r.minutes === iw.minutes ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">고유</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
         <div class="vb-note">+${iw.minutes}분 고유 움직임: 평소 같은 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}</div>
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
 </section>`;
@@ -2175,10 +2173,8 @@
     if (ic) {
       const span = ic.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤` : `${hhmm(ic.start)} 공개부터`;
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
-        <table class="ladder"><thead><tr><th></th><th style="text-align:right">이 종목</th><th style="text-align:right">KOSDAQ</th><th style="text-align:right">차이</th></tr></thead><tbody>
-        ${ic.rows.map((r) => `<tr${r.minutes === 30 ? ' class="iw-main"' : ""}><td class="h">+${r.minutes}분 <small class="muted">${hhmm(r.end)}</small></td>
-          <td class="v num ${sgnCls(r.own)}">${pct(r.own)}</td><td class="v num">${pct(r.kosdaq)}</td><td class="v num ${sgnCls(r.diff)}"><b>${points(r.diff)}</b></td></tr>`).join("")}
-        </tbody></table>
+        ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
+        <div class="rx-steps">${ic.rows.map((r) => `<span${r.minutes === 30 ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">KOSDAQ</small> ${pct(r.kosdaq)}</span>`).join("")}</div>
         <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).</div></section>`;
     }
     // 반응일 하루: 이 종목·같은 업종·KOSDAQ를 나란히, 초과는 업종 대비 (실제 값끼리 빼기만)
@@ -2230,7 +2226,11 @@
       html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
     }
     box.innerHTML = html;
-
+    // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
+    const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
+    if (rc && rxEl && rc.base_own) {
+      indexedChart(rxEl, $(".rx-legend", box), rc.own, rc.kq, rc.base_own, rc.base_kq, rc.start, rc.kind === "open" ? "장 시작" : "공개");
+    }
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));
     box.querySelectorAll(".dup-del").forEach((b) => b.addEventListener("click", async () => {

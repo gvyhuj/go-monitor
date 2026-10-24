@@ -1087,3 +1087,8 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rec-day-head h3 { margin: 0; font-size: 16px; }
 .rec-day-head b { font-size: 18px; }
 #rec-hits { margin-top: 8px; }
+
+/* 기사 상세: 발표 직후 그래프 */
+.rx-chart { height: 220px; margin: 4px 0 8px; }
+.rx-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 4px 0 6px; }
+.rx-steps .iw-main b { text-decoration: underline; text-underline-offset: 3px; }

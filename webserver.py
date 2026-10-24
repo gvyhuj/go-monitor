@@ -212,6 +212,43 @@ def _coarse_reaction(sym: str, e: dict, time_ok: bool):
         return None
 
 
+def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
+    """발표 직후 그래프용: 공개 시각(장 전 공개는 장 시작) 30분 전부터 2시간 뒤까지 이 종목·KOSDAQ 종가와 기준값.
+    1분봉이 있으면 1분봉, 없으면 야후 5분·60분봉. 기준값: 장 전 공개는 전날 종가, 장중 공개는 공개 시각 직전 봉 종가."""
+    w = iw or ic
+    if not w or not w.get("start"):
+        return None
+    start, kind, d0 = datetime.fromisoformat(w["start"]), w.get("kind"), e.get("reaction_day") or w["start"][:10]
+    lo, hi = (start - timedelta(minutes=30)).isoformat(timespec="minutes"), (start + timedelta(minutes=120)).isoformat(timespec="minutes")
+    with connect() as conn:
+        if iw:
+            iv = 1
+            q = "SELECT ts, close FROM minute_bars WHERE symbol=? AND ts BETWEEN ? AND ? AND substr(ts,1,10)=? ORDER BY ts"
+            own = conn.execute(q, (sym, lo, hi, d0)).fetchall()
+            kq = conn.execute(q, (KOSDAQ, lo, hi, d0)).fetchall()
+        else:
+            from core import yahoo
+            iv = ic["interval"]
+            q = "SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND ts BETWEEN ? AND ? ORDER BY ts"
+            own = conn.execute(q, (sym, iv, lo, hi)).fetchall()
+            kq = conn.execute(q, (yahoo.INDEX, iv, lo, hi)).fetchall()
+        prev = lambda code: (conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
+                                          (code, d0)).fetchone() or [None])[0]
+        p_own, p_kq = prev(sym), prev(KOSDAQ)
+    if not own:
+        return None
+
+    def at(rows, fallback):           # 공개 시각에 끝난 마지막 봉의 종가 (봉 시작 + 간격 <= 공개 시각)
+        best = None
+        for t, c in rows:
+            if datetime.fromisoformat(t) + timedelta(minutes=iv) <= start:
+                best = c
+        return best if best is not None else fallback
+    b_own, b_kq = (p_own, p_kq) if kind == "open" else (at(own, p_own), at(kq, p_kq))
+    return {"interval": iv, "kind": kind, "start": w["start"], "base_own": b_own, "base_kq": b_kq,
+            "own": [{"t": t, "c": c} for t, c in own], "kq": [{"t": t, "c": c} for t, c in kq]}
+
+
 def api_coarse(_q):
     """1분봉이 없는 날의 차트용 야후 5분봉·60분봉: {날짜: {interval, prev_close, bars}} (1분봉이 있는 날은 뺌)."""
     from core import yahoo
@@ -511,6 +548,10 @@ def api_article_detail(q, aid):
     except Exception:
         out["intraday"] = None
     out["intraday_coarse"] = None if out["intraday"] else _coarse_reaction(sym, e, a.get("time_quality") != "check_time")
+    try:
+        out["reaction_chart"] = _reaction_chart(sym, e, out["intraday"], out["intraday_coarse"])
+    except Exception:
+        out["reaction_chart"] = None
     m = e.get("minute")
     if m:
         rs = datetime.fromisoformat(m["reaction_start"])
@@ -599,6 +640,10 @@ def api_disclosure_detail(_q, did):
     except Exception:
         out["intraday"] = None
     out["intraday_coarse"] = None if out["intraday"] else _coarse_reaction(sym, e, not r["untimed"])
+    try:
+        out["reaction_chart"] = _reaction_chart(sym, e, out["intraday"], out["intraday_coarse"])
+    except Exception:
+        out["reaction_chart"] = None
     d0 = e.get("reaction_day")
     if d0:
         lo = (date.fromisoformat(d0) - timedelta(days=14)).isoformat()
