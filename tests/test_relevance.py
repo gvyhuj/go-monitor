@@ -38,6 +38,8 @@ def test_blocked_office_is_never_saved_and_old_rows_are_purged(tmpdb):
         conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES ('old', '000', '2026-08-19T15:23', "
                      "'핀포인트뉴스', 't', 'https://www.pinpointnews.co.kr/news/articleView.html?idxno=478691')")
     assert relevance.purge_blocked("000") == 1
+    assert relevance.blocked("Investing.com 한국어", "https://news.google.com/rss/articles/x")
+    assert relevance.blocked("", "https://kr.investing.com/news/stock-market-news/article-2070219")
     n = articles._save("000", [_item("a1", f"{NAME} 공급계약", office="핀포인트 뉴스"),
                                _item("a2", f"{NAME} 공급계약", url="https://www.pinpointnews.co.kr/x"),
                                _item("a3", f"{NAME} 공급계약")], "naver")
