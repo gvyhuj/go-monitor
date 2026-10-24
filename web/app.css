@@ -1054,6 +1054,7 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rc-mk.ext { fill: var(--muted); }
 .rec-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
 .rc-day { border: 0; box-shadow: none; padding: 0; margin: 0; }
+.rc-day .day-chart { margin-left: 0; margin-right: 0; }
 .rec-heat { margin-bottom: 12px; }
 .rec-heat-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 10px; }
 .rec-heat-head input[type=number] { width: 90px; }

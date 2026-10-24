@@ -300,6 +300,8 @@
     const spans = events.map((e) => ({ k: e.direction, a: toTime(e.start_ts) - 4 * 60, b: toTime(e.last_ts) }));
     const baseVol = dark ? "rgba(255,255,255,.26)" : (matchMedia("(prefers-color-scheme: dark)").matches ? "rgba(255,255,255,.22)" : "#C3CAD6");
     const pdata = [], vdata = [];
+    // 왼쪽 끝 여백: 첫 봉 앞에 빈 칸 몇 개 (09:00 급등·급락 표시 글자가 차트 밖으로 잘리지 않게)
+    if (bars.length) for (let k = 6; k >= 1; k--) { const t = toTime(bars[0].t) - k * barMinutes * 60; pdata.push({ time: t }); vdata.push({ time: t }); }
     for (const b of bars) {
       const t = toTime(b.t);
       pdata.push({ time: t, value: b.c });
