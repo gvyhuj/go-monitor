@@ -1519,8 +1519,8 @@
         </ul>
         <h3>대시보드</h3>
         <ul>
-          <li>기사를 월별(구분별로 쌓음)·주제·언론사·기자로 센 막대입니다. 막대를 누르면 그 조건으로 다른 막대와 아래 기사 목록이 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 막대에 그 언론사 기자만 남습니다.</li>
-          <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 막대에서 빠집니다.</li>
+          <li>기사를 월별·주제·언론사·기자로 센 표입니다(보도자료·외부 기사·합계). 줄을 누르면 그 조건으로 다른 표와 아래 기사 목록이 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 표에 그 언론사 기자만 남습니다.</li>
+          <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 표에서 빠집니다.</li>
           <li><b>내려받기</b>: '지금 조건 엑셀로 내려받기'는 걸러진 기사, '원본 전체 내려받기'는 조건과 관계없이 모든 기사(매체별)입니다. 엑셀에서 직접 피벗할 수 있습니다.</li>
           <li><b>세는 단위</b>: '매체별 기사'는 같은 내용이라도 실은 매체마다 1건, '같은 내용 묶음'은 묶음당 1건입니다. 기본으로 단순 언급·시황 기사는 뺍니다.</li>
           <li><b>주제</b>: 제목(없으면 요약 앞부분)에 들어 있는 단어로 자동 분류합니다. 순서대로 먼저 걸린 것이 대표 주제입니다: 실적 → 수주·계약 → 자금·주식 → 정부·기관 지원 → 방산 → 우주·위성 → 반도체 → 기술·제품 → 전시·IR·행사 → 주가·시황 → 기타. 여러 주제에 걸리면 내려받은 파일의 '걸린 주제 전부'에 모두 적습니다.</li>
@@ -1662,15 +1662,15 @@
 
   async function pagePivot() {
     main.innerHTML = `<div class="wrap">
-      <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">막대를 누르면 그 조건으로 다른 차트와 아래 목록이 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
+      <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">표의 줄을 누르면 그 조건으로 다른 표와 아래 목록이 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
       <div class="panel pivot-controls" id="piv-ctl"></div>
       <div id="dash-chips" class="dash-chips"></div>
       <div id="dash-kpi" class="score-line dash-kpi"></div>
       <div class="dash-grid">
-        <section class="panel dash-card dash-wide"><h3 class="d-sec">월별 <small class="muted">구분별로 쌓음</small></h3><div id="dash-month" class="dash-cols"></div><div id="dash-legend" class="dash-legend"></div></section>
+        <section class="panel dash-card"><h3 class="d-sec">월별 <small class="muted">최근 달부터</small></h3><div id="dash-month"></div></section>
         <section class="panel dash-card"><h3 class="d-sec">주제</h3><div id="dash-topic"></div></section>
         <section class="panel dash-card"><h3 class="d-sec">언론사 <small class="muted">상위 12</small></h3><div id="dash-office"></div></section>
-        <section class="panel dash-card dash-wide"><h3 class="d-sec">기자 <small class="muted">상위 15 · 같은 이름도 언론사가 다르면 따로</small></h3><div id="dash-reporter" class="dash-two"></div></section>
+        <section class="panel dash-card"><h3 class="d-sec">기자 <small class="muted">상위 15 · 같은 이름도 언론사가 다르면 따로</small></h3><div id="dash-reporter"></div></section>
       </div>
       <section class="panel dash-card"><div class="controls"><h3 class="d-sec" style="margin:0">기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
         <button class="btn" type="button" id="piv-csv">지금 조건 엑셀로 내려받기</button>
@@ -1687,25 +1687,19 @@
       <label class="check"><input type="checkbox" data-k="noise"${pivotState.noise ? " checked" : ""}> 단순 언급·시황 포함</label>`;
     const F = pivotState.f;
     const DIMS = { month: "월", topic: "주제", office: "언론사", reporter: "기자" };
-    const KCLS = { "그린광학 보도자료": "k1", "외부 기사": "k2" };
     let base = [], shown = [];
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
       list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
-    function bars(el, dim, limit) {
-      const list = dashAgg(base.filter((r) => pass(r, dim)), dim).slice(0, limit);
-      const max = Math.max(1, ...list.map((x) => x.n));
-      el.innerHTML = list.length ? list.map((x) => `<button type="button" class="dash-bar${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
-        <span class="nm">${esc(x.key)}</span><span class="track">${DASH_KINDS.filter((k) => x.by[k]).map((k) => `<i class="${KCLS[k]}" style="width:${(x.by[k] / max) * 100}%"></i>`).join("")}</span><span class="num">${x.n}</span></button>`).join("")
+    // 순위 표: 줄을 누르면 그 조건으로 다른 표와 아래 목록이 걸러짐 (다시 누르면 풀림)
+    function table(el, dim, limit, newestFirst) {
+      let list = dashAgg(base.filter((r) => pass(r, dim)), dim);
+      if (newestFirst) list = list.reverse();
+      list = list.slice(0, limit);
+      el.innerHTML = list.length ? `<table class="dash-table"><thead><tr><th>${DIMS[dim]}</th>${DASH_KINDS.map((k) => `<th class="num">${k === "그린광학 보도자료" ? "보도자료" : "외부"}</th>`).join("")}<th class="num">합계</th></tr></thead><tbody>
+        ${list.map((x) => `<tr class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}"><td>${esc(x.key)}</td>
+          ${DASH_KINDS.map((k) => `<td class="num">${x.by[k] || ""}</td>`).join("")}<td class="num"><b>${x.n}</b></td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">해당 기사가 없습니다.</p>`;
-    }
-    function months() {
-      const list = dashAgg(base.filter((r) => pass(r, "month")), "month");
-      const max = Math.max(1, ...list.map((x) => x.n));
-      $("#dash-month").innerHTML = list.length ? list.map((x) => `<button type="button" class="dash-col${F.month === x.key ? " on" : F.month ? " off" : ""}" data-d="month" data-v="${esc(x.key)}" title="${esc(x.key)} · ${x.n}건">
-        <span class="num">${x.n}</span><span class="stack" style="height:${(x.n / max) * 100}%">${DASH_KINDS.filter((k) => x.by[k]).map((k) => `<i class="${KCLS[k]}" style="flex:${x.by[k]}"></i>`).join("")}</span>
-        <span class="lb">${esc(x.key.slice(2).replace("-", "."))}</span></button>`).join("") : `<p class="muted">해당 기사가 없습니다.</p>`;
-      $("#dash-legend").innerHTML = DASH_KINDS.map((k) => `<span><i class="${KCLS[k]}"></i>${k}</span>`).join("");
     }
     function draw() {
       const since = pivotState.range === "all" ? "" : isoDate(new Date(Date.now() - +pivotState.range * 864e5));
@@ -1720,10 +1714,10 @@
         <span><small>그린광학 보도자료 비율</small><b>${shown.length ? Math.round((prN / shown.length) * 100) : 0}%</b> <small>${prN}건</small></span>`;
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
-      months();
-      bars($("#dash-topic"), "topic", 12);
-      bars($("#dash-office"), "office", 12);
-      bars($("#dash-reporter"), "reporter", 15);
+      table($("#dash-month"), "month", 36, true);
+      table($("#dash-topic"), "topic", 12);
+      table($("#dash-office"), "office", 12);
+      table($("#dash-reporter"), "reporter", 15);
       $("#dash-n").textContent = `${shown.length}건${shown.length > 100 ? " · 최근 100건 표시" : ""}`;
       $("#dash-list").innerHTML = shown.slice(0, 100).map((r) => `<li><span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)} · ${esc(r.kind)}</span>
         <a href="#/pr/${esc(r.lead)}">${esc(r.title)}</a>${r.url ? ` <a class="muted" href="${esc(r.url)}" target="_blank" rel="noopener">원문</a>` : ""}</li>`).join("")
@@ -1737,7 +1731,7 @@
     };
     main.addEventListener("click", (ev) => {
       if (ev.target.closest("#dash-clear")) { for (const k of Object.keys(F)) delete F[k]; draw(); return; }
-      const b = ev.target.closest(".dash-bar, .dash-col, .chip-f"); if (!b) return;
+      const b = ev.target.closest(".dash-row, .chip-f"); if (!b) return;
       const d = b.dataset.d, v = b.dataset.v;
       if (F[d] === v) delete F[d]; else F[d] = v;
       draw();
