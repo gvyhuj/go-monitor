@@ -986,3 +986,13 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 }
 .intraday-box .ladder, .verdict-box .ladder { margin-top: 8px; }
 .ladder tr.iw-main td { font-weight: 700; background: var(--canvas); }
+
+/* 달력 + 그날 카드 · 등락 고르기 */
+.cal-filter { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin-bottom: 12px; }
+.cal-filter input[type=number] { width: 110px; }
+.mv-hits { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mv-hits b { margin-right: 4px; }
+.cal-cell.dim { opacity: 0.3; }
+.cal-cell.hit { box-shadow: inset 0 0 0 2px var(--ink); }
+#cal-card { margin-top: 14px; }
+.cal-news { margin-top: 12px; }

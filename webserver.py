@@ -202,7 +202,7 @@ def api_intraday(q):
     sym = s["symbol"]
     with connect() as conn:
         dates = [r[0] for r in conn.execute(
-            "SELECT DISTINCT substr(ts,1,10) d FROM minute_bars WHERE symbol=? ORDER BY d DESC LIMIT 15", (sym,))]
+            "SELECT DISTINCT substr(ts,1,10) d FROM minute_bars WHERE symbol=? ORDER BY d DESC LIMIT 250", (sym,))]  # 달력에서 고른 날 차트 (약 1년)
     if not dates:
         return {"date": None, "dates": [], "bars": [], "kosdaq": [], "events": [], "prev_close": None}
     d = q.get("date") or dates[0]
