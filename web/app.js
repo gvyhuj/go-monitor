@@ -528,8 +528,8 @@
   // ---------------------------------------------------------------- dashboard
   // 최근 거래일(최대 15일)을 하루 한 장씩 세로로 쌓음. 카드가 화면 가까이 오면 그날 자료를 불러옴.
   // 이상변동이 없던 날은 한 줄로 접어 두고, 누르면 차트를 펼침. 오늘 카드만 30초마다 새로 그림.
-  // 주가 기록: [달력] [일별 표] (달력 아래에 고른 날의 차트·기사·공시, 급등·급락 기록 내려받기는 일별 표에)
-  const VIEWS = [["recent", "달력", "#/"], ["days", "일별 표", "#/days"]];
+  // 주가 기록: [차트] [일별 표] (차트 = 기간 탭 + 히트맵 + 고른 날, 급등·급락 기록 내려받기는 일별 표에)
+  const VIEWS = [["recent", "차트", "#/"], ["days", "일별 표", "#/days"]];
   async function pageDashboard(view = "recent") {
     $("#hero").hidden = false;
     main.innerHTML = `<div class="wrap"><div class="view-bar"><div class="seg" role="tablist" aria-label="보기">${VIEWS.map(([v, t, h]) =>
@@ -584,10 +584,11 @@
         prN[x.date] || 0, extN[x.date] || 0, discN[x.date] || 0]));
   }
 
-  // 달력 + 그날 카드: 달력으로 전체를 보면서, 누른 날(처음엔 최근 거래일)의 차트·장중 기록·기사·공시를 바로 아래에
-  // 맨 위 '등락 고르기'로 몇 % 이상 오르거나 내린 날만 달력에서 진하게 보고, 맞는 날짜 목록에서 바로 고름
-  const calState = { month: null, sel: null, dir: "", th: 5 };
+  // 주가 기록 (로빈후드·토스 종목 화면 참고): 기간 탭이 있는 큰 차트가 주인공, 선 위에 그날 소식 점,
+  // 아래 한 줄 히트맵(한 칸 = 하루)과 등락 고르기, 맨 아래 고른 날 요약. 1일 탭 = 고른 날 1분 차트(구간 골라 원인 묻기)
+  const calState = { range: "1m", sel: null, dir: "", th: 5 };
   const MAIN_DISC = new Set(["A", "B", "C", "I", "K"]);       // 정기(실적)·주요사항·발행·거래소 공시·거래소 조치
+  const REC_RANGES = [["1d", "1일", 1], ["1w", "1주", 5], ["1m", "1달", 22], ["3m", "3달", 66], ["1y", "1년", 250], ["all", "전체", 1e9]];
   async function viewCalendar() {
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
@@ -601,140 +602,176 @@
         api("/api/articles").then((d) => d.items || []).catch(() => []),
         api("/api/disclosures").then((d) => d.items || []).catch(() => []),
       ]);
-    } catch (e) { box.innerHTML = `<div class="empty"><strong>달력 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
+    } catch (e) { box.innerHTML = `<div class="empty"><strong>시세 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
     if (!$("#view")) return;
     if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
     const byDay = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
     const price = Object.fromEntries(daily.map((x) => [x.date, x]));
     const artDay = byDay(arts.filter((a) => !a.hidden && a.category !== "단순 언급" && a.ts), (a) => a.ts.slice(0, 10));
     const discDay = byDay(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf || "")), (x) => x.ts.slice(0, 10));
-    const months = [...new Set(daily.map((x) => x.date.slice(0, 7)))].sort();
     const latest = daily[daily.length - 1].date;
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
-    if (!calState.month || !months.includes(calState.month)) calState.month = calState.sel.slice(0, 7);
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const hitMove = (ch) => {
       if (!calState.dir || ch == null) return false;
       const v = calState.th / 100;
       return calState.dir === "up" ? ch >= v : calState.dir === "down" ? ch <= -v : Math.abs(ch) >= v;
     };
+    const news = (ds) => {
+      const ar = artDay[ds] || [];
+      return { pr: ar.filter(isPr).length, ext: ar.filter((a) => !isPr(a)).length, disc: (discDay[ds] || []).length };
+    };
+    const inRange = () => { const n = REC_RANGES.find((r) => r[0] === calState.range)[2]; return calState.range === "1d" ? daily.slice(-22) : daily.slice(-n); };
 
-    function filterBar() {
-      const hits = calState.dir ? daily.filter((x) => hitMove(x.change)).reverse() : [];
-      const opt = (v, t, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${t}</option>`;
-      const preset = [3, 5, 7, 10, 15];
-      return `<div class="panel cal-filter">
-        <label class="field"><span>등락 고르기</span><select id="mv-dir">${opt("", "고르지 않음", calState.dir)}${opt("up", "오른 날", calState.dir)}${opt("down", "내린 날", calState.dir)}${opt("both", "오르든 내리든", calState.dir)}</select></label>
-        <label class="field"><span>기준</span><select id="mv-th">${preset.map((v) => opt(v, `${v}% 이상`, calState.th)).join("")}${preset.includes(+calState.th) ? "" : opt(calState.th, `${calState.th}% 이상`, calState.th)}</select></label>
-        <label class="field"><span>직접 입력 (%)</span><input type="number" id="mv-custom" min="0" step="0.1" placeholder="예: 6.5" value="${preset.includes(+calState.th) ? "" : esc(String(calState.th))}"></label>
-        ${calState.dir ? `<div class="mv-hits"><b>${hits.length}일</b>${hits.length ? hits.slice(0, 80).map((x) => `<button type="button" class="chip-f" data-pick="${x.date}">${esc(x.date.slice(2).replaceAll("-", "."))} <span class="${sgnCls(x.change)}">${pct(x.change, 1)}</span></button>`).join("") : `<span class="muted">조건에 맞는 날이 없습니다.</span>`}</div>` : ""}
-      </div>`;
-    }
-
-    function grid() {
-      const [y, m] = calState.month.split("-").map(Number);
-      const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
-      const lead = first.getDay();                                 // 일요일 시작
-      const cells = [];
-      for (let i = 0; i < lead; i++) cells.push(`<div class="cal-cell blank"></div>`);
-      for (let d = 1; d <= days; d++) {
-        const ds = `${calState.month}-${String(d).padStart(2, "0")}`;
-        const px = price[ds], ch = px && px.change;
-        const pr = (artDay[ds] || []).filter(isPr).length, ext = (artDay[ds] || []).filter((a) => !isPr(a)).length;
-        const dc = (discDay[ds] || []).length;
-        const tint = ch == null ? "" : `style="--tint:${Math.min(1, Math.abs(ch) / 0.1).toFixed(2)}"`;
-        const dim = calState.dir && ch != null && !hitMove(ch) ? " dim" : calState.dir && hitMove(ch) ? " hit" : "";
-        cells.push(`<button type="button" class="cal-cell${ch == null ? " closed" : ""}${ch > 0 ? " up" : ch < 0 ? " down" : ""}${ds === calState.sel ? " sel" : ""}${dim}" data-day="${ds}" ${tint}>
-          <span class="cal-d">${d}</span>
-          ${ch != null ? `<span class="cal-ch ${sgnCls(ch)}">${pct(ch, 1)}</span>` : ""}
-          <span class="cal-marks">${pr ? `<i class="mk pr" title="그린광학 보도자료 ${pr}건"></i>` : ""}${dc ? `<i class="mk disc" title="주요 공시 ${dc}건"></i>` : ""}${ext ? `<i class="mk ext" title="외부 기사 ${ext}건"></i>` : ""}</span>
-        </button>`);
-      }
-      const mi = months.indexOf(calState.month);
-      return `<div class="cal-head">
-          <button type="button" class="btn small" data-mv="-1" ${mi <= 0 ? "disabled" : ""} aria-label="이전 달">‹</button>
-          <b>${y}년 ${m}월</b>
-          <button type="button" class="btn small" data-mv="1" ${mi >= months.length - 1 ? "disabled" : ""} aria-label="다음 달">›</button>
-          <span class="cal-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></span>
-        </div>
-        <div class="cal-grid">${["일", "월", "화", "수", "목", "금", "토"].map((w) => `<div class="cal-w">${w}</div>`).join("")}${cells.join("")}</div>`;
-    }
-
-    // 고른 날 카드: 차트(구간 골라 원인 묻기)·장중 기록, 그 아래 그날 기사·공시 전체
     let chart = null, loadSeq = 0, coarseAll = null;
     const st = {};
-    function newsList(ds) {
-      const ar = artDay[ds] || [], dc = discDay[ds] || [];
-      const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
-      return `${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
-        ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
-        ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}
-        <div class="ask-row"><button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button><span class="form-msg" id="cal-msg" role="status"></span></div>`;
+    function shell() {
+      box.innerHTML = `<section class="panel rec-card">
+          <div class="rec-tabs" role="tablist">${REC_RANGES.map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
+          <div id="rec-chart"></div>
+          <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
+        </section>
+        <section class="panel rec-heat">
+          <div class="rec-heat-head"><b>날마다 등락</b><span class="muted">한 칸 = 하루 · 빨강 오름 · 파랑 내림</span><span class="spacer"></span>
+            <label class="field"><span>등락 고르기</span><select id="mv-dir">${[["", "고르지 않음"], ["up", "오른 날"], ["down", "내린 날"], ["both", "오르든 내리든"]].map(([v, t]) => `<option value="${v}"${calState.dir === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+            <label class="field"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(calState.th))}"></label></div>
+          <div id="rec-cells" class="rec-cells"></div><div id="rec-hits" class="mv-hits"></div>
+        </section>
+        <section id="rec-day"></section>`;
     }
-    async function loadDay(ds) {
-      const seq = ++loadSeq;
-      const card = $("#cal-card");
-      if (!card) return;
+
+    // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
+    function lineChart() {
+      const el = $("#rec-chart");
+      const rows = inRange();
       if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
-      card.innerHTML = `<p class="loading">불러오는 중…</p>`;
+      const W = Math.max(320, Math.round(el.clientWidth || 760)), H = 280, L = 8, R = 62, T = 16, B = 26;
+      const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
+      const X = (i) => L + (rows.length > 1 ? (i * (W - L - R)) / (rows.length - 1) : (W - L - R) / 2);
+      const Y = (v) => T + (H - T - B) * (1 - (v - (lo - pad)) / (hi - lo + 2 * pad));
+      const first = rows.length > 1 && rows[0].change != null ? rows[0].close / (1 + rows[0].change) : rows[0].close;
+      const up = rows[rows.length - 1].close >= first;
+      const path = rows.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(x.close).toFixed(1)}`).join("");
+      const every = Math.max(1, Math.ceil(rows.length / 6));
+      const marks = rows.map((x, i) => {
+        const n = news(x.date), cx = X(i), cy = Y(x.close);
+        if (n.pr) return `<circle class="rc-mk pr" cx="${cx}" cy="${cy}" r="5"/>`;
+        if (n.disc) return `<circle class="rc-mk disc" cx="${cx}" cy="${cy}" r="5"/>`;
+        if (n.ext) return `<circle class="rc-mk ext" cx="${cx}" cy="${cy}" r="3.5"/>`;
+        return "";
+      }).join("");
+      const si = rows.findIndex((x) => x.date === calState.sel);
+      const chg = rows[rows.length - 1].close / first - 1;
+      el.innerHTML = `<div class="rc-head"><span class="muted">${esc(rows[0].date)} ~ ${esc(rows[rows.length - 1].date)}</span>
+          <b class="${sgnCls(chg)}">${pct(chg)}</b><span class="muted">이 기간</span></div>
+        <div class="dl-wrap"><svg viewBox="0 0 ${W} ${H}" class="dl-svg rc-svg" role="img" aria-label="일별 종가">
+          ${[lo, (lo + hi) / 2, hi].map((v) => `<line class="dl-grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="dl-ax" x="${W - R + 6}" y="${Y(v) + 4}">${won(v)}</text>`).join("")}
+          ${rows.map((x, i) => (i % every === 0) ? `<text class="dl-ax" x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(x.date.slice(5).replace("-", "."))}</text>` : "").join("")}
+          ${si >= 0 ? `<line class="rc-sel" x1="${X(si)}" x2="${X(si)}" y1="${T}" y2="${H - B}"/>` : ""}
+          <path class="rc-line ${up ? "up" : "down"}" d="${path}"/>
+          ${marks}
+          <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+          <circle class="rc-dot" r="4" cx="-10" cy="-10"/>
+          ${rows.map((x, i) => `<rect class="dl-hit" data-i="${i}" x="${X(i) - (W - L - R) / Math.max(1, rows.length - 1) / 2}" y="0" width="${Math.max(6, (W - L - R) / Math.max(1, rows.length - 1))}" height="${H}"/>`).join("")}
+        </svg><div class="dl-tip" hidden></div></div>`;
+      const svg = $(".rc-svg", el), tip = $(".dl-tip", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
+      svg.addEventListener("mousemove", (ev) => {
+        const h = ev.target.closest(".dl-hit"); if (!h) return;
+        const i = +h.dataset.i, x = rows[i], n = news(x.date);
+        cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
+        dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(x.close));
+        tip.hidden = false;
+        tip.innerHTML = `<b>${dayLabel(x.date)}</b><span>${won(x.close)}원 <b class="${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</b></span>
+          <span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)}</span>
+          ${n.pr || n.disc || n.ext ? `<span>${[n.pr ? `보도자료 ${n.pr}` : "", n.disc ? `공시 ${n.disc}` : "", n.ext ? `외부 ${n.ext}` : ""].filter(Boolean).join(" · ")}</span>` : ""}`;
+        const r = svg.getBoundingClientRect(), px = (X(i) / W) * r.width;
+        tip.style.left = `${Math.min(Math.max(px, 80), r.width - 80)}px`;
+      });
+      svg.addEventListener("mouseleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot.setAttribute("cx", -10); });
+      svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
+    }
+
+    // 1일 탭: 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
+    async function dayChart() {
+      const seq = ++loadSeq, ds = calState.sel;
+      const el = $("#rec-chart");
+      if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
+      el.innerHTML = `<p class="loading">불러오는 중…</p>`;
       let d = null;
       try { d = await api(ds === latest ? "/api/intraday" : `/api/intraday?date=${ds}`); } catch (_) { d = null; }
-      if (seq !== loadSeq || !$("#cal-card")) return;
-      if (d && d.date !== ds) d = null;          // 최근 거래일 자료가 다른 날이면(분봉 없음) 쓰지 않음
+      if (d && d.date !== ds) d = null;
       let coarseIv = null;
-      if (!d || !d.bars || !d.bars.length) {     // 1분봉이 없는 날: 야후 5분봉(없으면 60분봉)
+      if (!d || !d.bars || !d.bars.length) {
         try {
           coarseAll = coarseAll || (await api("/api/coarse")).days || {};
           const c = coarseAll[ds];
           if (c && c.bars.length) { d = { date: ds, bars: c.bars, kosdaq: [], events: [], prev_close: c.prev_close }; coarseIv = c.interval; }
         } catch (_) {}
-        if (seq !== loadSeq || !$("#cal-card")) return;
       }
-      const px = price[ds];
-      const head = !d || !d.bars || !d.bars.length
-        ? `<div class="day-total"><div class="day-total-main"><span class="day-total-label">${dayLabel(ds)}</span>
-            <span class="day-total-sub">${px ? `종가 ${won(px.close)}원 · KOSDAQ ${pct(px.kosdaq)} · 거래량 ${int(px.volume)}주` : "거래 없음"}</span></div>
-            ${px && px.change != null ? `<span class="day-total-val num ${sgnCls(px.change)}">${pct(px.change)}</span>` : ""}</div><p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`
-        : dayCardHtml(d, [], ds === latest) + (coarseIv ? `<p class="note">이날은 1분봉 기록이 없어 야후 파이낸스 ${coarseIv}분봉으로 그렸습니다.</p>` : "");
-      card.innerHTML = `<article class="day-card">${head}</article><section class="panel cal-news">${newsList(ds)}</section>`;
-      if (d && d.bars && d.bars.length) {
-        const art = $(".day-card", card);
-        const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
-        chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
-          events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
-          extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
-        });
-        st.range = null;
-        const i = daily.findIndex((x) => x.date === ds);
-        if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);   // 구간 원인 묻기는 1분봉이 있는 날만
-        if (ds === latest) {
-          const n = d.events.filter((e) => !isDaily(e)).length || (d.events.some(isDaily) ? 1 : 0);
-          $("#q-events").innerHTML = `${n}<small>건</small>`;
-        }
-      }
+      if (seq !== loadSeq || !$("#rec-chart") || calState.range !== "1d") return;
+      const i = daily.findIndex((x) => x.date === ds);
+      const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹</button>
+        <b>${dayLabel(ds)}</b><button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">›</button>
+        ${coarseIv ? `<span class="muted">1분봉이 없어 야후 ${coarseIv}분봉</span>` : ""}</div>`;
+      if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
+      el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
+      const art = $(".rc-day", el);
+      const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
+      chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
+        events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
+        extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
+      });
+      st.range = null;
+      if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
     }
 
-    function render(scroll) {
-      box.innerHTML = `${filterBar()}<div class="panel cal">${grid()}</div><div id="cal-card"></div>`;
-      loadDay(calState.sel);
-      if (scroll) $("#cal-card").scrollIntoView({ behavior: "smooth", block: "start" });
+    function cells() {
+      const rows = calState.range === "1d" || calState.range === "1w" ? daily.slice(-22) : inRange();
+      $("#rec-cells").innerHTML = rows.map((x) => {
+        const ch = x.change, t = ch == null ? 0 : Math.min(1, Math.abs(ch) / 0.1);
+        const cls = ch == null ? "" : ch > 0 ? "up" : ch < 0 ? "down" : "";
+        const dim = calState.dir ? (hitMove(ch) ? " hit" : " dim") : "";
+        const n = news(x.date);
+        return `<button type="button" class="rc-cell ${cls}${dim}${x.date === calState.sel ? " sel" : ""}" style="--tint:${t.toFixed(2)}" data-pick="${x.date}"
+          title="${esc(x.date)} ${ch == null ? "" : pct(ch)}${n.pr ? ` · 보도자료 ${n.pr}` : ""}${n.disc ? ` · 공시 ${n.disc}` : ""}${n.ext ? ` · 외부 ${n.ext}` : ""}">${n.pr ? "<i class=\"mk pr\"></i>" : n.disc ? "<i class=\"mk disc\"></i>" : ""}</button>`;
+      }).join("");
+      const hits = calState.dir ? daily.filter((x) => hitMove(x.change)).reverse() : [];
+      $("#rec-hits").innerHTML = calState.dir ? `<b>전체 기간 ${hits.length}일</b>${hits.slice(0, 80).map((x) => `<button type="button" class="chip-f" data-pick="${x.date}">${esc(x.date.slice(2).replaceAll("-", "."))} <span class="${sgnCls(x.change)}">${pct(x.change, 1)}</span></button>`).join("") || `<span class="muted">조건에 맞는 날이 없습니다.</span>`}` : "";
     }
-    const pick = (ds) => { calState.sel = ds; calState.month = ds.slice(0, 7); render(true); };
-    render(false);
-    box.onchange = (ev) => {
-      if (ev.target.id === "mv-dir") calState.dir = ev.target.value;
-      else if (ev.target.id === "mv-th") calState.th = +ev.target.value;
-      else if (ev.target.id === "mv-custom") { const v = parseFloat(ev.target.value); if (v > 0) calState.th = Math.round(v * 10) / 10; }
-      else return;
-      render(false);
-    };
+
+    function dayPanel() {
+      const ds = calState.sel, px = price[ds], ar = artDay[ds] || [], dc = discDay[ds] || [];
+      const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
+      $("#rec-day").innerHTML = `<section class="panel rec-daycard">
+        <div class="rec-day-head"><h3>${dayLabel(ds)}</h3>
+          ${px ? `<b class="num ${sgnCls(px.change)}">${px.change == null ? "-" : pct(px.change)}</b><span class="muted">종가 ${won(px.close)}원 · KOSDAQ ${px.kosdaq == null ? "-" : pct(px.kosdaq)} · 거래량 ${int(px.volume)}주</span>` : ""}
+          <span class="spacer"></span>${calState.range !== "1d" ? `<button type="button" class="btn small" id="rec-open-day">그날 1분 차트 보기</button>` : ""}</div>
+        ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
+        ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
+        ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}
+        <div class="ask-row"><button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button><span class="form-msg" id="cal-msg" role="status"></span></div></section>`;
+    }
+
+    function drawChart() { if (calState.range === "1d") dayChart(); else lineChart(); }
+    function render() { shell(); drawChart(); cells(); dayPanel(); }
+    function pick(ds) {
+      if (!price[ds]) return;
+      calState.sel = ds;
+      if (calState.range === "1d") dayChart(); else lineChart();
+      cells(); dayPanel();
+    }
+    render();
     box.onclick = async (ev) => {
-      const mv = ev.target.closest("[data-mv]");
-      if (mv) { calState.month = months[months.indexOf(calState.month) + +mv.dataset.mv]; $(".panel.cal").innerHTML = grid(); return; }
-      const cell = ev.target.closest(".cal-cell[data-day]");
-      if (cell) { if (price[cell.dataset.day]) pick(cell.dataset.day); return; }
-      const hit = ev.target.closest("[data-pick]");
-      if (hit) { pick(hit.dataset.pick); return; }
+      const rb = ev.target.closest("[data-range]");
+      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); drawChart(); cells(); dayPanel(); return; }
+      const step = ev.target.closest("[data-step]");
+      if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
+      const pk = ev.target.closest("[data-pick]");
+      if (pk) { pick(pk.dataset.pick); return; }
+      if (ev.target.closest("#rec-open-day")) {
+        calState.range = "1d"; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === "1d")));
+        drawChart(); cells(); dayPanel(); $("#rec-chart").scrollIntoView({ behavior: "smooth", block: "start" }); return;
+      }
       const e = ev.target.closest("[data-id]");
       if (e && e.closest(".day-card") && !e.closest(".range-panel")) { openEvent(+e.dataset.id); return; }
       const del = ev.target.closest("[data-ev-del]");
@@ -746,12 +783,23 @@
         catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
       }
     };
+    box.onchange = (ev) => {
+      if (ev.target.id === "mv-dir") calState.dir = ev.target.value;
+      else if (ev.target.id === "mv-th") { const v = parseFloat(ev.target.value); if (!(v > 0)) return; calState.th = Math.round(v * 10) / 10; }
+      else return;
+      cells();
+    };
     renderQuote();
-    timers.push(setInterval(() => {          // 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인을 입력하는 중이면 그대로)
-      if (calState.sel !== latest || !$("#cal-card") || $("#cal-card [data-range-form]:not([hidden])")) return;
-      loadDay(latest);
+    if (recResize) window.removeEventListener("resize", recResize);
+    let rz = null;
+    recResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rec-chart") && calState.range !== "1d") lineChart(); }, 200); };
+    window.addEventListener("resize", recResize);
+    timers.push(setInterval(() => {          // 1일 탭에서 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인 입력 중이면 그대로)
+      if (calState.range !== "1d" || calState.sel !== latest || !$("#rec-chart") || $("#rec-chart [data-range-form]:not([hidden])")) return;
+      dayChart();
     }, 30000));
   }
+  let recResize = null;
 
   // ---------------------------------------------------------------- 차트 구간 골라 원인 묻기
   // PC는 차트를 마우스로 끌어 구간을 고르고, 폰은 시작·끝을 차례로 누름 (손가락 끌기는 페이지 스크롤과 겹치므로)
@@ -1512,7 +1560,8 @@
         </dl>`)}
       ${sec("prices", "주가 기록", `
         <ul>
-          <li><b>목록</b>: 맨 위는 최근 거래일 하루를 펼친 카드(1분봉 차트, 급등·급락, 그날 기사)입니다. 지난 날짜는 한 줄(등락 · KOSDAQ · 그날 소식)로 접혀 있고, 누르면 그 자리에서 펼쳐집니다. 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다.</li>
+          <li><b>차트</b>: 기간 탭(1일·1주·1달·3달·1년·전체)으로 종가 선을 봅니다. 선 위의 점은 그날 소식(보도자료·주요 공시·외부 기사)이고, 마우스를 올리면 그날 종가·등락·KOSDAQ·소식 수가 나옵니다. 점이나 선을 누르면 그날을 고릅니다. 1일 탭은 고른 날의 1분 차트이고, 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다. 1분봉이 없는 날은 야후 파이낸스 5분봉(없으면 60분봉)으로 그리고, 마지막 점은 거래소 종가입니다.</li>
+          <li><b>날마다 등락</b>: 차트 아래 한 칸이 하루입니다(빨강 오름 · 파랑 내림, 진할수록 크게). '등락 고르기'로 몇 % 이상 오르거나 내린 날만 표시하고, 전체 기간에서 맞는 날짜를 모아 보여 줍니다.</li>
           <li><b>AI 메모</b>: AI가 쓴 원인 글입니다. 판단은 직접 하도록 접어 두었습니다. 숫자(KOSDAQ 같은 기간, 업종, 수급)는 메모와 따로 보입니다.</li>
           <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>급등·급락</b>: 감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
@@ -1720,7 +1769,7 @@
         <section class="panel dash-card"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small></div><div id="dash-office"></div></section>
         <section class="panel dash-card"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small></div><div id="dash-reporter"></div></section>
       </div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-tiles"></div></section>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
         <button class="btn small" type="button" id="piv-csv">지금 조건 엑셀로</button>
         <button class="btn small" type="button" id="piv-csv-all">원본 전체 엑셀로</button></div>
@@ -1757,12 +1806,11 @@
           <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span></button></li>`;
       }).join("")}</ol>` : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
+    // 주제: 가로로 줄지은 칩 (토스 '주식 골라보기' 칩처럼), 누르면 걸러짐
     function tiles(el) {
       const list = dashAgg(base.filter((r) => pass(r, "topic")), "topic");
-      const max = Math.max(1, ...list.map((x) => x.n));
-      el.innerHTML = list.length ? list.map((x) => `<button type="button" class="dash-tile dash-row${F.topic === x.key ? " on" : F.topic ? " off" : ""}" data-d="topic" data-v="${esc(x.key)}"
-          style="flex-grow:${x.n};--w:${Math.round(40 + (x.n / max) * 60)}%" title="${esc(x.key)} ${x.n}건">
-          <b>${esc(x.key)}</b><span>${x.n}건</span><small class="muted">보도자료 ${x.by["그린광학 보도자료"] || 0} · 외부 ${x.by["외부 기사"] || 0}</small></button>`).join("")
+      el.innerHTML = list.length ? list.map((x) => `<button type="button" class="dash-chip dash-row${F.topic === x.key ? " on" : F.topic ? " off" : ""}" data-d="topic" data-v="${esc(x.key)}"
+          title="보도자료 ${x.by["그린광학 보도자료"] || 0} · 외부 ${x.by["외부 기사"] || 0}">${esc(x.key)}<b>${x.n}</b></button>`).join("")
         : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
     function spark(rows) {
