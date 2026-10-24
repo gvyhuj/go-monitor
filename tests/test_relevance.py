@@ -69,3 +69,11 @@ def test_unreadable_page_keeps_article(tmpdb):
     assert relevance.check("000", NAME, fetch=fail) == 0
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 1
+
+
+def test_title_listed_for_removal_is_purged(tmpdb):
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES ('g1', '000', '2026-08-21T16:00', "
+                     "'Investing.com 한국어', '[테마시황] 스페이스X(SPCX) 보호예수 해제 충격파…국내 우주항공산업 테마까지 덮쳤다', 'https://kr.investing.com/x')")
+    assert relevance.purge_blocked("000") == 1
+    assert articles._save("000", [_item("g1", "[테마시황] 스페이스X(SPCX) 보호예수 해제 충격파…")], "google") == 0

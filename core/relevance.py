@@ -16,6 +16,8 @@ from datetime import datetime
 from .db import connect
 
 BLOCKED_OFFICES = {"핀포인트뉴스": "pinpointnews.co.kr"}      # 매체 이름: 주소
+# 원문을 열 수 없어(접속 차단) 자동 판단이 안 되는 기사 중 사용자가 지우라고 한 것 (제목 일부)
+DROP_TITLES = ("스페이스X(SPCX) 보호예수 해제 충격파",)
 MAX_NAME_COUNT = 2         # 원문 전체에 이름이 이만큼 이하이면 '이름만 언급'
 LEDE = 90                  # 네이버 요약에서 첫머리로 보는 글자 수
 BATCH = 20                 # 실행 한 번에 여는 기사 수
@@ -43,12 +45,12 @@ def drop(conn, row: dict, reason: str) -> None:
 
 
 def purge_blocked(symbol: str) -> int:
-    """막은 매체 기사를 지움. 지운 개수."""
+    """막은 매체 기사와 지우라고 한 제목의 기사를 지움. 지운 개수."""
     n = 0
     with connect() as conn:
         rows = [dict(r) for r in conn.execute("SELECT id, symbol, url, office, title FROM articles WHERE symbol=?", (symbol,))]
         for r in rows:
-            if blocked(r["office"], r["url"]):
+            if blocked(r["office"], r["url"]) or any(t in (r["title"] or "") for t in DROP_TITLES):
                 drop(conn, r, "blocked")
                 n += 1
     return n
