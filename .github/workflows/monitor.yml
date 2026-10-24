@@ -51,7 +51,6 @@ jobs:
       PYTHONUNBUFFERED: "1"
       GO_STATIC_SITE: "1"
       GO_SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
-      GO_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       GO_DATA_KEY: ${{ secrets.DATA_KEY }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}          # 선택: 국제·정치 이슈 기사 검색 (없으면 건너뜀)
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}

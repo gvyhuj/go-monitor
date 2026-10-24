@@ -556,25 +556,61 @@
     const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
     const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company"), (a) => a.ts.slice(0, 10));
     const discN = count(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf)), (x) => x.ts.slice(0, 10));
-    const rows = daily.slice().reverse();
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     const net = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ko-KR")}</span>`);
-    box.innerHTML = `<div class="controls"><span class="muted">${rows.length}거래일 (${esc(rows[rows.length - 1].date)} ~ ${esc(rows[0].date)})</span><span class="spacer"></span>
+    const hit = (ch) => !daysState.dir || (ch != null && (daysState.dir === "up" ? ch >= daysState.th / 100 : ch <= -daysState.th / 100));
+    const inRange = () => daily.slice(-(REC_RANGES.find((r) => r[0] === daysState.range) || REC_RANGES[REC_RANGES.length - 1])[2]);
+    box.innerHTML = `<div class="controls days-controls">
+        <div class="rec-tabs" role="tablist">${REC_RANGES.map(([v, t]) => `<button type="button" data-drange="${v}" aria-pressed="${daysState.range === v}">${t}</button>`).join("")}</div>
+        <span class="muted">등락 고르기</span><div class="seg" role="group" aria-label="등락 고르기">${[["", "끄기"], ["up", "오른 날"], ["down", "내린 날"]].map(([v, t]) => `<button type="button" data-dir="${v}" aria-pressed="${daysState.dir === v}">${t}</button>`).join("")}</div>
+        <label class="field mv-th"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(daysState.th))}"${daysState.dir ? "" : " disabled"}></label>
+        <span class="spacer"></span>
         <button type="button" class="btn" id="days-csv">엑셀로 내려받기</button>
         <button type="button" class="btn" id="events-csv" title="감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록 전체">급등·급락 기록 내려받기</button></div>
+      <div id="days-sum" class="days-sum"></div>
       <div class="table-wrap"><table class="days-table"><thead><tr>
         <th>날짜</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>등락</th><th>거래량</th><th>KOSDAQ</th>
-        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th><th>주요 공시</th></tr></thead><tbody>
-        ${rows.map((x) => `<tr><td><a href="#/calendar" data-day="${esc(x.date)}">${esc(x.date)}</a></td>
+        <th>외국인</th><th>기관</th><th>개인</th><th>보도자료</th><th>외부 기사</th><th>주요 공시</th></tr></thead><tbody id="days-body"></tbody></table></div>`;
+    let rows = [];
+    // 기간 요약 (Investing.com 과거 데이터 표 아래 요약 참고): 최고·최저·변화율·평균 거래량
+    function draw() {
+      const span = inRange();
+      rows = span.filter((x) => hit(x.change)).reverse();
+      const first = span[0], last = span[span.length - 1];
+      const base = first.change != null ? first.close / (1 + first.change) : first.close;
+      const hi = span.reduce((m, x) => (x.high > m.high ? x : m), span[0]), lo = span.reduce((m, x) => (x.low < m.low ? x : m), span[0]);
+      const avgVol = span.reduce((t, x) => t + (x.volume || 0), 0) / span.length;
+      $("#days-sum").innerHTML = `<span><span class="muted">기간</span> ${esc(first.date)} ~ ${esc(last.date)} (${span.length}거래일)</span>
+        <span><span class="muted">최고</span> <b>${won(hi.high)}</b> <small class="muted">${esc(hi.date.slice(5))}</small></span>
+        <span><span class="muted">최저</span> <b>${won(lo.low)}</b> <small class="muted">${esc(lo.date.slice(5))}</small></span>
+        <span><span class="muted">변화율</span> <b class="${sgnCls(last.close / base - 1)}">${pct(last.close / base - 1)}</b></span>
+        <span><span class="muted">평균 거래량</span> <b>${won(avgVol)}</b></span>
+        ${daysState.dir ? `<span><span class="muted">${daysState.dir === "up" ? "오른" : "내린"} 날 ${daysState.th}% 이상</span> <b>${rows.length}일</b></span>` : ""}`;
+      $("#days-body").innerHTML = rows.length ? rows.map((x) => `<tr><td><a href="#/calendar" data-day="${esc(x.date)}">${esc(x.date)}</a></td>
           <td class="num">${won(x.open)}</td><td class="num">${won(x.high)}</td><td class="num">${won(x.low)}</td><td class="num">${won(x.close)}</td>
           <td class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</td><td class="num">${won(x.volume)}</td>
           <td class="num ${sgnCls(x.kosdaq)}">${x.kosdaq == null ? "-" : pct(x.kosdaq)}</td>
           <td class="num">${net(x.foreign)}</td><td class="num">${net(x.organ)}</td><td class="num">${net(x.individual)}</td>
-          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td><td class="num">${discN[x.date] || ""}</td></tr>`).join("")}
-      </tbody></table></div>`;
-    box.querySelector(".days-table").onclick = (ev) => {
-      const a = ev.target.closest("a[data-day]"); if (!a) return;
-      calState.month = a.dataset.day.slice(0, 7); calState.sel = a.dataset.day;
+          <td class="num">${prN[x.date] || ""}</td><td class="num">${extN[x.date] || ""}</td><td class="num">${discN[x.date] || ""}</td></tr>`).join("")
+        : `<tr><td colspan="14" class="muted">조건에 맞는 날이 없습니다.</td></tr>`;
+    }
+    draw();
+    box.onclick = (ev) => {
+      const a = ev.target.closest("a[data-day]");
+      if (a) { calState.sel = a.dataset.day; return; }
+      const rb = ev.target.closest("[data-drange]");
+      if (rb) { daysState.range = rb.dataset.drange; box.querySelectorAll("[data-drange]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); draw(); return; }
+      const dir = ev.target.closest("[data-dir]");
+      if (dir) {
+        daysState.dir = dir.dataset.dir;
+        box.querySelectorAll("[data-dir]").forEach((b) => b.setAttribute("aria-pressed", String(b === dir)));
+        $("#mv-th").disabled = !daysState.dir; draw();
+      }
+    };
+    box.oninput = (ev) => {                  // 기준 숫자는 치는 즉시 반영
+      if (ev.target.id !== "mv-th") return;
+      const v = parseFloat(ev.target.value); if (!(v > 0)) return;
+      daysState.th = Math.round(v * 10) / 10; draw();
     };
     $("#events-csv").onclick = async () => { try { csvDownload((await api("/api/events")).events || []); } catch (e) { alert(e.message); } };
     $("#days-csv").onclick = () => csvDownloadRows("일별기록",
@@ -585,8 +621,9 @@
   }
 
   // 주가 기록 (로빈후드·토스 종목 화면 참고): 기간 탭이 있는 큰 차트가 주인공, 선 위에 그날 소식 점,
-  // 아래 한 줄 히트맵(한 칸 = 하루)과 등락 고르기, 맨 아래 고른 날 요약 + 그날 1분 차트(구간 골라 원인 묻기)
-  const calState = { range: "1m", sel: null, dir: "", th: 5 };
+  // 아래 고른 날 요약 + 그날 1분 차트(구간 골라 원인 묻기). 날마다 등락은 [일별 표]
+  const calState = { range: "1m", sel: null };
+  const daysState = { range: "all", dir: "", th: 5 };   // 일별 표: 기간, 등락 고르기
   const MAIN_DISC = new Set(["A", "B", "C", "I", "K"]);       // 정기(실적)·주요사항·발행·거래소 공시·거래소 조치
   const REC_RANGES = [["1w", "1주", 5], ["1m", "1달", 22], ["3m", "3달", 66], ["1y", "1년", 250], ["all", "전체", 1e9]];
   async function viewCalendar() {
@@ -612,11 +649,6 @@
     const latest = daily[daily.length - 1].date;
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
-    const hitMove = (ch) => {
-      if (!calState.dir || ch == null) return false;
-      const v = calState.th / 100;
-      return calState.dir === "up" ? ch >= v : ch <= -v;
-    };
     const news = (ds) => {
       const ar = artDay[ds] || [];
       return { pr: ar.filter(isPr).length, ext: ar.filter((a) => !isPr(a)).length, disc: (discDay[ds] || []).length };
@@ -630,12 +662,6 @@
           <div class="rec-tabs" role="tablist">${REC_RANGES.map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
-        </section>
-        <section class="panel rec-heat">
-          <div class="rec-heat-head"><b>날마다 등락</b><span class="muted">한 칸 = 하루 · 빨강 오름 · 파랑 내림</span><span class="spacer"></span>
-            <span class="muted">등락 고르기</span><div class="seg" role="group" aria-label="등락 고르기">${[["", "끄기"], ["up", "오른 날"], ["down", "내린 날"]].map(([v, t]) => `<button type="button" data-dir="${v}" aria-pressed="${calState.dir === v}">${t}</button>`).join("")}</div>
-            <label class="field mv-th"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(calState.th))}"${calState.dir ? "" : " disabled"}></label></div>
-          <div id="rec-cells" class="rec-cells"></div><div id="rec-hits" class="mv-hits"></div>
         </section>
         <section id="rec-day"></section>`;
     }
@@ -725,20 +751,6 @@
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
     }
 
-    function cells() {
-      const rows = calState.range === "1w" ? daily.slice(-22) : inRange();
-      $("#rec-cells").innerHTML = rows.map((x) => {
-        const ch = x.change, t = ch == null ? 0 : Math.min(1, Math.abs(ch) / 0.1);
-        const cls = ch == null ? "" : ch > 0 ? "up" : ch < 0 ? "down" : "";
-        const dim = calState.dir ? (hitMove(ch) ? " hit" : " dim") : "";
-        const n = news(x.date);
-        return `<button type="button" class="rc-cell ${cls}${dim}${x.date === calState.sel ? " sel" : ""}" style="--tint:${t.toFixed(2)}" data-pick="${x.date}"
-          title="${esc(x.date)} ${ch == null ? "" : pct(ch)}${n.pr ? ` · 보도자료 ${n.pr}` : ""}${n.disc ? ` · 공시 ${n.disc}` : ""}${n.ext ? ` · 외부 ${n.ext}` : ""}">${n.pr ? "<i class=\"mk pr\"></i>" : n.disc ? "<i class=\"mk disc\"></i>" : ""}</button>`;
-      }).join("");
-      const hits = calState.dir ? daily.filter((x) => hitMove(x.change)).reverse() : [];
-      $("#rec-hits").innerHTML = calState.dir ? `<b>전체 기간 ${hits.length}일</b>${hits.slice(0, 80).map((x) => `<button type="button" class="chip-f" data-pick="${x.date}">${esc(x.date.slice(2).replaceAll("-", "."))} <span class="${sgnCls(x.change)}">${pct(x.change, 1)}</span></button>`).join("") || `<span class="muted">조건에 맞는 날이 없습니다.</span>`}` : "";
-    }
-
     function dayPanel() {
       const ds = calState.sel, px = price[ds], ar = artDay[ds] || [], dc = discDay[ds] || [];
       const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
@@ -753,24 +765,18 @@
         <div class="ask-row"><button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button><span class="form-msg" id="cal-msg" role="status"></span></div></section>`;
     }
 
-    function render() { shell(); lineChart(); cells(); dayPanel(); dayChart(); }
+    function render() { shell(); lineChart(); dayPanel(); dayChart(); }
     function pick(ds) {
       if (!price[ds]) return;
       calState.sel = ds;
-      lineChart(); cells(); dayPanel(); dayChart();
+      lineChart(); dayPanel(); dayChart();
     }
     render();
     box.onclick = async (ev) => {
       const rb = ev.target.closest("[data-range]");
-      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); lineChart(); cells(); return; }
+      if (rb) { calState.range = rb.dataset.range; box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); lineChart(); return; }
       const step = ev.target.closest("[data-step]");
       if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
-      const dir = ev.target.closest("[data-dir]");
-      if (dir) {
-        calState.dir = dir.dataset.dir;
-        box.querySelectorAll("[data-dir]").forEach((b) => b.setAttribute("aria-pressed", String(b === dir)));
-        $("#mv-th").disabled = !calState.dir; cells(); return;
-      }
       const pk = ev.target.closest("[data-pick]");
       if (pk) { pick(pk.dataset.pick); return; }
       const e = ev.target.closest("[data-id]");
@@ -783,11 +789,6 @@
         try { msg.textContent = CLOUD ? await sendInbox({ type: "analyze", date: calState.sel, from: null, to: null }) : "PC 화면에서는 '다시 분석' 버튼을 이용해 주세요."; }
         catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
       }
-    };
-    box.oninput = (ev) => {                  // 기준 숫자는 치는 즉시 반영
-      if (ev.target.id !== "mv-th") return;
-      const v = parseFloat(ev.target.value); if (!(v > 0)) return;
-      calState.th = Math.round(v * 10) / 10; cells();
     };
     renderQuote();
     if (recResize) window.removeEventListener("resize", recResize);

@@ -202,22 +202,14 @@ def site_salt(password: str, state_key: str = "site:salt") -> bytes:
 
 def build_static_site(now, log) -> dict:
     from core import sitebuild
-    from core.history import History, build_admin
     pw = _site_password()
-    admin_password = os.environ.get("GO_ADMIN_PASSWORD", "")
-    history = History(admin_password, (pw, _data_key())) if admin_password else None
-    if history is None:
-        log.info("관리자 비밀번호 설정 전이라 분석 이력 보관은 아직 시작하지 않습니다.")
-    items = sitebuild.refresh_items(now, log.info, history=history)
+    items = sitebuild.refresh_items(now, log.info)
     from core.eventstudy import validate_primary_exports
     counts = validate_primary_exports(items)
     log.info("새 사건연구 대표 값 검증 완료: %s", json.dumps(counts, ensure_ascii=False))
     salt = site_salt(pw)
     checkpoint()
     n = sitebuild.build(SITE_DIR, pw, salt, items, repo=os.environ.get("GITHUB_REPOSITORY", ""))
-    # 관리자 salt도 배포마다 바꾸지 않음: CDN(10분 캐시)이 config.json과 index.bin을 서로 다른 배포판으로 줄 수 있음
-    admin_salt = site_salt(admin_password, "site:admin_salt") if admin_password else None
-    build_admin(SITE_DIR, admin_password, history, items=items, salt=admin_salt)
     # 주간 백업: 1시간 백업은 최신 하나만 덮어쓰므로, 잘못된 기록이 덮어써도 되돌릴 수 있게 날짜별로 따로 남김.
     # '했음' 표시를 다음 실행으로 넘길 기록에 담아야 하므로 그 저장보다 먼저 (늦게 하면 실행마다 다시 올림)
     weekly = weekly_backup_due(now)

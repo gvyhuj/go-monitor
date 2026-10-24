@@ -53,7 +53,7 @@ def test_daily_feed_for_calendar(fresh_db, monkeypatch):
 def test_weekly_mark_is_inside_the_record_handed_to_next_run(fresh_db, monkeypatch, tmp_path):
     """다음 실행으로 넘기는 기록을 저장하는 순간 '주간 백업 했음' 표시가 이미 들어 있어야 함 (아니면 실행마다 다시 올림)."""
     import cloud_job
-    from core import eventstudy, history, sitebuild
+    from core import eventstudy, sitebuild
     from core.db import get_state
     monkeypatch.setattr(cloud_job, "STATE_DIR", tmp_path / "state")
     monkeypatch.setattr(cloud_job, "WEEKLY_DIR", tmp_path / "weekly")
@@ -65,7 +65,6 @@ def test_weekly_mark_is_inside_the_record_handed_to_next_run(fresh_db, monkeypat
     monkeypatch.setattr(sitebuild, "refresh_items", lambda *a, **k: [])
     monkeypatch.setattr(eventstudy, "validate_primary_exports", lambda items: {})
     monkeypatch.setattr(sitebuild, "build", lambda *a, **k: 0)
-    monkeypatch.setattr(history, "build_admin", lambda *a, **k: None)
     seen = {}
     real = sitebuild.backup_db
 

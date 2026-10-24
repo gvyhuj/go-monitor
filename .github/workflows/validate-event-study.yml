@@ -14,7 +14,6 @@ on:
       - core/sitebuild.py
       - cloud_job.py
       - tests/test_history.py
-      - web/admin/**
       - web/app.js
       - tests/dashboard_badges_check.cjs
       - tests/public_refresh_check.cjs
@@ -49,7 +48,6 @@ jobs:
         run: |
           node --check web/app.js
           node tests/primary_analysis_check.cjs
-          node --check web/admin/app.js
           node tests/dashboard_badges_check.cjs
       - name: 백업 복원 및 읽기 전용 검증
         env:

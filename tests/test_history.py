@@ -118,57 +118,6 @@ def test_refresh_failure_never_publishes_old_article_calculation(database, monke
         sitebuild.refresh_items(datetime(2026, 10, 23, 10, 3))
 
 
-def test_admin_files_require_admin_password_and_do_not_enter_public_data(database):
-    archive = history.History(ADMIN_PASSWORD)
-    archive.record("article:one", detail(), "2026-10-20T10:30")
-    output = database / "site"
-    sitebuild.build(output, "public-site-password", b"0123456789abcdef", [("live", '{"latest": true}', False)])
-    history.build_admin(output, ADMIN_PASSWORD, archive)
-    config = json.loads((output / "admin/config.js").read_text()[len("window.GO_ADMIN="):-1])
-    assert json.loads((output / "admin/config.json").read_text()) == config
-    html = (output / "admin/index.html").read_text(encoding="utf-8")
-    for filename in ("app.js", "config.js", "app.css"):
-        assert f'"{filename}?v=' in html
-    import base64
-
-    admin_key = sitebuild.derive_key(ADMIN_PASSWORD, base64.b64decode(config["salt"]))
-    public_key = sitebuild.derive_key("public-site-password", base64.b64decode(config["salt"]))
-    encrypted = (output / "admin/index.bin").read_bytes()
-    with pytest.raises(Exception):
-        sitebuild.decrypt(public_key, encrypted)
-    index = json.loads(sitebuild.decrypt(admin_key, encrypted))
-    assert index[0]["label"] == "비공개 과거 기사 제목"
-    records = json.loads(sitebuild.decrypt(admin_key, (output / "admin" / f"{index[0]['file']}.bin").read_bytes()))
-    assert len(records) == 1
-    for path in (output / "d").glob("*.bin"):
-        assert "비공개 과거 기사 제목" not in sitebuild.decrypt(sitebuild.derive_key("public-site-password", b"0123456789abcdef"), path.read_bytes()).decode()
-    assert ADMIN_PASSWORD not in (output / "admin/config.js").read_text()
-
-
-def test_admin_salt_stays_same_across_builds_when_given(database):
-    import base64
-
-    archive = history.History(ADMIN_PASSWORD)
-    archive.record("article:one", detail(), "2026-10-20T10:30")
-    salt = b"fixed-admin-salt"
-    keys = []
-    for name in ("first", "second"):
-        output = database / name
-        history.build_admin(output, ADMIN_PASSWORD, archive, salt=salt)
-        config = json.loads((output / "admin/config.json").read_text())
-        assert base64.b64decode(config["salt"]) == salt
-        keys.append((output / "admin/index.bin").read_bytes())
-    # 앞 배포판의 index.bin을 뒤 배포판 설정(salt)으로 풀 수 있어야 함 (CDN이 섞어 줘도 로그인 가능)
-    assert json.loads(sitebuild.decrypt(sitebuild.derive_key(ADMIN_PASSWORD, salt), keys[0]))
-
-
-def test_admin_disabled_does_not_export_history(database):
-    output = database / "site"
-    history.build_admin(output, "", None)
-    assert not list((output / "admin").glob("*.bin"))
-    assert (output / "admin/config.js").read_text() == 'window.GO_ADMIN={"enabled": false};'
-
-
 def test_refresh_archives_previous_and_latest_results_without_adding_public_history(database, monkeypatch):
     import webserver
     from core import cloud
@@ -191,46 +140,6 @@ def test_refresh_archives_previous_and_latest_results_without_adding_public_hist
     assert not any("history" in key or "admin" in key for key, _, _ in items)
     sitebuild.refresh_items(datetime(2026, 10, 20, 17, 30), history=archive)
     assert len(archive.records()["article:one"]) == 2
-
-
-def test_admin_analysis_export_is_encrypted_and_reproducible(database):
-    import base64
-    import gzip
-
-    archive = history.History(ADMIN_PASSWORD)
-    with db.connect() as connection:
-        connection.execute("INSERT INTO daily_bars (symbol,date,close,volume) VALUES (?,?,?,?)",
-                           ("SAMPLE", "2026-10-20", 105.0, 1000))
-        connection.execute("INSERT INTO minute_bars (symbol,ts,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)",
-                           ("SAMPLE", "2026-10-20T11:00", 100.0, 106.0, 100.0, 105.0, 300))
-        connection.execute("INSERT INTO related_stocks (code,name,source) VALUES (?,?,?)",
-                           ("PEER", "비교종목", "업종"))
-        connection.execute("INSERT INTO system_state(key,value) VALUES (?,?)", ("secret-example", "DO_NOT_EXPORT"))
-    items = [
-        ("articles", json.dumps({"items": [{"id": "one"}]}), False),
-        ("article_details", json.dumps({"one": detail()}), False),
-        ("disclosures", json.dumps({"items": []}), False),
-        ("disclosure_details", "{}", False),
-    ]
-    output = database / "export-site"
-    sitebuild.build(output, "public-site-password", b"0123456789abcdef", [("live", "{}", False)])
-    history.build_admin(output, ADMIN_PASSWORD, archive, items=items)
-    config = json.loads((output / "admin" / "config.json").read_text())
-    assert config["has_export"] is True
-    encrypted = (output / "admin" / "analysis-export.bin").read_bytes()
-    admin_key = sitebuild.derive_key(ADMIN_PASSWORD, base64.b64decode(config["salt"]))
-    public_key = sitebuild.derive_key("public-site-password", base64.b64decode(config["salt"]))
-    with pytest.raises(Exception):
-        sitebuild.decrypt(public_key, encrypted)
-    exported = json.loads(gzip.decompress(sitebuild.decrypt(admin_key, encrypted)))
-    assert exported["format"] == "go-monitor-audit-v1"
-    assert exported["analysis_version"] == archive.version
-    assert exported["calculated"]["articles"]["items"][0]["id"] == "one"
-    assert exported["raw"]["daily_bars"][0]["close"] == 105
-    assert exported["raw"]["minute_bars"][0]["close"] == 105
-    assert exported["raw"]["related_stocks"][0]["code"] == "PEER"
-    assert "DO_NOT_EXPORT" not in json.dumps(exported)
-    assert not (output / "d" / "analysis-export.bin").exists()
 
 
 def test_audit_export_requires_all_current_results(database):
