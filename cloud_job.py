@@ -405,6 +405,19 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v1", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명이 빈 기사 {n_re}건 다시 읽기")
 
+    # 매번: 막은 매체(핀포인트뉴스) 기사와 회사 이름만 스쳐 지나가는 기사를 지움 (지운 기사는 다시 모으지 않음)
+    try:
+        from core import relevance
+        from core.articles import company_name
+        n_blk = relevance.purge_blocked(code)
+        n_only = relevance.check(code, company_name(), log=log.info)
+        with connect() as conn:
+            left = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=? AND mention_checked_at IS NULL", (code,)).fetchone()[0]
+        if n_blk or n_only or left:
+            annotate("notice", f"기사 정리: 막은 매체 {n_blk}건 · 이름만 언급 {n_only}건 삭제 (아직 살펴볼 기사 {left}건)")
+    except Exception as e:      # noqa: BLE001 - 정리가 실패해도 수집은 계속
+        annotate("warning", f"기사 정리 실패: {type(e).__name__}: {str(e)[:150]}")
+
     failed = None
     try:
         # 수집: 데스크톱 감시 엔진과 같은 규칙을 한 번 실행 (마지막 실행 시각은 기록에 저장)
