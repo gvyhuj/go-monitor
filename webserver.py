@@ -204,7 +204,8 @@ def api_coarse(_q):
     with connect() as conn:
         have = {r[0] for r in conn.execute("SELECT DISTINCT substr(ts,1,10) FROM minute_bars WHERE symbol=?", (sym,))}
         days = [r[0] for r in conn.execute("SELECT DISTINCT substr(ts,1,10) d FROM coarse_bars WHERE symbol=? ORDER BY d", (sym,))]
-        closes = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND close > 0", (sym,)).fetchall())
+        daily = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT date, close, volume FROM daily_bars WHERE symbol=? AND close > 0", (sym,))}
+        closes = {d: v[0] for d, v in daily.items()}
     dates = sorted(closes)
     prev = {d: closes[p] for p, d in zip(dates, dates[1:])}
     out = {}
@@ -213,6 +214,13 @@ def api_coarse(_q):
             continue
         iv, bars = yahoo.day_bars(sym, d)
         if bars:
+            # 야후 봉은 마지막 30분·종가 동시호가가 빠져(60분봉은 14:00 봉에서 끝남) 끝이 실제 종가와 달라짐
+            # → 15:30에 거래소 종가 한 점을 붙여 차트 끝이 그날 등락과 같게 (거래량은 하루 거래량에서 봉 합계를 뺀 나머지)
+            if d in daily and bars[-1]["t"][11:16] < "15:30":
+                c, vol = daily[d]
+                rest = max(0, int(vol or 0) - sum(b["v"] for b in bars))
+                bars.append({"t": f"{d}T15:30", "o": bars[-1]["c"], "h": max(c, bars[-1]["c"]), "l": min(c, bars[-1]["c"]),
+                             "c": c, "v": rest, "close_point": True})
             out[d] = {"interval": iv, "prev_close": prev.get(d), "bars": bars}
     return {"days": out}
 

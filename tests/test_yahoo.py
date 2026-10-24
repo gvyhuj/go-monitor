@@ -43,3 +43,6 @@ def test_sync_and_coarse_api_only_for_days_without_minute_bars(database, monkeyp
     assert sorted(days) == ["2026-03-16", "2026-08-14"]                 # 1분봉이 있는 10/20은 뺌
     assert days["2026-08-14"]["interval"] == 5 and days["2026-08-14"]["prev_close"] == 20
     assert days["2026-03-16"]["interval"] == 60 and days["2026-03-16"]["bars"][0]["t"] == "2026-03-16T09:00"
+    # 마지막 봉 뒤 15:30에 거래소 종가를 붙여 차트 끝 = 그날 등락 (1/12: 60분봉 끝 27,200 → 종가 27,550)
+    last = days["2026-03-16"]["bars"][-1]
+    assert last["t"] == "2026-03-16T15:30" and last["c"] == 11 and last["close_point"]
