@@ -960,7 +960,7 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
 .dash-chips:empty { display: none; }
 .chip-f { border: 1px solid var(--brand-blue); color: var(--brand-blue); background: var(--surface); border-radius: 14px; padding: 3px 10px; font: inherit; font-size: 13px; cursor: pointer; }
-.dash-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 8px 0 14px; }
+.dash-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 8px 0 14px; }
 .kpi { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
 .kpi small { color: var(--muted); font-size: 12.5px; }
 .kpi b { font-size: 28px; line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }

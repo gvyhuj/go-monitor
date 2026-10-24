@@ -1529,7 +1529,7 @@
         </ul>
         <h3>대시보드</h3>
         <ul>
-          <li>숫자 카드(기사 수·같은 내용 묶음·언론사·보도자료 비율), 월별 기사 추이(보도자료·외부 기사 두 선), 상위 언론사·자주 쓴 기자 순위, 주제 타일(크기 = 기사 수), 기사 피드로 되어 있습니다.</li>
+          <li>숫자 카드(기사 수·언론사), 월별 기사 추이(보도자료·외부 기사 두 선), 상위 언론사·자주 쓴 기자 순위, 주제, 기사 피드로 되어 있습니다.</li>
           <li>추이의 한 달, 순위의 한 줄, 주제 타일을 누르면 그 조건으로 나머지가 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 순위에 그 언론사 기자만 남습니다. 순위의 %는 지금 조건의 기사 중 비중입니다.</li>
           <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 순위에서 빠집니다.</li>
           <li><b>내려받기</b>: '지금 조건 엑셀로 내려받기'는 걸러진 기사, '원본 전체 내려받기'는 조건과 관계없이 모든 기사(매체별)입니다. 엑셀에서 직접 피벗할 수 있습니다.</li>
@@ -1720,7 +1720,7 @@
         <section class="panel dash-card"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small></div><div id="dash-office"></div></section>
         <section class="panel dash-card"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small></div><div id="dash-reporter"></div></section>
       </div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3><small class="muted">크기 = 기사 수</small></div><div id="dash-topic" class="dash-tiles"></div></section>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-tiles"></div></section>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
         <button class="btn small" type="button" id="piv-csv">지금 조건 엑셀로</button>
         <button class="btn small" type="button" id="piv-csv-all">원본 전체 엑셀로</button></div>
@@ -1777,14 +1777,11 @@
         && (pivotState.kind === "all" || r.kind === pivotState.kind)
         && (pivotState.noise || !["단순 언급", "시황·특징주"].includes(r.category)));
       shown = base.filter((r) => pass(r)).sort((x, y) => (x.ts < y.ts ? 1 : -1));
-      const stories = new Set(shown.map((r) => r.lead)).size, offices = new Set(shown.map((r) => r.office)).size;
-      const prN = shown.filter((r) => r.kind === "그린광학 보도자료").length;
+      const offices = new Set(shown.map((r) => r.office)).size;
       const monthsAll = dashAgg(shown, "month");
       $("#dash-kpi").innerHTML = `
         <div class="kpi"><small>기사 (${pivotState.unit === "outlet" ? "매체별" : "묶음"})</small><b>${shown.length}<em>건</em></b>${spark(monthsAll)}</div>
-        <div class="kpi"><small>같은 내용 묶음</small><b>${stories}<em>건</em></b><span class="muted">한 묶음당 ${stories ? (shown.length / stories).toFixed(1) : "-"}개 매체</span></div>
-        <div class="kpi"><small>언론사</small><b>${offices}<em>곳</em></b><span class="muted">기자 확인 ${new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size}명</span></div>
-        <div class="kpi"><small>그린광학 보도자료 비율</small><b>${shown.length ? Math.round((prN / shown.length) * 100) : 0}<em>%</em></b><span class="muted">보도자료 ${prN} · 외부 ${shown.length - prN}</span></div>`;
+        <div class="kpi"><small>언론사</small><b>${offices}<em>곳</em></b><span class="muted">기자 확인 ${new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size}명</span></div>`;
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
       dashLine($("#dash-month"), dashAgg(base.filter((r) => pass(r, "month")), "month"), F.month);
