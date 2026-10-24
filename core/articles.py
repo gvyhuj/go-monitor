@@ -154,6 +154,9 @@ def _save(code: str, items: list[dict], source: str) -> int:
                 if items else set()
             items = [i for i in items if _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
         items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]     # 모으는 기간 전 기사는 넣지 않음
+        from . import relevance
+        gone = relevance.dropped_ids(conn)                                     # 막은 매체·이름만 언급으로 지운 기사
+        items = [i for i in items if i["id"] not in gone and not relevance.blocked(i.get("office"), i.get("url"))]
         rows = []
         for i in items:
             cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
@@ -258,6 +261,14 @@ def sync_articles(code: str, pages: int = 1) -> int:
         n += sync_google(code)
     except Exception as e:      # noqa: BLE001 - 구글이 막혀도 네이버 수집은 그대로
         print(f"::warning title=구글 뉴스 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
+    try:
+        from . import relevance
+        gone = relevance.purge_blocked(code) + relevance.check(code, company_name())
+        if gone:
+            print(f"::notice title=기사 정리::막은 매체·이름만 언급한 기사 {gone}건 삭제", flush=True)
+            group_stories(code)
+    except Exception as e:      # noqa: BLE001 - 정리가 실패해도 수집은 그대로
+        print(f"::warning title=기사 정리::{type(e).__name__}: {str(e)[:150]}", flush=True)
     return n
 
 
