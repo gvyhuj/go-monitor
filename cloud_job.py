@@ -398,6 +398,13 @@ def main(argv) -> int:
         set_state("articles:purge_pre_coverage_v1", now.isoformat(timespec="minutes"))
         annotate("notice", f"2026년 전 기사 {n_old}건 삭제")
 
+    # 한 번만: 예전엔 기사 페이지를 한 번 못 열어도 '확인함'으로 두어 기자명이 비어 있던 기사를 다시 읽게 함
+    if not get_state("articles:reporter_retry_v1"):
+        with connect() as conn:
+            n_re = conn.execute("UPDATE articles SET reporter_at=NULL, reporter_tries=0 WHERE reporter IS NULL").rowcount
+        set_state("articles:reporter_retry_v1", now.isoformat(timespec="minutes"))
+        annotate("notice", f"기자명이 빈 기사 {n_re}건 다시 읽기")
+
     failed = None
     try:
         # 수집: 데스크톱 감시 엔진과 같은 규칙을 한 번 실행 (마지막 실행 시각은 기록에 저장)

@@ -231,7 +231,8 @@ _SNAPSHOT_MIGRATIONS = {"buy_top5": "INTEGER", "sell_top5": "INTEGER"}
 _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override": "INTEGER",
                        "reporter": "TEXT", "reporter_at": "TEXT",   # 기자명 (원문에서 한 번 읽음, reporter_at = 확인한 시각)
                        "resolved_at": "TEXT",   # 구글 뉴스 연결 주소를 원래 주소로 바꿔 본 시각
-                       "time_from": "TEXT"}     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각
+                       "time_from": "TEXT",
+                       "reporter_tries": "INTEGER"}  # 기사 페이지를 못 열어 다시 시도한 횟수     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각
 # 공시 시각(KIND 접수 시각), DART 공시 종류(A~J)·제출인·비고
 _DISCLOSURE_MIGRATIONS = {"ts": "TEXT", "pblntf": "TEXT", "filer": "TEXT", "rm": "TEXT"}
 _CAUSE_MIGRATIONS = {"move": "REAL"}            # 하루 원인: 원인을 넣은 시각의 전일 대비 등락

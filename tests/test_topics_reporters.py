@@ -60,11 +60,13 @@ def test_fill_reads_each_article_once_and_skips_google(tmp_path, monkeypatch):
         if u not in pages:
             raise OSError("안 열림")
         return pages[u]
-    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 최신 2개(3번 실패, 2번 이름 없음)
-    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 1          # 다음 실행: 구글(원래 주소 못 찾음 → 열지 않음) + 남은 1번
-    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 모두 확인함 → 다시 열지 않음
+    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 최신 2개(3번 못 열림, 2번 이름 없음)
+    assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 1          # 구글(원래 주소 못 찾음 → 열지 않음) + 남은 1번
+    for _ in range(4):                                                                     # 못 연 3번은 다음 실행에 다시, 3번까지
+        assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0
     assert opened == ["https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/2",
-                      "https://n.news.naver.com/mnews/article/018/1"]
+                      "https://n.news.naver.com/mnews/article/018/1",
+                      "https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/3"]
     with db.connect() as conn:
         got = dict(conn.execute("SELECT id, reporter FROM articles").fetchall())
     assert got == {"a0": "안유리", "a1": None, "a2": None, "a3": None}
@@ -125,3 +127,12 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
 ])
 def test_parse_time_formats(page, want):
     assert reporters.parse_time(page) == want
+
+
+@pytest.mark.parametrize("page, want", [
+    ('<meta name="author" content="박기영 기자">', "박기영"),
+    ('<meta property="dable:author" content="엄재천 기자" />', "엄재천"),
+    ('<meta name="author" content="머니투데이">', None),
+])
+def test_reporter_from_meta_author(page, want):
+    assert reporters.parse(page) == want

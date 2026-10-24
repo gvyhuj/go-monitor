@@ -16,6 +16,8 @@ from .db import connect
 NAME = r"([가-힣]{2,4})"
 TITLE = r"(?:기자|특파원|선임기자|객원기자)"
 PATTERNS = [
+    # 언론사 페이지 머리의 작성자 정보: <meta name="author" content="박기영 기자"> (dable:author, article:author도)
+    re.compile(r'<meta[^>]+(?:name|property)="(?:author|article:author|dable:author)"[^>]*content="\s*' + NAME + r'(?:\s?' + TITLE + r')?\s*"'),
     re.compile(r'media_end_head_journalist_name[^>]*>\s*' + NAME),
     re.compile(r'byline_s[^>]*>\s*' + NAME),
     re.compile(r"\[[^\[\]=]{0,24}?\s" + NAME + r"\s?" + TITLE + r"\]"),
@@ -31,6 +33,7 @@ TIME_PATTERNS = [
     re.compile(r'"datePublished"\s*:\s*"([^"]+)"'),
     re.compile(r'(?:입력|등록|승인)\s*:?\s*(20\d\d[.-]\d\d[.-]\d\d\s+\d\d:\d\d)'),
 ]
+MAX_TRIES = 3          # 기사 페이지를 못 열면 다음 실행에 다시 (3번까지)
 BATCH = 15             # 실행 한 번에 여는 기사 수 (새 기사 먼저, 남으면 지난 기사)
 
 
@@ -39,7 +42,7 @@ def parse(page: str) -> str | None:
     text = re.sub(r"<[^>]+>", " ", page)
     text = re.sub(r"\s+", " ", _html.unescape(text))
     for i, pat in enumerate(PATTERNS):
-        for m in pat.finditer(page if i < 2 else text):
+        for m in pat.finditer(page if i < 3 else text):
             name = m.group(1)
             if name not in STOP:
                 return name
@@ -78,14 +81,14 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
     resolve = resolve or gnews.resolve
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        rows = conn.execute("SELECT id, url, ts, source FROM articles WHERE symbol=? AND (reporter_at IS NULL OR "
-                            "(url LIKE '%news.google.com/%' AND resolved_at IS NULL)) ORDER BY ts DESC",
-                            (symbol,)).fetchall()
+        rows = conn.execute("SELECT id, url, ts, source FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
+                            "AND COALESCE(reporter_tries, 0) < ?) OR (url LIKE '%news.google.com/%' AND resolved_at IS NULL)) "
+                            "ORDER BY COALESCE(reporter_tries, 0), ts DESC", (symbol, MAX_TRIES)).fetchall()
     found, tried = 0, 0
     for aid, url, ts, source in rows:
         if tried >= limit:
             break
-        name = None
+        name, failed = None, False
         if gnews.is_google(url):
             tried += 1
             try:
@@ -109,10 +112,14 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
                         with connect() as conn:
                             conn.execute("UPDATE articles SET ts=?, time_from='page' WHERE id=?", (t, aid))
             except Exception as e:      # noqa: BLE001 - 한 기사가 안 열려도 계속
+                failed = True
                 if log:
                     log(f"기자명 읽기 실패: {e}")
             _time.sleep(0.3)
         with connect() as conn:
-            conn.execute("UPDATE articles SET reporter=?, reporter_at=? WHERE id=?", (name, now, aid))
+            if failed:                  # 못 열었으면 '확인함'으로 두지 않고 다음 실행에 다시
+                conn.execute("UPDATE articles SET reporter_tries=COALESCE(reporter_tries, 0)+1 WHERE id=?", (aid,))
+            else:
+                conn.execute("UPDATE articles SET reporter=?, reporter_at=? WHERE id=?", (name, now, aid))
         found += bool(name)
     return found
