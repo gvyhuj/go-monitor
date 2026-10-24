@@ -495,6 +495,18 @@ def main(argv) -> int:
             feed.purge_old_bars(int(settings.get("keep_bars_days", 0)))
             feed.purge_related_bars(code)
             set_state("job:last_purge", now.date().isoformat())
+        # 야후 5분봉·60분봉 (1분봉이 없는 지난 날의 차트용): 하루 한 번, 장 마감 뒤
+        last_y = get_state("yahoo:last_sync")
+        if (not last_y or last_y.get("value") != now.date().isoformat()) and now.strftime("%H:%M") >= "16:00":
+            from core import collect_status, yahoo
+            try:
+                added = yahoo.sync(code)
+                collect_status.mark("야후 5분봉·60분봉", True)
+                set_state("yahoo:last_sync", now.date().isoformat())
+                annotate("notice", f"야후 분봉 새로 5분 {added.get(5, 0)}개 · 60분 {added.get(60, 0)}개")
+            except Exception as e:  # noqa: BLE001 - 부가 자료라 실패해도 계속
+                collect_status.mark("야후 5분봉·60분봉", False, e)
+                annotate("warning", f"야후 분봉 받기 실패: {e}")
     except Exception as e:  # noqa: BLE001 - 수집이 실패해도 사이트와 기록은 저장
         failed = e
         log.exception("수집·분석 중 오류: %s", e)

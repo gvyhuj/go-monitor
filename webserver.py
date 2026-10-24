@@ -197,6 +197,26 @@ def _collect_status(sym: str) -> dict:
             "stored": collect_status.stored(sym)}
 
 
+def api_coarse(_q):
+    """1분봉이 없는 날의 차트용 야후 5분봉·60분봉: {날짜: {interval, prev_close, bars}} (1분봉이 있는 날은 뺌)."""
+    from core import yahoo
+    sym = load_settings()["symbol"]
+    with connect() as conn:
+        have = {r[0] for r in conn.execute("SELECT DISTINCT substr(ts,1,10) FROM minute_bars WHERE symbol=?", (sym,))}
+        days = [r[0] for r in conn.execute("SELECT DISTINCT substr(ts,1,10) d FROM coarse_bars WHERE symbol=? ORDER BY d", (sym,))]
+        closes = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND close > 0", (sym,)).fetchall())
+    dates = sorted(closes)
+    prev = {d: closes[p] for p, d in zip(dates, dates[1:])}
+    out = {}
+    for d in days:
+        if d in have:
+            continue
+        iv, bars = yahoo.day_bars(sym, d)
+        if bars:
+            out[d] = {"interval": iv, "prev_close": prev.get(d), "bars": bars}
+    return {"days": out}
+
+
 def api_intraday(q):
     s = load_settings()
     sym = s["symbol"]
@@ -594,6 +614,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/intraday$"), api_intraday),
     (re.compile(r"^/api/events$"), api_events),
     (re.compile(r"^/api/daily$"), api_daily),
+    (re.compile(r"^/api/coarse$"), api_coarse),
     (re.compile(r"^/api/events/(\d+)$"), api_event_detail),
     (re.compile(r"^/api/pr$"), api_pr_list),
     (re.compile(r"^/api/pr/(\d+)$"), api_pr_detail),

@@ -238,6 +238,8 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
 
     want.add("daily")
     keep("daily", lambda: ws.api_daily({}), True)               # 달력용 일별 등락 (가벼워서 매번)
+    want.add("coarse")
+    keep("coarse", lambda: ws.api_coarse({}), cached.get("coarse") is None or not cached["coarse"]["built_at"].startswith(today))   # 야후 5분·60분봉 (하루 한 번)
 
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
     lst = ws.api_articles({})

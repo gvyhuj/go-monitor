@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS pr_events (
 );
 
 -- 원인 분석용
+-- 지난 분봉 채우기: 야후 5분봉·60분봉 (1분봉과 섞지 않음. 1분봉이 없는 날의 차트용)
+CREATE TABLE IF NOT EXISTS coarse_bars (
+    symbol TEXT NOT NULL,
+    interval INTEGER NOT NULL,      -- 5 / 60 (분)
+    ts TEXT NOT NULL,               -- 봉 시작 (한국 시각)
+    open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+    PRIMARY KEY(symbol, interval, ts)
+);
+
 CREATE TABLE IF NOT EXISTS trader_snapshots (      -- 거래원(증권사 창구) 당일 누적, 1분마다
     symbol TEXT NOT NULL,
     ts TEXT NOT NULL,

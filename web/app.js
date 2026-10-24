@@ -208,6 +208,7 @@
     }
     if (p === "/api/disclosures") return kv("disclosures");
     if (p === "/api/daily") return kv("daily");
+    if (p === "/api/coarse") return kv("coarse").catch(() => ({ days: {} }));
     m = p.match(/^\/api\/disclosures\/(.+)$/);
     if (m) {
       const all = await kv("disclosure_details");
@@ -281,7 +282,7 @@
   const kindColor = (k, dark) => (dark ? { up: "#FF6B7D", down: "#7FA6FF", flat: "#F2BE4B" } : { up: css("--up"), down: css("--down"), flat: css("--vol") })[k];
 
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
-  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true, onEvent = null } = {}) {
+  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, barMinutes = 1 } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
     const lineColor = dark ? "#FFFFFF" : (matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2"));
     const price = chart.addSeries(LW.LineSeries, {
@@ -343,7 +344,7 @@
         const b = bars.find((x) => toTime(x.t) === t) || bars[bars.length - 1];
         if (!b) { legendEl.innerHTML = ""; return; }
         const chg = prevClose ? (b.c / prevClose - 1) : null;
-        legendEl.innerHTML = `<span>${hhmm(b.t)}</span><span><b>${won(b.c)}원</b>${chg != null ? ` <span class="${dark ? "" : sgnCls(chg)}">${pct(chg)}</span>` : ""}</span><span>1분 거래량 <b>${int(b.v)}주</b></span>`;
+        legendEl.innerHTML = `<span>${hhmm(b.t)}</span><span><b>${won(b.c)}원</b>${chg != null ? ` <span class="${dark ? "" : sgnCls(chg)}">${pct(chg)}</span>` : ""}</span><span>${barMinutes}분 거래량 <b>${int(b.v)}주</b></span>`;
       };
       show(null);
       chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : null));
@@ -660,7 +661,7 @@
     }
 
     // 고른 날 카드: 차트(구간 골라 원인 묻기)·장중 기록, 그 아래 그날 기사·공시 전체
-    let chart = null, loadSeq = 0;
+    let chart = null, loadSeq = 0, coarseAll = null;
     const st = {};
     function newsList(ds) {
       const ar = artDay[ds] || [], dc = discDay[ds] || [];
@@ -680,23 +681,32 @@
       try { d = await api(ds === latest ? "/api/intraday" : `/api/intraday?date=${ds}`); } catch (_) { d = null; }
       if (seq !== loadSeq || !$("#cal-card")) return;
       if (d && d.date !== ds) d = null;          // 최근 거래일 자료가 다른 날이면(분봉 없음) 쓰지 않음
+      let coarseIv = null;
+      if (!d || !d.bars || !d.bars.length) {     // 1분봉이 없는 날: 야후 5분봉(없으면 60분봉)
+        try {
+          coarseAll = coarseAll || (await api("/api/coarse")).days || {};
+          const c = coarseAll[ds];
+          if (c && c.bars.length) { d = { date: ds, bars: c.bars, kosdaq: [], events: [], prev_close: c.prev_close }; coarseIv = c.interval; }
+        } catch (_) {}
+        if (seq !== loadSeq || !$("#cal-card")) return;
+      }
       const px = price[ds];
       const head = !d || !d.bars || !d.bars.length
         ? `<div class="day-total"><div class="day-total-main"><span class="day-total-label">${dayLabel(ds)}</span>
             <span class="day-total-sub">${px ? `종가 ${won(px.close)}원 · KOSDAQ ${pct(px.kosdaq)} · 거래량 ${int(px.volume)}주` : "거래 없음"}</span></div>
             ${px && px.change != null ? `<span class="day-total-val num ${sgnCls(px.change)}">${pct(px.change)}</span>` : ""}</div><p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`
-        : dayCardHtml(d, [], ds === latest);
+        : dayCardHtml(d, [], ds === latest) + (coarseIv ? `<p class="note">이날은 1분봉 기록이 없어 야후 파이낸스 ${coarseIv}분봉으로 그렸습니다.</p>` : "");
       card.innerHTML = `<article class="day-card">${head}</article><section class="panel cal-news">${newsList(ds)}</section>`;
       if (d && d.bars && d.bars.length) {
         const art = $(".day-card", card);
         const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
         chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
           events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
-          extendTo: closed ? null : `${d.date}T15:30`,
+          extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
         });
         st.range = null;
         const i = daily.findIndex((x) => x.date === ds);
-        attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
+        if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);   // 구간 원인 묻기는 1분봉이 있는 날만
         if (ds === latest) {
           const n = d.events.filter((e) => !isDaily(e)).length || (d.events.some(isDaily) ? 1 : 0);
           $("#q-events").innerHTML = `${n}<small>건</small>`;
