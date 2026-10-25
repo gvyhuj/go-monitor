@@ -1642,7 +1642,7 @@
           <li>추이의 한 달, 순위의 한 줄, 주제 타일을 누르면 그 조건으로 나머지가 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 순위에 그 언론사 기자만 남습니다. 순위의 %는 지금 조건의 기사 중 비중입니다.</li>
           <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 순위에서 빠집니다.</li>
           <li><b>내려받기</b>: '지금 조건 엑셀로 내려받기'는 걸러진 기사, '원본 전체 내려받기'는 조건과 관계없이 모든 기사(매체별)입니다. 엑셀에서 직접 피벗할 수 있습니다.</li>
-          <li><b>세는 단위</b>: '매체별 기사'는 같은 내용이라도 실은 매체마다 1건, '같은 내용 묶음'은 묶음당 1건입니다. 기본으로 단순 언급·시황 기사는 뺍니다.</li>
+          <li><b>세는 단위</b>: '매체별 기사'는 같은 내용이라도 실은 매체마다 1건, '같은 내용 묶음'은 묶음당 1건입니다.</li>
           <li><b>주제</b>: 제목(없으면 요약 앞부분)에 들어 있는 단어로 자동 분류합니다. 순서대로 먼저 걸린 것이 대표 주제입니다: 실적 → 수주·계약 → 자금·주식 → 정부·기관 지원 → 방산 → 우주·위성 → 반도체 → 기술·제품 → 전시·IR·행사 → 주가·시황 → 기타. 여러 주제에 걸리면 내려받은 파일의 '걸린 주제 전부'에 모두 적습니다.</li>
           <li><b>모으지 않는 기사</b>: 핀포인트뉴스와 Investing.com 한국어(다른 매체 기사를 다시 싣는 곳) 기사는 모으지 않습니다. 제목과 첫머리(요약)에 회사 이름이 없고 원문 전체에도 이름이 2번 이하로만 나오는 기사(시황 기사의 종목 나열 등)는 원문을 열어 확인한 뒤 지우고 다시 모으지 않습니다. 원문을 못 열면 그대로 둡니다.</li>
           <li><b>기자</b>: 기사 원문을 한 번 열어 본문의 기자 표기(예: [매체 홍길동 기자], 홍길동 기자 이메일, ○○ 홍길동입니다)에서 읽습니다. 자동 수집 때마다 15건씩 새 기사부터 채우고, 지난 기사도 차례로 채웁니다. 구글 뉴스로 모은 기사는 연결 주소를 원래 기사 주소로 바꾼 뒤 그 원문에서 읽습니다(바꾼 주소가 '기사 열기' 링크가 됩니다). 표기를 찾지 못한 기사는 '(미확인)'입니다.</li>
@@ -1740,7 +1740,7 @@
   const artViewSeg = (pivot) => `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${!pivot}">목록</a><a href="#/pivot" aria-pressed="${pivot}">대시보드</a></div>`;
 
   // 기사 대시보드: 월별·주제·언론사·기자 막대를 누르면 서로 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
-  const pivotState = { range: "all", unit: "outlet", kind: "all", noise: false, f: {} };
+  const pivotState = { range: "all", unit: "outlet", kind: "all", f: {} };
   const PIV_DIMS = { topic: "주제", office: "언론사", reporter: "기자", category: "분류", kind: "구분", month: "월", quarter: "분기", year: "연도" };
   const PIV_TIME = new Set(["month", "quarter", "year"]);
   // 기사 목록(대표 + 같은 내용을 실은 매체들)을 한 줄 = 기사 하나로 펼침
@@ -1818,7 +1818,7 @@
     svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) el.dispatchEvent(new CustomEvent("pick", { bubbles: true, detail: { d: "month", v: rows[+h.dataset.i].key } })); });
   }
 
-  let dashResize = null;
+  let dashResize = null, dashPick = null, dashClick = null;
   async function pagePivot() {
     main.innerHTML = `<div class="wrap dash">
       <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">선·순위·타일을 누르면 그 조건으로 나머지가 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
@@ -1843,8 +1843,7 @@
     const drawCtl = () => {
       $("#piv-ctl").innerHTML = `${seg("range", [["all", "전체"], ["365", "1년"], ["183", "6개월"], ["92", "3개월"], ["31", "1개월"]])}
         ${seg("kind", [["all", "전체"], ["그린광학 보도자료", "보도자료"], ["외부 기사", "외부 기사"]])}
-        ${seg("unit", [["outlet", "매체별 기사"], ["story", "같은 내용 묶음"]])}
-        <label class="check"><input type="checkbox" data-k="noise"${pivotState.noise ? " checked" : ""}> 단순 언급·시황 포함</label>`;
+        ${seg("unit", [["outlet", "매체별 기사"], ["story", "같은 내용 묶음"]])}`;
     };
     drawCtl();
     const F = pivotState.f;
@@ -1886,8 +1885,7 @@
     function draw() {
       const since = pivotState.range === "all" ? "" : isoDate(new Date(Date.now() - +pivotState.range * 864e5));
       base = pivotRows(items, pivotState.unit).filter((r) => (!since || r.ts.slice(0, 10) >= since)
-        && (pivotState.kind === "all" || r.kind === pivotState.kind)
-        && (pivotState.noise || !["단순 언급", "시황·특징주"].includes(r.category)));
+        && (pivotState.kind === "all" || r.kind === pivotState.kind));
       shown = base.filter((r) => pass(r)).sort((x, y) => (x.ts < y.ts ? 1 : -1));
       const offices = new Set(shown.map((r) => r.office)).size;
       const monthsAll = dashAgg(shown, "month");
@@ -1918,13 +1916,17 @@
       const b = ev.target.closest("button[data-k]"); if (!b) return;
       pivotState[b.dataset.k] = b.dataset.v; drawCtl(); draw();
     };
-    $("#piv-ctl").onchange = (ev) => { if (ev.target.dataset.k === "noise") { pivotState.noise = ev.target.checked; draw(); } };
-    main.addEventListener("pick", (ev) => toggle(ev.detail.d, ev.detail.v));
-    main.addEventListener("click", (ev) => {
+    // main은 화면을 바꿔도 그대로라, 대시보드를 다시 열 때마다 처리기가 쌓이면 한 번 눌러도 두 번 토글되어 풀려 버림 → 이전 것은 떼고 붙임
+    if (dashPick) { main.removeEventListener("pick", dashPick); main.removeEventListener("click", dashClick); }
+    dashPick = (ev) => toggle(ev.detail.d, ev.detail.v);
+    dashClick = (ev) => {
+      if (!$("#dash-list")) return;
       if (ev.target.closest("#dash-clear")) { for (const k of Object.keys(F)) delete F[k]; draw(); return; }
       const b = ev.target.closest(".dash-row, .chip-f"); if (!b) return;
       toggle(b.dataset.d, b.dataset.v);
-    });
+    };
+    main.addEventListener("pick", dashPick);
+    main.addEventListener("click", dashClick);
     $("#piv-csv").onclick = () => csv("기사_지금조건", shown);
     $("#piv-csv-all").onclick = () => csv("기사_원본전체", pivotRows(items, "outlet").sort((x, y) => (x.ts < y.ts ? 1 : -1)));
   }
