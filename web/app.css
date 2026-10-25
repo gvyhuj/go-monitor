@@ -572,7 +572,7 @@ details.verify b { color: var(--ink); margin-right: 4px; }
 .progress i { display: block; height: 100%; background: var(--brand-blue); transition: width .4s; }
 .shared-banner { display: none; background: #2E9E6B; color: #fff; font-size: 13px; font-weight: 600; text-align: center; padding: 6px 12px; border-radius: 6px; margin: 0 0 10px; }
 body.shared .shared-banner { display: block; }
-body.shared .local-only, body.shared .editable, body.cloud .local-only, body.cloud:not(.owner) .editable { display: none !important; }
+body.shared .local-only, body.shared .editable, body.cloud .local-only, body.cloud:not(.owner) .editable:not(.dup-del) { display: none !important; }
 body:not(.shared) .shared-only { display: none !important; }
 
 @media (max-width: 980px) {
@@ -989,15 +989,20 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
 .dash-board { list-style: none; margin: 0; padding: 0; }
 .dash-board li + li { border-top: 1px solid var(--line); }
-.dash-row { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) 54px 72px; gap: 10px; align-items: center; padding: 8px 4px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 8px; }
+.dash-row { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) 46px 72px; gap: 10px; align-items: center; padding: 8px 4px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 8px; }
 .dash-row:hover { background: var(--canvas); }
 .dash-row .rk { color: var(--muted); font-size: 12.5px; text-align: center; }
-.dash-row .nm { display: flex; flex-direction: column; min-width: 0; }
+.dash-row .nm { position: relative; display: flex; flex-direction: column; justify-content: center; min-width: 0; min-height: 38px; padding: 2px 10px; }
+.dash-row .nm > :not(.bar) { position: relative; }
+.dash-row .bar { position: absolute; inset: 0 auto 0 0; display: flex; gap: 2px; border-radius: 6px; overflow: hidden; }
+.dash-row .bar i { min-width: 0; }
+.dash-row .bar .b-pr { background: color-mix(in srgb, var(--s-pr) 16%, transparent); }
+.dash-row .bar .b-ext { background: color-mix(in srgb, var(--s-ext) 20%, transparent); }
 .dash-row .nm b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-row .nm small { font-size: 12px; }
-.dash-row .mix { display: inline-flex; gap: 4px; }
-.dash-row .mix i { font-style: normal; font-size: 11.5px; font-weight: 600; padding: 1px 6px; border-radius: 10px; color: #fff; }
-.dash-row .mix i { color: #fff; }
+.dash-row .mix { display: inline-flex; gap: 10px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dash-row .mix > span { display: inline-flex; align-items: center; gap: 4px; min-width: 26px; }
+.dash-row .mix .dot { width: 7px; height: 7px; border-radius: 50%; }
 .dash-row .ct { display: flex; flex-direction: column; align-items: flex-end; }
 .dash-row .ct small { font-size: 11.5px; }
 .dash-row.on { background: var(--canvas); box-shadow: inset 3px 0 0 var(--brand-blue); }
@@ -1096,3 +1101,10 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rec-period input { height: 34px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 8px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); }
 .days-controls .rec-period { margin: 0; }
 .dash-grid > .panel + .panel { margin-top: 0; }   /* 나란히 놓인 두 칸은 윗선을 맞춤 */
+
+.dup-del { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.dup-del:hover { color: var(--brand-blue); text-decoration: underline; }
+.dash-leg { margin-left: auto; display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); }
+.dash-leg > span { display: inline-flex; align-items: center; gap: 4px; }
+.dash-leg .dot { width: 7px; height: 7px; border-radius: 50%; }
+.dash-row .mix .zero { opacity: .35; }

@@ -53,7 +53,7 @@
   const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const b64e = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
   const store = (kind) => { try { return window[kind]; } catch (_) { return null; } };
-  // 관리 버튼(중복 삭제·분석 요청·원인 넣기 등)은 관리자 기기에서만 보임: 사이트 주소 뒤에 ?owner 를 붙여 한 번 열면
+  // 관리 버튼(분석 요청·원인 넣기 등, 중복 삭제는 빼고)은 관리자 기기에서만 보임: 사이트 주소 뒤에 ?owner 를 붙여 한 번 열면
   // 이 기기에 기억 (?viewer 로 해제). 요청은 어차피 저장소 주인 GitHub 계정으로 만든 것만 반영됨 (monitor.yml)
   (() => {
     const q = new URLSearchParams(location.search), ls = store("localStorage");
@@ -1844,8 +1844,8 @@
       <div id="dash-kpi" class="dash-kpis"></div>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사 추이 <small class="muted">월별</small></h3></div><div id="dash-month"></div></section>
       <div class="dash-grid">
-        <section class="panel dash-card"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small></div><div id="dash-office"></div></section>
-        <section class="panel dash-card"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small></div><div id="dash-reporter"></div></section>
+        <section class="panel dash-card"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
+        <section class="panel dash-card"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
       </div>
       <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
@@ -1874,13 +1874,17 @@
       const all = base.filter((r) => pass(r, dim));
       const list = dashAgg(all, dim).slice(0, limit);
       const total = all.filter((r) => dashKey(r, dim)).length || 1;
+      const max = list.length ? list[0].n : 1;
+      // 플러저블(Plausible) 상위 출처 목록처럼 이름 뒤에 건수만큼 옅은 막대, 막대는 보도자료·외부 기사 비율로 나눔
       el.innerHTML = list.length ? `<ol class="dash-board">${list.map((x, i) => {
         const [name, sub] = dim === "reporter" ? x.key.split(" · ") : [x.key, ""];
+        const pr = x.by["그린광학 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
           <span class="rk">${i + 1}</span>
-          <span class="nm"><b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
+          <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
+            <b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
           <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
-          <span class="mix">${(x.by["그린광학 보도자료"] || 0) ? `<i class="s-pr" title="보도자료">${x.by["그린광학 보도자료"]}</i>` : ""}${(x.by["외부 기사"] || 0) ? `<i class="s-ext" title="외부 기사">${x.by["외부 기사"]}</i>` : ""}</span></button></li>`;
+          <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
       }).join("")}</ol>` : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
     // 주제: 가로로 줄지은 칩 (토스 '주식 골라보기' 칩처럼), 누르면 걸러짐
