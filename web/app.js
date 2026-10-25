@@ -715,22 +715,26 @@
       const first = rows.length > 1 && rows[0].change != null ? rows[0].close / (1 + rows[0].change) : rows[0].close;
       const up = rows[rows.length - 1].close >= first;
       const path = rows.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(x.close).toFixed(1)}`).join("");
+      const area = `${path}L${X(rows.length - 1).toFixed(1)},${H - B}L${X(0).toFixed(1)},${H - B}Z`;   // 선 아래 옅은 채우기
       const every = Math.max(1, Math.ceil(rows.length / 6));
       const marks = rows.map((x, i) => {
         const n = news(x.date), cx = X(i), cy = Y(x.close);
-        if (n.pr) return `<circle class="rc-mk pr" cx="${cx}" cy="${cy}" r="5"/>`;
-        if (n.disc) return `<circle class="rc-mk disc" cx="${cx}" cy="${cy}" r="5"/>`;
-        if (n.ext) return `<circle class="rc-mk ext" cx="${cx}" cy="${cy}" r="3.5"/>`;
+        // 선(빨강·파랑)과 겹치지 않는 색·모양: 보도자료 초록 ●, 공시 주황 ■, 외부 기사 회색 ▲ (흰 테두리로 선과 뗌)
+        if (n.pr) return `<circle class="rc-mk pr" cx="${cx}" cy="${cy}" r="7"/>`;
+        if (n.disc) return `<rect class="rc-mk disc" x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="1.5"/>`;
+        if (n.ext) return `<path class="rc-mk ext" d="M${cx},${cy - 8}L${cx + 7.5},${cy + 5.5}L${cx - 7.5},${cy + 5.5}Z"/>`;
         return "";
       }).join("");
       const si = rows.findIndex((x) => x.date === calState.sel);
       const chg = rows[rows.length - 1].close / first - 1;
       el.innerHTML = `<div class="rc-head"><span class="muted">${esc(rows[0].date)} ~ ${esc(rows[rows.length - 1].date)}</span>
           <b class="${sgnCls(chg)}">${pct(chg)}</b><span class="muted">이 기간</span></div>
-        <div class="dl-wrap"><svg viewBox="0 0 ${W} ${H}" class="dl-svg rc-svg" role="img" aria-label="일별 종가">
+        <div class="dl-wrap"><svg viewBox="0 0 ${W} ${H}" class="dl-svg rc-svg ${up ? "up" : "down"}" role="img" aria-label="일별 종가">
+          <defs><linearGradient id="rc-fill-${up ? "up" : "down"}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="rc-f0"/><stop offset="1" class="rc-f1"/></linearGradient></defs>
           ${[lo, (lo + hi) / 2, hi].map((v) => `<line class="dl-grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="dl-ax" x="${W - R + 6}" y="${Y(v) + 4}">${won(v)}</text>`).join("")}
           ${rows.map((x, i) => (i % every === 0) ? `<text class="dl-ax" x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(x.date.slice(5).replace("-", "."))}</text>` : "").join("")}
           ${si >= 0 ? `<line class="rc-sel" x1="${X(si)}" x2="${X(si)}" y1="${T}" y2="${H - B}"/>` : ""}
+          <path class="rc-area" d="${area}" fill="url(#rc-fill-${up ? "up" : "down"})"/>
           <path class="rc-line ${up ? "up" : "down"}" d="${path}"/>
           ${marks}
           <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>

@@ -30,6 +30,10 @@
   --down-bg: #EAF0FC;
   --vol-bg: #FBF3E1;
 
+  /* 차트 위 소식 표시 (선의 빨강·파랑과 겹치지 않게) */
+  --mk-pr: #1E9E5A;
+  --mk-disc: #E8820C;
+
   --on-navy: #FFFFFF;
   --on-navy-2: rgba(255, 255, 255, .72);
   --on-navy-3: rgba(255, 255, 255, .5);
@@ -59,6 +63,8 @@
     --up-bg: rgba(240, 86, 106, .14);
     --down-bg: rgba(92, 141, 240, .14);
     --vol-bg: rgba(224, 169, 58, .14);
+    --mk-pr: #3CC27D;
+    --mk-disc: #F29A35;
     color-scheme: dark;
   }
 }
@@ -861,11 +867,11 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .cal-d { font-size: 12.5px; color: var(--ink-2); }
 .cal-ch { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cal-marks { margin-top: auto; display: flex; gap: 4px; flex-wrap: wrap; }
-/* 달력 표시: 보도자료 ●(채운 원) / 공시 ○(빈 원) / 외부 기사 ●(회색). 급등·급락은 칸의 % 숫자로 봄 */
+/* 달력·범례 표시: 보도자료 초록 ● / 공시 주황 ■ / 외부 기사 회색 ▲ (차트 위 표시와 같게). 급등·급락은 칸의 % 숫자로 봄 */
 .mk { display: inline-block; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
-.mk.pr { background: var(--brand-blue); }
-.mk.disc { background: none; border: 2px solid var(--navy); }
-.mk.ext { background: var(--muted); }
+.mk.pr { background: var(--mk-pr); }
+.mk.disc { background: var(--mk-disc); border-radius: 1px; }
+.mk.ext { background: var(--muted); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .cal-hint { margin: 12px 2px; font-size: 14px; }
 .cal-day { margin-top: 14px; padding: 16px 18px; }
 .cal-day-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
@@ -881,7 +887,6 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
   .cal-ch { font-size: 11px; }
   .cal-d { font-size: 11px; }
   .mk { width: 7px; height: 7px; }
-  .mk.disc { border-width: 1.5px; }
   .cal-legend { margin-left: 0; width: 100%; }
 }
 /* 기사 피벗 표 */
@@ -1052,9 +1057,14 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rc-line.down { stroke: var(--down); }
 .rc-sel { stroke: var(--line-2); stroke-dasharray: 3 3; }
 .rc-dot { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
-.rc-mk { stroke: var(--surface); stroke-width: 2; }
-.rc-mk.pr { fill: var(--brand-blue); }
-.rc-mk.disc { fill: var(--surface); stroke: var(--brand-blue); stroke-width: 2; }
+.rc-area { stroke: none; }
+.rc-svg.up .rc-f0 { stop-color: var(--up); stop-opacity: .22; }
+.rc-svg.down .rc-f0 { stop-color: var(--down); stop-opacity: .22; }
+.rc-svg.up .rc-f1 { stop-color: var(--up); stop-opacity: 0; }
+.rc-svg.down .rc-f1 { stop-color: var(--down); stop-opacity: 0; }
+.rc-mk { stroke: var(--surface); stroke-width: 2.5; stroke-linejoin: round; }
+.rc-mk.pr { fill: var(--mk-pr); }
+.rc-mk.disc { fill: var(--mk-disc); }
 .rc-mk.ext { fill: var(--muted); }
 .rec-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
 .rc-day { border: 0; box-shadow: none; padding: 0; margin: 0; }
