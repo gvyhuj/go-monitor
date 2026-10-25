@@ -151,7 +151,32 @@
     const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
     return b64e(out);
   }
+  // 화면 아래에 잠깐 떴다 사라지는 알림 (kind "err"면 빨강)
+  let toastTimer = 0;
+  function toast(msg, kind = "") {
+    const el = $("#toast");
+    if (!el || !msg) return;
+    el.textContent = msg; el.className = `toast ${kind}`; el.hidden = false;
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";      // 연달아 떠도 다시 올라오게
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, kind === "err" ? 5000 : 3000);
+  }
+  // 요청 보내기: 누른 버튼은 보내는 동안 돌아가는 표시, 끝나면 ✓ (버튼 글자는 각 화면이 정함)
   async function sendInbox(item) {
+    const btn = document.activeElement && document.activeElement.closest ? document.activeElement.closest("button") : null;
+    if (btn) { btn.classList.remove("is-done"); btn.classList.add("is-busy"); }
+    try {
+      const msg = await sendInboxRaw(item);
+      if (btn) { btn.classList.remove("is-busy"); btn.classList.add("is-done"); }
+      toast(STATIC ? "GitHub 창에서 [Create]를 누르면 몇 분 안에 반영됩니다." : "요청을 보냈습니다. 다음 자동 수집 때 반영됩니다.");
+      return msg;
+    } catch (e) {
+      if (btn) btn.classList.remove("is-busy");
+      toast(e.message || "요청을 보내지 못했습니다.", "err");
+      throw e;
+    }
+  }
+  async function sendInboxRaw(item) {
     if (!STATIC) {
       return rawApi("/api/inbox", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item) })
         .then(() => "요청을 보냈습니다. 다음 자동 수집 때 반영됩니다.");
@@ -498,6 +523,7 @@
   }
   const ahLine = (ah) => (ah ? `시간외(넥스트레이드) ${won(ah.price)}원 <span class="${sgnCls(ah.chg)}">${pct(ah.chg)}</span> · ${ah.at}` : "");
 
+  let QUOTE_CP = null;          // 지금 등락(%) — KOSDAQ 카드의 '시장보다' 계산용
   function renderQuote() {
     if (!STATUS) return;
     const q = STATUS.quote, k = STATUS.kosdaq;
@@ -513,10 +539,12 @@
       const asof = k ? "장 마감 · 거래소 종가" : q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준` : "장 마감";
       $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(change))} (${pctRaw(cp)})</span><span class="asof">${asof}</span>${k ? `<span class="ah">${ahLine(k.ah)}</span>` : ""}`;
       $("#q-volume").innerHTML = `${int(q.volume)}<small>주</small>`;
+      QUOTE_CP = cp;
     }
     if (k && k.price != null) {
-      const cls = k.change_pct > 0 ? "up" : k.change_pct < 0 ? "down" : "";
-      $("#q-kosdaq").innerHTML = `${k.price.toFixed(2)}<small class="${cls}">${pctRaw(k.change_pct)}</small>`;
+      $("#q-kosdaq").innerHTML = `${k.price.toFixed(2)}<small class="${sgnCls(k.change_pct)}">${pctRaw(k.change_pct)}</small>`;
+      const gap = QUOTE_CP != null && k.change_pct != null ? QUOTE_CP - k.change_pct : null;
+      $("#q-kosdaq-sub").textContent = gap == null ? "" : `종목이 시장보다 ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%p`;
     }
   }
 
@@ -525,6 +553,41 @@
     const since = STATUS.first_bar_ts ? dayLabel(STATUS.first_bar_ts) : "-";
     $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융(공식 제공 서비스가 아니어서 형식이 바뀌면 수신이 멈출 수 있습니다)</span>` +
       `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 급등·급락 ${int(STATUS.events_count)}건${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
+  }
+
+  // ---------------------------------------------------------------- 오늘 한눈에 (위 카드 줄)
+  // 소식 칸: 최근 거래일의 그린광학 보도자료(건수·실린 매체 수)·주요 공시·외부 기사. 차트 점과 같은 기준
+  function fillToday(daily, arts, discs, events, onNews) {
+    if (!daily.length) return;
+    const latest = daily[daily.length - 1].date;
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const when = latest === today ? "오늘" : `${+latest.slice(5, 7)}/${+latest.slice(8, 10)}`;
+    const on = (ts) => !!ts && ts.slice(0, 10) === latest;
+    const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
+    const isPr = (a) => a.kind === "pr" || a.kind === "company";
+    const pr = ar.filter(isPr), ext = ar.length - pr.length;
+    const outlets = pr.reduce((t, a) => t + (a.outlets_total || 1), 0);
+    const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
+    $("#q-news-label").textContent = `${when} 소식`;
+    $("#q-news").innerHTML = `<span><i class="mk pr"></i>보도자료 <b>${pr.length}</b>건${pr.length ? ` · ${outlets}개 매체` : ""}</span>`
+      + `<span><i class="mk disc"></i>공시 <b>${dc}</b></span><span><i class="mk ext"></i>외부 <b>${ext}</b></span>`;
+    const card = $("#q-news-card");
+    if (card) card.onclick = () => (onNews ? onNews(latest) : (calState.sel = latest, location.hash = "#/"));
+    // 급등·급락: 그날 알림 대상(관찰·직접 요청 제외) 중 가장 크게 움직인 것
+    const ev = (events || []).filter((e) => on(e.start_ts) && e.tier !== "관찰" && e.tier !== "요청");
+    $("#q-events-label").textContent = `${when} 급등·급락`;
+    if (!ev.length) $("#q-events").textContent = "없음";
+    else {
+      const top = ev.reduce((m, e) => (Math.abs(e.peak_return_5m || 0) > Math.abs(m.peak_return_5m || 0) ? e : m), ev[0]);
+      $("#q-events").innerHTML = `<span class="${sgnCls(top.peak_return_5m)}">${top.direction === "up" ? "급등" : "급락"} ${pct(top.peak_return_5m, 1)}</span>${ev.length > 1 ? `<small>외 ${ev.length - 1}건</small>` : ""}`;
+    }
+    // 거래량: 지금 거래량이 직전 20거래일 평균의 몇 배인지
+    const q = STATUS && STATUS.quote;
+    const qd = q && q.traded_at ? q.traded_at.slice(0, 10) : latest;
+    const vol = q && q.volume != null && qd === latest ? q.volume : daily[daily.length - 1].volume;
+    const prev = daily.filter((x) => x.date < latest && x.volume).slice(-20);
+    const avg = prev.length ? prev.reduce((t, x) => t + x.volume, 0) / prev.length : 0;
+    $("#q-volume-sub").textContent = avg && vol ? `20일 평균의 ${(vol / avg).toFixed(1)}배` : "";
   }
 
   // ---------------------------------------------------------------- dashboard
@@ -553,6 +616,7 @@
       ]);
     } catch (e) { box.innerHTML = `<div class="empty"><strong>일별 자료를 불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
+    api("/api/events").then((d) => fillToday(daily, arts, discs, d.events || [])).catch(() => fillToday(daily, arts, discs, []));
     const count = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) m[d] = (m[d] || 0) + 1; }); return m; };
     const shown = (a) => !a.hidden && a.category !== "단순 언급" && a.ts;
     const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
@@ -628,7 +692,7 @@
       const v = parseFloat(ev.target.value); if (!(v > 0)) return;
       daysState.th = Math.round(v * 10) / 10; draw();
     };
-    $("#events-csv").onclick = async () => { try { csvDownload((await api("/api/events")).events || []); } catch (e) { alert(e.message); } };
+    $("#events-csv").onclick = async () => { try { csvDownload((await api("/api/events")).events || []); } catch (e) { toast(e.message, "err"); } };
     $("#days-csv").onclick = () => csvDownloadRows("일별기록",
       ["날짜", "시가", "고가", "저가", "종가", "등락(%)", "거래량", "KOSDAQ(%)", "외국인 순매수", "기관 순매수", "개인 순매수", "보도자료", "외부 기사", "주요 공시"],
       rows.map((x) => [x.date, x.open, x.high, x.low, x.close, x.change == null ? "" : (x.change * 100).toFixed(2), x.volume,
@@ -683,6 +747,9 @@
     const discDay = byDay(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf || "")), (x) => x.ts.slice(0, 10));
     const latest = daily[daily.length - 1].date;
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
+    const onNews = (ds) => { pick(ds); const el = $("#rec-day"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+    fillToday(daily, arts, discs, [], onNews);
+    api("/api/events").then((d) => { if ($("#view")) fillToday(daily, arts, discs, d.events || [], onNews); }).catch(() => {});
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const news = (ds) => {
       const ar = artDay[ds] || [];
@@ -699,7 +766,23 @@
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
         </section>
+        <div class="rec-extra">${extraCards()}</div>
         <section id="rec-day"></section>`;
+    }
+
+    // 차트 아래 작은 칸: 최근 거래일 개인·외국인·기관 순매수, 5·20거래일 누적 등락 (최근 거래일 종가 기준)
+    function extraCards() {
+      const last = daily[daily.length - 1], md = `${+last.date.slice(5, 7)}/${+last.date.slice(8, 10)}`;
+      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
+      const cum = (n) => {
+        const base = daily[daily.length - 1 - n];
+        if (!base || !base.close) return `<div class="tcard"><span class="tl">${n}거래일 누적</span><span class="tv">-</span></div>`;
+        const r = last.close / base.close - 1;
+        return `<div class="tcard"><span class="tl">${n}거래일 누적</span><span class="tv ${sgnCls(r)}">${pct(r)}</span><span class="ts">${+base.date.slice(5, 7)}/${+base.date.slice(8, 10)} 종가 → ${md} 종가</span></div>`;
+      };
+      const inv = last.individual != null || last.foreign != null || last.organ != null;
+      return `<div class="tcard"><span class="tl">${md} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(last.individual)} · 외국인 ${signed(last.foreign)} · 기관 ${signed(last.organ)}` : "-"}</span>
+          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span></div>${cum(5)}${cum(20)}`;
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
