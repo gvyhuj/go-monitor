@@ -824,12 +824,12 @@
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
-    function lineChart() {
+    function lineChart(H = 280) {
       const el = $("#rec-chart");
       if (calState.range === "1d") return;          // 1일 탭은 위 칸에 그날 1분 차트 (dayChart)
       const rows = inRange();
       if (!rows.length) { el.innerHTML = `<p class="muted day-nochart">고른 기간에 거래일이 없습니다.</p>`; return; }
-      const W = Math.max(320, Math.round(el.clientWidth || 760)), H = 280, L = 8, R = 62, T = 16, B = 26;
+      const W = Math.max(320, Math.round(el.clientWidth || 760)), L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
       const X = (i) => L + (rows.length > 1 ? (i * (W - L - R)) / (rows.length - 1) : (W - L - R) / 2);
       const Y = (v) => T + (H - T - B) * (1 - (v - (lo - pad)) / (hi - lo + 2 * pad));
@@ -841,9 +841,9 @@
       const marks = rows.map((x, i) => {
         const n = news(x.date), cx = X(i), cy = Y(x.close);
         // 선(빨강·파랑)과 겹치지 않는 색·모양: 보도자료 파랑 ●, 공시 주황 ■, 외부 기사 회색 ▲ (흰 테두리로 선과 뗌)
-        if (n.pr) return `<circle class="rc-mk pr" cx="${cx}" cy="${cy}" r="7"/>`;
-        if (n.disc) return `<rect class="rc-mk disc" x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="1.5"/>`;
-        if (n.ext) return `<path class="rc-mk ext" d="M${cx},${cy - 8}L${cx + 7.5},${cy + 5.5}L${cx - 7.5},${cy + 5.5}Z"/>`;
+        if (n.pr) return `<circle class="rc-mk pr" data-i="${i}" cx="${cx}" cy="${cy}" r="7"/>`;
+        if (n.disc) return `<rect class="rc-mk disc" data-i="${i}" x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="1.5"/>`;
+        if (n.ext) return `<path class="rc-mk ext" data-i="${i}" d="M${cx},${cy - 8}L${cx + 7.5},${cy + 5.5}L${cx - 7.5},${cy + 5.5}Z"/>`;
         return "";
       }).join("");
       const si = rows.findIndex((x) => x.date === calState.sel);
@@ -859,21 +859,46 @@
           <path class="rc-line ${up ? "up" : "down"}" d="${path}"/>
           ${marks}
           <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+          <line class="rc-hline" x1="${L}" x2="${W - R}" y1="0" y2="0" visibility="hidden"/>
+          <circle class="rc-halo" r="11" cx="-20" cy="-20"/>
           <circle class="rc-dot" r="4" cx="-10" cy="-10"/>
+          <g class="rc-chip rc-xchip" visibility="hidden"><rect rx="5" height="20"/><text y="14" text-anchor="middle"></text></g>
+          <g class="rc-chip rc-ychip" visibility="hidden"><rect rx="5" height="20" width="${R - 4}"/><text x="${(R - 4) / 2}" y="14" text-anchor="middle"></text></g>
           ${rows.map((x, i) => `<rect class="dl-hit" data-i="${i}" x="${X(i) - (W - L - R) / Math.max(1, rows.length - 1) / 2}" y="0" width="${Math.max(6, (W - L - R) / Math.max(1, rows.length - 1))}" height="${H}"/>`).join("")}
         </svg></div>`;
+      // 왼쪽 세로 줄 때문에 차트 칸 아래가 비면 그만큼 차트를 키워 다시 그림 (한 번만, 넓은 화면에서)
+      const card = el.closest(".rec-card"), grid = el.closest(".bento");
+      if (H === 280 && card && grid && getComputedStyle(grid).gridTemplateColumns.split(" ").length === 4) {
+        const last = card.lastElementChild, spare = card.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom
+          - parseFloat(getComputedStyle(card).paddingBottom || 0) - parseFloat(getComputedStyle(last).marginBottom || 0);
+        if (spare > 8) return lineChart(Math.min(560, H + spare));
+      }
       const svg = $(".rc-svg", el), tip = $(".rc-hover", el), period = $(".rc-period", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
+      const hline = $(".rc-hline", el), halo = $(".rc-halo", el), xchip = $(".rc-xchip", el), ychip = $(".rc-ychip", el);
+      const chip = (g, x, y, text, w) => { const t = $("text", g), r = $("rect", g); t.textContent = text; r.setAttribute("width", w); if (g === xchip) { r.setAttribute("x", -w / 2); } g.setAttribute("transform", `translate(${x},${y})`); g.setAttribute("visibility", "visible"); };
+      let hot = null;
       svg.addEventListener("mousemove", (ev) => {
         const h = ev.target.closest(".dl-hit"); if (!h) return;
         const i = +h.dataset.i, x = rows[i], n = news(x.date);
         cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
+        hline.setAttribute("y1", Y(x.close)); hline.setAttribute("y2", Y(x.close)); hline.setAttribute("visibility", "visible");
         dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(x.close));
+        halo.setAttribute("cx", X(i)); halo.setAttribute("cy", Y(x.close));
+        const ds = `${+x.date.slice(5, 7)}.${+x.date.slice(8, 10)}`, xw = 46;
+        chip(xchip, Math.min(Math.max(X(i), L + xw / 2), W - R - xw / 2), H - B + 3, ds, xw);
+        chip(ychip, W - R + 2, Y(x.close) - 10, won(x.close), R - 4);
+        if (hot) hot.classList.remove("hot");
+        hot = $(`.rc-mk[data-i="${i}"]`, svg); if (hot) hot.classList.add("hot");
         tip.hidden = false; period.hidden = true;
         tip.innerHTML = `<b class="rh-day">${dayLabel(x.date)}</b><span>${won(x.close)}원 <b class="${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</b></span>
           <span class="muted">KOSDAQ ${x.kosdaq_close == null ? "" : `${x.kosdaq_close.toFixed(2)} `}${x.kosdaq == null ? "-" : pct(x.kosdaq)}</span>
           ${n.pr || n.disc || n.ext ? `<span>${[n.pr ? `<i class="mk pr"></i>보도자료 ${n.pr}` : "", n.disc ? `<i class="mk disc"></i>공시 ${n.disc}` : "", n.ext ? `<i class="mk ext"></i>외부 ${n.ext}` : ""].filter(Boolean).join(" · ")}</span>` : ""}`;
       });
-      svg.addEventListener("mouseleave", () => { tip.hidden = true; period.hidden = false; cross.setAttribute("visibility", "hidden"); dot.setAttribute("cx", -10); });
+      svg.addEventListener("mouseleave", () => {
+        tip.hidden = true; period.hidden = false; cross.setAttribute("visibility", "hidden"); dot.setAttribute("cx", -10);
+        hline.setAttribute("visibility", "hidden"); halo.setAttribute("cx", -20); xchip.setAttribute("visibility", "hidden"); ychip.setAttribute("visibility", "hidden");
+        if (hot) { hot.classList.remove("hot"); hot = null; }
+      });
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
     }
 
