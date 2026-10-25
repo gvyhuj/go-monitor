@@ -2124,7 +2124,7 @@
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span><span class="spacer"></span>
-        <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 직접 등록</button>
+        <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
         <span class="editable art-act" id="art-act"></span></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
@@ -2442,8 +2442,8 @@
     if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     box.innerHTML = html;
     const act = $("#art-act");
-    if (act) act.innerHTML = isDisc ? "" : a.manual ? `<button class="btn small danger" type="button" id="pr-del">이 기사 삭제</button>`
-      : `<button class="btn small" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`;
+    if (act) act.innerHTML = isDisc ? "" : a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
+      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`;
     // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
     const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
     if (rc && rxEl && rc.base_own) {

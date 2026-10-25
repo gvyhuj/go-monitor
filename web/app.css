@@ -1161,6 +1161,9 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
   .rc-info .ri-v, .rc-info .ri-v span { white-space: normal; }
 }
 .art-act:empty { display: none; }
+.art-act { display: inline-flex; align-items: center; }
+.art-act::before { content: "/"; color: var(--line-2); margin: 0 10px 0 2px; }
+.btn-link.danger-link { color: var(--up); }
 .rc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .rc-line.up { stroke: var(--up); }
 .rc-line.down { stroke: var(--down); }
