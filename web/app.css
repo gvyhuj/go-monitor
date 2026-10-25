@@ -1108,3 +1108,4 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-leg > span { display: inline-flex; align-items: center; gap: 4px; }
 .dash-leg .dot { width: 7px; height: 7px; border-radius: 50%; }
 .dash-row .mix .zero { opacity: .35; }
+.dash-miss { margin: 10px 4px 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }

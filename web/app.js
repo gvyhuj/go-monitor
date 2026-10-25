@@ -1867,6 +1867,13 @@
           <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
           <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
       }).join("")}</ol>` : `<p class="muted">해당 기사가 없습니다.</p>`;
+      if (dim === "reporter") {               // 기자 이름을 못 읽은 기사도 숫자로 (언론사별)
+        const miss = all.filter((r) => !r.reporter);
+        if (miss.length) {
+          const by = dashAgg(miss, "office").slice(0, 5).map((x) => `${esc(x.key)} ${x.n}`).join(" · ");
+          el.insertAdjacentHTML("beforeend", `<p class="dash-miss muted">기자 미확인 <b>${miss.length}건</b> (${by})</p>`);
+        }
+      }
     }
     // 주제: 가로로 줄지은 칩 (토스 '주식 골라보기' 칩처럼), 누르면 걸러짐
     function tiles(el) {
