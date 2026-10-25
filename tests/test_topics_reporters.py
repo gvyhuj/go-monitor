@@ -22,6 +22,30 @@ def test_topic_rules(title, primary, also):
         assert also in all_
 
 
+@pytest.mark.parametrize("title,body,also,not_also", [
+    ("그린광학, SDT와 SWIR 카메라 MOU 체결", "", None, "수주·계약"),
+    ("그린광학, 해외 기업과 양해각서 체결", "", None, "수주·계약"),
+    ("그린광학, 방산기업과 mou", "", "방산", "수주·계약"),
+    # 제목에 없고 본문 뒤쪽(80자 밖)에만 있어도 MOU (예: 교수신문 209923)
+    ("SDT·그린광학, 양자점 단파 적외선 카메라 국산화 맞손",
+     "양자기술 전문기업 SDT(대표 윤지원)와 초정밀 광학 전문기업 그린광학(대표 조현일)이 양자점 기반 SWIR(단파 적외선) "
+     "카메라 공동 개발에 나선다.양사는 8일 업무협약(MOU)을 체결하고", "기술·제품", "수주·계약"),
+    ("그린광학, MOU 이어 47억 공급계약", "", "수주·계약", None),
+])
+def test_mou_is_its_own_topic(title, body, also, not_also):
+    got, all_ = topics.classify(title, body, topics.DEFAULT_TOPICS)
+    assert got == "MOU" and all_[0] == "MOU"
+    if also:
+        assert also in all_
+    if not_also:
+        assert not_also not in all_
+
+
+@pytest.mark.parametrize("title", ["그린광학, MOUSE 신제품 출시", "SMOU 데이터"])
+def test_mou_not_matched_inside_other_words(title):
+    assert topics.classify(title, "", topics.DEFAULT_TOPICS)[0] != "MOU"
+
+
 def test_topic_falls_back_to_summary_start():
     assert topics.classify("그린광학 대표 인터뷰", "올해 방산 수출 확대 계획을 밝혔다", topics.DEFAULT_TOPICS)[0] == "방산"
 

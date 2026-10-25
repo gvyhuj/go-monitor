@@ -1,15 +1,21 @@
 """기사 주제: 제목(없으면 요약 앞부분)의 단어로 자동 분류.
 
 앞에 있는 주제가 우선입니다(대표 주제). 한 기사가 여러 주제에 걸리면 topics에 모두 담습니다.
+제목이나 본문 어디든 MOU(양해각서)가 있으면 대표 주제는 'MOU'이고, 'MOU 체결'만으로는 수주·계약에 넣지 않습니다.
 비공개 설정의 'article_topics'({"주제": ["단어", ...], ...}, 순서 = 우선순위)로 목록을 바꿀 수 있습니다.
 """
 from __future__ import annotations
 
+import re
+
 OTHER = "기타"
+MOU = "MOU"
+# 영문 MOU(대소문자·M.O.U 표기 포함, 앞뒤가 영문자가 아닐 때) 또는 '양해각서'
+MOU_RE = re.compile(r"(?<![A-Za-z])M\.?O\.?U(?![A-Za-z])|양해각서", re.IGNORECASE)
 
 DEFAULT_TOPICS: list[tuple[str, tuple[str, ...]]] = [
     ("실적", ("실적", "매출", "영업이익", "영업익", "순이익", "흑자", "적자", "어닝")),
-    ("수주·계약", ("수주", "계약", "공급", "납품", "체결", "MOU", "양해각서")),
+    ("수주·계약", ("수주", "계약", "공급", "납품", "체결")),
     ("자금·주식", ("유상증자", "무상증자", "증자", "전환사채", "CB", "BW", "자사주", "공모", "상장", "보호예수",
                "블록딜", "오버행", "투자 유치", "지분")),
     ("정부·기관 지원", ("지원", "과제", "국책", "테크노파크", "TP,", "TP ", "정부", "산업부", "중기부", "과기정통부",
@@ -35,10 +41,14 @@ def rules() -> list[tuple[str, tuple[str, ...]]]:
 
 
 def classify(title: str, body: str = "", table=None) -> tuple[str, list[str]]:
-    """(대표 주제, 걸린 주제 전부). 제목에서 하나도 안 걸리면 요약 앞 80자로 한 번 더 봄."""
+    """(대표 주제, 걸린 주제 전부). 제목에서 하나도 안 걸리면 요약 앞 80자로 한 번 더 봄.
+    MOU는 제목·본문 전체에서 찾고, 있으면 대표 주제. 이때 'MOU 체결'의 '체결'은 다른 주제 판단에서 뺌."""
     table = table or rules()
+    mou = bool(MOU_RE.search(title or "") or MOU_RE.search(body or ""))
     for text in (title or "", (body or "")[:80]):
-        hits = [name for name, words in table if any(w in text for w in words)]
+        if mou:
+            text = MOU_RE.sub(" ", text).replace("체결", " ")
+        hits = [name for name, words in table if name != MOU and any(w in text for w in words)]
         if hits:
-            return hits[0], hits
-    return OTHER, []
+            return (MOU, [MOU] + hits) if mou else (hits[0], hits)
+    return (MOU, [MOU]) if mou else (OTHER, [])
