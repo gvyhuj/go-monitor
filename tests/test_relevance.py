@@ -50,7 +50,7 @@ def test_blocked_office_is_never_saved_and_old_rows_are_purged(tmpdb):
 
 def test_name_only_article_is_dropped_and_not_collected_again(tmpdb):
     articles._save("000", [_item("x", "방산주 희비 뚜렷", url="https://news.example.com/list"),
-                           _item("y", "부품주 동향", url="https://news.example.com/about"),
+                           _item("y", "방산 관련주 동향", url="https://news.example.com/about"),
                            _item("z", f"{NAME} 공급계약", url="https://news.example.com/title")], "naver")
     pages = {"https://news.example.com/list": LIST_ONLY, "https://news.example.com/about": ABOUT}
     opened = []
@@ -79,3 +79,16 @@ def test_title_listed_for_removal_is_purged(tmpdb):
                      "'Investing.com 한국어', '[테마시황] 스페이스X(SPCX) 보호예수 해제 충격파…국내 우주항공산업 테마까지 덮쳤다', 'https://kr.investing.com/x')")
     assert relevance.purge_blocked("000") == 1
     assert articles._save("000", [_item("g1", "[테마시황] 스페이스X(SPCX) 보호예수 해제 충격파…")], "google") == 0
+
+
+def test_noise_category_is_never_saved_and_old_rows_are_purged(tmpdb):
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url, category) VALUES ('m1', '000', '2026-08-19T15:23', "
+                     "'이데일리', '특징주 모음', 'https://news.example.com/m1', '시황·특징주')")
+    assert relevance.purge_blocked("000") == 1
+    n = articles._save("000", [_item("s1", f"[특징주] {NAME}, 상한가"), _item("s2", "오늘의 특징주 모음"),
+                               _item("s3", f"{NAME} 공급계약")], "naver")
+    assert n == 1
+    with db.connect() as conn:
+        assert [r[0] for r in conn.execute("SELECT id FROM articles")] == ["s3"]
+    assert articles._save("000", [_item("s2", "오늘의 특징주 모음")], "naver") == 0

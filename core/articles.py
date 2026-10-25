@@ -160,6 +160,9 @@ def _save(code: str, items: list[dict], source: str) -> int:
         rows = []
         for i in items:
             cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
+            if cat in relevance.NOISE_CATEGORIES:      # 단순 언급·시황 기사는 모으지 않음
+                relevance.drop(conn, {**i, "symbol": code}, "noise")
+                continue
             rows.append((i["id"], code, i["ts"], i["office"], i["title"], i["body"], i["url"], i.get("outlets") or 1,
                          cat, tone_of(i["title"], i["body"]), mention, now, source))
         before = conn.total_changes

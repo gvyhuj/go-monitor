@@ -1,6 +1,7 @@
-"""모으지 않는 기사: 막은 매체, 회사 이름만 스쳐 지나가는 기사.
+"""모으지 않는 기사: 막은 매체, 단순 언급·시황 기사, 회사 이름만 스쳐 지나가는 기사.
 
 - 막은 매체(BLOCKED_OFFICES)는 받지도 않고, 이미 있던 기사도 지움.
+- 분류가 단순 언급·시황·특징주(NOISE_CATEGORIES)인 기사도 받지 않고, 이미 있던 기사도 지움.
 - 이름만 언급: 제목에 회사 이름이 없고, 기사 첫머리(네이버 요약·원문 meta description)에도 없고,
   원문 전체에 이름이 2번 이하로만 나오는 기사 (방산주 시황 기사 끝에 종목 나열로만 나오는 경우 등).
   원문을 못 열면 판단하지 않고 둠.
@@ -19,6 +20,7 @@ BLOCKED_OFFICES = {"핀포인트뉴스": "pinpointnews.co.kr",       # 매체 �
                    "Investing.com 한국어": "kr.investing.com"}    # 다른 매체 기사를 다시 싣기만 함 (원문도 접속 차단)
 # 원문을 열 수 없어(접속 차단) 자동 판단이 안 되는 기사 중 사용자가 지우라고 한 것 (제목 일부)
 DROP_TITLES = ("스페이스X(SPCX) 보호예수 해제 충격파",)
+NOISE_CATEGORIES = ("단순 언급", "시황·특징주")
 MAX_NAME_COUNT = 2         # 원문 전체에 이름이 이만큼 이하이면 '이름만 언급'
 LEDE = 90                  # 네이버 요약에서 첫머리로 보는 글자 수
 BATCH = 20                 # 실행 한 번에 여는 기사 수
@@ -46,13 +48,16 @@ def drop(conn, row: dict, reason: str) -> None:
 
 
 def purge_blocked(symbol: str) -> int:
-    """막은 매체 기사와 지우라고 한 제목의 기사를 지움. 지운 개수."""
+    """막은 매체 기사, 지우라고 한 제목의 기사, 단순 언급·시황 기사를 지움. 지운 개수."""
     n = 0
     with connect() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT id, symbol, url, office, title FROM articles WHERE symbol=?", (symbol,))]
+        rows = [dict(r) for r in conn.execute("SELECT id, symbol, url, office, title, category FROM articles WHERE symbol=?", (symbol,))]
         for r in rows:
             if blocked(r["office"], r["url"]) or any(t in (r["title"] or "") for t in DROP_TITLES):
                 drop(conn, r, "blocked")
+                n += 1
+            elif r["category"] in NOISE_CATEGORIES:
+                drop(conn, r, "noise")
                 n += 1
     return n
 
