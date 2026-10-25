@@ -404,7 +404,23 @@
     s1.createPriceLine({ price: 0, color: css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false });
     const st = toTime(startT);
     const near = d1.find((p) => p.time >= st);
-    if (near) LW.createSeriesMarkers(s1, [{ time: near.time, position: "aboveBar", shape: "arrowDown", color: css("--ink"), text: label }]);
+    if (near) {
+      // 공개 시각: 화살표 대신 선 위 작은 점 + 세로 점선 + 위쪽 이름표 (차트를 움직이거나 크기가 바뀌면 따라감)
+      LW.createSeriesMarkers(s1, [{ time: near.time, position: "inBar", shape: "circle", color: css("--mk-pub"), size: 0.7 }]);
+      el.style.position = "relative";
+      const pin = document.createElement("div");
+      pin.className = "rx-pub";
+      pin.innerHTML = `<span class="rx-pub-tag">${esc(label)}${label === "공개" ? ` ${utcHHMM(st)}` : ""}</span>`;
+      el.appendChild(pin);
+      const place = () => {
+        const x = chart.timeScale().timeToCoordinate(near.time);
+        pin.hidden = x == null;
+        if (x != null) { pin.style.left = `${x}px`; pin.style.bottom = `${chart.timeScale().height()}px`; }
+      };
+      chart.timeScale().subscribeVisibleLogicalRangeChange(place);
+      chart.timeScale().subscribeSizeChange(place);
+      place();
+    }
     chart.timeScale().fitContent();
     const show = (t) => {
       const a = d1.find((p) => p.time === t) || d1[d1.length - 1];

@@ -33,6 +33,7 @@
   /* 차트 위 소식 표시 (선의 빨강·파랑과 겹치지 않게) */
   --mk-pr: #1973B9;
   --mk-disc: #E8820C;
+  --mk-pub: #E8820C;   /* 발표 직후 그래프의 공개 시각 화살표: 남색 선과 대비되는 주황 */
 
   --on-navy: #FFFFFF;
   --on-navy-2: rgba(255, 255, 255, .72);
@@ -65,6 +66,7 @@
     --vol-bg: rgba(224, 169, 58, .14);
     --mk-pr: #4A8FD4;
     --mk-disc: #F29A35;
+    --mk-pub: #F29A35;
     color-scheme: dark;
   }
 }
@@ -1225,6 +1227,9 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 
 /* 기사 상세: 발표 직후 그래프 */
 .rx-chart { height: 220px; margin: 4px 0 8px; }
+/* 발표 직후 그래프의 공개 시각 표시: 세로 점선 + 위쪽 이름표 */
+.rx-pub { position: absolute; top: 0; width: 0; border-left: 1.5px dashed var(--mk-pub); pointer-events: none; z-index: 3; }
+.rx-pub-tag { position: absolute; top: 2px; left: 0; transform: translateX(-50%); padding: 0 7px; border-radius: 999px; background: var(--mk-pub); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }
 .rx-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 4px 0 6px; }
 .rx-steps .iw-main b { text-decoration: underline; text-underline-offset: 3px; }
 .rec-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 12px; }
