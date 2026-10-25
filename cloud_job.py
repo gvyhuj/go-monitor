@@ -405,6 +405,25 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v2", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명 다시 읽기 (빈 것·언론사 이름이 들어간 것) {n_re}건")
 
+    # 한 번만: 네이버 뉴스판을 먼저 읽게 바꾼 뒤 기자명이 빈 기사를 모두 다시 읽게 함
+    if not get_state("articles:reporter_retry_v3"):
+        with connect() as conn:
+            n_re = conn.execute("UPDATE articles SET reporter_at=NULL, reporter_tries=0 WHERE reporter IS NULL").rowcount
+        set_state("articles:reporter_retry_v3", now.isoformat(timespec="minutes"))
+        annotate("notice", f"기자명 빈 기사 {n_re}건 네이버 뉴스판으로 다시 읽기")
+
+    # 매번: 아직 기자명을 안 읽은 기사가 있으면 한 번에 많이 읽어 바로 채움 (평소엔 수집할 때 15건씩)
+    try:
+        from core import reporters
+        with connect() as conn:
+            todo = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=? AND reporter_at IS NULL "
+                                "AND COALESCE(reporter_tries, 0) < ?", (code, reporters.MAX_TRIES)).fetchone()[0]
+        if todo:
+            got = reporters.fill(code, limit=150, log=log.info)
+            annotate("notice", f"기자명 읽기: {min(todo, 150)}건 중 {got}건 찾음 (남은 기사 {max(0, todo - 150)}건)")
+    except Exception as e:      # noqa: BLE001
+        annotate("warning", f"기자명 읽기 실패: {type(e).__name__}: {str(e)[:150]}")
+
     # 매번: 기자명이 빈 기사가 많은 언론사와 그 까닭 (네이버 주소 / 원문 주소 / 못 엶 3번)
     try:
         with connect() as conn:

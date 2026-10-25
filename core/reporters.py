@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import html as _html
+import os
 import re
+import urllib.parse
 import time as _time
 from datetime import datetime, timedelta, timezone
 
@@ -70,11 +72,29 @@ def parse_time(page: str) -> str | None:
     return None
 
 
+def _host(u: str) -> str:
+    return re.sub(r"^(www|m|mobile|nwww)\.", "", urllib.parse.urlsplit(u or "").netloc.lower())
+
+
+def naver_link(title: str, url: str) -> str | None:
+    """원문 주소만 있는 기사의 네이버 뉴스판 주소 (네이버 검색 API로 같은 언론사·같은 제목을 찾음). 없으면 None.
+
+    네이버 뉴스판은 언론사가 달라도 기자 칸 형식이 같아서 원문보다 확실히 읽힘."""
+    if not os.environ.get("NAVER_CLIENT_ID") or not title:
+        return None
+    from . import newssearch
+    key = lambda t: re.sub(r"[^0-9A-Za-z가-힣]", "", t or "")[:30]
+    for it in newssearch.search(title, display=20):
+        if "news.naver.com" in it["url"] and key(it["title"]) == key(title) and _host(it.get("orig")) == _host(url):
+            return it["url"]
+    return None
+
+
 def fetchable(url: str) -> bool:
     return bool(url) and url.startswith("http") and "news.google.com" not in url
 
 
-def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) -> int:
+def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, naver=None) -> int:
     """아직 기자명을 확인하지 않은 기사를 limit개까지 열어 기자명을 채움. 찾은 개수.
 
     구글 뉴스 연결 주소는 원래 주소로 바꿔 url에 저장 (바꿔 본 기사는 resolved_at, 예전에 건너뛴 기사도 한 번 더 봄)."""
@@ -83,13 +103,14 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
         from .naver import http_get
         fetch = lambda u: http_get(u, timeout=8, retries=0).decode("utf-8", "ignore")
     resolve = resolve or gnews.resolve
+    naver = naver or naver_link
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        rows = conn.execute("SELECT id, url, ts, source, office FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
+        rows = conn.execute("SELECT id, url, ts, source, office, title FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
                             "AND COALESCE(reporter_tries, 0) < ?) OR (url LIKE '%news.google.com/%' AND resolved_at IS NULL)) "
                             "ORDER BY COALESCE(reporter_tries, 0), ts DESC", (symbol, MAX_TRIES)).fetchall()
     found, tried = 0, 0
-    for aid, url, ts, source, office in rows:
+    for aid, url, ts, source, office, title in rows:
         if tried >= limit:
             break
         name, failed = None, False
@@ -107,16 +128,28 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
             _time.sleep(0.3)
         if fetchable(url):
             tried += 1
+            if "news.naver.com" not in url:      # 네이버 뉴스판이 있으면 그쪽을 먼저 (기자 칸 형식이 하나로 같음)
+                try:
+                    nv = naver(title, url)
+                    if nv:
+                        name = parse(fetch(nv), office or "")
+                except Exception as e:      # noqa: BLE001 - 네이버판을 못 찾거나 못 열면 원문으로
+                    if log:
+                        log(f"네이버 뉴스판 찾기 실패: {e}")
             try:
+                if name and source != "google":
+                    raise StopIteration          # 이미 읽음 (구글 기사는 원문 게시 시각 때문에 원문도 엶)
                 page = fetch(url)
-                name = parse(page, office or "")
+                name = name or parse(page, office or "")
                 if source == "google":      # 구글 뉴스 시각은 날짜만 맞고 16:00·17:00으로 나오기도 함 → 원문 게시 시각
                     t = parse_time(page)
                     if t and ts and abs((datetime.fromisoformat(t) - datetime.fromisoformat(ts[:16])).days) <= 2:
                         with connect() as conn:
                             conn.execute("UPDATE articles SET ts=?, time_from='page' WHERE id=?", (t, aid))
+            except StopIteration:
+                pass
             except Exception as e:      # noqa: BLE001 - 한 기사가 안 열려도 계속
-                failed = True
+                failed = not name           # 네이버판에서 이미 읽었으면 원문을 못 열어도 됨
                 if log:
                     log(f"기자명 읽기 실패: {e}")
             _time.sleep(0.3)

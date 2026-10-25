@@ -247,7 +247,7 @@ def search(query: str, start: int = 1, display: int = 100) -> list[dict]:
         link, orig = it.get("link") or "", it.get("originallink") or ""
         out.append({"id": _id(link, orig), "ts": ts.isoformat(timespec="minutes"), "office": _office(orig or link),
                     "title": _clean(it.get("title")), "body": _clean(it.get("description"))[:300],
-                    "url": link if "news.naver.com" in link else (orig or link)})
+                    "url": link if "news.naver.com" in link else (orig or link), "orig": orig})
     return out
 
 

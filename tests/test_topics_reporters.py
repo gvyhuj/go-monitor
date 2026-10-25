@@ -143,3 +143,20 @@ def test_office_name_in_meta_author_is_skipped():
     page = ('<meta property="article:author" content="뉴시스"/>'
             "<p>[서울=뉴시스] 김경택 기자 = 초정밀 광학 전문기업</p>")
     assert reporters.parse(page, "뉴시스") == "김경택"
+
+
+def test_naver_version_is_read_first(tmp_path, monkeypatch):
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    orig, nv = "https://www.newsis.com/view/NISX1", "https://n.news.naver.com/mnews/article/003/1"
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,source) VALUES ('n1','X','2026-10-20T10:00','뉴시스','t',?,'naver')", (orig,))
+    pages = {orig: '<meta property="article:author" content="뉴시스"/>', nv: 'media_end_head_journalist_name">김경택 기자'}
+    opened = []
+    got = reporters.fill("X", fetch=lambda u: (opened.append(u), pages[u])[1], resolve=lambda u: None, naver=lambda t, u: nv)
+    assert got == 1 and opened == [nv]                     # 네이버판에서 읽었으면 원문은 열지 않음
+    with db.connect() as conn:
+        assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김경택"
