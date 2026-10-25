@@ -537,6 +537,14 @@ def main(argv) -> int:
                 annotate("notice", f"급등·급락 알림 {n_alert}건 보냄")
         except Exception as e:  # noqa: BLE001
             annotate("warning", f"알림 보내기 실패: {e}")
+        # 기사·공시 알림 (보도자료 매체 수가 늘 때, 외부 기사·공시가 새로 들어올 때)
+        try:
+            from core import newsalerts
+            t = newsalerts.send_new(code, log=log.info)
+            if t:
+                annotate("notice", f"기사·공시 알림 보냄: {t}")
+        except Exception as e:  # noqa: BLE001
+            annotate("warning", f"기사·공시 알림 실패: {e}")
 
         last = get_state("job:last_purge")
         if not last or last.get("value") != now.date().isoformat():
