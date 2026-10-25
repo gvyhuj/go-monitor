@@ -816,8 +816,7 @@
         ${calState.range === "1d" ? "" : `<div id="rec-daychart" class="rec-daychart"></div>`}
         ${ar.length ? `<h4 class="sub">기사 ${ar.length}건</h4><ul class="cal-list">${ar.map((a) => li(`#/pr/${esc(a.id)}`, `${hhmm(a.ts)} · ${esc(a.office || "")}${isPr(a) ? ' · <span class="ktag k-pr">그린광학 보도자료</span>' : ""}`, a.title)).join("")}</ul>` : ""}
         ${dc.length ? `<h4 class="sub">공시 ${dc.length}건</h4><ul class="cal-list">${dc.map((x) => li(`#/pr/${esc(x.id)}`, `${x.untimed ? "시각 미상" : hhmm(x.ts)}`, x.title)).join("")}</ul>` : ""}
-        ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}
-        <div class="ask-row"><button type="button" class="btn small editable" id="cal-ask">이 날짜 분석 요청</button><span class="form-msg" id="cal-msg" role="status"></span></div></section>`;
+        ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}</section>`;
     }
 
     function render() { shell(); lineChart(); dayPanel(); dayChart(); }
@@ -847,12 +846,6 @@
       if (e && e.closest(".day-card") && !e.closest(".range-panel")) { openEvent(+e.dataset.id); return; }
       const del = ev.target.closest("[data-ev-del]");
       if (del) { deleteRecord(del); return; }
-      if (ev.target.closest("#cal-ask")) {
-        const msg = $("#cal-msg");
-        msg.className = "form-msg"; msg.textContent = "요청하는 중…";
-        try { msg.textContent = CLOUD ? await sendInbox({ type: "analyze", date: calState.sel, from: null, to: null }) : "PC 화면에서는 '다시 분석' 버튼을 이용해 주세요."; }
-        catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
-      }
     };
     box.onchange = (ev) => { const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
     renderQuote();
