@@ -1630,7 +1630,7 @@
       ${sec("articles", "소식", `
         <h3>탭과 건수</h3>
         <ul>
-          <li><b>건수</b>: '건'은 같은 내용 묶음(같은 반응일)을 하나로 센 수이고, '매체 기사'는 같은 내용이라도 실은 매체마다 하나로 센 수입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
+          <li><b>건수</b>: '기사'는 같은 내용을 하나로 센 수, '보도'는 그 기사를 실은 매체마다 하나로 센 수입니다. 예: 6월 22일 LIG 공급계약 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 기사 1건, 보도 3건입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 모으지 않습니다.</li>
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
@@ -1642,7 +1642,7 @@
           <li>추이의 한 달, 순위의 한 줄, 주제 타일을 누르면 그 조건으로 나머지가 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 순위에 그 언론사 기자만 남습니다. 순위의 %는 지금 조건의 기사 중 비중입니다.</li>
           <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 순위에서 빠집니다.</li>
           <li><b>내려받기</b>: '지금 조건 엑셀로 내려받기'는 걸러진 기사, '원본 전체 내려받기'는 조건과 관계없이 모든 기사(매체별)입니다. 엑셀에서 직접 피벗할 수 있습니다.</li>
-          <li><b>세는 단위</b>: 같은 내용이라도 실은 매체마다 1건으로 셉니다.</li>
+          <li><b>세는 단위</b>: 대시보드는 '보도' 수로 셉니다. 예: 같은 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 3건이고, 상위 언론사에서 세 곳이 각각 1건씩 올라갑니다.</li>
           <li><b>주제</b>: 제목(없으면 요약 앞부분)에 들어 있는 단어로 자동 분류합니다. 순서대로 먼저 걸린 것이 대표 주제입니다: 실적 → 수주·계약 → 자금·주식 → 정부·기관 지원 → 방산 → 우주·위성 → 반도체 → 기술·제품 → 전시·IR·행사 → 주가·시황 → 기타. 여러 주제에 걸리면 내려받은 파일의 '걸린 주제 전부'에 모두 적습니다.</li>
           <li><b>모으지 않는 기사</b>: 단순 언급·시황·특징주로 분류된 기사는 모으지 않고, 이미 모은 것도 지웠습니다. 핀포인트뉴스와 Investing.com 한국어(다른 매체 기사를 다시 싣는 곳) 기사는 모으지 않습니다. 제목과 첫머리(요약)에 회사 이름이 없고 원문 전체에도 이름이 2번 이하로만 나오는 기사(시황 기사의 종목 나열 등)는 원문을 열어 확인한 뒤 지우고 다시 모으지 않습니다. 원문을 못 열면 그대로 둡니다.</li>
           <li><b>기자</b>: 기사 원문을 한 번 열어 본문의 기자 표기(예: [매체 홍길동 기자], 홍길동 기자 이메일, ○○ 홍길동입니다)에서 읽습니다. 자동 수집 때마다 15건씩 새 기사부터 채우고, 지난 기사도 차례로 채웁니다. 구글 뉴스로 모은 기사는 연결 주소를 원래 기사 주소로 바꾼 뒤 그 원문에서 읽습니다(바꾼 주소가 '기사 열기' 링크가 됩니다). 표기를 찾지 못한 기사는 '(미확인)'입니다.</li>
@@ -1889,7 +1889,7 @@
       const offices = new Set(shown.map((r) => r.office)).size;
       const monthsAll = dashAgg(shown, "month");
       $("#dash-kpi").innerHTML = `
-        <div class="kpi"><small>기사 (매체별)</small><b>${shown.length}<em>건</em></b>${spark(monthsAll)}</div>
+        <div class="kpi"><small>보도</small><b>${shown.length}<em>건</em></b>${spark(monthsAll)}</div>
         <div class="kpi"><small>언론사</small><b>${offices}<em>곳</em></b><span class="muted">기자 확인 ${new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size}명</span></div>`;
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
@@ -2017,7 +2017,7 @@
         ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
           : `<span><small>한 건당 실린 매체 (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
         <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b>${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
-          : ` <small>매체 기사 ${media}건</small>`}</span></div>`;
+          : ` <small>보도 ${media}건</small>`}</span></div>`;
     }
     function baselineBlock() { return baselineHtml(d.baseline); }
 
