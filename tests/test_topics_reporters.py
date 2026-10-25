@@ -43,6 +43,7 @@ def test_reporter_parse(page, name):
 
 def test_fill_reads_each_article_once_and_skips_google(tmp_path, monkeypatch):
     from core import db
+    monkeypatch.setattr(reporters, "MAX_TRIES", 3)
     monkeypatch.setattr(db, "DATA_DIR", tmp_path)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
     db.init_db()

@@ -419,8 +419,10 @@ def main(argv) -> int:
             todo = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=? AND reporter_at IS NULL "
                                 "AND COALESCE(reporter_tries, 0) < ?", (code, reporters.MAX_TRIES)).fetchone()[0]
         if todo:
-            got = reporters.fill(code, limit=150, log=log.info)
-            annotate("notice", f"기자명 읽기: {min(todo, 150)}건 중 {got}건 찾음 (남은 기사 {max(0, todo - 150)}건)")
+            errs = []
+            got = reporters.fill(code, limit=150, log=lambda m: (errs.append(m), log.info(m)))
+            annotate("notice", f"기자명 읽기: {min(todo, 150)}건 중 {got}건 찾음 (남은 기사 {max(0, todo - 150)}건)"
+                     + (f" · 못 연 기사 {len(errs)}건, 예: {errs[0][:160]}" if errs else ""))
     except Exception as e:      # noqa: BLE001
         annotate("warning", f"기자명 읽기 실패: {type(e).__name__}: {str(e)[:150]}")
 

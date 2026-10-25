@@ -36,7 +36,7 @@ TIME_PATTERNS = [
     re.compile(r'"datePublished"\s*:\s*"([^"]+)"'),
     re.compile(r'(?:입력|등록|승인)\s*:?\s*(20\d\d[.-]\d\d[.-]\d\d\s+\d\d:\d\d)'),
 ]
-MAX_TRIES = 3          # 기사 페이지를 못 열면 다음 실행에 다시 (3번까지)
+MAX_TRIES = 10         # 기사 페이지를 못 열면 다음 실행에 다시 (10번까지)
 BATCH = 15             # 실행 한 번에 여는 기사 수 (새 기사 먼저, 남으면 지난 기사)
 
 
@@ -101,7 +101,7 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
     from . import gnews
     if fetch is None:
         from .naver import http_get
-        fetch = lambda u: http_get(u, timeout=8, retries=0).decode("utf-8", "ignore")
+        fetch = lambda u: http_get(u, timeout=10, retries=1).decode("utf-8", "ignore")   # 한 번 못 열면 잠깐 뒤 다시
     resolve = resolve or gnews.resolve
     naver = naver or naver_link
     now = datetime.now().isoformat(timespec="minutes")
