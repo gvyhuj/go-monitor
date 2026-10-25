@@ -397,6 +397,28 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v1", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명이 빈 기사 {n_re}건 다시 읽기")
 
+    # 한 번만: 기자 대신 언론사 이름('뉴시스')이 읽혔거나 비어 있던 기사를 고친 규칙으로 다시 읽게 함
+    if not get_state("articles:reporter_retry_v2"):
+        with connect() as conn:
+            n_re = conn.execute("UPDATE articles SET reporter=NULL, reporter_at=NULL, reporter_tries=0 "
+                                "WHERE reporter IS NULL OR instr(REPLACE(COALESCE(office, ''), ' ', ''), reporter) > 0").rowcount
+        set_state("articles:reporter_retry_v2", now.isoformat(timespec="minutes"))
+        annotate("notice", f"기자명 다시 읽기 (빈 것·언론사 이름이 들어간 것) {n_re}건")
+
+    # 매번: 기자명이 빈 기사가 많은 언론사와 그 까닭 (네이버 주소 / 원문 주소 / 못 엶 3번)
+    try:
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT office, SUM(url LIKE '%news.naver.com%'), SUM(url NOT LIKE '%news.naver.com%'), "
+                "SUM(COALESCE(reporter_tries, 0) >= 3), SUM(reporter_at IS NULL), COUNT(*) FROM articles "
+                "WHERE symbol=? AND reporter IS NULL GROUP BY office ORDER BY COUNT(*) DESC LIMIT 6", (code,)).fetchall()
+        if rows:
+            annotate("notice", "기자명 빈 기사: " + " / ".join(
+                f"{o or '-'} {n}건(네이버 {nv or 0}·원문 {orig or 0}·못 엶 {bad or 0}·아직 {todo or 0})"
+                for o, nv, orig, bad, todo, n in rows))
+    except Exception as e:      # noqa: BLE001
+        annotate("warning", f"기자명 점검 실패: {type(e).__name__}")
+
     # 매번: 막은 매체(핀포인트뉴스) 기사, 단순 언급·시황 기사, 회사 이름만 스쳐 지나가는 기사를 지움 (지운 기사는 다시 모으지 않음)
     try:
         from core import relevance

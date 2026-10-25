@@ -136,3 +136,10 @@ def test_parse_time_formats(page, want):
 ])
 def test_reporter_from_meta_author(page, want):
     assert reporters.parse(page) == want
+
+
+def test_office_name_in_meta_author_is_skipped():
+    # 뉴시스 원문: meta author는 '뉴시스', 본문은 [서울=뉴시스] 김경택 기자 = 
+    page = ('<meta property="article:author" content="뉴시스"/>'
+            "<p>[서울=뉴시스] 김경택 기자 = 초정밀 광학 전문기업</p>")
+    assert reporters.parse(page, "뉴시스") == "김경택"

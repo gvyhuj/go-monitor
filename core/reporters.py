@@ -1,7 +1,7 @@
 """기자명: 기사 원문 페이지를 한 번 열어 기자 이름을 읽어 둠 (기사마다 한 번만, 실패해도 다시 묻지 않음).
 
 네이버 뉴스는 위쪽 기자 칸을 나중에 스크립트로 채워서, 본문 글귀에서 찾습니다:
-[이데일리 안유리 기자] · (서울=연합뉴스) 홍길동 기자 = · 홍길동 기자 abc@… · 홍길동 기자가 보도합니다 · SBS Biz 윤지혜입니다
+[이데일리 안유리 기자] · (서울=연합뉴스) 홍길동 기자 = · [서울=뉴시스] 홍길동 기자 = · 홍길동 기자 abc@… · 홍길동 기자가 보도합니다 · SBS Biz 윤지혜입니다
 구글 뉴스 연결 주소(news.google.com)는 먼저 원래 기사 주소로 바꿔(gnews.resolve) 저장한 뒤 그 원문에서 읽습니다.
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ PATTERNS = [
     re.compile(r'byline_s[^>]*>\s*' + NAME),
     re.compile(r"\[[^\[\]=]{0,24}?\s" + NAME + r"\s?" + TITLE + r"\]"),
     re.compile(r"\([^()]{1,20}=[^()]{1,20}\)\s*" + NAME + r"\s?" + TITLE + r"\s*="),
+    re.compile(r"\[[^\[\]]{1,20}=[^\[\]]{1,20}\]\s*" + NAME + r"\s?" + TITLE + r"\s*="),   # [서울=뉴시스] 김경택 기자 =
     re.compile(NAME + r"\s?" + TITLE + r"\s*\(?[\w.+-]+@[\w-]+\.[\w.]+"),
     re.compile(NAME + r"\s?" + TITLE + r"(?:가|이) 보도합니다"),
     re.compile(r"(?:Biz|뉴스|TV|YTN|KBS|MBC|SBS|MBN|JTBC|채널A|연합뉴스TV)\s+" + NAME + r"입니다"),
@@ -37,14 +38,17 @@ MAX_TRIES = 3          # 기사 페이지를 못 열면 다음 실행에 다시 
 BATCH = 15             # 실행 한 번에 여는 기사 수 (새 기사 먼저, 남으면 지난 기사)
 
 
-def parse(page: str) -> str | None:
-    """원문 HTML(또는 글)에서 기자 이름 하나. 못 찾으면 None."""
+def parse(page: str, office: str = "") -> str | None:
+    """원문 HTML(또는 글)에서 기자 이름 하나. 못 찾으면 None.
+
+    언론사 이름은 건너뜀: 뉴시스 원문은 작성자 정보(meta author)에 기자 대신 '뉴시스'를 적어 둠."""
     text = re.sub(r"<[^>]+>", " ", page)
     text = re.sub(r"\s+", " ", _html.unescape(text))
+    off = re.sub(r"\s+", "", office or "")
     for i, pat in enumerate(PATTERNS):
         for m in pat.finditer(page if i < 3 else text):
             name = m.group(1)
-            if name not in STOP:
+            if name not in STOP and not (off and (name in off or off in name)):
                 return name
     return None
 
@@ -81,11 +85,11 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
     resolve = resolve or gnews.resolve
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        rows = conn.execute("SELECT id, url, ts, source FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
+        rows = conn.execute("SELECT id, url, ts, source, office FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
                             "AND COALESCE(reporter_tries, 0) < ?) OR (url LIKE '%news.google.com/%' AND resolved_at IS NULL)) "
                             "ORDER BY COALESCE(reporter_tries, 0), ts DESC", (symbol, MAX_TRIES)).fetchall()
     found, tried = 0, 0
-    for aid, url, ts, source in rows:
+    for aid, url, ts, source, office in rows:
         if tried >= limit:
             break
         name, failed = None, False
@@ -105,7 +109,7 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None) ->
             tried += 1
             try:
                 page = fetch(url)
-                name = parse(page)
+                name = parse(page, office or "")
                 if source == "google":      # 구글 뉴스 시각은 날짜만 맞고 16:00·17:00으로 나오기도 함 → 원문 게시 시각
                     t = parse_time(page)
                     if t and ts and abs((datetime.fromisoformat(t) - datetime.fromisoformat(ts[:16])).days) <= 2:
