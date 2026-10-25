@@ -848,8 +848,8 @@
       }).join("");
       const si = rows.findIndex((x) => x.date === calState.sel);
       const chg = rows[rows.length - 1].close / first - 1;
-      el.innerHTML = `<div class="rc-head"><span class="muted">${esc(rows[0].date)} ~ ${esc(rows[rows.length - 1].date)}</span>
-          <b class="${sgnCls(chg)}">${pct(chg)}</b><span class="muted">이 기간</span></div>
+      el.innerHTML = `<div class="rc-head"><span class="rc-period"><span class="muted">${esc(rows[0].date)} ~ ${esc(rows[rows.length - 1].date)}</span>
+          <b class="${sgnCls(chg)}">${pct(chg)}</b><span class="muted">이 기간</span></span><span class="rc-hover" hidden></span></div>
         <div class="dl-wrap"><svg viewBox="0 0 ${W} ${H}" class="dl-svg rc-svg ${up ? "up" : "down"}" role="img" aria-label="일별 종가">
           <defs><linearGradient id="rc-fill-${up ? "up" : "down"}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="rc-f0"/><stop offset="1" class="rc-f1"/></linearGradient></defs>
           ${[lo, (lo + hi) / 2, hi].map((v) => `<line class="dl-grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text class="dl-ax" x="${W - R + 6}" y="${Y(v) + 4}">${won(v)}</text>`).join("")}
@@ -861,21 +861,19 @@
           <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
           <circle class="rc-dot" r="4" cx="-10" cy="-10"/>
           ${rows.map((x, i) => `<rect class="dl-hit" data-i="${i}" x="${X(i) - (W - L - R) / Math.max(1, rows.length - 1) / 2}" y="0" width="${Math.max(6, (W - L - R) / Math.max(1, rows.length - 1))}" height="${H}"/>`).join("")}
-        </svg><div class="dl-tip" hidden></div></div>`;
-      const svg = $(".rc-svg", el), tip = $(".dl-tip", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
+        </svg></div>`;
+      const svg = $(".rc-svg", el), tip = $(".rc-hover", el), period = $(".rc-period", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
       svg.addEventListener("mousemove", (ev) => {
         const h = ev.target.closest(".dl-hit"); if (!h) return;
         const i = +h.dataset.i, x = rows[i], n = news(x.date);
         cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
         dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(x.close));
-        tip.hidden = false;
-        tip.innerHTML = `<b>${dayLabel(x.date)}</b><span>${won(x.close)}원 <b class="${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</b></span>
-          <span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)}</span>
-          ${n.pr || n.disc || n.ext ? `<span>${[n.pr ? `보도자료 ${n.pr}` : "", n.disc ? `공시 ${n.disc}` : "", n.ext ? `외부 ${n.ext}` : ""].filter(Boolean).join(" · ")}</span>` : ""}`;
-        const r = svg.getBoundingClientRect(), px = (X(i) / W) * r.width;
-        tip.style.left = `${Math.min(Math.max(px, 80), r.width - 80)}px`;
+        tip.hidden = false; period.hidden = true;
+        tip.innerHTML = `<b class="rh-day">${dayLabel(x.date)}</b><span>${won(x.close)}원 <b class="${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</b></span>
+          <span class="muted">KOSDAQ ${x.kosdaq_close == null ? "" : `${x.kosdaq_close.toFixed(2)} `}${x.kosdaq == null ? "-" : pct(x.kosdaq)}</span>
+          ${n.pr || n.disc || n.ext ? `<span>${[n.pr ? `<i class="mk pr"></i>보도자료 ${n.pr}` : "", n.disc ? `<i class="mk disc"></i>공시 ${n.disc}` : "", n.ext ? `<i class="mk ext"></i>외부 ${n.ext}` : ""].filter(Boolean).join(" · ")}</span>` : ""}`;
       });
-      svg.addEventListener("mouseleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot.setAttribute("cx", -10); });
+      svg.addEventListener("mouseleave", () => { tip.hidden = true; period.hidden = false; cross.setAttribute("visibility", "hidden"); dot.setAttribute("cx", -10); });
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
     }
 
@@ -2072,7 +2070,8 @@
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span class="spacer"></span>
-        <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 직접 등록</button></div>
+        <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 직접 등록</button>
+        <span class="editable art-act" id="art-act"></span></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
         <div class="pr-form-grid">
@@ -2349,18 +2348,8 @@
         <div class="rx-steps">${ic.rows.map((r) => `<span${r.minutes === 30 ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">KOSDAQ</small> ${pct(r.kosdaq)}</span>`).join("")}</div>
         <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).</div></section>`;
     }
-    // 반응일 하루: 이 종목·같은 업종·KOSDAQ를 나란히, 초과는 업종 대비 (실제 값끼리 빼기만)
-    if (dl) {
-      const row = (k, label) => `<tr><td class="h">${label}</td><td class="v num ${sgnCls(dl[k])}">${pct(dl[k])}</td><td class="v num">${pct((dl.peers || {})[k])}</td><td class="v num">${pct((dl.kosdaq || {})[k])}</td><td class="v num ${sgnCls((dl.excess || {})[k])}"><b>${pct((dl.excess || {})[k])}</b></td></tr>`;
-      html += `<section class="verdict-box"><div class="vb-head">반응일 하루 <small class="muted">${esc(e.reaction_day)} · 전날 종가 ${won(dl.prev_close)}원 → 종가</small></div>
-        <table class="ladder"><thead><tr><th></th><th style="text-align:right">이 종목</th><th style="text-align:right">${esc(dl.bench_name || "같은 업종")}</th><th style="text-align:right">KOSDAQ</th><th style="text-align:right">업종 대비 초과</th></tr></thead><tbody>
-        ${row("d0", "반응일")}${e.late ? row("d1", "다음날까지") : ""}</tbody></table>
-        <div class="vb-note">거래량 ${int(dl.volume)}주${dl.vol_ratio ? ` · 직전 20일 평균의 ${dl.vol_ratio.toFixed(1)}배` : ""}${dl.vol_rank != null ? ` · 직전 60거래일 중 이만큼 이상 거래된 날 ${dl.vol_rank < 0.01 ? "1% 미만" : `${(dl.vol_rank * 100).toFixed(0)}%`}` : ""}${dl.gap != null ? ` · 시초가 갭 ${pct(dl.gap)}` : ""}</div>
-        ${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}
-</section>`;
-    } else {
-      html += `<section class="verdict-box"><div>${e.reaction_day ? "반응일 시세 기록이 아직 없습니다." : "기사가 나온 무렵의 시세 기록이 없어 계산하지 못했습니다."}</div>${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    }
+    // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
+    if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
     if (!a.manual && !isDisc) {
       const toKind = a.kind === "pr" ? "ext" : "pr";
@@ -2371,9 +2360,7 @@
     }
 
     // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)
-    let ev = "";
-    if ((d.confounders || []).length) ev += `<h3 class="d-sec" style="margin-top:0">함께 봐야 할 것</h3><ul class="notes" style="margin-top:0">${d.confounders.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
-    if ((e.events || []).length) ev += `<div class="rule-full"><b>반응일에 감지된 급등·급락</b><br>${e.events.map((x) => `<a href="#/calendar" data-ev="${x.id}">${hhmm(x.start_ts)} ${KIND[x.direction]} ${pct(x.peak_return_5m)}</a>`).join(", ")}</div>`;
+    const ev = "";
 
     // 공시: 같은 내용이라 이 공시 시각부터 잰 기사들
     if (isDisc) {
@@ -2393,11 +2380,11 @@
       <span class="form-msg" id="dup-msg"></span>
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section>`;
-    if (!isDisc) {
-      html += ev ? `<section class="evidence">${ev}</section>` : "";
-      html += `<p class="editable" style="margin-top:18px">${a.manual ? `<button class="btn danger" type="button" id="pr-del">이 기사 삭제</button>` : `<button class="btn" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`}</p>`;
-    }
+    if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     box.innerHTML = html;
+    const act = $("#art-act");
+    if (act) act.innerHTML = isDisc ? "" : a.manual ? `<button class="btn small danger" type="button" id="pr-del">이 기사 삭제</button>`
+      : `<button class="btn small" type="button" id="art-hide">${a.hidden ? "목록에 다시 표시" : "관계없는 기사라 목록에서 빼기"}</button>`;
     // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
     const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
     if (rc && rxEl && rc.base_own) {

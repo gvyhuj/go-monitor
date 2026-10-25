@@ -1121,6 +1121,13 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 @media (max-width: 720px) { .rec-tabs { gap: 2px; } .rec-tabs button { padding: 6px 8px; } }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 14px; }
 .rc-head b { font-size: 16px; }
+.rc-period, .rc-hover { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px; }
+.rc-period[hidden], .rc-hover[hidden] { display: none; }
+.rc-hover { gap: 4px 14px; font-size: 13.5px; }
+.rc-hover b { font-size: 14px; }
+.rc-hover .rh-day { font-size: 14.5px; }
+.rc-hover .mk { margin-right: 4px; }
+.art-act:empty { display: none; }
 .rc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .rc-line.up { stroke: var(--up); }
 .rc-line.down { stroke: var(--down); }
