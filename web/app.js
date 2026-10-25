@@ -53,16 +53,6 @@
   const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const b64e = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
   const store = (kind) => { try { return window[kind]; } catch (_) { return null; } };
-  // 관리 버튼(분석 요청·원인 넣기 등, 중복 삭제는 빼고)은 관리자 기기에서만 보임: 사이트 주소 뒤에 ?owner 를 붙여 한 번 열면
-  // 이 기기에 기억 (?viewer 로 해제). 요청은 어차피 저장소 주인 GitHub 계정으로 만든 것만 반영됨 (monitor.yml)
-  (() => {
-    const q = new URLSearchParams(location.search), ls = store("localStorage");
-    try { if (q.has("owner")) ls.setItem("go_owner", "1"); if (q.has("viewer")) ls.removeItem("go_owner"); } catch (_) {}
-    if (q.has("owner") || q.has("viewer")) history.replaceState(null, "", location.pathname + location.hash);
-    let on = false;
-    try { on = ls.getItem("go_owner") === "1"; } catch (_) {}
-    document.body.classList.toggle("owner", on);
-  })();
   function savedKey() {
     for (const k of ["localStorage", "sessionStorage"]) { try { const v = store(k) && store(k).getItem(KEY_NAME); if (v) return v; } catch (_) {} }
     return null;
