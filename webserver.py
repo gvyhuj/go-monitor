@@ -336,7 +336,7 @@ def api_daily(_q):
         f = inv.get(d) or inv.get(d.replace("-", "")) or (None, None, None, None)
         days.append({"date": d, "close": c, "volume": v, "open": o, "high": h, "low": lo,
                      "change": c / prev - 1 if prev else None,
-                     "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None,
+                     "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3]})
     return {"days": days}
 

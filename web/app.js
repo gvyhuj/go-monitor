@@ -285,6 +285,7 @@
   }
   function cleanupPage() {
     restoreHero();
+    if (PAST_DAY) { PAST_DAY = null; renderQuote(); }
     charts.forEach((c) => { try { c.remove(); } catch (_) {} });
     charts = [];
     timers.forEach(clearInterval);
@@ -533,11 +534,13 @@
   const ahLine = (ah) => (ah ? `시간외(넥스트레이드) ${won(ah.price)}원 <span class="${sgnCls(ah.chg)}">${pct(ah.chg)}</span> · ${ah.at}` : "");
 
   let QUOTE_CP = null;          // 지금 등락(%) — KOSDAQ 카드의 '시장보다' 계산용
+  let PAST_DAY = null;          // 주가 기록에서 지난 날을 골랐으면 그 날짜 (위 칸들이 그날 기준)
   function renderQuote() {
     if (!STATUS) return;
     const q = STATUS.quote, k = STATUS.kosdaq;
     $("#q-name").textContent = STATUS.name;
     $("#q-code").textContent = STATUS.symbol;
+    if (PAST_DAY) return;
     if (q && q.price != null) {
       const lv = q.traded_at ? liveFor(q.traded_at.slice(0, 10)) : null;
       const k = lv && lv.closed ? lv : null;               // 장 마감 뒤: 거래소 종가
@@ -566,12 +569,26 @@
 
   // ---------------------------------------------------------------- 오늘 한눈에 (위 카드 줄)
   // 소식 칸: 최근 거래일의 그린광학 보도자료(건수·실린 매체 수)·주요 공시·외부 기사. 차트 점과 같은 기준
-  function fillToday(daily, arts, discs, events, onNews) {
+  function fillToday(daily, arts, discs, events, onNews, day = null) {
     if (!daily.length) return;
-    const latest = daily[daily.length - 1].date;
+    const last = daily[daily.length - 1].date;
+    const latest = day && daily.some((x) => x.date === day) ? day : last;     // 고른 날 (없으면 최근 거래일)
     const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
     const when = latest === today ? "오늘" : `${+latest.slice(5, 7)}/${+latest.slice(8, 10)}`;
     const on = (ts) => !!ts && ts.slice(0, 10) === latest;
+    PAST_DAY = latest === last ? null : latest;
+    const i = daily.findIndex((x) => x.date === latest), px = daily[i], pv = i > 0 ? daily[i - 1] : null;
+    const live = STATUS && STATUS.quote && STATUS.quote.price != null && String(STATUS.quote.traded_at || "").slice(0, 10) === latest;
+    if (PAST_DAY || !live) {            // 지난 날(또는 실시간 시세가 없을 때): 그날 종가·등락, KOSDAQ 등락, 거래량
+      const chg = pv && pv.close ? px.close - pv.close : null;
+      $("#q-price").textContent = won(px.close);
+      $("#q-change").innerHTML = `${chg == null ? "" : `<span class="chg ${chg > 0 ? "up" : chg < 0 ? "down" : ""}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""} ${won(Math.abs(chg))} (${pct(px.change)})</span>`}<span class="asof">${when} 종가</span>`;
+      $("#q-kosdaq").innerHTML = px.kosdaq_close == null && px.kosdaq == null ? "-"       // 지수와 등락률을 함께 (지금 시세 칸과 같은 모양)
+        : `${px.kosdaq_close == null ? "" : px.kosdaq_close.toFixed(2)}<small class="${sgnCls(px.kosdaq)}">${px.kosdaq == null ? "" : pct(px.kosdaq)}</small>`;
+      const gap = px.change != null && px.kosdaq != null ? (px.change - px.kosdaq) * 100 : null;
+      $("#q-kosdaq-sub").textContent = gap == null ? "" : `종목이 시장보다 ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%p`;
+      $("#q-volume").innerHTML = `${int(px.volume)}<small>주</small>`;
+    } else renderQuote();
     const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const pr = ar.filter(isPr), ext = ar.length - pr.length;
@@ -593,7 +610,7 @@
     // 거래량: 지금 거래량이 직전 20거래일 평균의 몇 배인지
     const q = STATUS && STATUS.quote;
     const qd = q && q.traded_at ? q.traded_at.slice(0, 10) : latest;
-    const vol = q && q.volume != null && qd === latest ? q.volume : daily[daily.length - 1].volume;
+    const vol = !PAST_DAY && q && q.volume != null && qd === latest ? q.volume : px.volume;
     const prev = daily.filter((x) => x.date < latest && x.volume).slice(-20);
     const avg = prev.length ? prev.reduce((t, x) => t + x.volume, 0) / prev.length : 0;
     $("#q-volume-sub").textContent = avg && vol ? `20일 평균의 ${(vol / avg).toFixed(1)}배` : "";
@@ -758,8 +775,9 @@
     const latest = daily[daily.length - 1].date;
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
     const onNews = (ds) => { pick(ds); const el = $("#rec-day"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
-    fillToday(daily, arts, discs, [], onNews);
-    api("/api/events").then((d) => { if ($("#view")) fillToday(daily, arts, discs, d.events || [], onNews); }).catch(() => {});
+    let events = [];
+    const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) { $(".b-inv", g).innerHTML = invHtml(); $(".b-cum", g).innerHTML = cumHtml(); } };
+    api("/api/events").then((d) => { events = d.events || []; if ($("#view")) fillDay(); }).catch(() => {});
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const news = (ds) => {
       const ar = artDay[ds] || [];
@@ -775,7 +793,7 @@
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
-        </section>${extraCards()}</div>
+        </section><div class="tcard b-inv">${invHtml()}</div><div class="tcard b-cum">${cumHtml()}</div></div>
         <section id="rec-day"></section>`;
       // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ·거래량)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨)
       const grid = $("#rec-bento", box), card = $(".rec-card", grid), inv = $(".b-inv", grid);
@@ -784,24 +802,25 @@
       [nc, ec, kc, vc].forEach((el) => grid.insertBefore(el, inv));
       grid.after($("#rules"));
       $("#hero").hidden = true;
-      setWide();
     }
-    // 1일 탭이면 1분 차트가 넓게 보이도록 차트 칸을 맨 위 한 줄 전체로
-    function setWide() { const g = $("#rec-bento"); if (g) g.classList.toggle("wide", calState.range === "1d"); }
 
-    // 차트 아래 작은 칸: 최근 거래일 개인·외국인·기관 순매수, 5·20거래일 누적 등락 (최근 거래일 종가 기준)
-    function extraCards() {
-      const last = daily[daily.length - 1], md = `${+last.date.slice(5, 7)}/${+last.date.slice(8, 10)}`;
+    // 아래 작은 칸: 고른 날 개인·외국인·기관 순매수, 고른 날까지 5·20거래일 누적 등락
+    const selRow = () => { const i = daily.findIndex((x) => x.date === calState.sel); return i >= 0 ? i : daily.length - 1; };
+    const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+    function invHtml() {
+      const x = daily[selRow()];
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
-      // 누적 등락: 5거래일을 크게, 20거래일은 아래 작은 글씨로 (한 칸)
-      const cumR = (n) => { const b = daily[daily.length - 1 - n]; return b && b.close ? { r: last.close / b.close - 1, d: b.date } : null; };
+      const inv = x.individual != null || x.foreign != null || x.organ != null;
+      return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(x.individual)} · 외국인 ${signed(x.foreign)} · 기관 ${signed(x.organ)}` : "-"}</span>
+          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span>`;
+    }
+    function cumHtml() {
+      const i = selRow(), x = daily[i];
+      const cumR = (n) => { const b = daily[i - n]; return b && b.close ? { r: x.close / b.close - 1, d: b.date } : null; };
       const c5 = cumR(5), c20 = cumR(20);
-      const cumCard = `<div class="tcard"><span class="tl">5거래일 누적</span><span class="tv ${c5 ? sgnCls(c5.r) : ""}">${c5 ? pct(c5.r) : "-"}</span>
-          <span class="ts">${c5 ? `${+c5.d.slice(5, 7)}/${+c5.d.slice(8, 10)} 종가 → ${md} 종가` : ""}</span>
-          ${c20 ? `<span class="ts">20거래일 <b class="${sgnCls(c20.r)}">${pct(c20.r)}</b></span>` : ""}</div>`;
-      const inv = last.individual != null || last.foreign != null || last.organ != null;
-      return `<div class="tcard b-inv"><span class="tl">${md} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(last.individual)} · 외국인 ${signed(last.foreign)} · 기관 ${signed(last.organ)}` : "-"}</span>
-          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span></div>${cumCard}`;
+      return `<span class="tl">5거래일 누적</span><span class="tv ${c5 ? sgnCls(c5.r) : ""}">${c5 ? pct(c5.r) : "-"}</span>
+          <span class="ts">${c5 ? `${mdOf(c5.d)} 종가 → ${mdOf(x.date)} 종가` : ""}</span>
+          ${c20 ? `<span class="ts">20거래일 <b class="${sgnCls(c20.r)}">${pct(c20.r)}</b></span>` : ""}`;
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
@@ -925,11 +944,11 @@
         ${!ar.length && !dc.length ? `<p class="muted">이날 모인 기사·공시가 없습니다.</p>` : ""}</section>`;
     }
 
-    function render() { shell(); lineChart(); dayPanel(); dayChart(); }
+    function render() { shell(); fillDay(); lineChart(); dayPanel(); dayChart(); }
     function pick(ds) {
       if (!price[ds]) return;
       calState.sel = ds;
-      lineChart(); dayPanel(); dayChart();
+      fillDay(); lineChart(); dayPanel(); dayChart();
     }
     render();
     box.onclick = async (ev) => {
@@ -939,8 +958,7 @@
         box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
         $(".rec-period", box).hidden = calState.range !== "custom";
         if (calState.range === "custom") startPeriod(daily, calState, prev, box, "data-period");
-        if (calState.range === "1d") calState.sel = latest;
-        setWide();
+        if (calState.range === "1d") { calState.sel = latest; fillDay(); }
         if (calState.range === "1d" || was === "1d") { if (calState.range !== "1d" && chart) { try { chart.remove(); } catch (_) {} chart = null; } lineChart(); dayPanel(); dayChart(); }
         else lineChart();
         return;
