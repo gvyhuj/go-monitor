@@ -275,7 +275,16 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
+  const TODAY_CARDS = ["q-price-card", "q-news-card", "q-events-card", "q-kosdaq-card", "q-volume-card"];
+  function restoreHero() {
+    const strip = $("#hero .today-strip");
+    if (!strip) return;
+    TODAY_CARDS.forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== strip) strip.appendChild(el); });
+    const rules = $("#rules");
+    if (rules && !rules.closest("#hero")) strip.after(rules);
+  }
   function cleanupPage() {
+    restoreHero();
     charts.forEach((c) => { try { c.remove(); } catch (_) {} });
     charts = [];
     timers.forEach(clearInterval);
@@ -605,6 +614,7 @@
 
   // 일별 표: 모든 거래일을 한 줄씩 (시세·수급·그날 기사·공시 수). 급등·급락 표와 따로
   async function viewDays() {
+    restoreHero();
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
     let daily, arts, discs;
@@ -760,29 +770,38 @@
     let chart = null, loadSeq = 0, coarseAll = null;
     const st = {};
     function shell() {
-      box.innerHTML = `<section class="panel rec-card">
+      box.innerHTML = `<div class="bento" id="rec-bento"><section class="panel rec-card">
           <div class="rec-tabs" role="tablist">${[["1d", "1일"], ...REC_RANGES, ["custom", "기간 지정"]].map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
-        </section>
-        <div class="rec-extra">${extraCards()}</div>
+        </section>${extraCards()}</div>
         <section id="rec-day"></section>`;
+      // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ·거래량)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨)
+      const grid = $("#rec-bento", box), card = $(".rec-card", grid), inv = $(".b-inv", grid);
+      const [pc, nc, ec, kc, vc] = TODAY_CARDS.map((id) => document.getElementById(id));
+      grid.insertBefore(pc, card);
+      [nc, ec, kc, vc].forEach((el) => grid.insertBefore(el, inv));
+      grid.after($("#rules"));
+      $("#hero").hidden = true;
+      setWide();
     }
+    // 1일 탭이면 1분 차트가 넓게 보이도록 차트 칸을 맨 위 한 줄 전체로
+    function setWide() { const g = $("#rec-bento"); if (g) g.classList.toggle("wide", calState.range === "1d"); }
 
     // 차트 아래 작은 칸: 최근 거래일 개인·외국인·기관 순매수, 5·20거래일 누적 등락 (최근 거래일 종가 기준)
     function extraCards() {
       const last = daily[daily.length - 1], md = `${+last.date.slice(5, 7)}/${+last.date.slice(8, 10)}`;
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
-      const cum = (n) => {
-        const base = daily[daily.length - 1 - n];
-        if (!base || !base.close) return `<div class="tcard"><span class="tl">${n}거래일 누적</span><span class="tv">-</span></div>`;
-        const r = last.close / base.close - 1;
-        return `<div class="tcard"><span class="tl">${n}거래일 누적</span><span class="tv ${sgnCls(r)}">${pct(r)}</span><span class="ts">${+base.date.slice(5, 7)}/${+base.date.slice(8, 10)} 종가 → ${md} 종가</span></div>`;
-      };
+      // 누적 등락: 5거래일을 크게, 20거래일은 아래 작은 글씨로 (한 칸)
+      const cumR = (n) => { const b = daily[daily.length - 1 - n]; return b && b.close ? { r: last.close / b.close - 1, d: b.date } : null; };
+      const c5 = cumR(5), c20 = cumR(20);
+      const cumCard = `<div class="tcard"><span class="tl">5거래일 누적</span><span class="tv ${c5 ? sgnCls(c5.r) : ""}">${c5 ? pct(c5.r) : "-"}</span>
+          <span class="ts">${c5 ? `${+c5.d.slice(5, 7)}/${+c5.d.slice(8, 10)} 종가 → ${md} 종가` : ""}</span>
+          ${c20 ? `<span class="ts">20거래일 <b class="${sgnCls(c20.r)}">${pct(c20.r)}</b></span>` : ""}</div>`;
       const inv = last.individual != null || last.foreign != null || last.organ != null;
-      return `<div class="tcard"><span class="tl">${md} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(last.individual)} · 외국인 ${signed(last.foreign)} · 기관 ${signed(last.organ)}` : "-"}</span>
-          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span></div>${cum(5)}${cum(20)}`;
+      return `<div class="tcard b-inv"><span class="tl">${md} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(last.individual)} · 외국인 ${signed(last.foreign)} · 기관 ${signed(last.organ)}` : "-"}</span>
+          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span></div>${cumCard}`;
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
@@ -802,7 +821,7 @@
       const every = Math.max(1, Math.ceil(rows.length / 6));
       const marks = rows.map((x, i) => {
         const n = news(x.date), cx = X(i), cy = Y(x.close);
-        // 선(빨강·파랑)과 겹치지 않는 색·모양: 보도자료 초록 ●, 공시 주황 ■, 외부 기사 회색 ▲ (흰 테두리로 선과 뗌)
+        // 선(빨강·파랑)과 겹치지 않는 색·모양: 보도자료 파랑 ●, 공시 주황 ■, 외부 기사 회색 ▲ (흰 테두리로 선과 뗌)
         if (n.pr) return `<circle class="rc-mk pr" cx="${cx}" cy="${cy}" r="7"/>`;
         if (n.disc) return `<rect class="rc-mk disc" x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="1.5"/>`;
         if (n.ext) return `<path class="rc-mk ext" d="M${cx},${cy - 8}L${cx + 7.5},${cy + 5.5}L${cx - 7.5},${cy + 5.5}Z"/>`;
@@ -921,6 +940,7 @@
         $(".rec-period", box).hidden = calState.range !== "custom";
         if (calState.range === "custom") startPeriod(daily, calState, prev, box, "data-period");
         if (calState.range === "1d") calState.sel = latest;
+        setWide();
         if (calState.range === "1d" || was === "1d") { if (calState.range !== "1d" && chart) { try { chart.remove(); } catch (_) {} chart = null; } lineChart(); dayPanel(); dayChart(); }
         else lineChart();
         return;
@@ -1911,17 +1931,16 @@
       <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">선·순위·타일을 누르면 그 조건으로 나머지가 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
       <div class="dash-bar-top" id="piv-ctl"></div>
       <div id="dash-chips" class="dash-chips"></div>
+      <div class="dash-bento">
       <div id="dash-kpi" class="dash-kpis"></div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>기사 추이 <small class="muted">월별</small></h3></div><div id="dash-month"></div></section>
-      <div class="dash-grid">
-        <section class="panel dash-card"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
-        <section class="panel dash-card"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
-      </div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
+      <section class="panel dash-card d-trend"><div class="dash-card-head"><h3>기사 추이 <small class="muted">월별</small></h3></div><div id="dash-month"></div></section>
+      <section class="panel dash-card d-topic"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
+      <section class="panel dash-card d-full"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
         <button class="btn small" type="button" id="piv-csv">지금 조건 엑셀로</button>
         <button class="btn small" type="button" id="piv-csv-all">원본 전체 엑셀로</button></div>
-        <ul class="dash-feed" id="dash-list"></ul></section></div>`;
+        <ul class="dash-feed" id="dash-list"></ul></section></div></div>`;
     let items;
     try { items = (await api("/api/articles")).items || []; }
     catch (e) { $("#dash-list").innerHTML = `<li class="empty"><strong>기사를 불러오지 못했습니다.</strong>${esc(e.message)}</li>`; return; }
@@ -1982,8 +2001,12 @@
       shown = base.filter((r) => pass(r)).sort((x, y) => (x.ts < y.ts ? 1 : -1));
       const offices = new Set(shown.map((r) => r.office)).size;
       const monthsAll = dashAgg(shown, "month");
+      const prN = shown.filter((r) => r.kind === "그린광학 보도자료").length, extN = shown.length - prN;
+      const share = (n) => (shown.length ? `${Math.round((n / shown.length) * 100)}%` : "-");
       $("#dash-kpi").innerHTML = `
         <div class="kpi"><small>보도</small><b>${shown.length}<em>건</em></b>${spark(monthsAll)}</div>
+        <div class="kpi k-pr"><small><i class="mk pr"></i>그린광학 보도자료</small><b>${prN}<em>건</em></b><span class="muted">전체의 ${share(prN)}</span></div>
+        <div class="kpi k-ext"><small><i class="mk ext"></i>외부 기사</small><b>${extN}<em>건</em></b><span class="muted">전체의 ${share(extN)}</span></div>
         <div class="kpi"><small>언론사</small><b>${offices}<em>곳</em></b><span class="muted">기자 확인 ${new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size}명</span></div>`;
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";

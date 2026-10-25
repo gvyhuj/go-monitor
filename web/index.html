@@ -39,16 +39,16 @@
   <section class="hero today" id="hero" hidden>
     <div class="wrap">
       <div class="today-strip">
-        <div class="tcard t-price">
+        <div class="tcard t-price" id="q-price-card">
           <span class="quote-name"><span id="q-name">이 종목</span><span class="quote-code" id="q-code"></span></span>
           <span class="quote-price"><span id="q-price">-</span><span class="won">원</span></span>
           <span class="quote-change" id="q-change"></span>
         </div>
         <button type="button" class="tcard t-news" id="q-news-card"><span class="tl" id="q-news-label">오늘 소식</span><span class="t-news-row" id="q-news">-</span><span class="ts">누르면 그날 기사·공시 목록</span></button>
-        <div class="tcard"><span class="tl" id="q-events-label">오늘 급등·급락</span><span class="tv" id="q-events">-</span>
+        <div class="tcard" id="q-events-card"><span class="tl" id="q-events-label">오늘 급등·급락</span><span class="tv" id="q-events">-</span>
           <button class="rules-btn" id="rules-toggle" type="button" aria-expanded="false" aria-controls="rules">감지 기준</button></div>
-        <div class="tcard"><span class="tl">KOSDAQ</span><span class="tv" id="q-kosdaq">-</span><span class="ts" id="q-kosdaq-sub"></span></div>
-        <div class="tcard"><span class="tl">거래량</span><span class="tv" id="q-volume">-</span><span class="ts" id="q-volume-sub"></span></div>
+        <div class="tcard" id="q-kosdaq-card"><span class="tl">KOSDAQ</span><span class="tv" id="q-kosdaq">-</span><span class="ts" id="q-kosdaq-sub"></span></div>
+        <div class="tcard" id="q-volume-card"><span class="tl">거래량</span><span class="tv" id="q-volume">-</span><span class="ts" id="q-volume-sub"></span></div>
       </div>
       <ul class="rules hero-rules" id="rules" hidden></ul>
     </div>
