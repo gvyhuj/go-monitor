@@ -53,6 +53,16 @@
   const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const b64e = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
   const store = (kind) => { try { return window[kind]; } catch (_) { return null; } };
+  // 관리 버튼(중복 삭제·분석 요청·원인 넣기 등)은 관리자 기기에서만 보임: 사이트 주소 뒤에 ?owner 를 붙여 한 번 열면
+  // 이 기기에 기억 (?viewer 로 해제). 요청은 어차피 저장소 주인 GitHub 계정으로 만든 것만 반영됨 (monitor.yml)
+  (() => {
+    const q = new URLSearchParams(location.search), ls = store("localStorage");
+    try { if (q.has("owner")) ls.setItem("go_owner", "1"); if (q.has("viewer")) ls.removeItem("go_owner"); } catch (_) {}
+    if (q.has("owner") || q.has("viewer")) history.replaceState(null, "", location.pathname + location.hash);
+    let on = false;
+    try { on = ls.getItem("go_owner") === "1"; } catch (_) {}
+    document.body.classList.toggle("owner", on);
+  })();
   function savedKey() {
     for (const k of ["localStorage", "sessionStorage"]) { try { const v = store(k) && store(k).getItem(KEY_NAME); if (v) return v; } catch (_) {} }
     return null;
@@ -561,9 +571,10 @@
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     const net = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ko-KR")}</span>`);
     const hit = (ch) => !daysState.dir || (ch != null && (daysState.dir === "up" ? ch >= daysState.th / 100 : ch <= -daysState.th / 100));
-    const inRange = () => daily.slice(-(REC_RANGES.find((r) => r[0] === daysState.range) || REC_RANGES[REC_RANGES.length - 1])[2]);
+    const inRange = () => spanRows(daily, daysState);
     box.innerHTML = `<div class="controls days-controls">
-        <div class="rec-tabs" role="tablist">${REC_RANGES.map(([v, t]) => `<button type="button" data-drange="${v}" aria-pressed="${daysState.range === v}">${t}</button>`).join("")}</div>
+        <div class="rec-tabs" role="tablist">${[...REC_RANGES, ["custom", "기간 지정"]].map(([v, t]) => `<button type="button" data-drange="${v}" aria-pressed="${daysState.range === v}">${t}</button>`).join("")}</div>
+        ${periodHtml(daily, daysState, "data-dperiod")}
         <span class="muted">등락 고르기</span><div class="seg" role="group" aria-label="등락 고르기">${[["", "끄기"], ["up", "오른 날"], ["down", "내린 날"]].map(([v, t]) => `<button type="button" data-dir="${v}" aria-pressed="${daysState.dir === v}">${t}</button>`).join("")}</div>
         <label class="field mv-th"><span>기준 (%)</span><input type="number" id="mv-th" min="0" step="0.5" value="${esc(String(daysState.th))}"${daysState.dir ? "" : " disabled"}></label>
         <span class="spacer"></span>
@@ -577,6 +588,12 @@
     // 기간 요약 (Investing.com 과거 데이터 표 아래 요약 참고): 최고·최저·변화율·평균 거래량
     function draw() {
       const span = inRange();
+      if (!span.length) {
+        rows = [];
+        $("#days-sum").innerHTML = "";
+        $("#days-body").innerHTML = `<tr><td colspan="14" class="muted">고른 기간에 거래일이 없습니다.</td></tr>`;
+        return;
+      }
       rows = span.filter((x) => hit(x.change)).reverse();
       const first = span[0], last = span[span.length - 1];
       const base = first.change != null ? first.close / (1 + first.change) : first.close;
@@ -601,7 +618,13 @@
       const a = ev.target.closest("a[data-day]");
       if (a) { calState.sel = a.dataset.day; return; }
       const rb = ev.target.closest("[data-drange]");
-      if (rb) { daysState.range = rb.dataset.drange; box.querySelectorAll("[data-drange]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb))); draw(); return; }
+      if (rb) {
+        const prev = inRange(); daysState.range = rb.dataset.drange;
+        box.querySelectorAll("[data-drange]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
+        $(".rec-period", box).hidden = daysState.range !== "custom";
+        if (daysState.range === "custom") startPeriod(daily, daysState, prev, box, "data-dperiod");
+        draw(); return;
+      }
       const dir = ev.target.closest("[data-dir]");
       if (dir) {
         daysState.dir = dir.dataset.dir;
@@ -609,6 +632,7 @@
         $("#mv-th").disabled = !daysState.dir; draw();
       }
     };
+    box.onchange = (ev) => { const p = ev.target.closest("[data-dperiod]"); if (p && setPeriod(daysState, p, "data-dperiod")) draw(); };
     box.oninput = (ev) => {                  // 기준 숫자는 치는 즉시 반영
       if (ev.target.id !== "mv-th") return;
       const v = parseFloat(ev.target.value); if (!(v > 0)) return;
@@ -624,10 +648,29 @@
 
   // 주가 기록 (로빈후드·토스 종목 화면 참고): 기간 탭이 있는 큰 차트가 주인공, 선 위에 그날 소식 점,
   // 아래 고른 날 요약 + 그날 1분 차트(구간 골라 원인 묻기). 날마다 등락은 [일별 표]
-  const calState = { range: "1m", sel: null };
-  const daysState = { range: "all", dir: "", th: 5 };   // 일별 표: 기간, 등락 고르기
+  const calState = { range: "1d", sel: null, from: "", to: "" };
+  const daysState = { range: "all", dir: "", th: 5, from: "", to: "" };   // 일별 표: 기간, 등락 고르기
   const MAIN_DISC = new Set(["A", "B", "C", "I", "K"]);       // 정기(실적)·주요사항·발행·거래소 공시·거래소 조치
   const REC_RANGES = [["1w", "1주", 5], ["1m", "1달", 22], ["3m", "3달", 66], ["1y", "1년", 250], ["all", "전체", 1e9]];
+  // 기간 지정 (야후 파이낸스 과거 데이터 'Time Period'의 시작·끝 날짜, Investing.com 과거 데이터 날짜 고르기 참고)
+  const spanRows = (daily, s) => (s.range === "custom"
+    ? daily.filter((x) => x.date >= s.from && x.date <= s.to)
+    : daily.slice(-(REC_RANGES.find((r) => r[0] === s.range) || REC_RANGES[REC_RANGES.length - 1])[2]));
+  const periodHtml = (daily, s, attr) => `<div class="rec-period"${s.range === "custom" ? "" : " hidden"}>
+      <input type="date" ${attr}="from" aria-label="시작 날짜" value="${esc(s.from)}" min="${esc(daily[0].date)}" max="${esc(daily[daily.length - 1].date)}">
+      <span class="muted">~</span>
+      <input type="date" ${attr}="to" aria-label="끝 날짜" value="${esc(s.to)}" min="${esc(daily[0].date)}" max="${esc(daily[daily.length - 1].date)}"></div>`;
+  function startPeriod(daily, s, prev, box, attr) {   // 기간 지정을 처음 누르면 보던 기간으로 채움
+    if (!s.from || !s.to) { const r = prev.length ? prev : daily.slice(-22); s.from = r[0].date; s.to = r[r.length - 1].date; }
+    box.querySelectorAll(`[${attr}]`).forEach((i) => { i.value = s[i.getAttribute(attr)]; });
+  }
+  function setPeriod(s, input, attr) {
+    if (!input.value) return false;
+    s[input.getAttribute(attr)] = input.value;
+    if (s.from > s.to) [s.from, s.to] = [s.to, s.from];
+    input.parentElement.querySelectorAll(`[${attr}]`).forEach((i) => { i.value = s[i.getAttribute(attr)]; });
+    return true;
+  }
   async function viewCalendar() {
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
@@ -655,13 +698,14 @@
       const ar = artDay[ds] || [];
       return { pr: ar.filter(isPr).length, ext: ar.filter((a) => !isPr(a)).length, disc: (discDay[ds] || []).length };
     };
-    const inRange = () => { const n = REC_RANGES.find((r) => r[0] === calState.range)[2]; return daily.slice(-n); };
+    const inRange = () => spanRows(daily, calState);
 
     let chart = null, loadSeq = 0, coarseAll = null;
     const st = {};
     function shell() {
       box.innerHTML = `<section class="panel rec-card">
-          <div class="rec-tabs" role="tablist">${[["1d", "1일"], ...REC_RANGES].map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
+          <div class="rec-tabs" role="tablist">${[["1d", "1일"], ...REC_RANGES, ["custom", "기간 지정"]].map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
+          ${periodHtml(daily, calState, "data-period")}
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
         </section>
@@ -673,6 +717,7 @@
       const el = $("#rec-chart");
       if (calState.range === "1d") return;          // 1일 탭은 위 칸에 그날 1분 차트 (dayChart)
       const rows = inRange();
+      if (!rows.length) { el.innerHTML = `<p class="muted day-nochart">고른 기간에 거래일이 없습니다.</p>`; return; }
       const W = Math.max(320, Math.round(el.clientWidth || 760)), H = 280, L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
       const X = (i) => L + (rows.length > 1 ? (i * (W - L - R)) / (rows.length - 1) : (W - L - R) / 2);
@@ -795,8 +840,10 @@
     box.onclick = async (ev) => {
       const rb = ev.target.closest("[data-range]");
       if (rb) {
-        const was = calState.range; calState.range = rb.dataset.range;
+        const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
         box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
+        $(".rec-period", box).hidden = calState.range !== "custom";
+        if (calState.range === "custom") startPeriod(daily, calState, prev, box, "data-period");
         if (calState.range === "1d") calState.sel = latest;
         if (calState.range === "1d" || was === "1d") { if (calState.range !== "1d" && chart) { try { chart.remove(); } catch (_) {} chart = null; } lineChart(); dayPanel(); dayChart(); }
         else lineChart();
@@ -817,6 +864,7 @@
         catch (er) { msg.className = "form-msg err"; msg.textContent = er.message; }
       }
     };
+    box.onchange = (ev) => { const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
     renderQuote();
     if (recResize) window.removeEventListener("resize", recResize);
     let rz = null;
@@ -1589,7 +1637,7 @@
         </dl>`)}
       ${sec("prices", "주가 기록", `
         <ul>
-          <li><b>차트</b>: 기간 탭(1일·1주·1달·3달·1년·전체)으로 종가 선을 봅니다. 선 위의 점은 그날 소식(보도자료·주요 공시·외부 기사)이고, 마우스를 올리면 그날 종가·등락·KOSDAQ·소식 수가 나옵니다. 점이나 선을 누르면 그날을 고릅니다. 1일 탭은 고른 날의 1분 차트이고, 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다. 1분봉이 없는 날은 야후 파이낸스 5분봉(없으면 60분봉)으로 그리고, 마지막 점은 거래소 종가입니다.</li>
+          <li><b>차트</b>: 처음에는 1일(최근 거래일 1분 차트)이 보입니다. 기간 탭(1일·1주·1달·3달·1년·전체·기간 지정)으로 종가 선을 봅니다. 기간 지정은 시작·끝 날짜를 직접 고르며, 일별 표에도 같은 칸이 있습니다. 선 위의 점은 그날 소식(보도자료·주요 공시·외부 기사)이고, 마우스를 올리면 그날 종가·등락·KOSDAQ·소식 수가 나옵니다. 점이나 선을 누르면 그날을 고릅니다. 1일 탭은 고른 날의 1분 차트이고, 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다. 1분봉이 없는 날은 야후 파이낸스 5분봉(없으면 60분봉)으로 그리고, 마지막 점은 거래소 종가입니다.</li>
           <li><b>날마다 등락</b>: 차트 아래 한 칸이 하루입니다(빨강 오름 · 파랑 내림, 진할수록 크게). '등락 고르기'로 몇 % 이상 오르거나 내린 날만 표시하고, 전체 기간에서 맞는 날짜를 모아 보여 줍니다.</li>
           <li><b>AI 메모</b>: AI가 쓴 원인 글입니다. 판단은 직접 하도록 접어 두었습니다. 숫자(KOSDAQ 같은 기간, 업종, 수급)는 메모와 따로 보입니다.</li>
           <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
@@ -1822,7 +1870,6 @@
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
       list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
-    const initial = (t) => esc(String(t || "?").trim().slice(0, 1));
     function board(el, dim, limit) {
       const all = base.filter((r) => pass(r, dim));
       const list = dashAgg(all, dim).slice(0, limit);
@@ -1830,10 +1877,10 @@
       el.innerHTML = list.length ? `<ol class="dash-board">${list.map((x, i) => {
         const [name, sub] = dim === "reporter" ? x.key.split(" · ") : [x.key, ""];
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
-          <span class="rk">${i + 1}</span><span class="av">${initial(name)}</span>
+          <span class="rk">${i + 1}</span>
           <span class="nm"><b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
-          <span class="mix">${(x.by["그린광학 보도자료"] || 0) ? `<i class="s-pr" title="보도자료">${x.by["그린광학 보도자료"]}</i>` : ""}${(x.by["외부 기사"] || 0) ? `<i class="s-ext" title="외부 기사">${x.by["외부 기사"]}</i>` : ""}</span>
-          <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span></button></li>`;
+          <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
+          <span class="mix">${(x.by["그린광학 보도자료"] || 0) ? `<i class="s-pr" title="보도자료">${x.by["그린광학 보도자료"]}</i>` : ""}${(x.by["외부 기사"] || 0) ? `<i class="s-ext" title="외부 기사">${x.by["외부 기사"]}</i>` : ""}</span></button></li>`;
       }).join("")}</ol>` : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
     // 주제: 가로로 줄지은 칩 (토스 '주식 골라보기' 칩처럼), 누르면 걸러짐
@@ -1867,7 +1914,7 @@
       board($("#dash-reporter"), "reporter", 10);
       tiles($("#dash-topic"));
       $("#dash-n").textContent = `${shown.length}건${shown.length > 100 ? " · 최근 100건" : ""}`;
-      $("#dash-list").innerHTML = shown.slice(0, 100).map((r) => `<li><span class="av">${initial(r.office)}</span><div>
+      $("#dash-list").innerHTML = shown.slice(0, 100).map((r) => `<li><div>
         <a href="#/pr/${esc(r.lead)}" class="t">${esc(r.title)}</a>
         <div class="meta"><span class="ktag ${r.kind === "그린광학 보도자료" ? "k-pr" : "k-ext"}">${r.kind === "그린광학 보도자료" ? "보도자료" : "외부"}</span>
           <span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)}</span>
