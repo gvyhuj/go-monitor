@@ -879,7 +879,9 @@ def group_events(items: list[dict]) -> list[dict]:
 
 
 def find(symbol: str, art_id: str) -> dict | None:
-    return next((a for a in article_rows(symbol, include_hidden=True) if a["id"] == art_id), None)
+    """기사 하나. 묶음 대표가 아닌 기사(같은 내용을 실은 다른 매체·합친 기사)면 그 묶음의 대표 기사."""
+    rows = article_rows(symbol, include_hidden=True)
+    return next((a for a in rows if a["id"] == art_id), None) or         next((a for a in rows if any(r["id"] == art_id for r in a.get("related_titles") or [])), None)
 
 
 def before_event(symbol: str, t_start: datetime, t_end: datetime) -> dict:

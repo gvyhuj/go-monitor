@@ -103,3 +103,48 @@ def test_manual_merge_moves_whole_story(tmpdb):
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
     assert st["a1"] == st["a2"] == st["b1"] == st["b2"]
+
+
+def test_merge_request_end_to_end(tmpdb, monkeypatch):
+    """사이트의 '이 묶음에 넣기' 요청 → 묶음 반영 → 목록은 한 줄, 합쳐진 기사 주소로 들어가도 대표 기사가 열림 → 빼기."""
+    import logging
+    import cloud_job
+    monkeypatch.setattr(cloud_job, "load_settings", lambda: {"symbol": SYM})
+    monkeypatch.setattr(articles, "COVERAGE_FROM", "2026-01-01")
+    with db.connect() as conn:
+        for aid, office, title, ts in (("a1", "국제뉴스", "청주상의 충북인자위, 직업계고 학부모와 우수 중소기업 탐방", "2026-10-26T15:02"),
+                                       ("a2", "충청타임즈", "충북인자위, 직업계고 학부모와 함께 우수 중소기업 탐방", "2026-10-26T15:10"),
+                                       ("b1", "공뉴스", "충북 고교생 취업 선호 2년 새 반토막", "2026-10-26T15:18"),
+                                       ("b2", "중부매일", "충북 고교생 취업 선호 3년 새 반토막", "2026-10-26T15:32")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url, category) VALUES (?, ?, ?, ?, ?, 'u', '언론 분석')",
+                         (aid, SYM, ts, office, title))
+    articles.group_stories(SYM)
+    leads = lambda: {a["id"]: sorted(r["id"] for r in a["related_titles"]) for a in articles.article_rows(SYM)}
+    assert leads() == {"a1": ["a2"], "b1": ["b2"]}
+    # 공뉴스 기사 화면에서 '청주상의…'(a1)을 이 묶음에 넣기 → a1 묶음 전체가 b1 묶음으로
+    cloud_job.apply_inbox({"type": "article_merge", "id": "a1", "into": "b1"}, logging.getLogger())
+    assert leads() == {"a1": ["a2", "b1", "b2"]}                  # 대표는 가장 이른 기사
+    assert articles.find(SYM, "b1")["id"] == "a1"                 # 보던 기사 주소로 들어가도 열림
+    assert articles.find(SYM, "a1")["story_with"] == "b1"           # 대표가 된 합친 기사에도 '빼기'를 띄울 수 있게
+    with db.connect() as conn:
+        assert conn.execute("SELECT story_with FROM articles WHERE id='a1'").fetchone()[0] == "b1"
+    cloud_job.apply_inbox({"type": "article_merge", "id": "a1", "into": None}, logging.getLogger())
+    assert leads() == {"a1": ["a2"], "b1": ["b2"]}
+
+
+def test_merge_several_at_once(tmpdb, monkeypatch):
+    """여러 건을 골라 요청 하나로: 모두 한 묶음."""
+    import logging
+    import cloud_job
+    monkeypatch.setattr(cloud_job, "load_settings", lambda: {"symbol": SYM})
+    with db.connect() as conn:
+        for aid, title, ts in (("t", "충북인자위 직업계고 학부모 탐방", "2026-10-26T15:02"),
+                               ("x", "청주 고교생 취업 선호 급감", "2026-10-26T15:18"),
+                               ("y", "학부모 40명 생산시설 견학", "2026-10-26T16:00"),
+                               ("z", "지역 중소기업 인식 개선 나서", "2026-10-26T17:00")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES (?, ?, ?, 'o', ?, 'u')", (aid, SYM, ts, title))
+    articles.group_stories(SYM)
+    cloud_job.apply_inbox({"type": "article_merge", "ids": ["x", "y", "z"], "into": "t"}, logging.getLogger())
+    with db.connect() as conn:
+        st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
+    assert st["x"] == st["y"] == st["z"] == st["t"]

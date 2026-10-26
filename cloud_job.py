@@ -115,12 +115,13 @@ def apply_inbox(item: dict, log):
             val = int(tone) if tone in (-1, 0, "-1", "0") else None
             conn.execute("UPDATE articles SET tone_override=? WHERE id=? OR story=?", (val, aid, aid))
             log.info("사이트에서 기사 악재 표시 변경: %s → %s", aid, "자동" if val is None else val)
-        elif t == "article_merge":              # 같은 내용인데 자동으로 안 묶인 기사를 대상 기사 묶음에 넣기 (into 없으면 풀기)
-            aid, into = str(item.get("id") or ""), item.get("into")
-            into = str(into) if into else None
-            if aid and aid != into:
-                conn.execute("UPDATE articles SET story_with=? WHERE id=?", (into, aid))
-                log.info("사이트에서 기사 묶기: %s → %s", aid, into or "풀기")
+        elif t == "article_merge":              # 같은 내용인데 자동으로 안 묶인 기사(여러 건 가능)를 대상 기사 묶음에 넣기 (into 없으면 풀기)
+            into = str(item["into"]) if item.get("into") else None
+            ids = [str(x) for x in (item.get("ids") or [item.get("id")]) if x]
+            for aid in ids:
+                if aid != into:
+                    conn.execute("UPDATE articles SET story_with=? WHERE id=?", (into, aid))
+            log.info("사이트에서 기사 묶기: %s → %s", ", ".join(ids), into or "풀기")
         elif t == "analyze":
             from core.detector import requested_event
             day = str(item.get("date") or "")[:10]

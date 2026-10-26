@@ -215,6 +215,8 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .rs-inv b, .rs-ret b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .rs-inv p { grid-column: 1 / -1; margin: 2px 0; font-size: 12px; }
 .rs-now { border-top: 1px dashed var(--line); padding-top: 8px; }
+.rs-kv .rs-q { grid-column: 1 / -1; }                 /* 분기 실적: 이름 한 줄, 값 한 줄 (값이 줄바꿈되지 않게) */
+.rs-kv dd.rs-q { margin-top: -4px; white-space: nowrap; }
 /* ⓘ 설명 (마우스를 올리거나 누르면) */
 .tip { position: relative; display: inline-block; color: var(--muted); font-size: 12px; font-weight: 400; cursor: help; margin-left: 2px; outline: none; }
 .tip-box { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: -8px; width: 280px; padding: 12px 14px; border-radius: 10px;
@@ -1289,9 +1291,13 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 /* 기사 합치기 목록 */
 .merge-box { margin-top: 10px; }
 .merge-ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.merge-ul li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); }
+.merge-ul li { border: 1px solid var(--line); border-radius: var(--r-md); transition: border-color .15s, background-color .15s; }
+.merge-ul label { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
+.merge-ul li:has(input:checked) { border-color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 6%, var(--surface)); }
+.merge-ul input { width: 16px; height: 16px; accent-color: var(--brand-blue); margin: 0; }
 .merge-ul .mt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 720px) { .merge-ul li { grid-template-columns: minmax(0, 1fr) auto; } .merge-ul li .muted { grid-column: 1 / -1; } }
+.merge-act { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+@media (max-width: 720px) { .merge-ul label { grid-template-columns: auto minmax(0, 1fr); } .merge-ul label .mt { grid-column: 2; } }
 .art-act { display: inline-flex; align-items: center; }
 .art-act::before { content: "/"; color: var(--line-2); margin: 0 10px 0 2px; }
 .btn-link.danger-link { color: var(--up); }

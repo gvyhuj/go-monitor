@@ -247,8 +247,12 @@
     }
     m = p.match(/^\/api\/articles\/(.+)$/);
     if (m) {
-      const all = await kv("article_details");
-      const d = all[decodeURIComponent(m[1])];
+      const all = await kv("article_details"), id = decodeURIComponent(m[1]);
+      let d = all[id];
+      if (!d) {                             // 묶음 대표가 아닌 기사(같은 내용의 다른 매체·합친 기사)면 그 묶음의 대표 기사
+        const lead = ((await kv("articles")).items || []).find((a) => (a.related || []).some((r) => r.id === id));
+        d = lead && all[lead.id];
+      }
       if (!d) throw new Error("이 기사는 아직 사이트에 올라오지 않았습니다. 다음 자동 수집 때 반영됩니다.");
       return d;
     }
@@ -938,7 +942,7 @@
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${nv.fetched_at ? hhmm(nv.fetched_at) : ""}</small></span>
           <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv(tipK("PER"), now("per"))}${kv(tipK("PBR"), now("pbr"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
-            ${qt ? kv(`${esc(qt.title || "")}기준(분기)`, `매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억`) : ""}</dl></div>` : ""}`;
+            ${qt ? `<dt class="rs-q">${esc(qt.title || "")}기준(분기)</dt><dd class="rs-q">매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억</dd>` : ""}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
@@ -2554,6 +2558,10 @@
       const x = discById.get(selId);
       if (artState.discTypes && !artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
+      if (!byId.has(selId)) {               // 합쳐져 묶음 대표가 아니게 된 기사 주소 → 그 묶음의 대표 기사로
+        const lead = items.find((a) => (a.related || []).some((r) => r.id === selId));
+        if (lead) { selId = current = lead.id; history.replaceState(null, "", `#/pr/${lead.id}`); }
+      }
       const ev = events.find((e) => e.ids.includes(selId));
       if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
@@ -2571,7 +2579,7 @@
         try {
           const next = await cloudLive(true);
           if (activeRoute !== location.hash || !$("#pr-detail") || next.published_at === displayedPublication) return;
-          if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden])")) return;
+          if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden]), #merge-list:not([hidden])")) return;
           const scrollPosition = window.scrollY;
           cleanupPage();
           await pagePR(current);
@@ -2683,10 +2691,10 @@
       html += ev ? `<section class="evidence">${ev}</section>` : "";
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
-    const outlets = [{ id: a.id, manual: a.manual, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
+    const outlets = [{ id: a.id, manual: a.manual, merged: !!a.story_with, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 묶은 기사를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
+    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <span class="tier watch" title="자동으로 묶이지 않아 직접 합친 기사 (그 기사와 같이 묶여 있던 기사도 함께 들어옴)">직접 합침</span> <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
@@ -2724,15 +2732,26 @@
       const t0 = new Date(a.ts).getTime(), mine = new Set(outlets.map((r) => r.id));
       const near = items.filter((x) => !x.manual && !mine.has(x.id) && x.ts && Math.abs(new Date(x.ts).getTime() - t0) <= 3 * 864e5)
         .sort((p, q) => Math.abs(new Date(p.ts).getTime() - t0) - Math.abs(new Date(q.ts).getTime() - t0)).slice(0, 15);
-      lst.innerHTML = near.length ? `<p class="note">이 기사와 같은 내용인 기사를 누르면 이 묶음에 들어갑니다 (그 기사와 이미 묶여 있던 기사도 함께). 앞뒤 3일, 가까운 순.</p>
-        <ul class="merge-ul">${near.map((x) => `<li><span class="muted">${dayLabel(x.ts)} ${hhmm(x.ts)} · ${esc(x.office || "-")}${(x.outlets_total || 1) > 1 ? ` · ${x.outlets_total}개 매체` : ""}</span>
-          <span class="mt">${esc(x.title)}</span><button type="button" class="btn small" data-merge="${esc(x.id)}">이 묶음에 넣기</button></li>`).join("")}</ul><span class="form-msg" id="merge-msg"></span>`
+      lst.innerHTML = near.length ? `<p class="note">이 기사와 같은 내용인 기사를 모두 고른 뒤 아래 버튼을 누르면 한 번에 이 묶음으로 합쳐집니다 (고른 기사와 이미 묶여 있던 기사도 함께). 앞뒤 3일, 가까운 순.</p>
+        <ul class="merge-ul">${near.map((x) => `<li><label><input type="checkbox" value="${esc(x.id)}">
+          <span class="muted">${dayLabel(x.ts)} ${hhmm(x.ts)} · ${esc(x.office || "-")}${(x.outlets_total || 1) > 1 ? ` · ${x.outlets_total}개 매체` : ""}</span>
+          <span class="mt">${esc(x.title)}</span></label></li>`).join("")}</ul>
+        <div class="merge-act"><button type="button" class="btn primary small" id="merge-go" disabled>고른 기사 합치기</button><span class="form-msg" id="merge-msg"></span></div>`
         : `<p class="note">앞뒤 3일 안에 합칠 만한 다른 기사가 없습니다.</p>`;
-      lst.querySelectorAll("[data-merge]").forEach((b) => b.addEventListener("click", async () => {
-        const msg = $("#merge-msg");
-        try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_merge", id: b.dataset.merge, into: a.id, title: a.title }); b.disabled = true; b.textContent = "요청함"; }
-        catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
-      }));
+      const go = $("#merge-go");
+      if (!go) return;
+      const picked = () => [...lst.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
+      lst.onchange = () => { const n = picked().length; go.disabled = !n; go.textContent = n ? `고른 ${n}건 합치기` : "고른 기사 합치기"; };
+      go.onclick = async () => {
+        const ids = picked(), msg = $("#merge-msg");
+        if (!ids.length) return;
+        try {
+          msg.className = "form-msg";
+          msg.textContent = await sendInbox({ type: "article_merge", ids, into: a.id, title: a.title });
+          go.disabled = true; go.textContent = `${ids.length}건 합치기 요청함`;
+          lst.querySelectorAll("input[type=checkbox]").forEach((c) => { c.disabled = true; });
+        } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+      };
     };
     box.querySelectorAll("[data-unmerge]").forEach((b) => b.addEventListener("click", async () => {
       const msg = $("#dup-msg");
