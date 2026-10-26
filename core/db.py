@@ -276,7 +276,9 @@ _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override
                        "story_with": "TEXT"}  # 사이트에서 '같은 내용'으로 직접 묶은 대상 기사 id (자동 묶음보다 우선)  # '이름만 언급' 기사인지 살펴본 시각  # 기사 페이지를 못 열어 다시 시도한 횟수     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각
 # 공시 시각(KIND 접수 시각), DART 공시 종류(A~J)·제출인·비고
 _DISCLOSURE_MIGRATIONS = {"ts": "TEXT", "pblntf": "TEXT", "filer": "TEXT", "rm": "TEXT"}
-_CAUSE_MIGRATIONS = {"move": "REAL"}            # 하루 원인: 원인을 넣은 시각의 전일 대비 등락
+_CAUSE_MIGRATIONS = {"move": "REAL"}
+# 일봉: 네이버 기준가 (등락률 = 종가 ÷ 기준가 − 1). 종가는 넥스트레이드 포함 마지막 체결가, 기준가는 전날 거래소 종가
+_DAILY_MIGRATIONS = {"base": "REAL"}            # 하루 원인: 원인을 넣은 시각의 전일 대비 등락
 
 
 def init_db():
@@ -288,7 +290,7 @@ def init_db():
             if col not in scols:
                 conn.execute(f"ALTER TABLE trader_snapshots ADD COLUMN {col} {typ}")
         for table, migs in (("articles", _ARTICLE_MIGRATIONS), ("disclosures", _DISCLOSURE_MIGRATIONS),
-                            ("manual_causes", _CAUSE_MIGRATIONS)):
+                            ("manual_causes", _CAUSE_MIGRATIONS), ("daily_bars", _DAILY_MIGRATIONS)):
             tcols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             for col, typ in migs.items():
                 if col not in tcols:

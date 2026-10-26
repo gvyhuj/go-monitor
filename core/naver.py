@@ -381,6 +381,25 @@ def fetch_disclosures(code: str, n: int = 20) -> list[dict]:
     return out
 
 
+def fetch_snapshot(code: str) -> dict:
+    """네이버 종목 화면의 '지금' 숫자: 시총·PER·EPS·PBR·BPS·대금·52주·외인소진율, 외국인 보유율, 최근 분기 실적."""
+    d = _json(f"https://m.stock.naver.com/api/stock/{code}/integration", "https://m.stock.naver.com/")
+    info = {t.get("code"): t.get("value") for t in d.get("totalInfos") or [] if t.get("code")}
+    deal = (d.get("dealTrendInfos") or [{}])[0]
+    out = {"info": info, "hold_ratio": deal.get("foreignerHoldRatio"), "hold_date": deal.get("bizdate")}
+    try:
+        f = _json(f"https://m.stock.naver.com/api/stock/{code}/finance/quarter", "https://m.stock.naver.com/")["financeInfo"]
+        cols = [t for t in f.get("trTitleList") or [] if t.get("isConsensus") == "N"]
+        if cols:
+            key = cols[-1]["key"]
+            rows = {r.get("title"): (r.get("columns") or {}).get(key, {}).get("value") for r in f.get("rowList") or []}
+            out["quarter"] = {"title": cols[-1].get("title"), "sales": rows.get("매출액"), "op": rows.get("영업이익"),
+                              "net": rows.get("당기순이익")}
+    except (DataSourceError, KeyError, TypeError, IndexError):
+        pass
+    return out
+
+
 def fetch_related(code: str) -> list[dict]:
     d = _json(f"https://m.stock.naver.com/api/stock/{code}/integration", "https://m.stock.naver.com/")
     out = []

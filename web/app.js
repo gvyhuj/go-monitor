@@ -567,27 +567,14 @@
     el.innerHTML = html; el.hidden = false;
   }
 
-  // 오늘 '지금 등락'은 한 곳(네이버 현재가)에서만 가져와 화면 어디서나 같은 숫자를 씀
-  // 15:30 이후 네이버 시세는 넥스트레이드 애프터마켓 가격이라 거래소 종가와 다름 → 거래소 종가(15:30 1분봉)를 보여주고
-  // 애프터마켓 가격은 따로 (ah). d: 그날 1분봉 자료 (없으면 사이트에 올라온 최신 자료)
-  function krxClose(d) {
-    if (!d || !d.prev_close || !(d.bars || []).length) return null;
-    const last = [...d.bars].reverse().find((b) => b.t.slice(11, 16) <= "15:30");
-    if (!last || last.t.slice(11, 16) < "15:30") return null;          // 종가 단일가 체결 전
-    return { price: last.c, chg: last.c / d.prev_close - 1, prev: d.prev_close };
-  }
-  function liveFor(date, d) {
+  // 오늘 '지금 등락'은 한 곳(네이버 현재가)에서만 가져와 화면 어디서나 같은 숫자를 씀.
+  // 네이버·증권사 앱과 같은 기준: 가격은 넥스트레이드(~20:00) 포함 마지막 체결가, 등락은 기준가(전날 거래소 종가) 대비
+  function liveFor(date) {
     const q = STATUS && STATUS.quote;
     if (!q || q.price == null || q.change_pct == null || !q.traded_at || q.traded_at.slice(0, 10) !== date) return null;
-    const at = q.traded_at.slice(11, 16);
-    if (at > "15:30") {
-      const k = krxClose(d || (LIVE && LIVE.intraday && LIVE.intraday.date === date ? LIVE.intraday : null));
-      if (k) return { price: k.price, chg: k.chg, prev: k.prev, at: "15:30", open: false, closed: true,
-        ah: { price: q.price, chg: q.change_pct / 100, at } };
-    }
-    return { price: q.price, chg: q.change_pct / 100, at, open: q.market_status === "OPEN" };
+    const at = q.traded_at.slice(11, 16), open = q.market_status === "OPEN";
+    return { price: q.price, chg: q.change_pct / 100, at, open, closed: !open && at >= "15:30", ext: at > "15:30" };
   }
-  const ahLine = (ah) => (ah ? `시간외(넥스트레이드) ${won(ah.price)}원 <span class="${sgnCls(ah.chg)}">${pct(ah.chg)}</span> · ${ah.at}` : "");
 
   let QUOTE_CP = null;          // 지금 등락(%) — KOSDAQ 카드의 '시장보다' 계산용
   let PAST_DAY = null;          // 주가 기록에서 지난 날을 골랐으면 그 날짜 (위 칸들이 그날 기준)
@@ -599,13 +586,13 @@
     if (PAST_DAY) return;
     if (q && q.price != null) {
       const lv = q.traded_at ? liveFor(q.traded_at.slice(0, 10)) : null;
-      const k = lv && lv.closed ? lv : null;               // 장 마감 뒤: 거래소 종가
-      const price = k ? k.price : q.price, change = k ? k.price - k.prev : q.change, cp = k ? k.chg * 100 : q.change_pct;
+      const price = q.price, change = q.change, cp = q.change_pct;
       $("#q-price").textContent = won(price);
       const cls = change > 0 ? "up" : change < 0 ? "down" : "";
       const arrow = change > 0 ? "▲" : change < 0 ? "▼" : "";
-      const asof = k ? "장 마감 · 거래소 종가" : q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준` : "장 마감";
-      $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(change))} (${pctRaw(cp)})</span><span class="asof">${asof}</span>${k ? `<span class="ah">${ahLine(k.ah)}</span>` : ""}`;
+      const asof = q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준`
+        : lv && lv.ext ? `장 마감 · 시간외 포함 ${lv.at}` : "장 마감";
+      $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(change))} (${pctRaw(cp)})</span><span class="asof">${asof}</span>`;
       $("#q-volume").innerHTML = `${int(q.volume)}<small>주</small>`;
       QUOTE_CP = cp;
     }
@@ -634,7 +621,7 @@
     const i = daily.findIndex((x) => x.date === latest), px = daily[i], pv = i > 0 ? daily[i - 1] : null;
     const live = STATUS && STATUS.quote && STATUS.quote.price != null && String(STATUS.quote.traded_at || "").slice(0, 10) === latest;
     if (PAST_DAY || !live) {            // 지난 날(또는 실시간 시세가 없을 때): 그날 종가·등락, KOSDAQ 등락, 거래량
-      const chg = pv && pv.close ? px.close - pv.close : null;
+      const base = px.base || (pv && pv.close), chg = base ? px.close - base : null;     // 네이버 기준가 대비
       $("#q-price").textContent = won(px.close);
       $("#q-change").innerHTML = `${chg == null ? "" : `<span class="chg ${chg > 0 ? "up" : chg < 0 ? "down" : ""}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""} ${won(Math.abs(chg))} (${pct(px.change)})</span>`}<span class="asof">${when} 종가</span>`;
       $("#q-kosdaq").innerHTML = px.kosdaq_close == null && px.kosdaq == null ? "-"       // 지수와 등락률을 함께 (지금 시세 칸과 같은 모양)
@@ -849,7 +836,7 @@
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
     const onNews = (ds) => { pick(ds); const el = $("#rec-day"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
     let events = [];
-    const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) $(".b-seg", g).innerHTML = segHtml(); };
+    const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) $(".b-seg", g).innerHTML = segHtml(); drawHeadSide(); };
     api("/api/events").then((d) => { events = d.events || []; if ($("#view")) fillDay(); }).catch(() => {});
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const news = (ds) => {
@@ -864,25 +851,100 @@
       box.innerHTML = `<div class="bento" id="rec-bento"><section class="panel rec-card">
           <div class="rec-tabs" role="tablist">${[["1d", "1일"], ...REC_RANGES, ["custom", "기간 지정"]].map(([v, t]) => `<button type="button" data-range="${v}" aria-pressed="${calState.range === v}">${t}</button>`).join("")}</div>
           ${periodHtml(daily, calState, "data-period")}
-          <div id="rec-chart"></div>
-          <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
+          <div id="rec-head"></div>
+          <div class="rec-main"><div class="rec-left"><div id="rec-chart"></div>
+            <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div></div>
+            <aside class="rec-side" id="rec-side"></aside></div>
         </section><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
-      // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨).
-      // 거래량 카드는 주가 기록 화면에서 빼고 숨긴 위 줄에 둠 (값은 계속 기록)
-      const grid = $("#rec-bento", box), card = $(".rec-card", grid), seg = $(".b-seg", grid);
-      const [pc, nc, ec, kc] = TODAY_CARDS.map((id) => document.getElementById(id));
-      grid.insertBefore(pc, card);
+      // 위 카드 줄의 카드(소식·급등락·KOSDAQ)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨).
+      // 가격 칸은 차트 칸 머리로, 거래량 칸은 오른쪽 '주요 숫자'로 옮겨 숨긴 위 줄에 둠 (값은 계속 기록)
+      const grid = $("#rec-bento", box), seg = $(".b-seg", grid);
+      const [, nc, ec, kc] = TODAY_CARDS.map((id) => document.getElementById(id));
       [nc, ec, kc].forEach((el) => grid.insertBefore(el, seg));
       $("#hero").hidden = true;
-      if (window.ResizeObserver) {
+      const side = $("#rec-side", grid);
+      if (window.ResizeObserver) {         // 오른쪽 숫자 칸 높이가 바뀌면 종가 선 차트 높이를 다시 맞춤
         let t = 0, lastH = 0;
         new ResizeObserver(() => {
-          const h = Math.round(pc.getBoundingClientRect().height);
+          const h = Math.round(side.getBoundingClientRect().height);
           if (h === lastH) return; lastH = h;
           clearTimeout(t); t = setTimeout(() => { if (grid.isConnected && calState.range !== "1d") lineChart(); }, 150);
-        }).observe(pc);
+        }).observe(side);
       }
+    }
+
+    // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
+    function headHtml() {
+      const ds = calState.sel, px = price[ds];
+      if (!px) return "";
+      const live = ds === latest ? liveFor(ds) : null;
+      const close = live ? live.price : px.close, chg = live ? live.chg : px.change;
+      const base = px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
+      const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;
+      const done = !(live && live.open);
+      const tag = ds === latest ? `<span class="day-now">${live && live.open ? `${live.at} 현재` : "장 마감"}</span>` : "";
+      const r = (v) => (base && v ? pct(v / base - 1) : "-");
+      const ext = live ? live.ext : false;
+      return `<button type="button" class="rh-box${done ? " is-click" : ""}" data-head ${done ? `title="${ev ? "이날 급등·급락 기록 자세히" : "이날 하루 분석"}"` : "disabled"}>
+        <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
+          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(px.high && base ? px.high - base : 0)}">${r(px.high)}</span> / 최저 <span class="${sgnCls(px.low && base ? px.low - base : 0)}">${r(px.low)}</span></span></span>
+        <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
+          <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
+      </button>${ev && ev.cause_headline ? `<div class="rh-cause">${aiMemo(ev.cause_headline)}</div>` : ""}`;
+    }
+    // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
+    function sideHtml() {
+      const ds = calState.sel, px = price[ds], i = daily.findIndex((x) => x.date === ds);
+      if (!px) return "";
+      const isLatest = ds === latest, q = STATUS && STATUS.quote, live = isLatest ? liveFor(ds) : null;
+      const nv = (STATUS && STATUS.naver) || {}, info = nv.info || {};
+      const from = new Date(new Date(ds).getTime() - 365 * 864e5).toISOString().slice(0, 10);
+      const yr = daily.filter((x) => x.date > from && x.date <= ds);
+      const hi52 = Math.max(...yr.map((x) => x.high || x.close)), lo52 = Math.min(...yr.map((x) => x.low || x.close));
+      const close = live ? live.price : px.close, pos = hi52 > lo52 ? Math.min(1, Math.max(0, (close - lo52) / (hi52 - lo52))) : 0;
+      const full = daily[0].date <= from;
+      const base = px.base;
+      const colored = (v) => `<span class="${base && v ? sgnCls(v - base) : ""}">${v ? won(v) : "-"}</span>`;
+      const vol = live && q && q.volume != null ? q.volume : px.volume;
+      const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
+      // 수익률: 네이버와 같은 방식 (고른 날 종가 ÷ N개월 전 날짜 이후 첫 거래일 종가, 기록이 짧으면 첫 거래일)
+      const back = (m) => {
+        const t = new Date(ds); t.setMonth(t.getMonth() - m);
+        const k = t.toISOString().slice(0, 10), b = daily.find((x) => x.date >= k) || daily[0];
+        return b && b.date < ds ? close / b.close - 1 : null;
+      };
+      const ret = (m, label) => { const v = back(m); return `<div><small>${label}</small><b class="${sgnCls(v)}">${v == null ? "-" : pct(v)}</b></div>`; };
+      const inv = px.individual != null || px.foreign != null || px.organ != null;
+      const now = (k) => info[k] || "-";
+      const qt = nv.quarter;
+      return `<h4>${mdOf(ds)} 주요 숫자</h4>
+        <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
+          <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
+        <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(px.open))}${kv("고가", colored(px.high))}${kv("저가", colored(px.low))}
+          ${kv("거래량", `${int(vol)}주`)}${isLatest ? kv("대금", now("accumulatedTradingValue")) : ""}</dl>
+        <div class="rs-inv">${inv ? `<div><small>개인</small><b>${signed(px.individual)}</b></div><div><small>외국인</small><b>${signed(px.foreign)}</b></div><div><small>기관</small><b>${signed(px.organ)}</b></div>`
+          : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
+        <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
+        ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${nv.fetched_at ? hhmm(nv.fetched_at) : ""}</small></span>
+          <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv("PER · PBR", `${now("per")} · ${now("pbr")}`)}${kv("EPS · BPS", `${now("eps")} · ${now("bps")}`)}
+            ${nv.hold_ratio ? kv("외국인 보유율", nv.hold_ratio) : ""}${qt ? kv(`${esc(qt.title || "")} 실적`, `매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억`) : ""}</dl></div>` : ""}`;
+    }
+    function drawHeadSide() {
+      const h = $("#rec-head"), s = $("#rec-side");
+      if (h) h.innerHTML = headHtml();
+      if (s) s.innerHTML = sideHtml();
+    }
+    // 머리 칸을 누르면: 하루 급등·급락 기록이 있으면 그 기록, 없으면 장 마감 뒤 자동 하루 분석 (없으면 ChatGPT 묻기)
+    async function openHead() {
+      const ds = calState.sel, i = daily.findIndex((x) => x.date === ds);
+      const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0];
+      if (ev) { openEvent(ev.id); return; }
+      let d = null;
+      try { d = await api(`/api/intraday?date=${ds}`); } catch (_) { d = null; }
+      if (!d || d.date !== ds) d = { date: ds, bars: [], prev_close: (price[ds] || {}).base, close: (price[ds] || {}).close };
+      openDay(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
     }
 
     // 아래 작은 칸: 고른 날 사업 분야
@@ -967,11 +1029,10 @@
       };
       const selRowOf = () => rows.find((x) => x.date === calState.sel) || rows[rows.length - 1];
       infoFor(selRowOf(), false);
-      // 왼쪽 세로 줄 때문에 차트 칸 아래가 비면 그만큼 차트를 키워 다시 그림 (한 번만, 넓은 화면에서)
-      const card = el.closest(".rec-card"), grid = el.closest(".bento");
-      if (H === 280 && card && grid && getComputedStyle(grid).gridTemplateColumns.split(" ").length === 4) {
-        const last = card.lastElementChild, spare = card.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom
-          - parseFloat(getComputedStyle(card).paddingBottom || 0) - parseFloat(getComputedStyle(last).marginBottom || 0);
+      // 오른쪽 숫자 칸이 차트보다 길면 그만큼 차트를 키워 다시 그림 (한 번만, 넓은 화면에서)
+      const left = el.closest(".rec-left"), side = $("#rec-side");
+      if (H === 280 && left && side && side.offsetHeight && getComputedStyle(left.parentElement).gridTemplateColumns.split(" ").length === 2) {
+        const spare = side.getBoundingClientRect().bottom - left.lastElementChild.getBoundingClientRect().bottom;   // 왼쪽 칸은 늘어나 있으므로 마지막 내용 기준
         if (spare > 8) return lineChart(Math.min(560, H + spare));
       }
       const svg = $(".rc-svg", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
@@ -1056,12 +1117,11 @@
     function dayPanel() {
       const ds = calState.sel, px = price[ds], ar = artDay[ds] || [], dc = discDay[ds] || [];
       const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
-      $("#rec-day").innerHTML = `<section class="panel rec-daycard">
-        <div class="rec-day-head"><h3>${dayLabel(ds)}</h3>
+      $("#rec-day").innerHTML = calState.range === "1d" ? "" : `<section class="panel rec-daycard">
+        <div class="rec-day-head"><h3>${dayLabel(ds)} <small class="muted">1분 차트</small></h3>
           ${px ? `<b class="num ${sgnCls(px.change)}">${px.change == null ? "-" : pct(px.change)}</b><span class="muted">KOSDAQ ${px.kosdaq == null ? "-" : pct(px.kosdaq)}</span>` : ""}
 </div>
-        ${px ? keyStats(ds, px) : ""}
-        ${calState.range === "1d" ? "" : `<div id="rec-daychart" class="rec-daychart"></div>`}
+        <div id="rec-daychart" class="rec-daychart"></div>
 </section>`;
     }
 
@@ -1073,6 +1133,7 @@
     }
     render();
     box.onclick = async (ev) => {
+      if (ev.target.closest("[data-head].is-click")) { openHead(); return; }
       const ib = ev.target.closest("[data-ind]");
       if (ib) { openIndustry(ib.dataset.ind); return; }
       const rb = ev.target.closest("[data-range]");
@@ -1296,8 +1357,9 @@
   function openDayAsk(d, arts, prevDay, px) {
     const r = rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t));
     if (!r) return;
-    const live = liveFor(d.date, d);
-    if (live && live.closed) { r.endPx = live.price; r.fromPrev = live.chg; }      // 거래소 종가 (15:30 뒤 시간외 가격이 아님)
+    const live = liveFor(d.date);
+    const fin = live && !live.open ? live.price : d.close;                         // 네이버 종가 (넥스트레이드 포함)
+    if (fin) { r.endPx = fin; r.fromPrev = fin / d.prev_close - 1; }
     if (px && px.kosdaq != null) r.kq = px.kosdaq;                                  // KOSDAQ도 전일 대비
     if (px && px.volume != null) r.vol = px.volume;                                // 거래량도 일봉(거래소 집계)과 같게
     const vol = r.vol;
@@ -1348,8 +1410,8 @@
 
   function dayChange(d) {
     if (!d.prev_close || !d.bars.length) return null;
-    const live = liveFor(d.date, d);
-    return live ? live.chg : d.bars[d.bars.length - 1].c / d.prev_close - 1;
+    const live = liveFor(d.date);
+    return live ? live.chg : (d.close || d.bars[d.bars.length - 1].c) / d.prev_close - 1;
   }
 
   function dayCardHtml(d, dayArts, isLatest) {
@@ -1363,10 +1425,10 @@
     let dayTotal = `<div class="day-total"><div class="day-total-main"><span class="day-total-label">${dayLabel(d.date)}</span></div></div>`;
     if (d.prev_close && d.bars.length) {
       const lastBar = d.bars[d.bars.length - 1];
-      const live = liveFor(d.date, d);
-      const nowPx = live ? live.price : lastBar.c;
+      const live = liveFor(d.date);
+      const nowPx = live ? live.price : d.close || lastBar.c;          // 네이버 종가 (넥스트레이드 포함), 없으면 15:30 분봉
       const nowAt = live ? live.at : hhmm(lastBar.t);
-      const chg = live ? live.chg : lastBar.c / d.prev_close - 1;
+      const chg = live ? live.chg : nowPx / d.prev_close - 1;
       const lowR = Math.min(...d.bars.map((b) => b.l ?? b.c)) / d.prev_close - 1;
       const highR = Math.max(...d.bars.map((b) => b.h ?? b.c)) / d.prev_close - 1;
       const wonT = (v) => `${Math.round(v).toLocaleString("ko-KR")}원`;
@@ -1377,8 +1439,7 @@
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${live && live.closed ? "장 마감" : closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
-          <span class="day-total-sub">전일 종가 ${wonT(d.prev_close)} → ${closed && !(live && live.open) ? "종가 " : ""}${wonT(nowPx)} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
-          ${isLatest && live && live.ah ? `<span class="day-total-sub day-total-ah">${ahLine(live.ah)}</span>` : ""}
+          <span class="day-total-sub">기준가 ${wonT(d.prev_close)} → ${closed && !(live && live.open) ? "종가 " : ""}${wonT(nowPx)}${(live ? live.ext : d.close && d.close !== lastBar.c) ? " (시간외 포함)" : ""} · 장중 최고 ${pct(highR)} / 최저 ${pct(lowR)}</span>
         </div>
         <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>`;
       dayTotal = dailyEv
@@ -1727,7 +1788,7 @@
       <h2 class="d-title" id="drawer-title">${dayLabel(e.start_ts)}${daily ? "" : ` ${hhmm(e.start_ts)}~${hhmm(e.peak_ts)}`} <span class="${sgnCls(mv)}">${pct(mv)}</span></h2>
       <p class="d-sub">${running
         ? `전일 종가 대비 ${live ? live.at + " 현재" : "지금까지"} 움직임입니다. 장 마감 뒤 종가로 확정됩니다.`
-        : daily ? "전일 종가 → 종가 (거래소 확정치)" : `${basis === "전일 대비" ? "전일 종가" : `${hhmm(e.start_ts)} 가격`} → ${hhmm(e.peak_ts)} 가격${held}`}</p>
+        : daily ? "기준가(전날 거래소 종가) → 종가(시간외 포함), 네이버와 같은 기준" : `${basis === "전일 대비" ? "전일 종가" : `${hhmm(e.start_ts)} 가격`} → ${hhmm(e.peak_ts)} 가격${held}`}</p>
       <dl class="facts${daily ? "" : " four"}">
         <div><dt>${running ? "지금 (전일 대비)" : daily ? "종가 등락" : basis}</dt><dd class="num ${sgnCls(mv)}">${pct(mv)}</dd></div>
         ${daily ? "" : `<div><dt>구간 안 변동</dt><dd class="num ${sgnCls(e.own_change)}">${e.own_change == null ? "-" : pct(e.own_change)}<small>${hhmm(e.start_ts)}~${hhmm(e.last_ts)}</small></dd></div>`}

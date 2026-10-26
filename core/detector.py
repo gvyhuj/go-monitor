@@ -163,13 +163,13 @@ def _ensure_version(symbol: str, log=None):
     return True
 
 
-KRX_DAILY_KEY = "detector_krx_daily_v1"
+KRX_DAILY_KEY = "detector_naver_daily_v1"     # v1(거래소 종가) → 네이버 기준(종가 ÷ 기준가)
 
 
 def _rescan_daily_krx(symbol: str, s: dict, now: datetime, log=None, sync: bool = True) -> bool:
-    """한 번만: 지난 90일 '하루' 기록을 거래소(KRX) 확정 종가로 다시 계산.
+    """한 번만: 지난 90일 '하루' 기록을 네이버 기준(종가 ÷ 기준가)으로 다시 계산.
 
-    예전 일봉은 넥스트레이드 애프터마켓이 섞인 네이버 값이라 등락률이 거래소와 달랐음.
+    화면·판단의 하루 등락을 네이버·증권사 앱과 같게 (종가는 넥스트레이드 포함, 기준가는 전날 거래소 종가).
     숫자는 같은 기록(번호)에 고쳐 쓰고, 기준(±관찰%) 밑으로 내려간 날은 기록을 지움.
     붙여넣은 원인(manual_causes)은 날짜·방향으로 따로 보관되므로 건드리지 않음.
     """
@@ -181,14 +181,14 @@ def _rescan_daily_krx(symbol: str, s: dict, now: datetime, log=None, sync: bool 
         set_state(KRX_DAILY_KEY, now.isoformat(timespec="minutes"))
         return False
     if sync:
-        from . import daum, macro
-        try:
-            daum.fetch_daily(symbol, pages=1)       # 거래소 일봉을 못 받으면 다음 실행 때 다시 시도
-        except daum.DataSourceError:
-            if log:
-                log("거래소 일봉을 받지 못해 하루 기록 재계산을 다음 실행으로 미룸")
-            return False
+        from . import macro
         macro.sync_daily_bars([symbol])
+        with connect() as conn:
+            ok = conn.execute("SELECT 1 FROM daily_bars WHERE symbol=? AND base IS NOT NULL LIMIT 1", (symbol,)).fetchone()
+        if not ok:                                  # 네이버 기준가를 못 받으면 다음 실행 때 다시 시도
+            if log:
+                log("네이버 일별 시세를 받지 못해 하루 기록 재계산을 다음 실행으로 미룸")
+            return False
     today = now.date().isoformat()
     since = (now - timedelta(days=int(s.get("daily_event_lookback_days", 90)))).date().isoformat()
     with connect() as conn:
@@ -218,7 +218,7 @@ def _rescan_daily_krx(symbol: str, s: dict, now: datetime, log=None, sync: bool 
                 _upsert(conn, symbol, dv)
     set_state(KRX_DAILY_KEY, now.isoformat(timespec="minutes"))
     if log:
-        log(f"하루 기록을 거래소 종가로 다시 계산: 바뀜·추가 {changed}건, 기준 밑이라 지움 {removed}건")
+        log(f"하루 기록을 네이버 기준으로 다시 계산: 바뀜·추가 {changed}건, 기준 밑이라 지움 {removed}건")
     return True
 
 
@@ -240,7 +240,11 @@ def _naver_base(symbol: str, day: str):
 
 
 def _prev_close(symbol: str, day: str):
-    """전 거래일 종가: 그날 네이버 기준가 → 일봉 → 없으면 분봉 마지막 값."""
+    """등락의 기준: 그날 일봉의 네이버 기준가 → 그날 네이버 현재가의 기준가 → 전날 일봉 종가 → 분봉 마지막 값."""
+    with connect() as conn:
+        b = conn.execute("SELECT base FROM daily_bars WHERE symbol=? AND date=?", (symbol, day)).fetchone()
+    if b and b["base"]:
+        return float(b["base"])
     base = _naver_base(symbol, day)
     if base:
         return base

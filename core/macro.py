@@ -542,17 +542,40 @@ def _price_infos(d) -> list[dict]:
     return out
 
 
-def fetch_daily(code: str, days: int = 420) -> list[dict]:
-    """일봉. 종목은 최근 약 300거래일을 거래소(KRX) 확정치로 덮어씀 (네이버 일봉은 넥스트레이드 애프터마켓 포함)."""
+def fetch_naver_prices(code: str, pages: int = 1) -> list[dict]:
+    """네이버 일별 시세 (증권사 앱과 같은 기준): 종가 = 넥스트레이드 포함 마지막 체결가,
+    기준가 = 종가 − 전일 대비 (전날 거래소 종가). 한 쪽 60거래일."""
+    out = []
+    for p in range(1, pages + 1):
+        d = naver._json(f"https://m.stock.naver.com/api/stock/{code}/price?pageSize=60&page={p}", "https://m.stock.naver.com/")
+        if not d:
+            break
+        for r in d:
+            try:
+                close = float(str(r["closePrice"]).replace(",", ""))
+                cmp_ = float(str(r.get("compareToPreviousClosePrice") or "0").replace(",", ""))
+                num = lambda k: float(str(r.get(k) or "0").replace(",", "")) or None
+                out.append({"date": r["localTradedAt"][:10], "open": num("openPrice"), "high": num("highPrice"),
+                            "low": num("lowPrice"), "close": close, "volume": int(r.get("accumulatedTradingVolume") or 0),
+                            "base": close - cmp_})
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(d) < 60:
+            break
+    return out
+
+
+def fetch_daily(code: str, days: int = 420, base_pages: int = 0) -> list[dict]:
+    """일봉. base_pages > 0 이면 그만큼 네이버 일별 시세(기준가 포함)로 덮어씀 (이 종목만: 화면 숫자를 네이버와 같게)."""
     rows = _fetch_daily_naver(code, days)
-    if code == KOSDAQ or not re.fullmatch(r"[0-9A-Z]{6}", code):
+    if not base_pages or code == KOSDAQ or not re.fullmatch(r"[0-9A-Z]{6}", code):
         return rows
     try:
-        krx = daum.fetch_daily(code)
-    except daum.DataSourceError:
+        nv = fetch_naver_prices(code, base_pages)
+    except naver.DataSourceError:
         return rows
     by_date = {r["date"]: r for r in rows}
-    by_date.update({r["date"]: r for r in krx})
+    by_date.update({r["date"]: r for r in nv})
     return [by_date[d] for d in sorted(by_date)]
 
 
@@ -582,17 +605,30 @@ def _fetch_daily_naver(code: str, days: int = 420) -> list[dict]:
     return _price_infos(naver._json(f"https://api.stock.naver.com/chart/domestic/{kind}/{code}?periodType=dayCandle"))
 
 
+NAVER_BASE_KEY = "daily:naver_base_v1"
+
+
 def sync_daily_bars(codes: list[str]) -> int:
+    """일봉. 감시 종목은 네이버 일별 시세(종가·기준가)로 (처음 한 번은 약 1년치, 그 뒤로는 최근 60거래일)."""
+    from .db import get_state, set_state
+    try:
+        from .detector import load_settings
+        main = load_settings().get("symbol")
+    except Exception:
+        main = None
     n = 0
     for c in codes:
+        pages = (1 if get_state(NAVER_BASE_KEY) else 7) if c == main else 0
         try:
-            rows = fetch_daily(c)
+            rows = fetch_daily(c, base_pages=pages)
         except naver.DataSourceError:
             continue
         with connect() as conn:
-            conn.executemany("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume) "
-                             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                             [(c, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows])
+            conn.executemany("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume, base) "
+                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                             [(c, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"], r.get("base")) for r in rows])
+        if pages and any(r.get("base") for r in rows):
+            set_state(NAVER_BASE_KEY, datetime.now().isoformat(timespec="minutes"))
         n += len(rows)
     return n
 

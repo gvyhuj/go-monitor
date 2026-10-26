@@ -403,8 +403,10 @@ def _investor_day(symbol: str, day: str):
 
 def _daily_change(code: str, day: str):
     with connect() as conn:
-        rows = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date<=? ORDER BY date DESC LIMIT 2",
+        rows = conn.execute("SELECT date, close, base FROM daily_bars WHERE symbol=? AND date<=? ORDER BY date DESC LIMIT 2",
                             (code, day)).fetchall()
+    if rows and rows[0][0] == day and rows[0][2]:          # 네이버 기준가 (종가 ÷ 기준가)
+        return rows[0][1] / rows[0][2] - 1
     if len(rows) == 2 and rows[0][0] == day and rows[1][1]:
         return rows[0][1] / rows[1][1] - 1
     # 일봉이 아직 없으면 분봉으로 (전일 마지막 → 당일 마지막)

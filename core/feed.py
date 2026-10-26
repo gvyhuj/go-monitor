@@ -71,6 +71,15 @@ def sync_history(code: str, days: int = 14, now: datetime | None = None) -> int:
 def update_quotes(code: str):
     q = naver.fetch_quote(code)
     set_state(f"quote:{code}", json.dumps(q, ensure_ascii=False))
+    try:                                   # 주가 기록 오른쪽 '주요 숫자' 칸용 네이버 숫자 (10분에 한 번)
+        st = get_state(f"naver_snapshot:{code}")
+        old = json.loads(st["value"]) if st and st.get("value") else {}
+        if not old.get("fetched_at") or kst_now().replace(tzinfo=None) - datetime.fromisoformat(old["fetched_at"]) >= timedelta(minutes=10):
+            snap = naver.fetch_snapshot(code)
+            snap["fetched_at"] = kst_now().replace(tzinfo=None).isoformat(timespec="minutes")
+            set_state(f"naver_snapshot:{code}", json.dumps(snap, ensure_ascii=False))
+    except (naver.DataSourceError, ValueError, TypeError):
+        pass
     try:
         k = naver.fetch_quote(KOSDAQ, is_index=True)
         set_state(f"quote:{KOSDAQ}", json.dumps(k, ensure_ascii=False))

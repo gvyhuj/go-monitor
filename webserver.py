@@ -176,7 +176,7 @@ def api_status(_q):
     dv = data["value"] if data else ""
     return {
         "symbol": sym, "name": s.get("display_name", sym),
-        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"),
+        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"), "naver": state_json(f"naver_snapshot:{sym}"),
         "engine": engine_state(s),
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
@@ -300,13 +300,18 @@ def api_intraday(q):
     if d == dates[0] and quote and quote.get("price") is not None and quote.get("change") is not None             and str(quote.get("traded_at") or "")[:10] == d:
         prev_close = quote["price"] - quote["change"]
     with connect() as conn:
+        dr = conn.execute("SELECT close, base FROM daily_bars WHERE symbol=? AND date=?", (sym, d)).fetchone()
+    day_close = None                     # 네이버 종가 (넥스트레이드 포함 마지막 체결가). 1분 차트는 정규장(15:30)까지
+    if dr and dr["base"]:
+        prev_close, day_close = float(dr["base"]), float(dr["close"])
+    with connect() as conn:
         ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
         ind_info = industry_info(conn).get(d)
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl}
+            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl}
 
 
 def api_events(q):
@@ -331,7 +336,7 @@ def api_daily(_q):
     """달력·일별 표용: 날마다 시가·고가·저가·종가·전일 대비 등락·거래량·KOSDAQ 등락·투자자별 순매수 (일봉 전체)."""
     sym = load_settings()["symbol"]
     with connect() as conn:
-        own = conn.execute("SELECT date, close, volume, open, high, low FROM daily_bars WHERE symbol=? AND close > 0 "
+        own = conn.execute("SELECT date, close, volume, open, high, low, base FROM daily_bars WHERE symbol=? AND close > 0 "
                            "ORDER BY date", (sym,)).fetchall()
         kq = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND close > 0", (KOSDAQ,)).fetchall())
         inv = {r[0]: r[1:] for r in conn.execute(
@@ -341,11 +346,11 @@ def api_daily(_q):
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
-    for i, (d, c, v, o, h, lo) in enumerate(own):
-        prev = own[i - 1][1] if i else None
+    for i, (d, c, v, o, h, lo, base) in enumerate(own):
+        prev = base or (own[i - 1][1] if i else None)      # 네이버 기준가 (없으면 전날 종가)
         f = inv.get(d) or inv.get(d.replace("-", "")) or (None, None, None, None)
         days.append({"date": d, "close": c, "volume": v, "open": o, "high": h, "low": lo,
-                     "change": c / prev - 1 if prev else None,
+                     "change": c / prev - 1 if prev else None, "base": prev,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
                      "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d)})
