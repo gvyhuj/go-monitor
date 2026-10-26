@@ -824,7 +824,7 @@
         daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
-          foreign: null, organ: null, individual: null, foreign_ratio: null, live: true });
+          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null, live: true });
       }
     } catch (_) {}
     const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
@@ -880,11 +880,13 @@
       return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(x.individual)} · 외국인 ${signed(x.foreign)} · 기관 ${signed(x.organ)}` : "-"}</span>
           <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span>`;
     }
-    // 사업 분야: 비교 종목을 묶은 분야(산업) 이름만
+    // 사업 분야: 네이버 업종(WICS) 고른 날 등락률 (2026-10-26부터 기록, 그 전 날은 '-')
+    const INDUSTRY_LABELS = [["우주항공과국방", "우주항공·국방"], ["반도체와반도체장비", "반도체"], ["디스플레이장비및부품", "디스플레이 장비·부품"], ["디스플레이패널", "디스플레이 패널"]];
     function segHtml() {
-      const segs = (STATUS && STATUS.segments) || [];
-      return `<span class="tl">사업 분야 <small class="muted">비교 종목 기준</small></span>
-          ${segs.length ? `<span class="seg-chips">${segs.map((s) => `<span class="seg-chip">${esc(s.name)}</span>`).join("")}</span>` : `<span class="tv">-</span>`}`;
+      const x = daily[selRow()], ind = x.industries || {};
+      return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)</small></span>
+          <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
+            `<span class="seg-chip">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></span>`).join("")}</span>`;
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자

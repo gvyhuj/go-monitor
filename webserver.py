@@ -299,8 +299,10 @@ def api_intraday(q):
     # '전일 종가 = 그날 종가'가 되어 버림)
     if d == dates[0] and quote and quote.get("price") is not None and quote.get("change") is not None             and str(quote.get("traded_at") or "")[:10] == d:
         prev_close = quote["price"] - quote["change"]
+    with connect() as conn:
+        ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "events": event_rows(sym, d, d, None)}
+            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind}
 
 
 def api_events(q):
@@ -331,6 +333,7 @@ def api_daily(_q):
         inv = {r[0]: r[1:] for r in conn.execute(
             "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
             (sym,))}
+        ind = industry_rates(conn)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -340,8 +343,23 @@ def api_daily(_q):
         days.append({"date": d, "close": c, "volume": v, "open": o, "high": h, "low": lo,
                      "change": c / prev - 1 if prev else None,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
-                     "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3]})
+                     "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
+                     "industries": ind.get(d)})
     return {"days": days}
+
+
+# 사업 분야 칸에 보여 줄 네이버 업종(WICS). 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
+INDUSTRY_NAMES = ["우주항공과국방", "반도체와반도체장비", "디스플레이장비및부품", "디스플레이패널"]
+
+
+def industry_rates(conn) -> dict:
+    """{날짜: {업종: 등락률(소수)}} — 기록을 시작한 날(2026-10-26)부터. 없는 날은 키가 없음."""
+    out = {}
+    q = "SELECT date, name, change_rate FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
+    for d, name, rate in conn.execute(q, INDUSTRY_NAMES):
+        if rate is not None:
+            out.setdefault(d, {})[name] = rate / 100
+    return out
 
 
 def api_event_detail(q, eid):

@@ -349,6 +349,31 @@ def fetch_theme_groups() -> list[dict]:
     return out
 
 
+def fetch_industries() -> list[dict]:
+    """네이버 업종(WICS 분류) 전체와 지금 등락률. 네이버 증권 '업종별 시세'와 같은 숫자."""
+    out = []
+    for p in range(1, 4):                   # 한 번에 100개까지만 줌 (2026-10 기준 79개)
+        d = naver._json(f"https://m.stock.naver.com/api/stocks/industry?page={p}&pageSize=100")
+        groups = d.get("groups") or []
+        out += groups
+        if len(out) >= int(d.get("totalCount") or 0) or not groups:
+            break
+    return out
+
+
+def snapshot_industries(now: datetime, trading_day: str) -> int:
+    """업종 등락률을 그날 날짜로 기록 (장중 덮어쓰기 → 장 마감 뒤 마지막 값이 확정치)."""
+    groups = fetch_industries()
+    ts = now.isoformat(timespec="minutes")
+    with connect() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO industry_daily(date, industry_no, name, change_rate, rise, fall, total, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(trading_day, int(g["no"]), g.get("name"), _num(g.get("changeRate")), int(g.get("riseCount") or 0),
+              int(g.get("fallCount") or 0), int(g.get("totalCount") or 0), ts) for g in groups])
+    return len(groups)
+
+
 def _num(v) -> float:
     try:
         return float(str(v).replace(",", ""))

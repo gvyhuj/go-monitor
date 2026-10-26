@@ -162,6 +162,7 @@ class Collector:
                     threading.Thread(target=self._scan_themes, args=(today,), daemon=True).start()
             if feed.is_weekday(today) and now.time() >= feed.time(9, 0) and self.traded_today(today):
                 self._safe("테마 등락", macro.snapshot_themes, self.code, now, today.isoformat())
+                self._safe("업종 등락", macro.snapshot_industries, now, today.isoformat())
             self.log.info("기사·거시 자료 수집 (새 이 종목 기사 %s건)", n_art if n_art is not None else "-")
             self.last_news_at = self.last_discl_at = self.last_related_at = self.last_investor_at = now
             self._safe("종목토론방(최근 2주)", board.sync_board, self.code, now - timedelta(days=15), 20)
@@ -184,6 +185,7 @@ class Collector:
                     and self.traded_today(today):
                 self.last_theme_at = now
                 self._safe("테마 등락", macro.snapshot_themes, self.code, now, today.isoformat())
+                self._safe("업종 등락", macro.snapshot_industries, now, today.isoformat())
             if now - self.last_discl_at >= timedelta(minutes=10):
                 self.last_discl_at = now
                 self._safe("공시", feed.sync_disclosures, self.code)
@@ -202,6 +204,7 @@ class Collector:
                     and self.traded_today(today):
                 self.eod_theme_on = today
                 self._safe("테마 마감 등락", macro.snapshot_themes, self.code, now, today.isoformat())
+                self._safe("업종 마감 등락", macro.snapshot_industries, now, today.isoformat())
             if feed.is_weekday(today) and now.time() >= feed.time(15, 50) and self.eod_daily_on != today:
                 self.eod_daily_on = today
                 self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.related_codes() + self.factor_codes())

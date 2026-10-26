@@ -205,6 +205,13 @@ CREATE TABLE IF NOT EXISTS theme_daily (
     PRIMARY KEY(date, theme_no)
 );
 
+-- 네이버 업종(WICS) 날짜별 등락률 (장중엔 계속 덮어쓰고, 장 마감 뒤 값이 그날 확정치). 2026-10-26부터 기록
+CREATE TABLE IF NOT EXISTS industry_daily (
+    date TEXT NOT NULL, industry_no INTEGER NOT NULL, name TEXT,
+    change_rate REAL, rise INTEGER, fall INTEGER, total INTEGER, updated_at TEXT,
+    PRIMARY KEY(date, industry_no)
+);
+
 -- 해외 지표 (미국 방산주, 유가) 일별
 CREATE TABLE IF NOT EXISTS overseas_daily (
     sym TEXT NOT NULL, date TEXT NOT NULL, name TEXT, close REAL, chg REAL,
