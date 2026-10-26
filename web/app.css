@@ -140,8 +140,14 @@ button, input, select { font: inherit; color: inherit; }
 .tcard .tv { margin-top: 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
 .tcard .tv small { font-size: 14px; font-weight: 650; margin-left: 6px; }
 .tcard .ts { font-size: 12.5px; color: var(--muted); }
-button.tcard { cursor: pointer; }
-button.tcard:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16, 32, 64, .06); }
+/* 누를 수 있는 카드(소식·순매수): 오른쪽 위 꺾쇠를 늘 보여 주고(폰은 마우스 올림이 없으므로),
+   마우스를 올리면 살짝 떠오르며 테두리가 파래짐 */
+button.tcard, .bento > .b-inv { position: relative; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s; }
+button.tcard::after, .bento > .b-inv::after { content: ""; position: absolute; top: 16px; right: 16px; width: 7px; height: 7px;
+  border-top: 2px solid var(--muted); border-right: 2px solid var(--muted); transform: rotate(45deg); opacity: .75; transition: transform .15s, border-color .15s, opacity .15s; }
+button.tcard:hover, .bento > .b-inv:hover, button.tcard:focus-visible, .bento > .b-inv:focus-visible {
+  border-color: color-mix(in srgb, var(--brand-blue) 50%, var(--line)); box-shadow: 0 6px 18px rgba(16, 32, 64, .10); transform: translateY(-2px); outline: none; }
+button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--brand-blue); opacity: 1; transform: translateX(2px) rotate(45deg); }
 .t-news-row { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 2px; font-size: 14.5px; align-items: baseline; }
 .bento > .t-news .t-news-row { flex-wrap: nowrap; gap: 12px; white-space: nowrap; }
 .t-news-row b { font-size: 20px; font-weight: 700; margin: 0 2px; }
@@ -198,9 +204,9 @@ button.tcard:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16
 .seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .seg-chip { padding: 3px 10px; border-radius: 999px; background: var(--canvas); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); }
 button.seg-chip { font-family: inherit; cursor: pointer; }
-.bento > .b-inv { cursor: pointer; }                 /* 순매수 칸: 누르면 자세히 */
-.bento > .b-inv:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16, 32, 64, .06); }
-button.seg-chip:hover { border-color: var(--navy-2); color: var(--ink); }
+button.seg-chip { transition: border-color .15s, box-shadow .15s, transform .15s; }
+button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand-blue); color: var(--ink); background: var(--surface);
+  box-shadow: 0 3px 10px rgba(16, 32, 64, .10); transform: translateY(-1px); outline: none; }
 /* 업종 칸을 누르면 뜨는 창 */
 .ind-rate { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
 .ind-rate b { font-size: 26px; }
@@ -939,8 +945,17 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .method { max-width: 860px; }
 .method-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; }
 .method-toc a { padding: 5px 12px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 13.5px; color: var(--ink-2); text-decoration: none; background: var(--surface); }
-.method-sec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px 20px 8px; margin-bottom: 18px; scroll-margin-top: 80px; }
-.method-sec h2 { font-size: 19px; font-weight: 740; margin: 0 0 10px; }
+.method-sec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 12px; scroll-margin-top: 80px; transition: border-color .15s, box-shadow .15s; }
+.method-sec h2 { font-size: 19px; font-weight: 740; margin: 0; }
+/* README 대제목: 누르면 펼치고 접음 (오른쪽 꺾쇠가 돌아감) */
+.method-sec > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; cursor: pointer; list-style: none; border-radius: var(--r-md); }
+.method-sec > summary::-webkit-details-marker { display: none; }
+.method-sec > summary::after { content: ""; flex: none; width: 9px; height: 9px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); margin: -4px 4px 0 0; transition: transform .2s; }
+.method-sec[open] > summary::after { transform: rotate(-135deg); margin-top: 4px; }
+.method-sec:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16, 32, 64, .06); }
+.method-sec > summary:hover h2 { color: var(--navy-2); }
+.method-sec > summary:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 2px; }
+.method-body { padding: 0 20px 10px; }
 .method-sec h3 { font-size: 15.5px; font-weight: 700; margin: 18px 0 6px; }
 .method-sec ul { margin: 0 0 10px; padding-left: 20px; line-height: 1.65; font-size: 14.5px; }
 .method-sec li { margin-bottom: 4px; }

@@ -1871,7 +1871,8 @@
 
   // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
   function pageMethod() {
-    const sec = (id, title, body) => `<section class="method-sec" id="m-${id}"><h2>${title}</h2>${body}</section>`;
+    // 대제목마다 접고 펴기 (처음엔 '먼저 알아 둘 말'만 펼침)
+    const sec = (id, title, body) => `<details class="method-sec" id="m-${id}"${id === "words" ? " open" : ""}><summary><h2>${title}</h2></summary><div class="method-body">${body}</div></details>`;
     const toc = [["words", "먼저 알아 둘 말"], ["prices", "주가 기록"], ["articles", "소식"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
       <div class="page-head"><div><h1 class="page-title">README</h1>
@@ -2002,7 +2003,9 @@
     main.querySelector(".method-toc").onclick = (ev) => {
       const a = ev.target.closest("a[data-to]"); if (!a) return;
       ev.preventDefault();
-      document.getElementById(a.dataset.to).scrollIntoView({ behavior: "smooth", block: "start" });
+      const target = document.getElementById(a.dataset.to);
+      target.open = true;                     // 목차로 가면 그 칸을 펼침
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
     };
   }
 
