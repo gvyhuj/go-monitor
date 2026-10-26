@@ -65,7 +65,7 @@ def test_reporter_parse(page, name):
     assert reporters.parse(page) == name
 
 
-def test_fill_reads_each_article_once_and_skips_google(tmp_path, monkeypatch):
+def test_fill_retries_missing_names_and_skips_google(tmp_path, monkeypatch):
     from core import db
     monkeypatch.setattr(reporters, "MAX_TRIES", 3)
     monkeypatch.setattr(db, "DATA_DIR", tmp_path)
@@ -87,11 +87,12 @@ def test_fill_reads_each_article_once_and_skips_google(tmp_path, monkeypatch):
         return pages[u]
     assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0          # 최신 2개(3번 못 열림, 2번 이름 없음)
     assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 1          # 구글(원래 주소 못 찾음 → 열지 않음) + 남은 1번
-    for _ in range(4):                                                                     # 못 연 3번은 다음 실행에 다시, 3번까지
+    for _ in range(4):                    # 못 연 3번, 열었지만 이름이 없던 2번은 다음 실행에 다시, 3번까지 (한 번 빈 화면을 받았다고 굳히지 않음)
         assert reporters.fill("X", limit=2, fetch=fetch, resolve=lambda u: None) == 0
     assert opened == ["https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/2",
                       "https://n.news.naver.com/mnews/article/018/1",
-                      "https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/3"]
+                      "https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/2",
+                      "https://n.news.naver.com/mnews/article/018/3", "https://n.news.naver.com/mnews/article/018/2"]
     with db.connect() as conn:
         got = dict(conn.execute("SELECT id, reporter FROM articles").fetchall())
     assert got == {"a0": "안유리", "a1": None, "a2": None, "a3": None}
@@ -185,3 +186,20 @@ def test_naver_version_is_read_first(tmp_path, monkeypatch):
     assert got == 1 and opened == [nv]                     # 네이버판에서 읽었으면 원문은 열지 않음
     with db.connect() as conn:
         assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김경택"
+
+
+def test_naver_page_without_name_falls_back_to_original(tmp_path, monkeypatch):
+    # 네이버판에 기자 칸이 비어 있으면 '기사원문' 링크(언론사 페이지)에서 읽음 (블로터 등)
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    nv, orig = "https://n.news.naver.com/mnews/article/293/1", "https://www.bloter.net/news/articleView.html?idxno=676674"
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url) VALUES ('b','X','2026-10-20T10:00','블로터','t',?)", (nv,))
+    pages = {nv: '<a href="https://www.bloter.net/news/articleView.html?idxno&#x3D;676674" target="_blank" class="media_end_head_origin_link">원문</a>',
+             orig: '<span class="byline">김나영 기자(steaming@bloter.net)</span>'}
+    assert reporters.fill("X", fetch=lambda u: pages[u], resolve=lambda u: None) == 1
+    with db.connect() as conn:
+        assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김나영"

@@ -1,4 +1,4 @@
-"""기자명: 기사 원문 페이지를 한 번 열어 기자 이름을 읽어 둠 (기사마다 한 번만, 실패해도 다시 묻지 않음).
+"""기자명: 기사 원문 페이지를 열어 기자 이름을 읽어 둠 (찾으면 끝, 못 열거나 이름이 없으면 다음 실행에 다시, MAX_TRIES번까지).
 
 네이버 뉴스는 위쪽 기자 칸을 나중에 스크립트로 채워서, 본문 글귀에서 찾습니다:
 [이데일리 안유리 기자] · (서울=연합뉴스) 홍길동 기자 = · [서울=뉴시스] 홍길동 기자 = · 홍길동 기자 abc@… · 홍길동 기자가 보도합니다 · SBS Biz 윤지혜입니다
@@ -141,6 +141,11 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
                     raise StopIteration          # 이미 읽음 (구글 기사는 원문 게시 시각 때문에 원문도 엶)
                 page = fetch(url)
                 name = name or parse(page, office or "")
+                if not name and "news.naver.com" in url:      # 네이버판에서 못 읽으면 '기사원문' 링크의 언론사 페이지에서 한 번 더
+                    m = re.search(r'href="([^"]+)"[^>]*class="media_end_head_origin_link"', page)
+                    orig = _html.unescape(m.group(1)) if m else None
+                    if orig and fetchable(orig):
+                        name = parse(fetch(orig), office or "")
                 if source == "google":      # 구글 뉴스 시각은 날짜만 맞고 16:00·17:00으로 나오기도 함 → 원문 게시 시각
                     t = parse_time(page)
                     if t and ts and abs((datetime.fromisoformat(t) - datetime.fromisoformat(ts[:16])).days) <= 2:
@@ -154,7 +159,8 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
                     log(f"기자명 읽기 실패: {e}")
             _time.sleep(0.3)
         with connect() as conn:
-            if failed:                  # 못 열었으면 '확인함'으로 두지 않고 다음 실행에 다시
+            if failed or (not name and fetchable(url)):
+                # 못 열었거나, 열었는데 이름이 없으면(네이버가 잠깐 막아 빈 화면을 준 경우 등) '확인함'으로 두지 않고 다음 실행에 다시
                 conn.execute("UPDATE articles SET reporter_tries=COALESCE(reporter_tries, 0)+1 WHERE id=?", (aid,))
             else:
                 conn.execute("UPDATE articles SET reporter=?, reporter_at=? WHERE id=?", (name, now, aid))
