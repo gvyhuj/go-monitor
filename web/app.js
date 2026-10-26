@@ -2285,9 +2285,10 @@
       ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
     const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
-    // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. 처음엔 주가와 관련이 큰 거래소·주요사항·발행 공시와 거래소 조치만
-    if (!artState.discTypes) artState.discTypes = new Set(["I", "B", "C", "K"]);
-    const discShown = () => discs.filter((x) => artState.discTypes.has(x.pblntf || "?"));
+    // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. discTypes가 null이면 '전체'(처음 기본값),
+    // Set이면 고른 종류만 (전체 상태에서 한 종류를 누르면 그것만, 더 누르면 더해지고, 다 빼면 다시 전체)
+    if (artState.discTypes === undefined) artState.discTypes = null;
+    const discShown = () => discs.filter((x) => !artState.discTypes || artState.discTypes.has(x.pblntf || "?"));
     groups.disc = discShown();
 
     const renderScore = () => { $("#pr-score").innerHTML = countLine(artState.cat); };     // 소식 없는 날 비교는 README로
@@ -2340,15 +2341,20 @@
     const typeKeys = Object.keys(DTYPES).filter((t) => typeCount(t));
     if (discs.some((x) => !x.pblntf)) { typeKeys.push("?"); DTYPES["?"] = "분류 없음"; }
     function renderTypes() {
-      const allOn = typeKeys.every((t) => artState.discTypes.has(t));
-      typeBox.innerHTML = `<button type="button" data-t="*" aria-pressed="${allOn}">전체 <small>${discs.length}</small></button>`
-        + typeKeys.map((t) => `<button type="button" data-t="${t}" aria-pressed="${artState.discTypes.has(t)}">${esc(DTYPES[t])} <small>${typeCount(t)}</small></button>`).join("");
+      const S = artState.discTypes;           // null = 전체 (전체만 채워지고 나머지는 빈 버튼)
+      typeBox.innerHTML = `<button type="button" data-t="*" aria-pressed="${!S}">전체 <small>${discs.length}</small></button>`
+        + typeKeys.map((t) => `<button type="button" data-t="${t}" aria-pressed="${!!S && S.has(t)}">${esc(DTYPES[t])} <small>${typeCount(t)}</small></button>`).join("");
     }
     typeBox.onclick = (ev) => {
       const b = ev.target.closest("button[data-t]"); if (!b) return;
-      const t = b.dataset.t, S = artState.discTypes;
-      if (t === "*") { if (typeKeys.every((k) => S.has(k))) S.clear(); else typeKeys.forEach((k) => S.add(k)); }
-      else if (S.has(t)) S.delete(t); else S.add(t);
+      const t = b.dataset.t;
+      if (t === "*") artState.discTypes = null;                       // 전체로
+      else if (!artState.discTypes) artState.discTypes = new Set([t]);  // 전체 상태에서 누르면 그 종류만
+      else {
+        const S = artState.discTypes;
+        if (S.has(t)) S.delete(t); else S.add(t);                     // 더하거나 빼기
+        if (!S.size || typeKeys.every((k) => S.has(k))) artState.discTypes = null;   // 다 빼거나 다 고르면 전체
+      }
       groups.disc = discShown();
       renderList();
       followTab();
@@ -2413,7 +2419,7 @@
     if (selId && discById.has(selId)) {
       artState.cat = "disc";
       const x = discById.get(selId);
-      if (!artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
+      if (artState.discTypes && !artState.discTypes.has(x.pblntf || "?")) { artState.discTypes.add(x.pblntf || "?"); groups.disc = discShown(); }
     } else if (selId) {
       const ev = events.find((e) => e.ids.includes(selId));
       if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
