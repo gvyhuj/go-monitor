@@ -221,7 +221,7 @@ def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
     w = iw or ic
     if not w or not w.get("start"):
         return None
-    start, kind, d0 = datetime.fromisoformat(w["start"]), w.get("kind"), e.get("reaction_day") or w["start"][:10]
+    start, kind, d0 = datetime.fromisoformat(w["start"]), w.get("kind"), w.get("day") or e.get("reaction_day") or w["start"][:10]
     lo, hi = (start - timedelta(minutes=30)).isoformat(timespec="minutes"), (start + timedelta(minutes=120)).isoformat(timespec="minutes")
     with connect() as conn:
         if iw:
@@ -247,7 +247,7 @@ def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
             if datetime.fromisoformat(t) + timedelta(minutes=iv) <= start:
                 best = c
         return best if best is not None else fallback
-    b_own, b_kq = (p_own, p_kq) if kind == "open" else (at(own, p_own), at(kq, p_kq))
+    b_own, b_kq = (p_own, p_kq) if kind in ("open", "late") else (at(own, p_own), at(kq, p_kq))
     return {"interval": iv, "kind": kind, "start": w["start"], "base_own": b_own, "base_kq": b_kq,
             "own": [{"t": t, "c": c} for t, c in own], "kq": [{"t": t, "c": c} for t, c in kq]}
 

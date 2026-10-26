@@ -835,6 +835,8 @@
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
           foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null,
           foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, live: true });
+      } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
+        last.foreign_est = lv.foreign_est;       // 장 마감 뒤 일봉은 생겼지만 거래소 개인·외국인·기관 확정치는 아직 → 장중 추정을 이어서 보여 줌
       }
     } catch (_) {}
     const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
@@ -889,7 +891,7 @@
       const inv = x.individual != null || x.foreign != null || x.organ != null;
       const fe = !inv && x.foreign_est;      // 장중: 거래소 확정치 대신 증권사 창구 기준 외국계 추정 (원인 분석 창의 '외국계 창구 합계'와 같은 자료)
       if (fe) return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">외국계 창구 ${signed(fe.buy - fe.sell)}</span>
-          <span class="ts">${hhmm(fe.ts)} 기준 장중 추정 · 개인·외국인·기관 확정치는 장 마감 뒤</span>`;
+          <span class="ts">${hhmm(fe.ts)} 기준 장중 추정 · 개인·외국인·기관 확정치는 거래소 집계 뒤</span>`;
       return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(x.individual)} · 외국인 ${signed(x.foreign)} · 기관 ${signed(x.organ)}` : "-"}</span>
           <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span>`;
     }
@@ -917,7 +919,7 @@
            <p class="note">거래소 확정치(장 마감 뒤), 단위 주</p>`
         : fe ? `<p class="ind-rate"><b>${signed(fe.buy - fe.sell)}</b><span class="muted">외국계 창구 순매수 · ${hhmm(fe.ts)} 기준</span></p>
            <p class="muted">외국계 창구 매수 ${int(fe.buy)}주 · 매도 ${int(fe.sell)}주</p>
-           <p class="note">장중 값은 증권사 창구(거래원) 기준 추정치입니다. 거래소의 개인·외국인·기관 확정치는 장 마감 뒤에 나옵니다.</p>`
+           <p class="note">증권사 창구(거래원) 기준 추정치입니다. 거래소의 개인·외국인·기관 확정치는 장 마감 뒤 집계가 끝나면 나오고, 그때 이 자리가 확정치로 바뀝니다.</p>`
         : `<p class="note">아직 집계 전입니다.</p>`;
       $("#ind-title").textContent = `${mdOf(x.date)} 순매수`;
       $("#ind-body").innerHTML = head + `<h3 class="d-sec">거래원 매수·매도 상위 5 <small class="muted">${tr && tr.ts ? `${hhmm(tr.ts)} 기준` : tr ? "장 마감" : ""}</small></h3>
@@ -2551,12 +2553,15 @@
     }
     if (isDisc && a.untimed) notes.push("접수 시각 미상 → 그날 하루(전일 종가 → 종가)로 계산");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일 공개 → 반응일 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}`);
-    if (e.late && !d.intraday) notes.push("오후 늦게(14시 이후) 공개");
+    if (e.late && !d.intraday) notes.push(a.ts && a.ts.slice(11, 16) > "15:00"
+      ? "15시 넘어 공개 → 그날 남은 거래가 짧아 다음 거래일 장 시작 30분 반응으로 잽니다 (다음 거래일 09:30 뒤 그래프가 나옴)"
+      : "오후 늦게(14시 이후) 공개");
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("공개 시각 확인 필요: 구글 뉴스 시각이 16:00 또는 17:00으로 표시됨");
     // 발표 직후: 시간대별로 같은 방식(시장 몫 + 업종 몫 + 고유 움직임)으로 한 표에, 30분 줄을 대표로 (공개 시각이 확실하고 분봉이 있을 때)
     const iw = d.intraday;
     if (iw) {
-      const span = iw.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤` : `${hhmm(iw.start)} 공개부터`;
+      const span = iw.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
+        : iw.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(iw.day)}) 장 시작 뒤` : `${hhmm(iw.start)} 공개부터`;
       const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, sector: iw.sector, abnormal: iw.abnormal }];
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
@@ -2601,10 +2606,11 @@
     const outlets = [{ id: a.id, manual: a.manual, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}</li>`;
+    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 묶은 기사를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
+      ${a.manual ? "" : `<div class="merge-box editable"><button type="button" class="btn-link" id="merge-open">같은 내용인데 따로 보이는 기사 합치기</button><div id="merge-list" hidden></div></div>`}
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section>`;
     if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
@@ -2615,7 +2621,7 @@
     // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
     const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
     if (rc && rxEl && rc.base_own) {
-      indexedChart(rxEl, $(".rx-legend", box), rc.own, rc.kq, rc.base_own, rc.base_kq, rc.start, rc.kind === "open" ? "장 시작" : "공개");
+      indexedChart(rxEl, $(".rx-legend", box), rc.own, rc.kq, rc.base_own, rc.base_kq, rc.start, rc.kind === "open" || rc.kind === "late" ? "장 시작" : "공개");
     }
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));
@@ -2625,6 +2631,32 @@
       const item = b.dataset.manual === "1" ? { type: "delete_pr", id: b.dataset.dup, title: a.title }
         : { type: "hide_one", id: b.dataset.dup, title: a.title };
       try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); b.disabled = true; b.textContent = "삭제 요청함"; }
+      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    }));
+    // 합치기: 이 기사 앞뒤 3일 안의 다른 묶음 기사 중에서 골라 이 묶음에 넣음
+    const mOpen = $("#merge-open");
+    if (mOpen) mOpen.onclick = async () => {
+      const lst = $("#merge-list");
+      if (!lst.hidden) { lst.hidden = true; return; }
+      lst.hidden = false; lst.innerHTML = `<p class="loading">불러오는 중…</p>`;
+      let items = [];
+      try { items = (await api("/api/articles")).items || []; } catch (err) { lst.innerHTML = `<p class="form-msg err">${esc(err.message)}</p>`; return; }
+      const t0 = new Date(a.ts).getTime(), mine = new Set(outlets.map((r) => r.id));
+      const near = items.filter((x) => !x.manual && !mine.has(x.id) && x.ts && Math.abs(new Date(x.ts).getTime() - t0) <= 3 * 864e5)
+        .sort((p, q) => Math.abs(new Date(p.ts).getTime() - t0) - Math.abs(new Date(q.ts).getTime() - t0)).slice(0, 15);
+      lst.innerHTML = near.length ? `<p class="note">이 기사와 같은 내용인 기사를 누르면 이 묶음에 들어갑니다 (그 기사와 이미 묶여 있던 기사도 함께). 앞뒤 3일, 가까운 순.</p>
+        <ul class="merge-ul">${near.map((x) => `<li><span class="muted">${dayLabel(x.ts)} ${hhmm(x.ts)} · ${esc(x.office || "-")}${(x.outlets_total || 1) > 1 ? ` · ${x.outlets_total}개 매체` : ""}</span>
+          <span class="mt">${esc(x.title)}</span><button type="button" class="btn small" data-merge="${esc(x.id)}">이 묶음에 넣기</button></li>`).join("")}</ul><span class="form-msg" id="merge-msg"></span>`
+        : `<p class="note">앞뒤 3일 안에 합칠 만한 다른 기사가 없습니다.</p>`;
+      lst.querySelectorAll("[data-merge]").forEach((b) => b.addEventListener("click", async () => {
+        const msg = $("#merge-msg");
+        try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_merge", id: b.dataset.merge, into: a.id, title: a.title }); b.disabled = true; b.textContent = "요청함"; }
+        catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+      }));
+    };
+    box.querySelectorAll("[data-unmerge]").forEach((b) => b.addEventListener("click", async () => {
+      const msg = $("#dup-msg");
+      try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_merge", id: b.dataset.unmerge, into: null, title: a.title }); b.disabled = true; b.textContent = "요청함"; }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     }));
     const queued = (btn, text) => { btn.disabled = true; btn.textContent = STATIC ? "GitHub 창에서 [Create]를 누르면 반영됩니다" : "요청을 보냈습니다 (다음 자동 수집 때 반영)"; btn.title = text || ""; };

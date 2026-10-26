@@ -179,6 +179,8 @@ def _save(code: str, items: list[dict], source: str) -> int:
         rows = []
         for i in items:
             cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
+            if source == "naver_search" and cat == "단순 언급" and name in (i.get("body") or ""):
+                cat = "언론 분석"      # 요약 뒷부분에만 이름이 나와도 받고, 원문을 열어 '이름만 언급'인지 따로 봄 (relevance.check)
             if cat in relevance.NOISE_CATEGORIES:      # 단순 언급·시황 기사는 모으지 않음
                 relevance.drop(conn, {**i, "symbol": code}, "noise")
                 continue
@@ -254,7 +256,10 @@ def sync_naver_search(code: str, log=None) -> int:
     name = company_name()
     if name == NAME or not newssearch.naver_enabled():
         return 0
-    first = not get_state("articles:naver_search_backfill_v1")
+    first = not get_state("articles:naver_search_backfill_v2")
+    if first:     # v2: 요약 뒷부분에만 이름이 나와 '단순 언급'으로 버렸던 기사를 다시 받을 수 있게
+        with connect() as conn:
+            conn.execute("DELETE FROM dropped_articles WHERE reason='noise' AND dropped_at >= '2026-10-26'")
     if newssearch._throttled("articles:naver_search", 10) and not first:      # 부를 때마다 시각을 남김
         return 0
     with connect() as conn:          # 주소의 매체 이름을 이미 아는 경우(구글 뉴스로 받은 기사 등)는 그 이름을 씀
@@ -280,7 +285,7 @@ def sync_naver_search(code: str, log=None) -> int:
         if len(items) < 100:
             break
     if first:
-        set_state("articles:naver_search_backfill_v1", datetime.now().isoformat(timespec="minutes"))
+        set_state("articles:naver_search_backfill_v2", datetime.now().isoformat(timespec="minutes"))
     if n:
         group_stories(code)
     return n
@@ -370,6 +375,17 @@ def group_stories(code: str):
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
+    # 사이트에서 직접 묶은 기사: 대상 기사의 묶음으로 (대상도 다른 기사에 묶였으면 따라감)
+    with connect() as conn:
+        manual = {r[0]: r[1] for r in conn.execute(
+            "SELECT id, story_with FROM articles WHERE symbol=? AND story_with IS NOT NULL", (code,))}
+    for aid, target in manual.items():
+        seen = {aid}
+        while target in manual and target not in seen:
+            seen.add(target)
+            target = manual[target]
+        if aid in assign and target in assign:
+            assign[aid] = assign[target]
     with connect() as conn:
         conn.executemany("UPDATE articles SET story=? WHERE id=?", [(s, i) for i, s in assign.items()])
 
@@ -643,7 +659,8 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
     """공개 시각이 확실하고 분봉이 있으면 발표 직후 30분 반응 (상세 화면의 대표 숫자).
     - 장중 공개(15:00까지): 공개 시각 → 30분 뒤
     - 장 시작 전·전날 장 마감 뒤 공개: 전일 종가 → 반응일 09:30 (처음 거래된 30분)
-    - 15시 넘어 공개, 시각을 모름, 분봉 없음 → None (하루 단위를 대표로)"""
+    - 15시 넘어 공개(남은 거래가 30분도 안 됨): 그날 종가 → 다음 거래일 09:30 (다음 거래일 분봉이 쌓인 뒤)
+    - 시각을 모름, 분봉 없음 → None (하루 단위를 대표로)"""
     d0 = eff.get("reaction_day")
     if not time_ok or not d0 or not eff.get("base_ts"):
         return None
@@ -653,6 +670,13 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         t0, t1, kind = None, open_t + timedelta(minutes=INTRADAY_MINUTES), "open"
     elif ts.date().isoformat() == d0 and ts.time() <= time(15, 0):
         t0, t1, kind = ts, ts + timedelta(minutes=INTRADAY_MINUTES), "session"
+    elif ts.date().isoformat() == d0:
+        nxt = [d for d in trading_days(symbol) if d > d0]
+        if not nxt:
+            return None
+        d0 = nxt[0]
+        open_t = datetime.combine(date.fromisoformat(d0), time(9, 0))
+        t0, t1, kind = None, open_t + timedelta(minutes=INTRADAY_MINUTES), "late"
     else:
         return None
     dc = decompose(symbol, d0)
@@ -671,7 +695,7 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         if x:
             rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"),
                          **{k: x[k] for k in ("own", "market", "sector", "abnormal", "kosdaq")}})
-    return {**w, "rows": rows, "kind": kind, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
+    return {**w, "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
                                                                              if p.get("kind") == "seg"])}
 
 
@@ -768,7 +792,8 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         # 실린 매체 수: 네이버 묶음 수(링크는 대표 1개뿐)와 실제로 모은 매체 수 중 큰 값 (더하면 같은 매체를 두 번 셈)
         lead["outlets_total"] = max(max(int(g.get("outlets") or 1) for g in group),
                                     len({_key_office(g.get("office")) for g in group}))
-        lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "ts": g["ts"], "office": g["office"],
+        lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "merged": bool(g.get("story_with")),
+                                   "ts": g["ts"], "office": g["office"],
                                    "title": g["title"], "url": g["url"], "reporter": g.get("reporter"),
                                    "topic": topics.classify(g["title"], g.get("body") or "", table)[0]}
                                   for g in group[1:]]

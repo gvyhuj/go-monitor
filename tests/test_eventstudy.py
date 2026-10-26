@@ -410,7 +410,8 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
     before_open = reaction(event_day + "T08:00")
     assert before_open["kind"] == "open" and before_open["start"] is None and before_open["end"] == event_day + "T09:30"
     assert reaction(event_day + "T10:00", time_ok=False) is None        # 공개 시각 확인 필요
-    assert reaction(event_day + "T15:10") is None                       # 30분을 채울 수 없음 → 하루 단위
+    late = reaction(event_day + "T15:10")                               # 30분을 채울 수 없음 → 다음 거래일 장 시작 30분
+    assert late["kind"] == "late" and late["day"] > event_day and late["start"] is None and late["end"] == late["day"] + "T09:30"
     assert reaction(dates[100] + "T10:00") is None                      # 분봉 없는 옛 기사
     json.dumps(hit, allow_nan=False)
 

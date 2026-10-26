@@ -15,7 +15,7 @@ API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 TYPES = {"등록": "pr", "빼기": "hide", "다시표시": "show", "삭제": "delete_pr"}
 # 사이트가 보내는 요청 종류 (cloud_job.apply_inbox가 처리하는 것과 같아야 함)
 KNOWN = ("pr", "hide", "show", "delete_pr", "analyze", "cause", "cause_delete",
-         "hide_one", "event_delete", "article_kind", "article_tone")
+         "hide_one", "event_delete", "article_kind", "article_tone", "article_merge")
 RETRY_KEY = "ghinbox:retry_unknown_v1"
 
 
