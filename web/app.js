@@ -894,6 +894,15 @@
       </button>${ev && ev.cause_headline ? `<div class="rh-cause">${aiMemo(ev.cause_headline)}</div>` : ""}`;
     }
     // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
+    // ⓘ에 마우스를 올리거나(폰은 누르면) 설명 (네이버 종목 화면 설명 그대로)
+    const TIPS = {
+      PER: ["주가가 주당순이익(EPS)의 몇 배인지 나타내는 지표입니다.", "· PER = 현재가 ÷ EPS"],
+      EPS: ["1주당 벌어들인 순이익입니다.", "지배기업귀속 최근 4분기 합산 순이익을 수정평균발행주식수로 나눈 값이며, 보통주와 우선주를 합산해서 계산합니다."],
+      PBR: ["주가가 주당순자산(BPS)의 몇 배인지 나타내는 지표입니다.", "· PBR = 현재가 ÷ BPS"],
+      BPS: ["1주당 순자산(자본)입니다.", "최근 분기 자본총계를 수정기말유통주식수로 나눈 값이며, 보통주와 우선주를 합산해 계산합니다."],
+    };
+    const tip = (title, lines) => `<span class="tip" tabindex="0" aria-label="${esc(title)} 설명">ⓘ<span class="tip-box" role="tooltip">${title ? `<b>${esc(title)}</b>` : ""}${lines.map((l) => `<span>${esc(l)}</span>`).join("")}</span></span>`;
+    const tipK = (k) => `${k} ${tip(k, TIPS[k])}`;
     function sideHtml() {
       const ds = calState.sel, px = price[ds], i = daily.findIndex((x) => x.date === ds);
       if (!px) return "";
@@ -919,7 +928,7 @@
       const inv = px.individual != null || px.foreign != null || px.organ != null;
       const now = (k) => info[k] || "-";
       const qt = nv.quarter;
-      return `<h4>${mdOf(ds)} 주요 숫자</h4>
+      return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시/고/저, 거래량/거래대금, 52주 최고/최저는 KRX+NXT 통합 기준으로 제공됩니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
         <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(px.open))}${kv("고가", colored(px.high))}${kv("저가", colored(px.low))}
@@ -928,8 +937,8 @@
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${nv.fetched_at ? hhmm(nv.fetched_at) : ""}</small></span>
-          <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv("PER · PBR", `${now("per")} · ${now("pbr")}`)}${kv("EPS · BPS", `${now("eps")} · ${now("bps")}`)}
-            ${nv.hold_ratio ? kv("외국인 보유율", nv.hold_ratio) : ""}${qt ? kv(`${esc(qt.title || "")} 실적`, `매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억`) : ""}</dl></div>` : ""}`;
+          <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv(tipK("PER"), now("per"))}${kv(tipK("PBR"), now("pbr"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
+            ${qt ? kv(`${esc(qt.title || "")}기준(분기)`, `매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억`) : ""}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
