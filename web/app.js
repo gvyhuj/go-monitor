@@ -2446,11 +2446,11 @@
           return;
         }
         ul.innerHTML = list.map((x) => {
-          const ef = x.effect || {}, m = ef.measure;
+          const ef = x.effect || {};
           return `<li><button type="button" data-id="${esc(x.id)}" aria-current="${x.id === current}">
           <span class="al-meta"><span class="ktag k-disc">공시</span>${catTag(x.kind || "공시")}<span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)}</span>${artFlags(ef)}</span>
           <span class="t">${esc(x.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
+          <span class="al-foot">${verdictTag(ef)}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
         }).join("");
         ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
         return;
@@ -2461,11 +2461,11 @@
         return;
       }
       ul.innerHTML = list.map((e) => {
-        const a = byId.get(e.lead), ef = a.effect || {}, m = ef.measure;
+        const a = byId.get(e.lead), ef = a.effect || {};
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
-          <span class="al-meta">${kindTag(a)}${catTag(a.category)}${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
+          <span class="al-meta"><span class="ktag k-office">${esc(a.office || "-")}</span>${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
           <span class="t">${esc(a.title)}</span>
-          <span class="al-foot">${verdictTag(ef)}${measureList(m)}${m && m.vol_ratio ? `<span class="muted">거래량 ${m.vol_ratio.toFixed(1)}배</span>` : ""}<span class="muted">${e.outlets > 1 ? `${e.outlets}개 매체` : esc(a.office)}</span></span></button></li>`;
+          ${verdictTag(ef) || e.outlets > 1 ? `<span class="al-foot">${verdictTag(ef)}${e.outlets > 1 ? `<span class="muted">${e.outlets}개 매체</span>` : ""}</span>` : ""}</button></li>`;
       }).join("");
       ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
     }

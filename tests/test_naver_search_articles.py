@@ -88,3 +88,18 @@ def test_manual_merge_joins_story(tmpdb):
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
     assert st["b1"] == st["a1"]
+
+
+def test_manual_merge_moves_whole_story(tmpdb):
+    """묶음의 기사 하나를 다른 묶음에 넣으면, 그 기사와 자동으로 같이 묶여 있던 기사도 함께 옮겨짐."""
+    with db.connect() as conn:
+        for aid, title, ts in (("a1", "충북인자위, 직업계고 학부모와 중소기업 탐방", "2026-10-26T15:02"),
+                               ("a2", "직업계고 학부모 우수 중소기업 탐방", "2026-10-26T15:30"),
+                               ("b1", "청주 고교생 취업 선호 3년 새 급감", "2026-10-26T16:00"),
+                               ("b2", "청주 고교생 취업 선호 3년 새 급감 우려", "2026-10-26T16:10")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES (?, ?, ?, 'o', ?, 'u')", (aid, SYM, ts, title))
+        conn.execute("UPDATE articles SET story_with='b2' WHERE id='a1'")     # 6개 매체 묶음의 대표를 다른 묶음에 넣음
+    articles.group_stories(SYM)
+    with db.connect() as conn:
+        st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
+    assert st["a1"] == st["a2"] == st["b1"] == st["b2"]

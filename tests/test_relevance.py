@@ -28,7 +28,9 @@ def _item(aid, title, office="이데일리", url="https://news.example.com/1", b
 
 def test_name_only_rule():
     assert relevance.name_only("방산주 희비 뚜렷", LIST_ONLY, NAME)
-    assert not relevance.name_only("방산주 희비 뚜렷", ABOUT, NAME)                 # 첫머리에 이름
+    assert relevance.name_only("방산주 희비 뚜렷", ABOUT, NAME)                     # 요약(첫머리)에만 이름 → 원문 횟수로 판단
+    assert relevance.name_only("[부고] 홍길동 씨 별세", f'<meta property="og:description" content="… 홍철수({NAME} 이사) 장인상">'
+                               f"<p>홍철수({NAME} 이사) 장인상=15일 …</p>", NAME)
     assert not relevance.name_only(f"{NAME}·센서뷰 급등", LIST_ONLY, NAME)          # 제목에 이름
     assert not relevance.name_only("방산주", "<p>" + (NAME + " ") * 3 + "</p>", NAME)  # 본문에 여러 번
 
@@ -55,13 +57,18 @@ def test_name_only_article_is_dropped_and_not_collected_again(tmpdb):
     pages = {"https://news.example.com/list": LIST_ONLY, "https://news.example.com/about": ABOUT}
     opened = []
     fetch = lambda u: (opened.append(u), pages[u])[1]
-    assert relevance.check("000", NAME, fetch=fetch) == 1
+    assert relevance.check("000", NAME, fetch=fetch) == 2
     assert "https://news.example.com/title" not in opened        # 제목에 이름이 있으면 열지 않음
     with db.connect() as conn:
-        assert sorted(r[0] for r in conn.execute("SELECT id FROM articles")) == ["y", "z"]
+        assert sorted(r[0] for r in conn.execute("SELECT id FROM articles")) == ["z"]
     assert articles._save("000", [_item("x", "방산주 희비 뚜렷", url="https://news.example.com/list")], "naver") == 0
     assert relevance.check("000", NAME, fetch=fetch) == 0          # 이미 살펴본 기사는 다시 열지 않음
     assert len(opened) == 2
+
+
+def test_obituary_and_personnel_titles_are_noise():
+    for t in ("[부고] 홍길동(전 시의원)씨 별세", "[인사] 산업통상부", "홍길동 모친상", "[게시판] 충북 소식"):
+        assert articles.classify(t, f"… {NAME} 이사 …", NAME)[0] == "단순 언급"
 
 
 def test_unreadable_page_keeps_article(tmpdb):

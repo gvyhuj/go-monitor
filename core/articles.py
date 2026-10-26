@@ -46,7 +46,8 @@ NEG = ("유상증자", "적자", "손실", "소송", "해지", "취소", "블록
 
 
 # 매주 자동으로 만들어지는 종목 분석 글, 여러 종목 모음 기사 → '단순 언급'으로 (목록 기본 화면에서 숨김)
-NOISE_TITLE = re.compile(r"투자분석\s*\d{4}|브리핑|모음|마감\s*시황|오늘의\s*(특징주|종목|공시)|주간\s*(유망|추천)")
+NOISE_TITLE = re.compile(r"투자분석\s*\d{4}|브리핑|모음|마감\s*시황|오늘의\s*(특징주|종목|공시)|주간\s*(유망|추천)"
+                         r"|^\s*\[(부고|부음|인사|동정|게시판|결혼|화촉|알림)\]|별세|모친상|부친상|빙모상|빙부상|장모상|장인상|조모상|조부상")
 NOISE_OFFICE = ("주달",)
 # 외부 기사에 '악재'를 붙이는 뚜렷한 단어 (그 밖에는 호재·악재를 자동으로 붙이지 않음)
 STRONG_NEG = ("유상증자", "소송", "적자", "오버행", "블록딜", "전환사채", "감사의견", "거래정지", "불성실", "계약 해지",
@@ -384,8 +385,11 @@ def group_stories(code: str):
         while target in manual and target not in seen:
             seen.add(target)
             target = manual[target]
-        if aid in assign and target in assign:
-            assign[aid] = assign[target]
+        if aid in assign and target in assign and assign[aid] != assign[target]:
+            old, new = assign[aid], assign[target]
+            for k, v in assign.items():          # 그 기사와 자동으로 같이 묶여 있던 기사도 함께 옮김
+                if v == old:
+                    assign[k] = new
     with connect() as conn:
         conn.executemany("UPDATE articles SET story=? WHERE id=?", [(s, i) for i, s in assign.items()])
 
