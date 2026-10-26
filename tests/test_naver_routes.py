@@ -48,3 +48,13 @@ def test_industry_snapshot_and_rates(tmp_path, monkeypatch):
     assert got.keys() == {"2026-10-26"} and got["2026-10-26"].keys() == {"우주항공과국방", "반도체와반도체장비"}
     assert got["2026-10-26"]["우주항공과국방"] == pytest.approx(-0.0465)
     assert got["2026-10-26"]["반도체와반도체장비"] == pytest.approx(0.0032)
+
+
+def test_wics_peers_take_largest_per_industry(monkeypatch):
+    # 비교 종목 = WICS 업종마다 시가총액 큰 순으로 n개, 이 종목은 뺌
+    from core import feed
+    members = {284: [{"code": "A", "name": "a", "market": "KOSPI", "mcap": 10, "change": 0.01},
+                     {"code": "ME", "name": "me", "market": "KOSDAQ", "mcap": 99, "change": 0.0},
+                     {"code": "B", "name": "b", "market": "KOSPI", "mcap": 50, "change": -0.02}]}
+    monkeypatch.setattr(naver, "fetch_industry_members", lambda no: members.get(no, []))
+    assert feed.wics_peers("ME", 1) == [("B", "b", "KOSPI", "우주항공과국방")]

@@ -212,6 +212,12 @@ CREATE TABLE IF NOT EXISTS industry_daily (
     PRIMARY KEY(date, industry_no)
 );
 
+-- 화면에 보여 주는 네 업종(feed.WICS_PEERS)의 그날 오른·내린 상위 종목 (업종 칸을 누르면 뜨는 창용, JSON)
+CREATE TABLE IF NOT EXISTS industry_movers (
+    date TEXT NOT NULL, industry_no INTEGER NOT NULL, name TEXT, movers TEXT, updated_at TEXT,
+    PRIMARY KEY(date, industry_no)
+);
+
 -- 해외 지표 (미국 방산주, 유가) 일별
 CREATE TABLE IF NOT EXISTS overseas_daily (
     sym TEXT NOT NULL, date TEXT NOT NULL, name TEXT, close REAL, chg REAL,

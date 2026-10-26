@@ -371,6 +371,20 @@ def snapshot_industries(now: datetime, trading_day: str) -> int:
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [(trading_day, int(g["no"]), g.get("name"), _num(g.get("changeRate")), int(g.get("riseCount") or 0),
               int(g.get("fallCount") or 0), int(g.get("totalCount") or 0), ts) for g in groups])
+    # 화면의 네 업종: 그날 많이 오른·내린 종목 5개씩 (업종 칸을 누르면 뜨는 창용)
+    from .feed import WICS_PEERS
+    for no, name in WICS_PEERS:
+        try:
+            ms = [m for m in naver.fetch_industry_members(no) if m["change"] is not None]
+        except naver.DataSourceError:
+            continue
+        ms.sort(key=lambda m: -m["change"])
+        pick = lambda xs: [{"code": m["code"], "name": m["name"], "change": m["change"]} for m in xs]
+        movers = {"up": pick([m for m in ms if m["change"] > 0][:5]),
+                  "down": pick([m for m in reversed(ms) if m["change"] < 0][:5])}
+        with connect() as conn:
+            conn.execute("INSERT OR REPLACE INTO industry_movers(date, industry_no, name, movers, updated_at) VALUES (?, ?, ?, ?, ?)",
+                         (trading_day, no, name, json.dumps(movers, ensure_ascii=False), ts))
     return len(groups)
 
 

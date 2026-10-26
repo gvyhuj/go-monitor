@@ -301,8 +301,11 @@ def api_intraday(q):
         prev_close = quote["price"] - quote["change"]
     with connect() as conn:
         ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
+        ind_info = industry_info(conn).get(d)
+    fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
+    fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind}
+            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe}
 
 
 def api_events(q):
@@ -333,7 +336,7 @@ def api_daily(_q):
         inv = {r[0]: r[1:] for r in conn.execute(
             "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
             (sym,))}
-        ind = industry_rates(conn)
+        ind, ind_info = industry_rates(conn), industry_info(conn)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -344,12 +347,12 @@ def api_daily(_q):
                      "change": c / prev - 1 if prev else None,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
-                     "industries": ind.get(d)})
+                     "industries": ind.get(d), "industry_info": ind_info.get(d)})
     return {"days": days}
 
 
-# 사업 분야 칸에 보여 줄 네이버 업종(WICS). 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
-INDUSTRY_NAMES = ["우주항공과국방", "반도체와반도체장비", "디스플레이장비및부품", "디스플레이패널"]
+# 사업 분야 칸에 보여 줄 네이버 업종(WICS) = 비교 종목 묶음과 같은 네 업종. 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
+INDUSTRY_NAMES = [name for _, name in feed.WICS_PEERS]
 
 
 def industry_rates(conn) -> dict:
@@ -359,6 +362,18 @@ def industry_rates(conn) -> dict:
     for d, name, rate in conn.execute(q, INDUSTRY_NAMES):
         if rate is not None:
             out.setdefault(d, {})[name] = rate / 100
+    return out
+
+
+def industry_info(conn) -> dict:
+    """업종 칸을 누르면 뜨는 창용 {날짜: {업종: {rise, fall, total, up: [...], down: [...]}}}."""
+    out = {}
+    q = "SELECT date, name, rise, fall, total FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
+    for d, name, rise, fall, total in conn.execute(q, INDUSTRY_NAMES):
+        out.setdefault(d, {})[name] = {"rise": rise, "fall": fall, "total": total, "up": [], "down": []}
+    for d, name, movers in conn.execute("SELECT date, name, movers FROM industry_movers"):
+        if d in out and name in out[d] and movers:
+            out[d][name].update(json.loads(movers))
     return out
 
 

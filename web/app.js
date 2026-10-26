@@ -824,7 +824,8 @@
         daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
-          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null, live: true });
+          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null,
+          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, live: true });
       }
     } catch (_) {}
     const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
@@ -877,6 +878,9 @@
       const x = daily[selRow()];
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
       const inv = x.individual != null || x.foreign != null || x.organ != null;
+      const fe = !inv && x.foreign_est;      // 장중: 거래소 확정치 대신 증권사 창구 기준 외국계 추정 (원인 분석 창의 '외국계 창구 합계'와 같은 자료)
+      if (fe) return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">외국계 창구 ${signed(fe.buy - fe.sell)}</span>
+          <span class="ts">${hhmm(fe.ts)} 기준 장중 추정 · 개인·외국인·기관 확정치는 장 마감 뒤</span>`;
       return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(x.individual)} · 외국인 ${signed(x.foreign)} · 기관 ${signed(x.organ)}` : "-"}</span>
           <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span>`;
     }
@@ -886,7 +890,21 @@
       const x = daily[selRow()], ind = x.industries || {};
       return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)</small></span>
           <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
-            `<span class="seg-chip">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></span>`).join("")}</span>`;
+            `<button type="button" class="seg-chip" data-ind="${esc(k)}" title="누르면 이 업종의 그날 오른·내린 종목">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></button>`).join("")}</span>`;
+    }
+    // 업종 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 많이 오른·내린 종목 5개씩
+    function openIndustry(k) {
+      const x = daily[selRow()], label = (INDUSTRY_LABELS.find(([n]) => n === k) || [k, k])[1];
+      const rate = (x.industries || {})[k], info = (x.industry_info || {})[k];
+      const list = (xs) => xs && xs.length ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}</span><b class="${sgnCls(s.change)}">${pct(s.change)}</b></li>`).join("")}</ul>` : `<p class="muted">-</p>`;
+      $("#ind-title").textContent = `${mdOf(x.date)} ${label}`;
+      $("#ind-body").innerHTML = rate == null && !info
+        ? `<p class="note">이 날은 업종 기록이 없습니다. 네이버 업종(WICS) 등락률은 2026-10-26부터 기록합니다.</p>`
+        : `<p class="ind-rate"><b class="${rate == null ? "" : sgnCls(rate)}">${rate == null ? "-" : pct(rate)}</b>
+             <span class="muted">네이버 업종(WICS) '${esc(k)}'${x.live ? " · 장중 값" : ""}</span></p>
+           ${info ? `<p class="muted">오른 종목 ${int(info.rise)} · 내린 종목 ${int(info.fall)} · 전체 ${int(info.total)}</p>
+           <div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}`;
+      $("#ind-modal").hidden = false;
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
@@ -1049,6 +1067,8 @@
     }
     render();
     box.onclick = async (ev) => {
+      const ib = ev.target.closest("[data-ind]");
+      if (ib) { openIndustry(ib.dataset.ind); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
@@ -2591,6 +2611,8 @@
   }
   const shareBtn = $("#share-btn");
   if (shareBtn) shareBtn.onclick = () => { location.hash = "#/cloud"; };
+  $("#ind-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-iclose]")) $("#ind-modal").hidden = true; });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("#ind-modal").hidden = true; });
   $("#share-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-mclose]")) { $("#share-modal").hidden = true; clearInterval(shareTimer); } });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#share-modal").hidden) { $("#share-modal").hidden = true; clearInterval(shareTimer); } });
 
