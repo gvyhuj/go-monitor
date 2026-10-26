@@ -193,16 +193,19 @@ button.tcard:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16
 .tn-more { font-size: 12.5px; color: var(--brand-blue); cursor: pointer; }
 .t-go { cursor: pointer; border-radius: 6px; padding: 1px 4px; margin: -1px -4px; transition: background-color .15s; }
 .t-go:hover { background: var(--canvas); text-decoration: underline; text-underline-offset: 3px; }
-.bento > .b-cum { grid-column: 8 / -1; grid-row: 6; }
+.bento > .b-seg { grid-column: 8 / -1; grid-row: 6; }
+/* 사업 분야 칸: 분야 이름을 작은 칩으로 */
+.seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.seg-chip { padding: 3px 10px; border-radius: 999px; background: var(--canvas); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .bento > .tcard { justify-content: center; }
 .bento > .tcard:not(.t-price) .tv { white-space: normal; }
 #rec-day { margin-top: 12px; }
 @media (max-width: 980px) {
-  /* 좁은 화면: 가격·차트·소식은 한 줄 전체, 급등락·KOSDAQ·거래량은 한 상자처럼 붙여 한 줄, 누적·순매수는 반반 */
+  /* 좁은 화면: 가격·차트·소식은 한 줄 전체, 급등락·KOSDAQ·거래량은 한 상자처럼 붙여 한 줄, 사업 분야·순매수는 반반 */
   .bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .bento > .tcard, .bento > .rec-card, .bento > #q-price-card, .bento > #q-events-card, .bento > #q-kosdaq-card, .bento > #q-volume-card { grid-column: span 2; grid-row: auto; }
   .bento > #q-price-card, .bento > .rec-card, .bento > .t-news { grid-column: 1 / -1; }
-  .bento > .b-cum, .bento > .b-inv { grid-column: span 3; }
+  .bento > .b-seg, .bento > .b-inv { grid-column: span 3; }
   .bento > .tcard.b-inv .tv { white-space: normal; }
   .bento > #q-events-card { border-radius: var(--r-md) 0 0 var(--r-md); }
   .bento > #q-kosdaq-card { border-radius: 0; border-left: 0; margin-left: calc(-1 * var(--bento-gap)); }
@@ -849,6 +852,12 @@ details.art-group > button { padding-left: 24px; }
 .art-search { flex: 0 1 240px; min-width: 160px; padding: 7px 12px; font-size: 14px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-sm); }
 .art-search:focus { outline: 2px solid var(--brand-blue); outline-offset: -1px; }
+/* '기사 등록 / 목록에서 삭제'는 한 묶음으로 (줄이 바뀌어도 둘이 갈라지지 않게) */
+.art-tools { display: inline-flex; align-items: center; white-space: nowrap; }
+@media (max-width: 720px) {
+  .controls .art-search { flex: 1 1 100%; }          /* 폰: 검색창은 한 줄 전체, 그 아래 오른쪽에 기사 등록 / 목록에서 삭제 */
+  .controls .art-tools { margin-left: auto; }
+}
 /* 공시 종류 버튼 (여러 개 켤 수 있음) */
 .disc-types { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
 .disc-types button { border: 1px solid var(--line-2); background: var(--surface); border-radius: 999px; padding: 5px 12px;
@@ -1071,6 +1080,12 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-card { margin-bottom: 14px; }
 .dash-card-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .dash-card-head h3 { margin: 0; font-size: 15.5px; }
+.dash-card-head .btn { white-space: nowrap; flex-shrink: 0; }     /* 내려받기 버튼 글자가 두 줄로 쪼개지거나 잘리지 않게 */
+.dash-dl { display: inline-flex; gap: 8px; flex-shrink: 0; margin-left: auto; }   /* 두 버튼은 늘 한 줄에 함께 */
+@media (max-width: 720px) {
+  .dash-card-head { flex-wrap: wrap; row-gap: 8px; }
+  .dash-card-head .btn.small { padding: 0 10px; font-size: 12.5px; }
+}
 .dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .dash-grid .dash-card { margin-bottom: 14px; }
 .dl-wrap { position: relative; }
@@ -1233,6 +1248,7 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 
 /* 기사 상세: 발표 직후 그래프 */
 .rx-chart { height: 220px; margin: 4px 0 8px; }
+.rx-legend.day-legend { height: auto; min-height: 20px; flex-wrap: wrap; row-gap: 2px; }   /* 폰에서 두 줄이 되면 차트를 밀어 내림 (공개 이름표와 겹치지 않게) */
 /* 발표 직후 그래프의 공개 시각 표시: 세로 점선 + 위쪽 이름표 */
 /* 범례 선 견본: 실선 = 이 종목, 점선 = KOSDAQ (그래프 선 모양과 같게) */
 .rx-sw { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: 4px; margin-right: 6px; }

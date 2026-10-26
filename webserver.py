@@ -170,6 +170,9 @@ def api_status(_q):
         n_bars = conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol=?", (sym,)).fetchone()[0]
         n_events = conn.execute("SELECT COUNT(*) FROM events WHERE symbol=?", (sym,)).fetchone()[0]
         first_bar = conn.execute("SELECT MIN(ts) FROM minute_bars WHERE symbol=?", (sym,)).fetchone()[0]
+        # 사업 분야별 비교 종목 묶음 (분야 이름과 종목 수만, 설정 순서대로)
+        segments = [{"name": r[0] or "비교 종목", "n": r[1]} for r in conn.execute(
+            "SELECT source, COUNT(*) FROM related_stocks GROUP BY source ORDER BY MIN(rowid)")]
     dv = data["value"] if data else ""
     return {
         "symbol": sym, "name": s.get("display_name", sym),
@@ -178,6 +181,7 @@ def api_status(_q):
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
         "last_bar_ts": last_bar, "first_bar_ts": first_bar, "bars_count": n_bars, "events_count": n_events,
+        "segments": segments,
         "collect": _collect_status(sym),
         "viewer": viewer, "share": share.status() if viewer == "local" else None,
         "cloud": cloud.status() if viewer == "local" else None,
