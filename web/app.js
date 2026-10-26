@@ -395,8 +395,8 @@
     const chart = baseChart(el, false, daily ? { timeScale: { borderVisible: false, timeVisible: false, tickMarkFormatter: dfmt, fixLeftEdge: true, fixRightEdge: true }, localization: { locale: "ko-KR", timeFormatter: dfmt } } : {});
     const ownColor = matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2");
     const fmt = { type: "custom", minMove: 0.01, formatter: (v) => pctRaw(v) };
-    const s1 = chart.addSeries(LW.LineSeries, { color: ownColor, lineWidth: 2, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true });
-    const s2 = chart.addSeries(LW.LineSeries, { color: css("--muted"), lineWidth: 2, lineStyle: LW.LineStyle.Dashed, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true });
+    const s1 = chart.addSeries(LW.LineSeries, { color: ownColor, lineWidth: 2, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true, title: "이 종목" });
+    const s2 = chart.addSeries(LW.LineSeries, { color: css("--muted"), lineWidth: 2, lineStyle: LW.LineStyle.Dashed, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true, title: "KOSDAQ" });
     const d1 = own.map((b) => ({ time: toTime(b.t), value: (b.c / base - 1) * 100 }));
     const d2 = kqBase ? kq.map((b) => ({ time: toTime(b.t), value: (b.c / kqBase - 1) * 100 })) : [];
     s1.setData(d1);
@@ -426,8 +426,8 @@
       const a = d1.find((p) => p.time === t) || d1[d1.length - 1];
       const b = d2.find((p) => p.time === (a && a.time));
       if (!a) return;
-      legendEl.innerHTML = `<span>${daily ? dfmt(a.time) : utcHHMM(a.time)}</span><span><i style="background:${ownColor}"></i>이 종목 <b class="${sgnCls(a.value)}">${pctRaw(a.value)}</b></span>` +
-        `<span><i style="background:${css("--muted")}"></i>KOSDAQ <b>${b ? pctRaw(b.value) : (d2.length ? "-" : "데이터 없음")}</b></span>`;
+      legendEl.innerHTML = `<span>${daily ? dfmt(a.time) : utcHHMM(a.time)}</span><span><i class="rx-sw" style="border-color:${ownColor}"></i>이 종목 <b class="${sgnCls(a.value)}">${pctRaw(a.value)}</b></span>` +
+        `<span><i class="rx-sw dash" style="border-color:${css("--muted")}"></i>KOSDAQ <b>${b ? pctRaw(b.value) : (d2.length ? "-" : "데이터 없음")}</b></span>`;
     };
     show(null);
     chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : null));
@@ -797,7 +797,19 @@
     } catch (e) { box.innerHTML = `<div class="empty"><strong>시세 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
     if (!$("#view")) return;
     if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
-    const byDay = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
+    // 오늘 일봉은 장 마감 뒤(15:50)에야 쌓이므로, 장중에는 실시간 1분봉으로 오늘 줄을 만들어 붙임 → 1일 탭 기본값이 오늘
+    try {
+      const lv = await api("/api/intraday"), lb = (lv && lv.bars) || [], last = daily[daily.length - 1];
+      if (lv && lv.date > last.date && lb.length) {
+        const close = lb[lb.length - 1].c, kc = lv.kosdaq && lv.kosdaq.length ? lv.kosdaq[lv.kosdaq.length - 1].c : null;
+        const base = lv.prev_close || last.close;
+        daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
+          volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
+          kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
+          foreign: null, organ: null, individual: null, foreign_ratio: null, live: true });
+      }
+    } catch (_) {}
+    const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
     const price = Object.fromEntries(daily.map((x) => [x.date, x]));
     const artDay = byDay(arts.filter((a) => !a.hidden && a.category !== "단순 언급" && a.ts), (a) => a.ts.slice(0, 10));
     const discDay = byDay(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf || "")), (x) => x.ts.slice(0, 10));
@@ -957,7 +969,7 @@
       if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
       el.innerHTML = `<p class="loading">불러오는 중…</p>`;
       let d = null;
-      try { d = await api(ds === latest ? "/api/intraday" : `/api/intraday?date=${ds}`); } catch (_) { d = null; }
+      try { d = await api(`/api/intraday?date=${ds}`); } catch (_) { d = null; }   // 날짜로 받음 (장중엔 일봉 마지막 날 ≠ 실시간 분봉 날)
       if (d && d.date !== ds) d = null;
       let coarseIv = null;
       if (!d || !d.bars || !d.bars.length) {

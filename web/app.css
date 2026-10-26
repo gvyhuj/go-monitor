@@ -1228,6 +1228,9 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 /* 기사 상세: 발표 직후 그래프 */
 .rx-chart { height: 220px; margin: 4px 0 8px; }
 /* 발표 직후 그래프의 공개 시각 표시: 세로 점선 + 위쪽 이름표 */
+/* 범례 선 견본: 실선 = 이 종목, 점선 = KOSDAQ (그래프 선 모양과 같게) */
+.rx-sw { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: 4px; margin-right: 6px; }
+.rx-sw.dash { border-top-style: dashed; }
 .rx-pub { position: absolute; top: 0; width: 0; border-left: 1.5px dashed var(--mk-pub); pointer-events: none; z-index: 3; }
 .rx-pub-tag { position: absolute; top: 2px; left: 0; transform: translateX(-50%); padding: 0 7px; border-radius: 999px; background: var(--mk-pub); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }
 .rx-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 4px 0 6px; }
