@@ -216,6 +216,10 @@ class Collector:
                     and now - self.last_investor_at >= timedelta(minutes=60):
                 self.last_investor_at = now
                 self._safe("투자자별 순매수", feed.sync_investor, self.code)
+        # 지난 거래일 순매수가 비어 있으면(수집 실패 등) 장중이라도 바로 채움 (1시간에 한 번까지)
+        if now - self.last_investor_at >= timedelta(minutes=60) and feed.investor_stale(self.code, today):
+            self.last_investor_at = now
+            self._safe("투자자별 순매수", feed.sync_investor, self.code)
 
     def fetch(self, kind, arg, day):
         """원인 분석 중 필요한 자료를 그 자리에서 받아옴 (짧은 시간 안 중복 요청은 생략)."""

@@ -289,6 +289,17 @@ def sync_investor(code: str) -> int:
     return len(rows)
 
 
+def investor_stale(code: str, today: date) -> bool:
+    """투자자별 순매수 기록이 비었는지: 오늘 전 마지막 거래일(일봉 기준) 값이 없으면 True (장중이라도 바로 다시 받게)."""
+    with connect() as conn:
+        last_day = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol=? AND date<?",
+                                (code, today.isoformat())).fetchone()[0]
+        last_inv = conn.execute("SELECT MAX(bizdate) FROM investor_daily WHERE symbol=?", (code,)).fetchone()[0]
+    if not last_day:
+        return False
+    return not last_inv or last_inv < last_day.replace("-", "")
+
+
 def sync_related(code: str, extra: list | None = None) -> list[dict]:
     """비교 종목.
 

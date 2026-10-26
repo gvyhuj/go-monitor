@@ -125,3 +125,21 @@ def test_key_source_failure_alerts_once(tmpdb, monkeypatch):
     collect_status.mark("공시", True, at=(NOW + timedelta(minutes=5)).isoformat(timespec="seconds"))
     alerts.check_health(NOW + timedelta(minutes=6), trading_day=True)
     assert len(posted) == 2 and posted[1][0].startswith("[복구]")
+
+
+def test_investor_stale_when_last_trading_day_missing(tmp_path, monkeypatch):
+    from datetime import date
+    from core import db, feed
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    with db.connect() as conn:
+        for d in ("2026-10-01", "2026-10-23", "2026-10-26"):
+            conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES ('X',?,1,1,1,1,1)", (d,))
+        conn.execute("INSERT INTO investor_daily(symbol,bizdate,foreign_net,organ_net,individual_net,close,volume,foreign_ratio) "
+                     "VALUES ('X','20261001',0,0,0,1,1,0)")
+    assert feed.investor_stale("X", date(2026, 10, 26))            # 10/23 값이 없음 → 바로 다시 받음
+    with db.connect() as conn:
+        conn.execute("INSERT INTO investor_daily(symbol,bizdate,foreign_net,organ_net,individual_net,close,volume,foreign_ratio) "
+                     "VALUES ('X','20261023',0,0,0,1,1,0)")
+    assert not feed.investor_stale("X", date(2026, 10, 26))        # 오늘 값은 장 마감 뒤라 기다림
