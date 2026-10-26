@@ -1217,6 +1217,15 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
   .rc-info .ri-v, .rc-info .ri-v span { white-space: normal; }
 }
 .art-act:empty { display: none; }
+/* 소식 대시보드: 쪽 넘기기 · 기사 목록 달 고르기 */
+.dash-pager { display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 12px; flex-wrap: wrap; }
+.pg-btn { min-width: 32px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2);
+  font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.pg-btn:hover:not(:disabled) { background: var(--canvas); border-color: var(--line-2); }
+.pg-btn[aria-current="true"] { background: var(--brand-blue); border-color: var(--brand-blue); color: #fff; font-weight: 700; }
+.pg-btn:disabled { opacity: .35; cursor: default; }
+.pg-gap { color: var(--muted); padding: 0 2px; }
+.dash-sel { margin-left: 10px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .ktag.k-office { background: var(--canvas); color: var(--ink-2); border: 1px solid var(--line); font-weight: 600; }
 /* 기사 합치기 목록 */
 .merge-box { margin-top: 10px; }

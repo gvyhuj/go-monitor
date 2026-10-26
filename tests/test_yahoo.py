@@ -87,3 +87,16 @@ def test_reaction_chart_bars_and_base(database):
                          [("Y", "2026-08-21T10:00", 50), ("Y", "2026-08-21T10:05", 51), ("KOSDAQ", "2026-08-21T10:00", 9)])
     rc = webserver._reaction_chart("Y", e, None, {"start": "2026-08-21T10:05", "kind": "session", "interval": 5})
     assert rc["interval"] == 5 and rc["base_own"] == 50 and [b["c"] for b in rc["own"]] == [50, 51]
+
+
+def test_late_article_measured_from_close_to_next_open(database):
+    """15시 넘어 공개: 그날 마지막 봉 종가 → 다음 거래일 장 시작 뒤."""
+    with db.connect() as conn:
+        for sym, rows in (("X", [("2026-08-12T14:55", 100), ("2026-08-13T09:00", 104), ("2026-08-13T09:25", 106)]),
+                          ("KOSDAQ", [("2026-08-12T14:55", 1000), ("2026-08-13T09:00", 1005), ("2026-08-13T09:25", 1010)])):
+            for ts, c in rows:
+                conn.execute("INSERT INTO coarse_bars(symbol,interval,ts,open,high,low,close,volume) VALUES (?,5,?,?,?,?,?,1)",
+                             (sym, ts, c, c, c, c))
+    r = yahoo.reaction("X", "2026-08-12T15:13", "2026-08-12", 95, 990)
+    assert r["kind"] == "late" and r["day"] == "2026-08-13" and r["start"] == "2026-08-13T09:00"
+    assert r["rows"][0]["minutes"] == 30 and r["rows"][0]["own"] == pytest.approx(0.06) and r["rows"][0]["kosdaq"] == pytest.approx(0.01)

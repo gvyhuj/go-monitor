@@ -2075,7 +2075,21 @@
   const artViewSeg = (pivot) => `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${!pivot}">목록</a><a href="#/pivot" aria-pressed="${pivot}">대시보드</a></div>`;
 
   // 기사 대시보드: 월별·주제·언론사·기자 막대를 누르면 서로 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
-  const pivotState = { range: "all", unit: "outlet", kind: "all", f: {} };
+  const pivotState = { range: "all", unit: "outlet", kind: "all", f: {}, pages: { office: 0, reporter: 0, feed: 0 } };
+  const DASH_PER = 10;           // 순위·기사 목록 한 쪽에 보이는 줄 수
+  // 쪽 번호: ‹ 1 2 3 … 9 › (지금 쪽 앞뒤 2쪽과 처음·끝)
+  function dashPager(key, page, total) {
+    const n = Math.ceil(total / DASH_PER);
+    if (n <= 1) return "";
+    const nums = [...new Set([0, n - 1, ...[-2, -1, 0, 1, 2].map((d) => page + d)])].filter((i) => i >= 0 && i < n).sort((x, y) => x - y);
+    let html = "", prev = -1;
+    for (const i of nums) {
+      if (i - prev > 1) html += `<span class="pg-gap">…</span>`;
+      html += `<button type="button" class="pg-btn" data-pg-k="${key}" data-pg="${i}" aria-current="${i === page}">${i + 1}</button>`;
+      prev = i;
+    }
+    return `<nav class="dash-pager" aria-label="쪽 넘기기"><button type="button" class="pg-btn" data-pg-k="${key}" data-pg="${page - 1}" ${page <= 0 ? "disabled" : ""} aria-label="이전 쪽">‹</button>${html}<button type="button" class="pg-btn" data-pg-k="${key}" data-pg="${page + 1}" ${page >= n - 1 ? "disabled" : ""} aria-label="다음 쪽">›</button></nav>`;
+  }
   const PIV_DIMS = { topic: "주제", office: "언론사", reporter: "기자", category: "분류", kind: "구분", month: "월", quarter: "분기", year: "연도" };
   const PIV_TIME = new Set(["month", "quarter", "year"]);
   // 기사 목록(대표 + 같은 내용을 실은 매체들)을 한 줄 = 기사 하나로 펼침
@@ -2163,12 +2177,12 @@
       <div id="dash-kpi" class="dash-kpis"></div>
       <section class="panel dash-card d-trend"><div class="dash-card-head"><h3>기사 추이 <small class="muted">월별</small></h3></div><div id="dash-month"></div></section>
       <section class="panel dash-card d-topic"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
-        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">상위 10</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
-        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">상위 10 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
-      <section class="panel dash-card d-full"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><span class="spacer"></span>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">10곳씩</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">10명씩 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
+      <section class="panel dash-card d-full"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><select id="dash-feed-month" class="dash-sel" aria-label="기사 목록 달"></select><span class="spacer"></span>
         <span class="dash-dl"><button class="btn small" type="button" id="piv-csv">지금 조건 엑셀로</button>
         <button class="btn small" type="button" id="piv-csv-all">원본 전체 엑셀로</button></span></div>
-        <ul class="dash-feed" id="dash-list"></ul></section></div></div>`;
+        <ul class="dash-feed" id="dash-list"></ul><div id="dash-feed-pager"></div></section></div></div>`;
     let items;
     try { items = (await api("/api/articles")).items || []; }
     catch (e) { $("#dash-list").innerHTML = `<li class="empty"><strong>기사를 불러오지 못했습니다.</strong>${esc(e.message)}</li>`; return; }
@@ -2185,22 +2199,25 @@
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
       list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
-    function board(el, dim, limit) {
+    function board(el, dim) {
       const all = base.filter((r) => pass(r, dim));
-      const list = dashAgg(all, dim).slice(0, limit);
+      const full = dashAgg(all, dim);
+      const pages = pivotState.pages, last = Math.max(0, Math.ceil(full.length / DASH_PER) - 1);
+      pages[dim] = Math.min(pages[dim] || 0, last);
+      const from = pages[dim] * DASH_PER, list = full.slice(from, from + DASH_PER);
       const total = all.filter((r) => dashKey(r, dim)).length || 1;
-      const max = list.length ? list[0].n : 1;
+      const max = full.length ? full[0].n : 1;          // 막대 길이는 1위 기준 (쪽을 넘겨도 같은 눈금)
       // 플러저블(Plausible) 상위 출처 목록처럼 이름 뒤에 건수만큼 옅은 막대, 막대는 보도자료·외부 기사 비율로 나눔
       el.innerHTML = list.length ? `<ol class="dash-board">${list.map((x, i) => {
         const [name, sub] = dim === "reporter" ? x.key.split(" · ") : [x.key, ""];
         const pr = x.by["그린광학 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
-          <span class="rk">${i + 1}</span>
+          <span class="rk">${from + i + 1}</span>
           <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
             <b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
           <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
           <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
-      }).join("")}</ol>` : `<p class="muted">해당 기사가 없습니다.</p>`;
+      }).join("")}</ol>${dashPager(dim, pages[dim], full.length)}` : `<p class="muted">해당 기사가 없습니다.</p>`;
       if (dim === "reporter") {               // 기자 이름을 못 읽은 기사도 숫자로 (언론사별)
         const miss = all.filter((r) => !r.reporter);
         if (miss.length) {
@@ -2239,11 +2256,17 @@
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
       dashLine($("#dash-month"), dashAgg(base.filter((r) => pass(r, "month")), "month"), F.month);
-      board($("#dash-office"), "office", 10);
-      board($("#dash-reporter"), "reporter", 10);
+      board($("#dash-office"), "office");
+      board($("#dash-reporter"), "reporter");
       tiles($("#dash-topic"));
-      $("#dash-n").textContent = `${shown.length}건${shown.length > 100 ? " · 최근 100건" : ""}`;
-      $("#dash-list").innerHTML = shown.slice(0, 100).map((r) => `<li><div>
+      $("#dash-n").textContent = `${shown.length}건`;
+      // 기사 목록: 달 고르기(전체 또는 한 달) + 10건씩 쪽 넘기기
+      const months = dashAgg(base.filter((r) => pass(r, "month")), "month").map((x) => x.key).reverse();
+      $("#dash-feed-month").innerHTML = `<option value="">전체 기간</option>${months.map((m) => `<option value="${esc(m)}"${F.month === m ? " selected" : ""}>${+m.slice(0, 4)}년 ${+m.slice(5, 7)}월</option>`).join("")}`;
+      const pg = pivotState.pages;
+      pg.feed = Math.min(pg.feed, Math.max(0, Math.ceil(shown.length / DASH_PER) - 1));
+      $("#dash-feed-pager").innerHTML = dashPager("feed", pg.feed, shown.length);
+      $("#dash-list").innerHTML = shown.slice(pg.feed * DASH_PER, (pg.feed + 1) * DASH_PER).map((r) => `<li><div>
         <a href="#/pr/${esc(r.lead)}" class="t">${esc(r.title)}</a>
         <div class="meta"><span class="ktag ${r.kind === "그린광학 보도자료" ? "k-pr" : "k-ext"}">${r.kind === "그린광학 보도자료" ? "보도자료" : "외부"}</span>
           <span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)}</span>
@@ -2255,17 +2278,25 @@
     if (dashResize) window.removeEventListener("resize", dashResize);
     dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#dash-month")) draw(); }, 200); };
     window.addEventListener("resize", dashResize);
-    const toggle = (d, v) => { if (F[d] === v) delete F[d]; else F[d] = v; draw(); };
+    const firstPages = () => { const p = pivotState.pages; p.office = p.reporter = p.feed = 0; };     // 조건이 바뀌면 첫 쪽부터
+    const toggle = (d, v) => { if (F[d] === v) delete F[d]; else F[d] = v; firstPages(); draw(); };
+    $("#dash-feed-month").onchange = (ev) => { const v = ev.target.value; if (v) F.month = v; else delete F.month; firstPages(); draw(); };
     $("#piv-ctl").onclick = (ev) => {
       const b = ev.target.closest("button[data-k]"); if (!b) return;
-      pivotState[b.dataset.k] = b.dataset.v; drawCtl(); draw();
+      pivotState[b.dataset.k] = b.dataset.v; firstPages(); drawCtl(); draw();
     };
     // main은 화면을 바꿔도 그대로라, 대시보드를 다시 열 때마다 처리기가 쌓이면 한 번 눌러도 두 번 토글되어 풀려 버림 → 이전 것은 떼고 붙임
     if (dashPick) { main.removeEventListener("pick", dashPick); main.removeEventListener("click", dashClick); }
     dashPick = (ev) => toggle(ev.detail.d, ev.detail.v);
     dashClick = (ev) => {
       if (!$("#dash-list")) return;
-      if (ev.target.closest("#dash-clear")) { for (const k of Object.keys(F)) delete F[k]; draw(); return; }
+      if (ev.target.closest("#dash-clear")) { for (const k of Object.keys(F)) delete F[k]; firstPages(); draw(); return; }
+      const pb = ev.target.closest(".pg-btn[data-pg-k]");
+      if (pb) {
+        pivotState.pages[pb.dataset.pgK] = +pb.dataset.pg; draw();
+        if (pb.dataset.pgK === "feed") $("#dash-list").closest(".dash-card").scrollIntoView({ block: "start", behavior: "smooth" });
+        return;
+      }
       const b = ev.target.closest(".dash-row, .chip-f"); if (!b) return;
       toggle(b.dataset.d, b.dataset.v);
     };
@@ -2553,7 +2584,7 @@
     }
     if (isDisc && a.untimed) notes.push("접수 시각 미상 → 그날 하루(전일 종가 → 종가)로 계산");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일 공개 → 반응일 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}`);
-    if (e.late && !d.intraday) notes.push(a.ts && a.ts.slice(11, 16) > "15:00"
+    if (e.late && !d.intraday && !d.intraday_coarse) notes.push(a.ts && a.ts.slice(11, 16) > "15:00"
       ? "15시 넘어 공개 → 그날 남은 거래가 짧아 다음 거래일 장 시작 30분 반응으로 잽니다 (다음 거래일 09:30 뒤 그래프가 나옴)"
       : "오후 늦게(14시 이후) 공개");
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("공개 시각 확인 필요: 구글 뉴스 시각이 16:00 또는 17:00으로 표시됨");
@@ -2573,7 +2604,8 @@
     // 1분봉이 없는 지난 기사: 야후 5분봉(없으면 60분봉)으로 +30·60·120분 (업종 분봉이 없어 KOSDAQ와만 비교)
     const ic = !iw && d.intraday_coarse;
     if (ic) {
-      const span = ic.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤` : `${hhmm(ic.start)} 공개부터`;
+      const span = ic.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
+        : ic.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(ic.day)}) 장 시작 뒤` : `${hhmm(ic.start)} 공개부터`;
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
         <div class="rx-steps">${ic.rows.map((r) => `<span${r.minutes === 30 ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">KOSDAQ</small> ${pct(r.kosdaq)}</span>`).join("")}</div>
@@ -2587,7 +2619,7 @@
       const toKinds = a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"];
       html += `<div class="ask-row editable art-fix">
         ${toKinds.map((k) => `<button class="btn small" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}
-        ${a.kind !== a.kind_auto && a.kind_auto ? `<button class="btn-link" type="button" data-kind="auto">자동 판정으로 되돌리기</button>` : ""}
+
         <span class="form-msg" id="art-fix-msg"></span></div>`;
     }
 

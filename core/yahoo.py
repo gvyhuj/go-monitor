@@ -81,25 +81,42 @@ def _price_at(rows: list[tuple], iv: int, t: datetime) -> float | None:
     return best
 
 
+def _day_rows(conn, code: str, day: str):
+    for iv in sorted(RANGES):
+        own = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
+                           (code, iv, day)).fetchall()
+        idx = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
+                           (INDEX, iv, day)).fetchall()
+        if own and idx:
+            return iv, own, idx
+    return None, [], []
+
+
 def reaction(code: str, base_ts: str, day: str, prev_close: float | None, prev_index: float | None,
              steps=(30, 60, 120)) -> dict | None:
     """1분봉이 없는 지난 기사의 발표 직후 반응 (야후 5분봉, 없으면 60분봉): 이 종목·코스닥·차이.
-    장 시작 전 공개면 전날 종가부터 장 시작 뒤 각 시점까지."""
+    장 시작 전 공개면 전날 종가부터 장 시작 뒤 각 시점까지.
+    15시 넘어 공개면 그날 종가(마지막 봉)부터 다음 거래일 장 시작 뒤 각 시점까지."""
     t0 = datetime.fromisoformat(base_ts)
     open_t = datetime.fromisoformat(day + "T09:00")
     with connect() as conn:
-        for iv in sorted(RANGES):
-            own = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
-                               (code, iv, day)).fetchall()
-            idx = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
-                               (INDEX, iv, day)).fetchall()
-            if own and idx:
-                break
-        else:
-            return None
-    if t0 < open_t:
+        iv, own, idx = _day_rows(conn, code, day)
+        late = t0.date().isoformat() == day and t0.time() > datetime.strptime("15:00", "%H:%M").time()
+        if late:
+            nxt = conn.execute("SELECT MIN(substr(ts,1,10)) FROM coarse_bars WHERE symbol=? AND substr(ts,1,10)>?",
+                               (code, day)).fetchone()[0]
+            if not own or not nxt:
+                return None
+            b_own, b_idx = own[-1][1], idx[-1][1]          # 그날 마지막 봉 종가
+            day = nxt
+            iv, own, idx = _day_rows(conn, code, day)
+    if not own:
+        return None
+    if late:
+        start, kind = datetime.fromisoformat(day + "T09:00"), "late"
+    elif t0 < open_t:
         start, b_own, b_idx, kind = open_t, prev_close, prev_index, "open"
-    elif t0.date().isoformat() == day and t0.time() <= datetime.strptime("15:00", "%H:%M").time():
+    elif t0.date().isoformat() == day:
         start, kind = t0, "session"
         b_own, b_idx = _price_at(own, iv, t0), _price_at(idx, iv, t0)
         if b_own is None:           # 장 시작 직후 공개: 첫 봉 시가 대신 전날 종가
@@ -120,7 +137,7 @@ def reaction(code: str, base_ts: str, day: str, prev_close: float | None, prev_i
             continue
         o, k = p_own / b_own - 1, p_idx / b_idx - 1
         rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": o, "kosdaq": k, "diff": o - k})
-    return {"interval": iv, "kind": kind, "start": start.isoformat(timespec="minutes"), "rows": rows} if rows else None
+    return {"interval": iv, "kind": kind, "day": day, "start": start.isoformat(timespec="minutes"), "rows": rows} if rows else None
 
 
 def day_bars(code: str, day: str) -> tuple[int | None, list[dict]]:
