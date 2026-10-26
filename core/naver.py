@@ -299,6 +299,29 @@ def fetch_research(code: str) -> list[dict]:
     return out
 
 
+def _pct(v) -> float | None:
+    """'26.57' → 0.2657 (못 읽으면 None)."""
+    try:
+        return float(str(v).replace(",", "")) / 100
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_industry_members(no: int) -> list[dict]:
+    """네이버 업종(WICS) 소속 종목 전부: 코드·이름·시장·시가총액(억 원)·지금 등락률(소수)."""
+    out = []
+    for p in range(1, 6):
+        d = _json(f"https://m.stock.naver.com/api/stocks/industry/{no}?page={p}&pageSize=100")
+        stocks = d.get("stocks") or []
+        for s in stocks:
+            out.append({"code": s.get("itemCode"), "name": s.get("stockName") or "",
+                        "market": ((s.get("stockExchangeType") or {}).get("name") or ""),
+                        "mcap": _int(s.get("marketValue")), "change": _pct(s.get("fluctuationsRatio"))})
+        if len(out) >= int(d.get("totalCount") or 0) or not stocks:
+            break
+    return out
+
+
 def fetch_investor_trend(code: str, n: int = 20) -> list[dict]:
     d = _json(f"https://stock.naver.com/api/stockSecurity/investor-trend/v2/domestic/{code}?exchangeType=krx&size={n}")
     return parse_investor_trend(d)

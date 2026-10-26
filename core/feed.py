@@ -130,6 +130,9 @@ def snapshot_traders(code: str, now: datetime | None = None) -> int:
             [(code, ts, t["trader_no"], t["name"], t["buy"], t["sell"], int(t["foreign"]),
               int(t["buy_top5"]), int(t["sell_top5"])) for t in rows],
         )
+    # 네이버가 함께 주는 외국계 창구 추정 합계 (장중 순매수 칸용 — 거래소 개인·외국인·기관 확정치는 장 마감 뒤에만 나옴)
+    set_state(f"foreign_est:{code}", json.dumps({"date": now.date().isoformat(), "ts": ts,
+                                                  "buy": info.get("foreign_buy"), "sell": info.get("foreign_sell")}))
     return len(rows)
 
 
@@ -300,15 +303,40 @@ def investor_stale(code: str, today: date) -> bool:
     return not last_inv or last_inv < last_day.replace("-", "")
 
 
+# 사업 분야별 비교 종목 = 네이버 업종(WICS) 이 네 업종의 시가총액 큰 종목 (방산·우주항공은 WICS에서 한 업종)
+WICS_PEERS = [(284, "우주항공과국방"), (278, "반도체와반도체장비"), (269, "디스플레이장비및부품"), (327, "디스플레이패널")]
+
+
+def wics_peers(code: str, per_industry: int = 10) -> list[tuple]:
+    """[(코드, 이름, 시장, 업종)] 업종마다 시가총액 상위 per_industry개 (이 종목은 뺌)."""
+    out = []
+    for no, name in WICS_PEERS:
+        ms = [m for m in naver.fetch_industry_members(no) if m["code"] and m["code"] != code]
+        ms.sort(key=lambda m: -m["mcap"])
+        out += [(m["code"], m["name"], m["market"], name) for m in ms[:per_industry]]
+    return out
+
+
 def sync_related(code: str, extra: list | None = None) -> list[dict]:
     """비교 종목.
 
-    설정의 peer_groups(사업 분야별 비교 종목, 비공개 설정)가 있으면 그것을 씀.
-    없으면 네이버 '동일 업종 비교'(네이버 업종 분류 1개만 반영) + extra_peers.
+    네이버 업종(WICS) 네 업종(WICS_PEERS)의 시가총액 상위 종목을 업종별로 씀 (업종 몫 계산도 이 묶음으로).
+    네이버 업종을 못 받으면 설정의 peer_groups(비공개 설정), 그것도 없으면 네이버 '동일 업종 비교' + extra_peers.
     """
     from .detector import load_settings
-    groups = load_settings().get("peer_groups") or {}
+    s = load_settings()
     now = kst_now().isoformat(timespec="minutes")
+    try:
+        rows = wics_peers(code, int(s.get("wics_peers_per_industry", 10)))
+    except naver.DataSourceError:
+        rows = []
+    if rows:
+        with connect() as conn:
+            conn.execute("DELETE FROM related_stocks")
+            conn.executemany("INSERT OR REPLACE INTO related_stocks(code, name, market, source, updated_at) VALUES (?, ?, ?, ?, ?)",
+                             [(*r, now) for r in rows])
+        return related_list()
+    groups = s.get("peer_groups") or {}
     if groups:
         with connect() as conn:
             conn.execute("DELETE FROM related_stocks")

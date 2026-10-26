@@ -419,6 +419,19 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v4", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명 빈 기사 {n_re}건 다시 읽기 (네이버판에 없으면 언론사 원문에서)")
 
+    # 한 번만: 비교 종목을 네이버 업종(WICS) 묶음으로 바꾸고, 새 종목의 일봉·오늘 분봉을 바로 받음 (내일까지 기다리지 않게)
+    if not get_state("peers:wics_v1"):
+        try:
+            from core import macro
+            rel = feed.sync_related(code)
+            codes = [r["code"] for r in rel]
+            n_d = macro.sync_daily_bars(codes)
+            n_m = feed.sync_related_bars(codes, False, now)      # 오늘 분봉만 (지난 분봉은 내일 첫 실행의 하루 수집에서)
+            set_state("peers:wics_v1", now.isoformat(timespec="minutes"))
+            annotate("notice", f"비교 종목을 네이버 업종(WICS) {len(codes)}개로 바꿈 (일봉 {n_d}건, 분봉 {n_m}건 받음)")
+        except Exception as e:      # noqa: BLE001 - 다음 실행에 다시
+            annotate("warning", f"비교 종목 WICS 전환 실패: {type(e).__name__}: {str(e)[:150]}")
+
     # 매번: 아직 기자명을 안 읽은 기사가 있으면 한 번에 많이 읽어 바로 채움 (평소엔 수집할 때 15건씩)
     try:
         from core import reporters

@@ -25,7 +25,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "17"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름)
+CAUSE_VERSION = "18"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름, 18: 비교 종목을 네이버 업종(WICS)으로)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -777,9 +777,9 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
             ch = _change(df, t0, t1)
         related.append({"code": r["code"], "name": r["name"], "change": ch, "source": r["source"]})
     valid = [r for r in related if r["change"] is not None]
-    from .detector import load_settings as _ls
-    _cfg = _ls()
-    groups = {seg: [x["code"] for x in items] for seg, items in (_cfg.get("peer_groups") or {}).items()}
+    groups = {}                     # 업종(비교 종목 묶음)별 종목 코드 — 지금은 네이버 업종(WICS)
+    for r in rel:
+        groups.setdefault(r["source"] or "비교 종목", []).append(r["code"])
     try:
         seg_links = _segment_links(symbol, day, groups) if groups else {}
     except Exception:
