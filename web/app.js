@@ -2375,7 +2375,8 @@
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span><span class="spacer"></span>
-        <span class="art-tools"><button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
+        <span class="art-tools"><button class="btn-link editable" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
+        <button class="btn-link editable" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
         <span class="editable art-act" id="art-act"></span></span></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
@@ -2389,6 +2390,7 @@
         <div class="form-msg" id="pr-msg" role="status"></div>
       </form>
       <div class="disc-types" id="disc-types" role="group" aria-label="공시 종류" hidden></div>
+      <div class="art-bulk editable" id="art-bulk" hidden></div>
       <div class="pr-layout art-layout">
         <ul class="art-list" id="art-list"><li class="loading">불러오는 중…</li></ul>
         <section id="pr-detail" class="art-detail"></section>
@@ -2482,7 +2484,12 @@
     qBox.oninput = () => { artState.q = qBox.value; renderList(); followTab(); };
     const seg = $("#art-cat");
     seg.innerHTML = Object.keys(LABEL).map((v) => `<button type="button" data-v="${v}" aria-pressed="${artState.cat === v}">${LABEL[v]} <small></small></button>`).join("");
-    seg.onclick = (ev) => { const b = ev.target.closest("button"); if (!b) return; artState.cat = b.dataset.v; renderList(); followTab(); };
+    seg.onclick = (ev) => {
+      const b = ev.target.closest("button"); if (!b) return;
+      artState.cat = b.dataset.v;
+      if (multi.on) { multi.ids.clear(); multi.cat = artState.cat; if (artState.cat === "disc") multi.on = false; }
+      drawBulk(); renderList(); followTab();
+    };
     const typeBox = $("#disc-types");
     const typeCount = (t) => discs.filter((x) => (x.pblntf || "?") === t).length;
     const typeKeys = Object.keys(DTYPES).filter((t) => typeCount(t));
@@ -2520,6 +2527,7 @@
     }
 
     function renderList() {
+      $("#art-list").classList.toggle("is-multi", multi.on && artState.cat !== "disc");
       seg.querySelectorAll("button").forEach((b) => {
         b.setAttribute("aria-pressed", String(b.dataset.v === artState.cat));
         // 탭 숫자: 검색어가 있으면 맞는 수 (공시는 종류 버튼과 관계없이 전체 공시 중)
@@ -2555,13 +2563,56 @@
       }
       ul.innerHTML = list.map((e) => {
         const a = byId.get(e.lead), ef = a.effect || {};
-        return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}">
-          <span class="al-meta"><span class="ktag k-office">${esc(a.office || "-")}</span>${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
+        const pickable = multi.on && !a.manual;
+        return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}"${multi.on ? ` aria-pressed="${multi.ids.has(a.id)}"${a.manual ? ' data-nopick="1" title="직접 등록한 기사는 하나씩 삭제합니다"' : ""}` : ""}>
+          ${multi.on ? `<span class="pick-box${pickable ? "" : " off"}" aria-hidden="true"></span>` : ""}<span class="al-meta"><span class="ktag k-office">${esc(a.office || "-")}</span>${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
           <span class="t">${esc(a.title)}</span>
           ${verdictTag(ef) || e.outlets > 1 ? `<span class="al-foot">${verdictTag(ef)}${e.outlets > 1 ? `<span class="muted">${e.outlets}개 매체</span>` : ""}</span>` : ""}</button></li>`;
       }).join("");
-      ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) openInPlace(b.dataset.id); };
+      ul.onclick = (ev) => {
+        const b = ev.target.closest("button[data-id]"); if (!b) return;
+        if (!multi.on) { openInPlace(b.dataset.id); return; }
+        if (b.dataset.nopick) return;            // 고르는 중에는 상세를 열지 않고 체크만
+        const id = b.dataset.id;
+        if (multi.ids.has(id)) multi.ids.delete(id); else multi.ids.add(id);
+        b.setAttribute("aria-pressed", String(multi.ids.has(id)));
+        drawBulk();
+      };
     }
+    // 여러 개 고르기: 보도자료·외부 기사 탭에서 골라 한 번에 삭제·구분 바꾸기 (요청 하나 = GitHub [Create] 한 번)
+    const multi = { on: false, cat: null, ids: new Set() };
+    function drawBulk() {
+      const bar = $("#art-bulk"), btn = $("#art-multi");
+      if (btn) { btn.hidden = artState.cat === "disc"; btn.textContent = multi.on ? "고르기 끝" : "여러 개 고르기"; }
+      if (!bar) return;
+      bar.hidden = !multi.on;
+      if (!multi.on) { bar.innerHTML = ""; return; }
+      const n = multi.ids.size, to = artState.cat === "pr" ? "ext" : "pr";
+      bar.innerHTML = `<b>${n}건 선택</b><span class="muted">기사를 눌러 고르세요 (n개 매체 묶음은 묶음 전체가 함께 바뀝니다)</span><span class="spacer"></span>
+        <button type="button" class="btn small" data-bulk="hide" ${n ? "" : "disabled"}>목록에서 삭제</button>
+        <button type="button" class="btn small" data-bulk="${to}" ${n ? "" : "disabled"}>${to === "pr" ? "그린광학 보도자료로" : "외부 기사로"}</button>
+        <button type="button" class="btn-link" data-bulk="cancel">취소</button><span class="form-msg" id="bulk-msg"></span>`;
+    }
+    $("#art-multi").onclick = () => {
+      multi.on = !multi.on; multi.cat = artState.cat; multi.ids.clear();
+      drawBulk(); renderList();
+    };
+    $("#art-bulk").onclick = async (ev) => {
+      const b = ev.target.closest("[data-bulk]"); if (!b) return;
+      const act = b.dataset.bulk, ids = [...multi.ids];
+      if (act === "cancel") { multi.on = false; multi.ids.clear(); drawBulk(); renderList(); return; }
+      if (!ids.length) return;
+      if (act === "hide" && b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = `${ids.length}건 삭제 — 한 번 더 누르기`; return; }
+      const title = `${ids.length}건 ${act === "hide" ? "목록에서 삭제" : act === "pr" ? "그린광학 보도자료로" : "외부 기사로"}`;
+      const item = act === "hide" ? { type: "hide", ids, title } : { type: "article_kind", ids, kind: act, title };
+      const msg = $("#bulk-msg");
+      try {
+        msg.className = "form-msg"; msg.textContent = await sendInbox(item);
+        $("#art-bulk").querySelectorAll("button.btn").forEach((x) => { x.disabled = true; });
+        b.textContent = `${title} 요청함`;
+      } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    };
+    drawBulk();
     let current = selId;
     // 목록에서 기사·공시를 누르면: 페이지를 다시 그리지 않고(스크롤 그대로) 오른쪽 상세만 바꿈. 주소는 바꿔 두어 뒤로 가기·공유 가능
     const openInPlace = (id) => {
@@ -2597,7 +2648,7 @@
         try {
           const next = await cloudLive(true);
           if (activeRoute !== location.hash || !$("#pr-detail") || next.published_at === displayedPublication) return;
-          if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden]), #merge-list:not([hidden])")) return;
+          if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden]), #merge-list:not([hidden]), #art-bulk:not([hidden])")) return;
           const scrollPosition = window.scrollY;
           cleanupPage();
           await pagePR(current);

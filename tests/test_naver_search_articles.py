@@ -148,3 +148,18 @@ def test_merge_several_at_once(tmpdb, monkeypatch):
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
     assert st["x"] == st["y"] == st["z"] == st["t"]
+
+
+def test_bulk_hide_and_kind(tmpdb, monkeypatch):
+    """여러 개 고르기: 한 요청으로 여러 기사 삭제 / 구분 바꾸기 (묶음 전체 함께)."""
+    import logging
+    import cloud_job
+    with db.connect() as conn:
+        for aid, story in (("p", "p"), ("q", "q"), ("q2", "q"), ("r", "r")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url, story) VALUES (?, ?, '2026-10-26T10:00', 'o', ?, 'u', ?)",
+                         (aid, SYM, aid, story))
+    cloud_job.apply_inbox({"type": "hide", "ids": ["p", "q"]}, logging.getLogger())
+    cloud_job.apply_inbox({"type": "article_kind", "ids": ["r", "q"], "kind": "pr"}, logging.getLogger())
+    with db.connect() as conn:
+        rows = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT id, hidden, kind_override FROM articles")}
+    assert rows == {"p": (1, None), "q": (1, "pr"), "q2": (1, "pr"), "r": (0, "pr")}
