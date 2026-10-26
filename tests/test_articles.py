@@ -230,3 +230,19 @@ def test_kind_pr_is_confirmed_only_and_same_story_followup_is_not_another_indepe
                                    item("b", "2026-06-19T16:00", "2026-06-22")])
     later = next(e for e in events if e["day"] == "2026-06-22")
     assert later["followup_of"] == "a"
+
+
+def test_company_report_only_when_company_is_subject():
+    # 다른 기관이 주어인 기사('…그린광학 방문')는 회사 발표가 아니라 외부 기사(언론 분석)
+    from core import articles as a
+    assert a.classify("충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…그린광학 방문", "", name="그린광학")[0] == "언론 분석"
+    assert a.classify("그린광학, 인도 GalaxEye 위성군에 광학미러 공급", "", name="그린광학")[0] == "회사 발표"
+    assert a.classify("그린광학 신제품 출시", "", name="그린광학")[0] == "회사 발표"
+
+
+def test_false_negative_words_are_not_bad_news():
+    # '인적자원'의 '적자'는 악재가 아님, 진짜 '영업적자'는 악재
+    from core import articles as a
+    t = "충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…그린광학 방문"
+    assert not any(w in a.neg_text(t) for w in a.STRONG_NEG) and a.tone_of(t) >= 0
+    assert any(w in a.neg_text("그린광학, 3분기 영업적자 확대") for w in a.STRONG_NEG)

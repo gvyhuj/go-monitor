@@ -2511,9 +2511,10 @@
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
     if (!a.manual && !isDisc) {
-      const toKind = a.kind === "pr" ? "ext" : "pr";
+      // 자동 판정 '회사 관련 보도'는 그린광학 보도자료 탭에 보이므로, 확인된 보도자료로 · 외부 기사로 둘 다 고를 수 있게
+      const toKinds = a.kind === "pr" ? ["ext"] : a.kind === "company" ? ["pr", "ext"] : ["pr"];
       html += `<div class="ask-row editable art-fix">
-        <button class="btn small" type="button" data-kind="${toKind}">${toKind === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>
+        ${toKinds.map((k) => `<button class="btn small" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}
         ${a.kind !== a.kind_auto && a.kind_auto ? `<button class="btn-link" type="button" data-kind="auto">자동 판정으로 되돌리기</button>` : ""}
         <span class="form-msg" id="art-fix-msg"></span></div>`;
     }

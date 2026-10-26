@@ -74,8 +74,9 @@ def _change(df: pd.DataFrame, t0: datetime, t1: datetime):
 
 def _tone(text: str) -> int:
     """기사 제목·요약의 방향성: +1 호재 쪽, -1 악재 쪽, 0 중립."""
+    from .articles import neg_text           # '인적자원'의 '적자' 같은 우연한 겹침은 악재로 세지 않음
     p = sum(w in text for w in POS_WORDS)
-    n = sum(w in text for w in NEG_WORDS)
+    n = sum(w in neg_text(text) for w in NEG_WORDS)
     return (p > n) - (n > p)
 
 

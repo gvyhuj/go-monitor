@@ -78,7 +78,10 @@ def classify(title: str, body: str, name: str | None = None, office: str = "") -
     if in_title:
         if t.lstrip().startswith("[") and not t.lstrip().startswith("[단독]"):
             return "언론 분석", mention          # 기획 연재 ([빛을 담는 기업들] 등)
-        return ("회사 발표" if has_company else "언론 분석"), mention
+        # 회사 발표는 이 회사가 제목의 주어일 때만 (첫 쉼표·말줄임표 앞에 이름이 있을 때).
+        # 예: '충북○○위원회, 우수 중소기업 탐방…그린광학 방문'은 다른 기관이 주어라 외부 기사 (언론 분석)
+        subject = re.split(r"[,，…]|\.\.\.", t, 1)[0]
+        return ("회사 발표" if has_company and name in subject else "언론 분석"), mention
     if name in b[:90]:
         return "언론 분석", mention              # 제목엔 없지만 이 종목을 다룬 기사
     if any(w in t for w in THEME):
@@ -86,10 +89,20 @@ def classify(title: str, body: str, name: str | None = None, office: str = "") -
     return "단순 언급", mention
 
 
+# 악재 단어가 다른 말 속에 우연히 들어 있는 경우 (예: '인적자원'의 '적자') — 악재 판단 전에 지움
+FALSE_NEG = ("인적자원", "인적 자원")
+
+
+def neg_text(s: str) -> str:
+    for w in FALSE_NEG:
+        s = s.replace(w, " ")
+    return s
+
+
 def tone_of(title: str, body: str = "") -> int:
     def score(s):
         p = sum(w in s for w in POS)
-        n = sum(w in s for w in NEG)
+        n = sum(w in neg_text(s) for w in NEG)
         return (p > n) - (n > p)
     t = score(title or "")
     return t if t else score((body or "")[:120])
@@ -130,18 +143,23 @@ def _key_office(o: str | None) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", o or "")
 
 
+RECLASS_VERSION = "v2"   # 분류 규칙이 바뀌면 올림 → 모은 기사 전체를 한 번 다시 분류 (v2: 회사가 제목의 주어일 때만 회사 발표, '인적자원'은 악재 아님)
+
+
 def reclassify(code: str) -> int:
-    """한 번만: 회사 이름 대신 '이 종목'으로 분류하던 동안(공개 저장소 전환 뒤) 잘못 매겨진 분류를 다시 매김."""
+    """규칙이 바뀌면 한 번만: 모은 기사 전체의 분류·호재/악재를 지금 규칙으로 다시 매김."""
     from .db import get_state, set_state
     name = company_name()
-    if name == NAME or get_state("articles:reclass_v1"):
+    key = f"articles:reclass_{RECLASS_VERSION}"
+    if name == NAME or get_state(key):
         return 0
     with connect() as conn:
         rows = [dict(r) for r in conn.execute("SELECT id, title, body, office FROM articles WHERE symbol=?", (code,))]
         for r in rows:
             cat, mention = classify(r["title"], r["body"], name, r["office"] or "")
-            conn.execute("UPDATE articles SET category=?, mention=? WHERE id=?", (cat, mention, r["id"]))
-    set_state("articles:reclass_v1", datetime.now().isoformat(timespec="minutes"))
+            conn.execute("UPDATE articles SET category=?, mention=?, tone=? WHERE id=?",
+                         (cat, mention, tone_of(r["title"], r["body"]), r["id"]))
+    set_state(key, datetime.now().isoformat(timespec="minutes"))
     return len(rows)
 
 
@@ -714,7 +732,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         a["time_quality"] = time_quality(a)
         a["topic"], a["topics"] = topics.classify(a["title"], a.get("body") or "", table)
         # 호재·악재: 보도자료는 표시하지 않고, 외부 기사는 뚜렷한 악재 단어가 있을 때만 '악재'
-        auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in (a["title"] or "") for w in STRONG_NEG) else 0)
+        auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in neg_text(a["title"] or "") for w in STRONG_NEG) else 0)
         a["tone"] = a["tone_override"] if a.get("tone_override") is not None else auto_tone
     out.sort(key=lambda a: a["ts"], reverse=True)
     return out
