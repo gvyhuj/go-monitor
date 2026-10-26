@@ -135,19 +135,20 @@ def _feature_rows(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True) if out else df
 
 
-DETECTOR_VERSION = "3"   # 기준이 바뀌면 올림 → 새 기준으로 다시 찾음 (2→3: 관찰 단계 추가, 기존 기록은 유지)
+DETECTOR_VERSION = "4"   # 기준이 바뀌면 올림 → 새 기준으로 다시 찾음 (2→3: 관찰 단계 추가, 기존 기록은 유지, 3→4: 거래대금 기준 없앰)
 
 
 def _ensure_version(symbol: str, log=None):
     st = get_state("detector_version")
     if st and st.get("value") == DETECTOR_VERSION:
         return False
-    if st and st.get("value") == "2" and DETECTOR_VERSION == "3":
-        with connect() as conn:                 # 기존 급등·급락은 그대로 두고, 받아 둔 기간을 다시 훑어 '관찰'만 더함
+    if st and st.get("value") in ("2", "3"):
+        # 기준을 넓히기만 한 변경(관찰 단계 추가, 거래대금 기준 없앰): 기존 기록은 그대로 두고 받아 둔 기간을 다시 훑어 새로 걸리는 것만 더함
+        with connect() as conn:
             conn.execute("DELETE FROM system_state WHERE key=?", (_state_key(symbol),))
         set_state("detector_version", DETECTOR_VERSION)
         if log:
-            log("관찰 단계(3~5%) 추가: 받아 둔 기간을 다시 훑습니다")
+            log("감지 기준을 넓힘(거래대금 기준 없앰): 받아 둔 기간을 다시 훑습니다")
         return True
     with connect() as conn:
         n = conn.execute("DELETE FROM events WHERE symbol=?", (symbol,)).rowcount
@@ -304,7 +305,7 @@ def _drop_pieces(conn, symbol, ev, keep_id):
 
 
 def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> list[dict]:
-    """하루 1분봉에서 '30분 안에 ±N% 움직이고, 그 가격이 몇 분 이상 유지되고, 거래대금이 충분한' 구간을 찾음.
+    """하루 1분봉에서 '30분 안에 ±N% 움직이고, 그 가격이 몇 분 이상 유지된' 구간을 찾음 (거래대금은 기준으로 쓰지 않음).
 
     - 체결 한두 건으로 튄 가격(얇은 호가)을 거르기 위해 3분 중앙값 가격을 씀
     - 장 시작 직후 움직임도 잡도록 전일 종가를 09시 직전 값으로 넣음
@@ -314,7 +315,6 @@ def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> l
     big = float(s.get("event_big_pct", 10.0)) / 100
     win = int(s.get("event_window_minutes", 30))
     hold = int(s.get("event_hold_minutes", 5))
-    min_val = float(s.get("event_min_value_won", 5e7))
     skip_from = s.get("skip_detection_from", "15:20")
     # 실제 체결이 있던 분끼리 앞뒤 3개 중앙값 → 체결 한 건으로 튄 가격은 빠짐. 그 뒤 빈 분은 직전 값으로 채움
     real = day.sort_values("ts").drop_duplicates("ts")
@@ -397,8 +397,6 @@ def intraday_events(day: pd.DataFrame, prev_close, s: dict, day_over: bool) -> l
         k = _ext(a, e, d)
         move = p[k] / base - 1
         val = sum(value[a + 1:e + 1])
-        if val < min_val:
-            continue
         start_label = "전일 종가" if (prev_close and a == 0) else ts[a].strftime("%H:%M")
         st = ts[a + 1] if (prev_close and a == 0) else ts[a]
         rule = (f"{st:%H:%M}~{ts[k]:%H:%M} 이어진 움직임 {move*100:+.1f}% ({start_label} {base:,.0f}원 → "
@@ -452,8 +450,6 @@ def running_daily_event(day: pd.DataFrame, prev_close, s: dict) -> dict | None:
     k = (min if d == "down" else max)(range(len(rets)), key=lambda i: rets[i])
     ext = rets[k]
     val = float((g["close"].astype(float) * g["volume"].astype(float)).sum())
-    if val < float(s.get("event_min_value_won", 5e7)):
-        return None
     now_ts = g["ts"].iloc[-1]
     now_px = float(g["robust"].iloc[-1])
     rule = (f"장중 전일 대비 {rets[-1]*100:+.2f}% (전일 {pc:,.0f}원 → {now_ts:%H:%M} {now_px:,.0f}원), "
@@ -599,7 +595,7 @@ def requested_event(symbol: str, day: str, t_from: str | None = None, t_to: str 
 def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: datetime | None = None, log=None) -> int:
     """급등·급락 찾기 (하루 단위로 다시 계산해서 기록을 맞춤).
 
-    - 장중: 30분 안에 ±5% 이상 움직이고 유지된 구간 (거래대금 기준 이상)
+    - 장중: 30분 안에 ±5% 이상 움직이고 유지된 구간
     - 하루: 종가가 전일보다 ±5% 이상 (장 마감 뒤 기록)
     - ±10% 이상은 '대형', ±3~5%는 '관찰'(사이트 기록만, 알림 없음)
     처음 실행하거나 기준이 바뀌면 받아 둔 기간 전체를 다시 훑음. 이후에는 오늘(과 어제)만.

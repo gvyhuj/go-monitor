@@ -11,7 +11,6 @@
   "event_big_pct": 10.0,
   "event_window_minutes": 30,
   "event_hold_minutes": 5,
-  "event_min_value_won": 50000000,
   "daily_event_lookback_days": 90,
   "multiday_days": 5,
   "multiday_pct": 10.0,

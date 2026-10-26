@@ -46,11 +46,11 @@
         </div>
         <button type="button" class="tcard t-news" id="q-news-card"><span class="tl" id="q-news-label">오늘 소식</span><span class="t-news-row" id="q-news">-</span><span class="tn-list" id="q-news-list"></span><span class="ts" id="q-news-sub">누르면 그날 기사·공시 목록</span></button>
         <div class="tcard" id="q-events-card"><span class="tl" id="q-events-label">오늘 급등·급락</span><span class="tv" id="q-events">-</span>
-          <button class="rules-btn" id="rules-toggle" type="button" aria-expanded="false" aria-controls="rules">감지 기준</button></div>
+          <span class="rules-wrap"><button class="rules-btn" id="rules-toggle" type="button" aria-describedby="rules">감지 기준</button>
+            <ul class="rules rules-pop" id="rules" role="tooltip"></ul></span></div>
         <div class="tcard" id="q-kosdaq-card"><span class="tl">KOSDAQ</span><span class="tv" id="q-kosdaq">-</span><span class="ts" id="q-kosdaq-sub"></span></div>
         <div class="tcard" id="q-volume-card"><span class="tl">거래량</span><span class="tv" id="q-volume">-</span><span class="ts" id="q-volume-sub"></span></div>
       </div>
-      <ul class="rules hero-rules" id="rules" hidden></ul>
     </div>
   </section>
 

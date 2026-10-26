@@ -184,7 +184,6 @@ def api_status(_q):
         "rules": {
             "move_pct": s.get("event_move_pct", 5.0), "big_pct": s.get("event_big_pct", 10.0),
             "window_min": s.get("event_window_minutes", 30), "hold_min": s.get("event_hold_minutes", 5),
-            "min_value_eok": round(float(s.get("event_min_value_won", 5e7)) / 1e8, 2),
         },
     }
 

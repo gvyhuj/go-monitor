@@ -196,3 +196,13 @@ def test_krx_daily_rescan_fixes_numbers_and_drops_below_threshold(tmpdb):
     assert abs(evs["2026-10-15"]["peak_return_5m"] - (11200 / 12620 - 1)) < 1e-9 and evs["2026-10-15"]["tier"] == "대형"
     assert kept == 1
     assert not detector._rescan_daily_krx(SYM, s, datetime(2026, 10, 21, 10, 0), sync=False)   # 한 번만
+
+
+def test_small_trade_value_is_still_detected():
+    # 거래대금 기준을 없앰: 분당 1주만 거래돼도(거래대금이 아주 작아도) 움직임이 기준을 넘으면 기록
+    day = "2026-10-12"
+    bars = _bars(day, _path(SLOW_DROP))
+    bars["volume"] = 1
+    evs = detector.intraday_events(bars, PREV, S, day_over=False)
+    assert [e for e in evs if e["direction"] == "down"]
+    assert detector.running_daily_event(bars, PREV, S) is not None

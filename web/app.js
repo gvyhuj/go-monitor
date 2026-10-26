@@ -280,8 +280,6 @@
     const strip = $("#hero .today-strip");
     if (!strip) return;
     TODAY_CARDS.forEach((id) => { const el = document.getElementById(id); if (el && el.parentElement !== strip) strip.appendChild(el); });
-    const rules = $("#rules");
-    if (rules && !rules.closest("#hero")) strip.after(rules);
   }
   function cleanupPage() {
     restoreHero();
@@ -785,8 +783,6 @@
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
     renderRules();
-    const tog = $("#rules-toggle");
-    tog.onclick = () => { const r = $("#rules"); r.hidden = !r.hidden; tog.setAttribute("aria-expanded", String(!r.hidden)); };
     let daily, arts, discs;
     try {
       [daily, arts, discs] = await Promise.all([
@@ -841,7 +837,6 @@
       const [pc, nc, ec, kc, vc] = TODAY_CARDS.map((id) => document.getElementById(id));
       grid.insertBefore(pc, card);
       [nc, ec, kc, vc].forEach((el) => grid.insertBefore(el, inv));
-      grid.after($("#rules"));
       $("#hero").hidden = true;
       if (window.ResizeObserver) {
         let t = 0, lastH = 0;
@@ -1318,7 +1313,6 @@
       <li><span>하루: 종가가 전일보다</span><b>±${r.move_pct}% 이상</b></li>
       <li><span>장중: ${r.window_min}분 안에</span><b>±${r.move_pct}% 이상</b></li>
       <li><span>장중은 그 가격이 유지된 시간</span><b>${r.hold_min}분 이상</b></li>
-      <li><span>장중 구간 거래대금</span><b>${r.min_value_eok}억 원 이상</b></li>
       <li><span>'대형' 표시</span><b>±${r.big_pct}% 이상</b></li>`;
   }
 
