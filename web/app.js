@@ -362,10 +362,32 @@
         position: e.direction === "down" ? "aboveBar" : e.direction === "up" ? "belowBar" : "aboveBar",
         shape: e.direction === "up" ? "arrowUp" : e.direction === "down" ? "arrowDown" : "circle",
         color: kindColor(e.direction, dark),
-        text: pct(e.peak_return_5m, 1),
         size: 1,
       })).sort((a, b) => a.time - b.time);
       LW.createSeriesMarkers(price, markers);
+      // 숫자(-4.5% 등)는 차트 글자(작고 흐림) 대신 색 바탕 이름표로 화살표 바로 위(하락)·아래(상승)에. 차트를 움직이면 따라감
+      el.style.position = "relative";
+      const tags = events.map((e) => {
+        const t = toTime(e.peak_ts || e.start_ts), b = bars.find((x) => toTime(x.t) === t);
+        const tag = document.createElement("button");
+        tag.type = "button";
+        tag.className = "ev-tag";
+        tag.textContent = pct(e.peak_return_5m, 1);
+        tag.style.background = kindColor(e.direction, dark);
+        tag.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
+        tag.addEventListener("pointerup", (ev) => ev.stopPropagation());
+        if (onEvent) tag.addEventListener("click", () => onEvent(e.id));
+        el.appendChild(tag);
+        return { tag, t, px: b ? b.c : null, up: e.direction === "up" };
+      });
+      const placeTags = () => tags.forEach(({ tag, t, px, up }) => {
+        const x = chart.timeScale().timeToCoordinate(t), y = px == null ? null : price.priceToCoordinate(px);
+        tag.hidden = x == null || y == null;
+        if (!tag.hidden) { tag.style.left = `${x}px`; tag.style.top = `${y + (up ? 36 : -36)}px`; }
+      });
+      chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
+      chart.timeScale().subscribeSizeChange(placeTags);
+      requestAnimationFrame(placeTags);
       // 차트의 급등·급락 표시를 누르면 목록과 같은 원인 분석 창을 엶
       if (onEvent) chart.subscribeClick((p) => { if (p.hoveredObjectId) onEvent(+p.hoveredObjectId); });
     }
@@ -421,6 +443,10 @@
       chart.timeScale().subscribeVisibleLogicalRangeChange(place);
       chart.timeScale().subscribeSizeChange(place);
       place();
+      // 폰에서는 차트 칸 크기가 늦게 정해지기도 해서, 화면이 자리 잡은 뒤 한 번 더 맞춤
+      requestAnimationFrame(place);
+      setTimeout(place, 400);
+      if (window.ResizeObserver) new ResizeObserver(place).observe(el);
     }
     chart.timeScale().fitContent();
     const show = (t) => {
@@ -2232,7 +2258,12 @@
     const hit = (...xs) => { const q = norm(artState.q); return !q || xs.some((x) => norm(x).includes(q)); };
     const onDay = (ts) => !artState.day || (!!ts && ts.slice(0, 10) === artState.day);
     const shown = (cat) => cat === "disc" ? groups.disc.filter((x) => onDay(x.ts) && hit(x.title, x.filer, x.kind))
-      : groups[cat].filter((e) => e.ids.some((id) => { const a = byId.get(id); return a && onDay(a.ts) && hit(a.title, a.office, a.category); }));
+      : groups[cat].filter((e) => e.ids.some((id) => {
+        const a = byId.get(id);
+        // 같은 내용으로 묶인 다른 매체(related)의 매체·제목·기자도 찾음 (대표 기사가 다른 매체여도 '블로터'로 걸리게)
+        const rel = (a && a.related || []).flatMap((r) => [r.office, r.title, r.reporter]);
+        return a && onDay(a.ts) && hit(a.title, a.office, a.category, a.reporter, ...rel);
+      }));
     const dayBox = $("#art-day");
     const renderDay = () => { dayBox.innerHTML = artState.day ? `<button type="button" class="chip-f" title="날짜 거르기 풀기">${+artState.day.slice(5, 7)}/${+artState.day.slice(8, 10)} 소식만 ✕</button>` : ""; };
     dayBox.onclick = () => { artState.day = null; renderDay(); renderList(); followTab(); };
