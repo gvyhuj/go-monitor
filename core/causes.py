@@ -618,15 +618,17 @@ def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, s
 
 # ------------------------------------------------------------------ main
 
-def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
+def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | None = None) -> dict:
     """한 이상변동의 원인 후보를 계산해 events.cause_json 에 저장하고 돌려준다.
 
     fetch: 같은 업종 종목 분봉·뉴스를 그 자리에서 받아오는 함수 (감시 엔진이 넘겨줌).
+    ev: events 표에 없는 기록(급등·급락이 없는 날의 하루 기록)을 줄 때. 이때는 저장하지 않고 돌려주기만 함.
     """
-    with connect() as conn:
-        ev = conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-    if not ev:
-        raise LookupError("해당 이상변동이 없습니다.")
+    if ev is None:
+        with connect() as conn:
+            ev = conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+        if not ev:
+            raise LookupError("해당 이상변동이 없습니다.")
     ev = dict(ev)
     symbol = ev["symbol"]
     daily = ev.get("event_type") == "daily"
@@ -907,6 +909,8 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
     # --- ① 몫 나누기: 실제 = 시장 몫 + 업종 몫 + 이 종목 고유 몫 ---------------------
     split = _decompose_window(symbol, day, own, kq, related, daily)
     from . import causal as _causal
+    from .detector import load_settings as _ls
+    _cfg = _ls()                    # 업종 ETF 목록 (factor_etfs)
     try:
         factor = _causal.factor_attribution(symbol, day.isoformat(), _cfg.get("factor_etfs") or [])
     except Exception as e:
@@ -1246,9 +1250,10 @@ def analyze(event_id: int, stage: str = "1차", fetch=None) -> dict:
         "disclosures": discl,
         "notes": notes,
     }
-    with connect() as conn:
-        conn.execute("UPDATE events SET cause_json=?, cause_stage=?, cause_updated_at=? WHERE id=?",
-                     (json.dumps(result, ensure_ascii=False, default=str), stage, result["analyzed_at"], event_id))
+    if event_id is not None:
+        with connect() as conn:
+            conn.execute("UPDATE events SET cause_json=?, cause_stage=?, cause_updated_at=? WHERE id=?",
+                         (json.dumps(result, ensure_ascii=False, default=str), stage, result["analyzed_at"], event_id))
     return result
 
 
@@ -1275,6 +1280,66 @@ def upgrade_reanalysis(symbol: str, now: datetime, log=None):
     set_state("cause_version", CAUSE_VERSION)
     if log and n:
         log.info("분석 방식 업데이트: 이상변동 %d건을 다시 분석합니다", n)
+
+
+DAY_LOOKBACK = 60          # 하루 분석을 채우는 기간 (거래일 아닌 달력 기준 일수)
+
+
+def day_stored(symbol: str, day: str):
+    with connect() as conn:
+        r = conn.execute("SELECT cause_json, stage, analyzed_at FROM day_causes WHERE symbol=? AND date=?", (symbol, day)).fetchone()
+    if not r or not r[0]:
+        return None
+    try:
+        return json.loads(r[0])
+    except ValueError:
+        return None
+
+
+def refresh_days(symbol: str, now: datetime, fetch=None, log=None, max_n: int = 3) -> int:
+    """급등·급락 기록(하루)이 없는 거래일도 장 마감 뒤 하루 분석을 해 둠 (화면에서 그날 하루 칸을 누르면 같은 분석 창).
+    오늘은 15:35 뒤 '준최종', 18시 뒤 '최종'으로 한 번 더. 지난 날은 바로 '최종'. 최근 날부터, 한 번에 max_n개."""
+    from .detector import day_record
+    since = (now - timedelta(days=DAY_LOOKBACK)).date().isoformat()
+    today = now.date().isoformat()
+    with connect() as conn:
+        days = [r[0] for r in conn.execute("SELECT date FROM daily_bars WHERE symbol=? AND date>=? ORDER BY date DESC", (symbol, since))]
+        has_ev = {r[0] for r in conn.execute("SELECT DISTINCT substr(start_ts,1,10) FROM events WHERE symbol=? AND event_type='daily' "
+                                             "AND start_ts>=?", (symbol, since))}
+        done = {r[0]: r[1] for r in conn.execute("SELECT date, stage FROM day_causes WHERE symbol=? AND date>=?", (symbol, since))}
+        conn.execute("DELETE FROM day_causes WHERE symbol=? AND date<?", (symbol, since))
+    n = 0
+    for day in days:
+        if n >= max_n:
+            break
+        if day in has_ev:
+            continue
+        if day == today:
+            if now.time() < datetime.strptime("15:35", "%H:%M").time():
+                continue
+            want = "최종" if now.hour >= 18 else "준최종"
+        else:
+            want = "최종"
+        if done.get(day) == want:
+            continue
+        ev = day_record(symbol, day)
+        if not ev:
+            continue
+        try:
+            result = analyze(None, want, fetch=fetch, ev=ev)
+        except Exception as e:      # noqa: BLE001 - 한 날이 실패해도 다음 날
+            if log:
+                log.warning("하루 분석 실패 %s: %s", day, e)
+            continue
+        with connect() as conn:
+            conn.execute("INSERT INTO day_causes(symbol, date, stage, cause_json, analyzed_at) VALUES (?,?,?,?,?) "
+                         "ON CONFLICT(symbol, date) DO UPDATE SET stage=excluded.stage, cause_json=excluded.cause_json, "
+                         "analyzed_at=excluded.analyzed_at",
+                         (symbol, day, want, json.dumps(result, ensure_ascii=False, default=str), result.get("analyzed_at")))
+        n += 1
+        if log:
+            log.info("하루 분석 %s: %s", want, day)
+    return n
 
 
 def refresh_pending(symbol: str, now: datetime, fetch=None, log=None, max_n: int = 8) -> int:

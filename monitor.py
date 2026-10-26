@@ -368,6 +368,7 @@ def main():
             # 원인 분석 기록 (1차 → 준최종 → 최종)
             causes.refresh_pending(settings["symbol"], feed.kst_now(),
                                    fetch=collector.fetch if collector else None, log=log)
+            causes.refresh_days(settings["symbol"], feed.kst_now(), fetch=collector.fetch if collector else None, log=log)
             today = feed.kst_now().date()
             if last_purge != today:
                 feed.purge_old_bars(int(settings.get("keep_bars_days", 0)))

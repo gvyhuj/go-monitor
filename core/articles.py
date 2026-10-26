@@ -47,7 +47,9 @@ NEG = ("유상증자", "적자", "손실", "소송", "해지", "취소", "블록
 
 # 매주 자동으로 만들어지는 종목 분석 글, 여러 종목 모음 기사 → '단순 언급'으로 (목록 기본 화면에서 숨김)
 NOISE_TITLE = re.compile(r"투자분석\s*\d{4}|브리핑|모음|마감\s*시황|오늘의\s*(특징주|종목|공시)|주간\s*(유망|추천)"
-                         r"|^\s*\[(부고|부음|인사|동정|게시판|결혼|화촉|알림)\]|별세|모친상|부친상|빙모상|빙부상|장모상|장인상|조모상|조부상")
+                         r"|^\s*\[(부고|부음|인사|동정|게시판|결혼|화촉|알림)\]|별세|모친상|부친상|빙모상|빙부상|장모상|장인상|조모상|조부상"
+                         # 테마주 등락 나열: "우주항공산업 관련주, '웃음꽃' 퍼스텍·태웅… '한숨' 센서뷰" (현대경제신문 등)
+                         r"|관련주\s*,\s*['‘\"“]")
 NOISE_OFFICE = ("주달",)
 # 외부 기사에 '악재'를 붙이는 뚜렷한 단어 (그 밖에는 호재·악재를 자동으로 붙이지 않음)
 STRONG_NEG = ("유상증자", "소송", "적자", "오버행", "블록딜", "전환사채", "감사의견", "거래정지", "불성실", "계약 해지",
@@ -144,7 +146,14 @@ def _key_office(o: str | None) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", o or "")
 
 
-RECLASS_VERSION = "v2"   # 분류 규칙이 바뀌면 올림 → 모은 기사 전체를 한 번 다시 분류 (v2: 회사가 제목의 주어일 때만 회사 발표, '인적자원'은 악재 아님)
+RECLASS_VERSION = "v3"   # 분류 규칙이 바뀌면 올림 → 모은 기사 전체를 한 번 다시 분류 (v2: 회사가 제목의 주어일 때만 회사 발표, '인적자원'은 악재 아님)
+
+
+def _category(title: str, body: str, name: str, office: str, source: str | None) -> tuple[str, str]:
+    cat, mention = classify(title, body, name, office)
+    if source == "naver_search" and cat == "단순 언급" and name in (body or "") and not NOISE_TITLE.search(title or ""):
+        cat = "언론 분석"      # 요약 뒷부분에만 이름이 나와도 받고, 원문을 열어 '이름만 언급'인지 따로 봄 (relevance.check)
+    return cat, mention
 
 
 def reclassify(code: str) -> int:
@@ -155,9 +164,9 @@ def reclassify(code: str) -> int:
     if name == NAME or get_state(key):
         return 0
     with connect() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT id, title, body, office FROM articles WHERE symbol=?", (code,))]
+        rows = [dict(r) for r in conn.execute("SELECT id, title, body, office, source FROM articles WHERE symbol=?", (code,))]
         for r in rows:
-            cat, mention = classify(r["title"], r["body"], name, r["office"] or "")
+            cat, mention = _category(r["title"], r["body"], name, r["office"] or "", r["source"])
             conn.execute("UPDATE articles SET category=?, mention=?, tone=? WHERE id=?",
                          (cat, mention, tone_of(r["title"], r["body"]), r["id"]))
     set_state(key, datetime.now().isoformat(timespec="minutes"))
@@ -179,9 +188,7 @@ def _save(code: str, items: list[dict], source: str) -> int:
         items = [i for i in items if i["id"] not in gone and not relevance.blocked(i.get("office"), i.get("url"))]
         rows = []
         for i in items:
-            cat, mention = classify(i["title"], i["body"], name, i.get("office") or "")
-            if source == "naver_search" and cat == "단순 언급" and name in (i.get("body") or ""):
-                cat = "언론 분석"      # 요약 뒷부분에만 이름이 나와도 받고, 원문을 열어 '이름만 언급'인지 따로 봄 (relevance.check)
+            cat, mention = _category(i["title"], i["body"], name, i.get("office") or "", source)
             if cat in relevance.NOISE_CATEGORIES:      # 단순 언급·시황 기사는 모으지 않음
                 relevance.drop(conn, {**i, "symbol": code}, "noise")
                 continue

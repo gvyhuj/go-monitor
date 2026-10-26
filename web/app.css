@@ -182,12 +182,24 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .bento > #q-price-card { grid-column: 1 / 4; grid-row: 1; }
 .bento > #q-events-card { grid-column: 1 / 4; grid-row: 2; }
 .bento > #q-kosdaq-card { grid-column: 1 / 4; grid-row: 3; }
-.bento > #q-volume-card { grid-column: 1 / 4; grid-row: 4; }
 .bento > .rec-card { grid-column: 4 / -1; grid-row: 1 / 5; margin: 0; min-width: 0; }
 /* 아래: 왼쪽 소식(제목 목록, 두 줄 높이) · 오른쪽에 순매수와 누적을 위아래로 */
-.bento > .t-news { grid-column: 1 / 8; grid-row: 5 / 7; justify-content: flex-start; }
-.bento > .b-inv { grid-column: 8 / -1; grid-row: 5; }
-.bento > .tcard.b-inv .tv { white-space: nowrap; font-size: 17px; }
+.bento > .t-news { grid-column: 1 / -1; grid-row: 5; justify-content: flex-start; }
+/* 넓은 소식 칸: 왼쪽에 날짜·건수·안내, 오른쪽에 제목 목록 (한 줄 전체를 쓰되 빈 곳 없이) */
+@media (min-width: 721px) {
+  .bento > .t-news { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; grid-template-rows: auto auto 1fr;
+    grid-template-areas: "label list" "counts list" "sub list"; column-gap: 28px; align-items: start; }
+  .bento > .t-news > .tl { grid-area: label; }
+  .bento > .t-news > .t-news-row { grid-area: counts; }
+  .bento > .t-news > .ts { grid-area: sub; align-self: end; }
+  .bento > .t-news > .tn-list { grid-area: list; margin: 0; padding-left: 24px; border-left: 1px solid var(--line); align-self: stretch; justify-content: center; }
+  /* 그날 기사·공시가 없으면 목록 칸 없이 한 줄로 (날짜 · 건수 · 안내) → 빈 곳이 생기지 않음 */
+  .bento > .t-news:has(> .tn-list:empty) { grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: auto;
+    grid-template-areas: "label counts sub"; align-items: center; }
+  .bento > .t-news:has(> .tn-list:empty) > .tn-list { display: none; }
+  .bento > .t-news:has(> .tn-list:empty) > .t-news-row { margin: 0; }
+  .bento > .t-news:has(> .tn-list:empty) > .ts { align-self: center; justify-self: end; margin-right: 22px; }
+}
 /* 소식 칸 안의 그날 기사·공시 제목 (누르면 소식 탭의 그 기사) */
 .tn-list { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 2px; min-width: 0; }
 .tn-item { display: flex; align-items: center; gap: 6px; font-size: 13.5px; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; min-width: 0; }
@@ -199,7 +211,7 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .tn-more { font-size: 12.5px; color: var(--brand-blue); cursor: pointer; }
 .t-go { cursor: pointer; border-radius: 6px; padding: 1px 4px; margin: -1px -4px; transition: background-color .15s; }
 .t-go:hover { background: var(--canvas); text-decoration: underline; text-underline-offset: 3px; }
-.bento > .b-seg { grid-column: 8 / -1; grid-row: 6; }
+.bento > .b-seg { grid-column: 1 / 4; grid-row: 4; }      /* 왼쪽 세로 줄 맨 아래 (가격·급등락·KOSDAQ 밑) */
 /* 사업 분야 칸: 분야 이름을 작은 칩으로 */
 .seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .seg-chip { padding: 3px 10px; border-radius: 999px; background: var(--canvas); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); }
@@ -218,16 +230,12 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
 .bento > .tcard:not(.t-price) .tv { white-space: normal; }
 #rec-day { margin-top: 12px; }
 @media (max-width: 980px) {
-  /* 좁은 화면: 가격·차트·소식은 한 줄 전체, 급등락·KOSDAQ·거래량은 한 상자처럼 붙여 한 줄, 사업 분야·순매수는 반반 */
+  /* 좁은 화면: 가격·차트·소식·사업 분야는 한 줄 전체, 급등락·KOSDAQ은 한 상자처럼 붙여 한 줄 */
   .bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .bento > .tcard, .bento > .rec-card, .bento > #q-price-card, .bento > #q-events-card, .bento > #q-kosdaq-card, .bento > #q-volume-card { grid-column: span 2; grid-row: auto; }
-  .bento > #q-price-card, .bento > .rec-card, .bento > .t-news { grid-column: 1 / -1; }
-  .bento > .b-seg, .bento > .b-inv { grid-column: span 3; }
-  .bento > .tcard.b-inv .tv { white-space: normal; }
+  .bento > .tcard, .bento > .rec-card, .bento > #q-price-card, .bento > #q-events-card, .bento > #q-kosdaq-card { grid-column: span 3; grid-row: auto; }
+  .bento > #q-price-card, .bento > .rec-card, .bento > .t-news, .bento > .b-seg { grid-column: 1 / -1; }
   .bento > #q-events-card { border-radius: var(--r-md) 0 0 var(--r-md); }
-  .bento > #q-kosdaq-card { border-radius: 0; border-left: 0; margin-left: calc(-1 * var(--bento-gap)); }
-  .bento > #q-volume-card { border-radius: 0 var(--r-md) var(--r-md) 0; border-left: 0; margin-left: calc(-1 * var(--bento-gap)); }
-  .bento > #q-kosdaq-card, .bento > #q-volume-card { box-shadow: inset 1px 0 0 var(--line); }
+  .bento > #q-kosdaq-card { border-radius: 0 var(--r-md) var(--r-md) 0; border-left: 0; margin-left: calc(-1 * var(--bento-gap)); box-shadow: inset 1px 0 0 var(--line); }
   .today-strip { grid-template-columns: 1fr 1fr 1fr; }
   .today-strip .t-price, .today-strip .t-news { grid-column: 1 / -1; }
 }

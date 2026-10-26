@@ -6,7 +6,7 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const main = $("#main");
   const KIND = { up: "급등", down: "급락", flat: "거래량만 급증" };
-  const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
+  const kindOf = (e) => (e.tier === "관찰" || e.tier === "요청" || e.tier === "일일" ? ({ up: "상승", down: "하락" }[e.direction] || KIND[e.direction]) : KIND[e.direction]);
   // 장중 이상변동 숫자의 기준: 장 시작부터 이어진 움직임만 전일 종가 대비, 나머지는 움직임 시작 가격 대비 (감지 규칙 글에 적힌 시작점)
   const moveBasis = (e) => (e.event_type === "daily" || /\(전일 종가 /.test(e.rule || "") ? "전일 대비" : "구간 움직임");
   const scopeTag = (e) => `<span class="scope">${e.scope === "하루" || e.event_type === "daily" ? "하루" : "장중"}</span>`;
@@ -228,6 +228,8 @@
     }
     let m = p.match(/^\/api\/events\/(\d+)$/);
     if (m) return kv(`event:${m[1]}`);
+    m = p.match(/^\/api\/day\/(\d{4}-\d{2}-\d{2})$/);
+    if (m) return kv(`day:${m[1]}`);
     if (p === "/api/articles") {
       const a = await kv("articles");
       if (!q.limit) return a;
@@ -847,7 +849,7 @@
     if (!calState.sel || !price[calState.sel]) calState.sel = latest;
     const onNews = (ds) => { pick(ds); const el = $("#rec-day"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
     let events = [];
-    const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) { $(".b-inv", g).innerHTML = invHtml(); $(".b-seg", g).innerHTML = segHtml(); } };
+    const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) $(".b-seg", g).innerHTML = segHtml(); };
     api("/api/events").then((d) => { events = d.events || []; if ($("#view")) fillDay(); }).catch(() => {});
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const news = (ds) => {
@@ -864,13 +866,14 @@
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
-        </section><div class="tcard b-inv" role="button" tabindex="0" title="누르면 거래원 상위 창구 등 자세히">${invHtml()}</div><div class="tcard b-seg">${segHtml()}</div></div>
+        </section><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
-      // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ·거래량)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨)
-      const grid = $("#rec-bento", box), card = $(".rec-card", grid), inv = $(".b-inv", grid);
-      const [pc, nc, ec, kc, vc] = TODAY_CARDS.map((id) => document.getElementById(id));
+      // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨).
+      // 거래량 카드는 주가 기록 화면에서 빼고 숨긴 위 줄에 둠 (값은 계속 기록)
+      const grid = $("#rec-bento", box), card = $(".rec-card", grid), seg = $(".b-seg", grid);
+      const [pc, nc, ec, kc] = TODAY_CARDS.map((id) => document.getElementById(id));
       grid.insertBefore(pc, card);
-      [nc, ec, kc, vc].forEach((el) => grid.insertBefore(el, inv));
+      [nc, ec, kc].forEach((el) => grid.insertBefore(el, seg));
       $("#hero").hidden = true;
       if (window.ResizeObserver) {
         let t = 0, lastH = 0;
@@ -882,19 +885,9 @@
       }
     }
 
-    // 아래 작은 칸: 고른 날 개인·외국인·기관 순매수, 사업 분야
+    // 아래 작은 칸: 고른 날 사업 분야
     const selRow = () => { const i = daily.findIndex((x) => x.date === calState.sel); return i >= 0 ? i : daily.length - 1; };
     const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
-    function invHtml() {
-      const x = daily[selRow()];
-      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
-      const inv = x.individual != null || x.foreign != null || x.organ != null;
-      const fe = !inv && x.foreign_est;      // 장중: 거래소 확정치 대신 증권사 창구 기준 외국계 추정 (원인 분석 창의 '외국계 창구 합계'와 같은 자료)
-      if (fe) return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">외국계 창구 ${signed(fe.buy - fe.sell)}</span>
-          <span class="ts">${hhmm(fe.ts)} 기준 장중 추정 · 개인·외국인·기관 확정치는 거래소 집계 뒤</span>`;
-      return `<span class="tl">${mdOf(x.date)} 순매수 (주)</span><span class="tv">${inv ? `개인 ${signed(x.individual)} · 외국인 ${signed(x.foreign)} · 기관 ${signed(x.organ)}` : "-"}</span>
-          <span class="ts">${inv ? "장 마감 뒤 확정치" : "아직 집계 전입니다"}</span>`;
-    }
     // 사업 분야: 네이버 업종(WICS) 고른 날 등락률 (2026-10-26부터 기록, 그 전 날은 '-')
     const INDUSTRY_LABELS = [["우주항공과국방", "우주항공·국방"], ["반도체와반도체장비", "반도체"], ["디스플레이장비및부품", "디스플레이 장비·부품"], ["디스플레이패널", "디스플레이 패널"]];
     function segHtml() {
@@ -902,30 +895,6 @@
       return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)</small></span>
           <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
             `<button type="button" class="seg-chip" data-ind="${esc(k)}" title="누르면 이 업종의 그날 오른·내린 종목">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></button>`).join("")}</span>`;
-    }
-    // 순매수 칸을 누르면: 확정치(개인·외국인·기관, 외국인 보유율, 5거래일 누적) 또는 장중 외국계 창구 추정, 거래원 매수·매도 상위 5
-    function openInvest() {
-      const i = selRow(), x = daily[i];
-      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
-      const inv = x.individual != null || x.foreign != null || x.organ != null, fe = !inv && x.foreign_est, tr = x.traders;
-      const cum = (k) => { const rs = daily.slice(Math.max(0, i - 4), i + 1).map((r) => r[k]); return rs.length === 5 && rs.every((v) => v != null) ? rs.reduce((a, b) => a + b, 0) : null; };
-      const cell = (k, v) => `<div><dt>${k}</dt><dd class="num">${v}</dd></div>`;
-      const list = (xs) => xs && xs.length
-        ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}${s.foreign ? ' <em class="fx">외국계</em>' : ""}</span><b>${int(s.qty)}주</b></li>`).join("")}</ul>`
-        : `<p class="muted">-</p>`;
-      const head = inv
-        ? `<dl class="key-stats">${cell("개인", signed(x.individual))}${cell("외국인", signed(x.foreign))}${cell("기관", signed(x.organ))}${x.foreign_ratio != null ? cell("외국인 보유율", `${x.foreign_ratio}%`) : ""}</dl>
-           <p class="muted">최근 5거래일 누적: 개인 ${signed(cum("individual"))} · 외국인 ${signed(cum("foreign"))} · 기관 ${signed(cum("organ"))}</p>
-           <p class="note">거래소 확정치(장 마감 뒤), 단위 주</p>`
-        : fe ? `<p class="ind-rate"><b>${signed(fe.buy - fe.sell)}</b><span class="muted">외국계 창구 순매수 · ${hhmm(fe.ts)} 기준</span></p>
-           <p class="muted">외국계 창구 매수 ${int(fe.buy)}주 · 매도 ${int(fe.sell)}주</p>
-           <p class="note">증권사 창구(거래원) 기준 추정치입니다. 거래소의 개인·외국인·기관 확정치는 장 마감 뒤 집계가 끝나면 나오고, 그때 이 자리가 확정치로 바뀝니다.</p>`
-        : `<p class="note">아직 집계 전입니다.</p>`;
-      $("#ind-title").textContent = `${mdOf(x.date)} 순매수`;
-      $("#ind-body").innerHTML = head + `<h3 class="d-sec">거래원 매수·매도 상위 5 <small class="muted">${tr && tr.ts ? `${hhmm(tr.ts)} 기준` : tr ? "장 마감" : ""}</small></h3>
-        ${tr ? `<div class="ind-cols"><div><h3 class="d-sec">매수</h3>${list(tr.buy)}</div><div><h3 class="d-sec">매도</h3>${list(tr.sell)}</div></div>`
-          : `<p class="muted">이 날은 거래원 기록이 없습니다.</p>`}`;
-      $("#ind-modal").hidden = false;
     }
     // 업종 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 많이 오른·내린 종목 5개씩
     function openIndustry(k) {
@@ -1065,7 +1034,7 @@
       st.range = null;
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
       const dayAsk = $("[data-day-ask]", art);
-      if (dayAsk) dayAsk.onclick = () => openDayAsk(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
+      if (dayAsk) dayAsk.onclick = () => openDay(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
     }
 
     // 고른 날 주요 숫자 (토스 '1일 범위·52주 범위'·투자자별, 네이버 시가·고가·저가·거래량 칸 참고)
@@ -1106,7 +1075,6 @@
     box.onclick = async (ev) => {
       const ib = ev.target.closest("[data-ind]");
       if (ib) { openIndustry(ib.dataset.ind); return; }
-      if (ev.target.closest(".b-inv")) { openInvest(); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
@@ -1312,6 +1280,16 @@
     (arts || []).filter((a) => a.category !== "단순 언급" && !a.hidden && a.ts && a.ts >= since && a.ts <= until).slice(0, 8)
       .forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」${a.office ? ` (${a.office})` : ""}`));
     return `${L.join("\n")}\n\n[질문] ${question}`;
+  }
+
+  /** 장 마감 뒤 하루 칸(급등·급락 기록이 없는 날)을 누르면: 장 마감 뒤 자동으로 해 둔 하루 분석을 급등·급락 상세와 같은 창으로.
+   *  아직 분석이 없으면(분석 전·오래된 날) ChatGPT에게 묻는 창 */
+  async function openDay(d, arts, prevDay, px) {
+    openDrawer(`<p class="loading">불러오는 중…</p>`);
+    let r = null;
+    try { r = await api(`/api/day/${d.date}`); } catch (_) { r = null; }
+    if (r && r.event && r.cause) renderEventDrawer(r);
+    else openDayAsk(d, arts, prevDay, px);
   }
 
   /** 장 마감 뒤 하루 칸을 누르면: 그날 장 전체를 ChatGPT에게 묻는 창 (구간 묻기와 같은 자료·같은 기록 방식) */
@@ -1758,7 +1736,7 @@
       </dl>
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
-      <section class="evidence"><h3 class="evidence-title">근거 자세히 <span class="muted">몫 나누기 · 비교 종목 · 매매 창구</span></h3>
+      <section class="evidence">
         <section class="d-block">${factsBlock(c)}</section>
         <section class="d-block">${relatedBlock(c, e.own_change)}</section>
         ${disclosureBlock(c)}

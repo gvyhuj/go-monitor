@@ -229,6 +229,15 @@ CREATE INDEX IF NOT EXISTS idx_news_ts ON news(symbol, ts);
 CREATE INDEX IF NOT EXISTS idx_trader_ts ON trader_snapshots(symbol, ts);
 CREATE INDEX IF NOT EXISTS idx_events_symbol_ts ON events(symbol, start_ts);
 -- 사이트에서 직접 붙여넣은 원인 (ChatGPT 등). 이벤트 기록은 다시 계산되며 지워질 수 있어 날짜·방향·구간으로 연결
+CREATE TABLE IF NOT EXISTS day_causes (     -- 급등·급락 기록이 없는 거래일의 하루 분석 (장 마감 뒤 자동, 화면의 하루 칸용)
+    symbol TEXT NOT NULL,
+    date TEXT NOT NULL,
+    stage TEXT,                     -- 준최종(15:35 뒤) / 최종(18시 뒤, 투자자별 확정치 반영)
+    cause_json TEXT,
+    analyzed_at TEXT,
+    PRIMARY KEY(symbol, date)
+);
+
 CREATE TABLE IF NOT EXISTS manual_causes (
     date TEXT NOT NULL,
     direction TEXT NOT NULL,

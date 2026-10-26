@@ -228,6 +228,17 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
             (e["cause_updated_at"] or "") > c["built_at"] or (e["last_ts"] or "") > c["built_at"]
         keep(key, lambda i=e["id"]: ws.api_event_detail({}, i), need)
 
+    # 급등·급락이 없는 날의 하루 분석
+    with connect() as conn:
+        dcs = [dict(r) for r in conn.execute("SELECT date, analyzed_at FROM day_causes WHERE date >= ? ORDER BY date",
+                                             (since[:10],))]
+    for x in dcs:
+        key = f"day:{x['date']}"
+        want.add(key)
+        c = cached.get(key)
+        need = version_changed or full or c is None or (x["analyzed_at"] or "") > c["built_at"]
+        keep(key, lambda d=x["date"]: ws.api_day_detail({}, d), need)
+
     # 지난 날짜 장중 차트
     first = ws.api_intraday({})
     for d in (first.get("dates") or [])[1:]:

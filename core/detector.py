@@ -542,6 +542,23 @@ def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
             "tier": _tier(ret, main_th, big), "detection_rule": rule, "status": "closed"}
 
 
+def day_record(symbol: str, day: str) -> dict | None:
+    """급등·급락 기록이 없는 날도 하루 분석을 하려고 만드는 '하루' 기록 모양 (events 표에는 넣지 않음)."""
+    pc = _prev_close(symbol, day)
+    with connect() as conn:
+        dr = conn.execute("SELECT close, high, low, volume FROM daily_bars WHERE symbol=? AND date=?", (symbol, day)).fetchone()
+    if not pc or not dr or not dr["close"]:
+        return None
+    close = float(dr["close"])
+    move = close / pc - 1
+    d = "up" if move >= 0 else "down"
+    ext = (float(dr["high"] or close) / pc - 1) if d == "up" else (float(dr["low"] or close) / pc - 1)
+    return {"symbol": symbol, "event_type": "daily", "direction": d, "start_ts": f"{day}T09:00", "last_ts": f"{day}T15:30",
+            "peak_ts": f"{day}T15:30", "peak_return_5m": move, "return_5m": ext, "trade_value": close * float(dr["volume"] or 0),
+            "tier": "일일", "status": "closed",
+            "detection_rule": f"하루 종가 {move*100:+.2f}% (전일 {pc:,.0f}원 → {close:,.0f}원), 장중 {'최고' if d == 'up' else '최저'} {ext*100:+.2f}%"}
+
+
 def requested_event(symbol: str, day: str, t_from: str | None = None, t_to: str | None = None) -> dict:
     """사용자가 사이트에서 '이 날(이 시간대) 왜 움직였나' 분석을 요청했을 때 만드는 기록 (단계: 요청).
 

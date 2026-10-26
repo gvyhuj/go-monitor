@@ -99,3 +99,10 @@ def test_noise_category_is_never_saved_and_old_rows_are_purged(tmpdb):
     with db.connect() as conn:
         assert [r[0] for r in conn.execute("SELECT id FROM articles")] == ["s3"]
     assert articles._save("000", [_item("s2", "오늘의 특징주 모음")], "naver") == 0
+
+
+def test_theme_roundup_titles_and_office_are_dropped(tmpdb):
+    t = "우주항공산업 관련주, '덩실덩실' 이노스페이스·센서뷰·" + NAME + "·나라스페이스테크놀로지.. '눈물' K삼양·퍼스텍"
+    assert articles.classify(t, "", NAME)[0] == "단순 언급"
+    assert relevance.blocked("현대경제신문", "https://www.finomy.com/news/articleView.html?idxno=1")
+    assert articles._save("000", [_item("h1", f"{NAME} 공급계약", office="현대경제신문")], "naver") == 0

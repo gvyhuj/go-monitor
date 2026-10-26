@@ -19,7 +19,8 @@ from datetime import datetime
 from .db import connect
 
 BLOCKED_OFFICES = {"핀포인트뉴스": "pinpointnews.co.kr",       # 매체 이름: 주소
-                   "Investing.com 한국어": "kr.investing.com"}    # 다른 매체 기사를 다시 싣기만 함 (원문도 접속 차단)
+                   "Investing.com 한국어": "kr.investing.com",    # 다른 매체 기사를 다시 싣기만 함 (원문도 접속 차단)
+                   "현대경제신문": "finomy.com"}                  # 테마주 등락 나열 기사만 냄 ('○○ 관련주, '웃음꽃' 종목·종목…')
 # 원문을 열 수 없어(접속 차단) 자동 판단이 안 되는 기사 중 사용자가 지우라고 한 것 (제목 일부)
 DROP_TITLES = ("스페이스X(SPCX) 보호예수 해제 충격파",)
 NOISE_CATEGORIES = ("단순 언급", "시황·특징주")

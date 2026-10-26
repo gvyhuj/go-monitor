@@ -433,6 +433,35 @@ def api_event_detail(q, eid):
             "followups": causes.followup_filings(sym, day)}
 
 
+def api_day_detail(q, day):
+    """급등·급락 기록이 없는 날의 하루 분석 (장 마감 뒤 자동). 화면은 급등·급락 상세와 같은 창으로 그림."""
+    s = load_settings()
+    sym = s["symbol"]
+    from core.detector import day_record
+    r = day_record(sym, day)
+    if not r:
+        raise LookupError("이날 일봉 기록이 없습니다.")
+    with connect() as conn:
+        mc = manual.find(conn, r)
+    ev = {"cause_headline": manual.summary(mc), "cause_confidence": manual.confidence(mc), "manual": mc,
+          "tier": "일일", "trade_value": r["trade_value"], "scope": "하루", "id": None,
+          "start_ts": r["start_ts"], "last_ts": r["last_ts"], "direction": r["direction"],
+          "kind": DIR_KO.get(r["direction"], r["direction"]), "event_type": "daily",
+          "peak_return_5m": r["peak_return_5m"], "peak_ts": r["peak_ts"], "own_change": r["peak_return_5m"],
+          "kosdaq_change": causes._daily_change(KOSDAQ, day), "rule": r["detection_rule"], "status": "closed"}
+    t0, t1 = datetime.fromisoformat(r["start_ts"]), datetime.fromisoformat(r["last_ts"])
+    own = analysis.load_range(sym, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
+    kq = analysis.load_range(KOSDAQ, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
+    cause = manual.facts_only(causes.day_stored(sym, day))
+    rel = []
+    for x in (cause or {}).get("related") or []:
+        df = analysis.load_range(x["code"], t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
+        if not df.empty:
+            rel.append({"code": x["code"], "name": x["name"], "change": x.get("change"), "bars": bars_payload(df, full=False)})
+    return {"event": ev, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
+            "cause": cause, "related_bars": rel, "followups": causes.followup_filings(sym, day)}
+
+
 def _live_fetch(kind, arg, day):
     """화면에서 '다시 분석'을 누르면 같은 업종 시세·뉴스를 바로 받아와 반영."""
     now = feed.kst_now()
@@ -750,6 +779,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/daily$"), api_daily),
     (re.compile(r"^/api/coarse$"), api_coarse),
     (re.compile(r"^/api/events/(\d+)$"), api_event_detail),
+    (re.compile(r"^/api/day/(\d{4}-\d{2}-\d{2})$"), api_day_detail),
     (re.compile(r"^/api/pr$"), api_pr_list),
     (re.compile(r"^/api/pr/(\d+)$"), api_pr_detail),
     (re.compile(r"^/api/articles$"), api_articles),

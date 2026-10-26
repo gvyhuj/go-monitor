@@ -556,6 +556,10 @@ def main(argv) -> int:
                 set_state("factor_ready", now.isoformat(timespec="minutes"))
                 log.info("업종 ETF 자료가 준비되어 이벤트를 다시 분석합니다")
         causes.refresh_pending(code, feed.kst_now(), fetch=c.fetch, log=log)
+        try:                                   # 급등·급락이 없는 날도 하루 분석 (하루 칸을 누르면 같은 분석 창)
+            causes.refresh_days(code, feed.kst_now(), fetch=c.fetch, log=log)
+        except Exception as e:  # noqa: BLE001
+            log.warning("하루 분석 실패: %s", e)
         # 급등·급락 알림 (GitHub 앱 푸시: 저장소 주인 @언급)
         try:
             from core import alerts
