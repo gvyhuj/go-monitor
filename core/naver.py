@@ -196,9 +196,11 @@ def fetch_quote(code: str, is_index: bool = False) -> dict:
 
 # ------------------------------------------------------------------ 원인 분석용
 # (2026-10-02 확인) 모두 공개 화면이 쓰는 주소이며 로그인 정보는 사용하지 않음
-#   거래원      https://stock.naver.com/api/domestic/detail/{code}/traderInfo
+#   거래원      https://stock.naver.com/api/stockSecurity/items/v2/domestic/{code}/broker-trades
+#               (2026-10-26 확인: 예전 /api/domestic/detail/{code}/traderInfo 는 404로 바뀜)
 #               당일 누적, 상위 거래원(증권사 창구)별 매수/매도 수량. 최상위 buyQuant/sellQuant는 외국계 추정 합계
-#   투자자별    https://stock.naver.com/api/domestic/detail/{code}/trend?tradeType=KRX&startIdx=0&pageSize=N
+#   투자자별    https://stock.naver.com/api/stockSecurity/investor-trend/v2/domestic/{code}?exchangeType=krx&size=N
+#               (2026-10-26 확인: 예전 /api/domestic/detail/{code}/trend 는 404로 바뀜)
 #               일별 개인/외국인/기관 순매수 (장 마감 후 확정분)
 #   뉴스        https://m.stock.naver.com/api/news/stock/{code}?pageSize=N&page=1   (datetime = 한국 시각)
 #   공시        https://stock.naver.com/api/domestic/detail/notice?itemCode={code}&startIdx=0&pageSize=N
@@ -245,7 +247,27 @@ def mark_top5(rows: list[dict]) -> list[dict]:
 
 
 def fetch_trader_info(code: str) -> dict:
-    return parse_trader_info(_json(f"https://stock.naver.com/api/domestic/detail/{code}/traderInfo"))
+    return parse_broker_trades(_json(f"https://stock.naver.com/api/stockSecurity/items/v2/domestic/{code}/broker-trades"))
+
+
+def parse_broker_trades(d: dict) -> dict:
+    """새 거래원 응답 → parse_trader_info와 같은 모양. bidVolume = 매수, askVolume = 매도, foreignEstimate = 외국계 추정 합계."""
+    day = str(d.get("tradingDateKst") or "").replace("-", "") or None
+    rows = []
+    for t in d.get("items") or []:
+        rows.append({
+            "trader_no": str(t.get("brokerNo")),
+            "name": t.get("brokerDisplayName") or t.get("brokerName") or "",
+            "name_full": t.get("brokerName") or "",
+            "buy": _int(t.get("bidVolume")),
+            "sell": _int(t.get("askVolume")),
+            "foreign": is_foreign_broker(t.get("brokerName") or "", t.get("brokerDisplayName") or ""),
+            "bizdate": day,
+        })
+    mark_top5(rows)
+    fe = d.get("foreignEstimate") or {}
+    return {"source": "네이버", "foreign_buy": _int(fe.get("bidVolume")), "foreign_sell": _int(fe.get("askVolume")),
+            "traders": rows}
 
 
 def parse_trader_info(d: dict) -> dict:
@@ -278,17 +300,22 @@ def fetch_research(code: str) -> list[dict]:
 
 
 def fetch_investor_trend(code: str, n: int = 20) -> list[dict]:
-    d = _json(f"https://stock.naver.com/api/domestic/detail/{code}/trend?tradeType=KRX&startIdx=0&pageSize={n}")
+    d = _json(f"https://stock.naver.com/api/stockSecurity/investor-trend/v2/domestic/{code}?exchangeType=krx&size={n}")
+    return parse_investor_trend(d)
+
+
+def parse_investor_trend(d: dict) -> list[dict]:
     out = []
-    for r in d or []:
+    for r in (d or {}).get("items") or []:
+        k = r.get("krx") or {}
         out.append({
-            "bizdate": r.get("bizdate"),
-            "foreign": _int(r.get("foreignerPureBuyQuant")),
-            "organ": _int(r.get("organPureBuyQuant")),
-            "individual": _int(r.get("individualPureBuyQuant")),
-            "close": _int(r.get("closePrice")),
-            "volume": _int(r.get("tradeVolume")),
-            "foreign_ratio": float(r.get("frgnHoldRatio") or 0),
+            "bizdate": str(r.get("localTradedAt") or "").replace("-", ""),
+            "foreign": _int(k.get("foreignNetVolume")),
+            "organ": _int(k.get("organizationNetVolume")),
+            "individual": _int(k.get("individualNetVolume")),
+            "close": _int(k.get("closingPrice")),
+            "volume": _int(k.get("tradingVolume")),
+            "foreign_ratio": float(r.get("foreignHoldingRatio") or 0),
         })
     return out
 
