@@ -953,7 +953,7 @@
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${nv.fetched_at ? hhmm(nv.fetched_at) : ""}</small></span>
           <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv(tipK("PER"), now("per"))}${kv(tipK("PBR"), now("pbr"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
-            ${qt ? `<dt class="rs-q">${esc(qt.title || "")}기준(분기)</dt><dd class="rs-q">매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억</dd>` : ""}</dl></div>` : ""}`;
+            ${qt ? `<dt class="rs-q">${esc(qt.title || "")}(분기)</dt><dd class="rs-q">매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억</dd>` : ""}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
@@ -2085,7 +2085,6 @@
         <h3>기사 표시</h3>
         <ul>
           <li><b>공개 시각 확인 필요</b>: 구글 뉴스 시각이 16:00·17:00으로 반복 표시되는 기사입니다. 오류가 확정된 것은 아니지만, 원문 시각을 확인하기 전에는 반응일과 숫자를 잠정치로 보세요.</li>
-          <li><b>장 외 공개</b>: 장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 그 사이 다른 소식이 섞일 수 있습니다.</li>
           <li><b>오후 늦게 공개</b>(14시 이후): 남은 거래 시간이 짧아 반응이 다음 날까지 이어질 수 있으니 여러 날 구간도 함께 보세요.</li>
           <li><b>시황·특징주</b>: 주가가 움직인 뒤 그 움직임을 다룬 기사라 원인보다 결과에 가깝습니다. <b>단순 언급</b>: 이름만 나오는 기사라 그날 움직임을 기사 효과로 보기 어렵습니다.</li>
           <li><b>거래량 급증</b>: 반응일 거래량이 직전 60거래일 중 상위 5% 안입니다.</li>
@@ -2546,7 +2545,7 @@
           <span class="t">${esc(x.title)}</span>
           <span class="al-foot">${verdictTag(ef)}<span class="muted">${esc(x.filer || "")}</span>${(x.links || []).length ? `<span class="muted">같은 내용 기사 ${x.links.length}건</span>` : ""}</span></button></li>`;
         }).join("");
-        ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
+        ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) openInPlace(b.dataset.id); };
         return;
       }
       const list = shown(artState.cat);
@@ -2561,9 +2560,17 @@
           <span class="t">${esc(a.title)}</span>
           ${verdictTag(ef) || e.outlets > 1 ? `<span class="al-foot">${verdictTag(ef)}${e.outlets > 1 ? `<span class="muted">${e.outlets}개 매체</span>` : ""}</span>` : ""}</button></li>`;
       }).join("");
-      ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) location.hash = `#/pr/${b.dataset.id}`; };
+      ul.onclick = (ev) => { const b = ev.target.closest("button[data-id]"); if (b) openInPlace(b.dataset.id); };
     }
     let current = selId;
+    // 목록에서 기사·공시를 누르면: 페이지를 다시 그리지 않고(스크롤 그대로) 오른쪽 상세만 바꿈. 주소는 바꿔 두어 뒤로 가기·공유 가능
+    const openInPlace = (id) => {
+      if (id === current) return;
+      current = id;
+      history.pushState(null, "", `#/pr/${id}`);
+      $("#art-list").querySelectorAll("button[data-id]").forEach((x) => x.setAttribute("aria-current", String(x.dataset.id === id)));
+      loadPR(id);
+    };
     if (selId && discById.has(selId)) {
       artState.cat = "disc";
       const x = discById.get(selId);
@@ -2605,7 +2612,7 @@
 
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
   const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
-  const artFlags = (ef, row = null, event = null) => `${ef && ef.off_session ? '<span class="tier watch" title="장 마감 뒤·휴장일 공개라 다음 거래일 움직임에 다른 요인이 섞일 수 있음">장 외 공개</span>' : ""}${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
+  const artFlags = (ef, row = null, event = null) => `${ef && ef.disclosure ? '<span class="tier watch" title="같은 내용의 공시가 먼저 나와 공시 시각부터 쟀습니다">공시 먼저</span>' : ""}${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
   function decompBlock(dc, tm, d0, two, noun = "기사") {
     const p = (two && dc.d01) || dc.d0, sig = dc.sigma;

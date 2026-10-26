@@ -215,8 +215,8 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .rs-inv b, .rs-ret b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .rs-inv p { grid-column: 1 / -1; margin: 2px 0; font-size: 12px; }
 .rs-now { border-top: 1px dashed var(--line); padding-top: 8px; }
-.rs-kv .rs-q { grid-column: 1 / -1; }                 /* 분기 실적: 이름 한 줄, 값 한 줄 (값이 줄바꿈되지 않게) */
-.rs-kv dd.rs-q { margin-top: -4px; white-space: nowrap; }
+.rs-kv .rs-q { white-space: nowrap; }                 /* 분기 실적: 이름과 값을 한 행 한 줄로 */
+.rs-kv dd.rs-q { font-size: 12.5px; letter-spacing: -.2px; }
 /* ⓘ 설명 (마우스를 올리거나 누르면) */
 .tip { position: relative; display: inline-block; color: var(--muted); font-size: 12px; font-weight: 400; cursor: help; margin-left: 2px; outline: none; }
 .tip-box { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: -8px; width: 280px; padding: 12px 14px; border-radius: 10px;
