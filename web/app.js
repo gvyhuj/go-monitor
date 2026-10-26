@@ -390,18 +390,29 @@
         tag.style.background = lead.style.background = ring.style.borderColor = color;
         return { tag, ring, lead, t, px: b ? b.c : null, up: e.direction === "up" };
       });
-      const placeTags = () => tags.forEach(({ tag, ring, lead, t, px, up }) => {
-        const x = chart.timeScale().timeToCoordinate(t), y = px == null ? null : price.priceToCoordinate(px);
-        const off = x == null || y == null;
-        tag.hidden = ring.hidden = lead.hidden = off;
-        if (off) return;
-        const ty = y + (up ? 40 : -40);
-        tag.style.left = ring.style.left = lead.style.left = `${x}px`;
-        tag.style.top = `${ty}px`;
-        ring.style.top = `${y}px`;
-        lead.style.top = `${Math.min(y, ty)}px`;
-        lead.style.height = `${Math.abs(ty - y)}px`;
-      });
+      // 이름표끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 반대쪽으로 뒤집거나 더 멀리 띄움
+      const placeTags = () => {
+        const H = el.clientHeight, placed = [];
+        const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
+        tags.map((g) => ({ g, x: chart.timeScale().timeToCoordinate(g.t), y: g.px == null ? null : price.priceToCoordinate(g.px) }))
+          .sort((p, q) => (p.x ?? 0) - (q.x ?? 0))
+          .forEach(({ g: { tag, ring, lead, up }, x, y }) => {
+            const off = x == null || y == null;
+            tag.hidden = ring.hidden = lead.hidden = off;
+            if (off) return;
+            const w = tag.offsetWidth || 52, h = tag.offsetHeight || 22, d = up ? 1 : -1;
+            const box = (ty) => ({ l: x - w / 2, r: x + w / 2, t: ty - h / 2, b: ty + h / 2 });
+            const inside = (ty) => ty - h / 2 >= 2 && ty + h / 2 <= H - 2;
+            const cands = [40, -40, 70, -70, 100, -100].map((k) => y + d * k);
+            const ty = cands.find((c) => inside(c) && !placed.some((p) => hit(p, box(c)))) ?? cands.find(inside) ?? cands[0];
+            placed.push(box(ty));
+            tag.style.left = ring.style.left = lead.style.left = `${x}px`;
+            tag.style.top = `${ty}px`;
+            ring.style.top = `${y}px`;
+            lead.style.top = `${Math.min(y, ty)}px`;
+            lead.style.height = `${Math.abs(ty - y)}px`;
+          });
+      };
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);
