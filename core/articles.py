@@ -383,20 +383,29 @@ def group_stories(code: str):
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
-    # 사이트에서 직접 묶은 기사: 대상 기사의 묶음으로 (대상도 다른 기사에 묶였으면 따라감)
+    # 사이트에서 직접 묶은 기사: '이 두 기사는 같은 내용'이라는 연결로 보고 연결된 묶음을 모두 하나로 (방향 무관).
+    # 예전에는 대상을 따라가며 옮겨서, 같은 두 기사를 서로 반대 방향으로 합치면(A에 B, B에 A) 순환이 되어 아무것도 안 합쳐졌음
     with connect() as conn:
-        manual = {r[0]: r[1] for r in conn.execute(
-            "SELECT id, story_with FROM articles WHERE symbol=? AND story_with IS NOT NULL", (code,))}
-    for aid, target in manual.items():
-        seen = {aid}
-        while target in manual and target not in seen:
-            seen.add(target)
-            target = manual[target]
-        if aid in assign and target in assign and assign[aid] != assign[target]:
-            old, new = assign[aid], assign[target]
-            for k, v in assign.items():          # 그 기사와 자동으로 같이 묶여 있던 기사도 함께 옮김
-                if v == old:
-                    assign[k] = new
+        links = [(r[0], r[1]) for r in conn.execute("SELECT a, b FROM article_links")] + [(r[0], r[1]) for r in conn.execute(
+            "SELECT id, story_with FROM articles WHERE symbol=? AND story_with IS NOT NULL", (code,))]   # story_with: 예전 방식(한 기사에 하나)
+    parent = {}
+    def root(x):
+        while parent.get(x, x) != x:
+            parent[x] = parent.get(parent[x], parent[x])
+            x = parent[x]
+        return x
+    first = {}                                   # 묶음 번호 → 그 묶음의 가장 이른 시각 (합친 묶음의 번호는 가장 이른 묶음 것으로)
+    ts_of = {r["id"]: r["ts"] for r in rows}
+    for k, v in assign.items():
+        first[v] = min(first.get(v, ts_of[k]), ts_of[k])
+    for aid, target in links:
+        if aid in assign and target in assign:
+            a, b = root(assign[aid]), root(assign[target])
+            if a != b:
+                keep, drop = (a, b) if (first[a], a) <= (first[b], b) else (b, a)
+                parent[drop] = keep
+    if parent:
+        assign = {k: root(v) for k, v in assign.items()}     # 그 기사와 자동으로 같이 묶여 있던 기사도 함께
     with connect() as conn:
         conn.executemany("UPDATE articles SET story=? WHERE id=?", [(s, i) for i, s in assign.items()])
 

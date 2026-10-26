@@ -121,8 +121,12 @@ def apply_inbox(item: dict, log):
             into = str(item["into"]) if item.get("into") else None
             ids = [str(x) for x in (item.get("ids") or [item.get("id")]) if x]
             for aid in ids:
-                if aid != into:
-                    conn.execute("UPDATE articles SET story_with=? WHERE id=?", (into, aid))
+                if into and aid != into:          # 합친 쌍을 쌓음 (같은 기사를 다른 묶음에 또 합쳐도 앞의 것이 지워지지 않게)
+                    conn.execute("INSERT OR IGNORE INTO article_links(a, b) VALUES (?, ?)", (aid, into))
+                    conn.execute("UPDATE articles SET story_with=COALESCE(story_with, ?) WHERE id=?", (into, aid))   # 화면의 '직접 합침' 표시용
+                elif not into:                    # 빼기: 이 기사가 들어간 합친 쌍을 모두 지움
+                    conn.execute("DELETE FROM article_links WHERE a=? OR b=?", (aid, aid))
+                    conn.execute("UPDATE articles SET story_with=NULL WHERE id=? OR story_with=?", (aid, aid))
             log.info("사이트에서 기사 묶기: %s → %s", ", ".join(ids), into or "풀기")
         elif t == "analyze":
             from core.detector import requested_event
@@ -151,9 +155,19 @@ def apply_inbox(item: dict, log):
             conn.execute("DELETE FROM site_items WHERE key IN ('articles', 'article_details')")
         except Exception:  # noqa: BLE001
             pass
-    if t == "article_merge":                   # 묶음을 바로 다시 계산 (위 기록이 저장된 뒤)
+    if t == "article_merge":                   # 묶음을 바로 다시 계산 (위 기록이 저장된 뒤) + 실제로 합쳐졌는지 기록
         from core.articles import group_stories
         group_stories(load_settings()["symbol"])
+        into = str(item["into"]) if item.get("into") else None
+        if into:
+            with connect() as conn:
+                st = {r[0]: r[1] for r in conn.execute("SELECT id, story FROM articles WHERE id IN (%s)" % ",".join("?" * (len(item.get("ids") or [1]) + 1)),
+                                                       [into, *[str(x) for x in (item.get("ids") or [item.get("id")])]])}
+            for aid in [str(x) for x in (item.get("ids") or [item.get("id")]) if x]:
+                if aid not in st or into not in st:
+                    log.warning("기사 묶기 확인: %s → %s 실패 (기사가 기록에 없음: %s)", aid, into, aid if aid not in st else into)
+                else:
+                    log.info("기사 묶기 확인: %s → %s %s", aid, into, "같은 묶음" if st[aid] == st[into] else "다른 묶음(반영 안 됨)")
 
 
 def checkpoint():
@@ -425,6 +439,21 @@ def main(argv) -> int:
         annotate("notice", f"기자명 빈 기사 {n_re}건 네이버 뉴스판으로 다시 읽기")
 
     # 한 번만: 열었는데 이름이 없던 기사도 '확인함'으로 굳히지 않게 바꾼 뒤(블로터 등), 빈 기사를 모두 다시 읽게 함
+    # 한 번만: 예전 방식(기사마다 합친 상대 하나)에서 덮어써져 사라진 합치기 요청까지 실행 기록(10/26)에서 되살려 쌓음
+    if not get_state("articles:links_seed_v1"):
+        pairs = [("0030014015708", "0180006309689"), ("0030014015708", "g0369fe45d35189a34a"), ("0180006345920", "sf3da29cefba800c9f3"),
+                 ("g751ef1f83409ff4ac8", "s46329805fc80906eb6"), ("gdd52d68876ad29218d", "s9c2bb981eb43f23f40"),
+                 ("s46329805fc80906eb6", "s0c608229a09d2fc783"), ("s46329805fc80906eb6", "s8e5b699def622749dd"),
+                 ("s6d2269e97fa913784d", "s46329805fc80906eb6")] + [
+                (x, "s35a87d97e0d5997ad7") for x in ("s1f735504a551a8598a", "g0da5b9e70f507e63db", "gf28b484b37489ad9ca",
+                                                     "s80d4a54dfeb428ebf7", "g8637cfd85e76542045", "g39a00269f237f8d23a", "g0541eaf1f4c5b05e84")]
+        with connect() as conn:
+            conn.executemany("INSERT OR IGNORE INTO article_links(a, b) VALUES (?, ?)", pairs)
+        from core.articles import group_stories
+        group_stories(code)
+        set_state("articles:links_seed_v1", now.isoformat(timespec="minutes"))
+        annotate("notice", f"합친 기사 쌍 {len(pairs)}개를 다시 쌓고 묶음을 다시 계산")
+
     if not get_state("articles:reporter_retry_v4"):
         with connect() as conn:
             n_re = conn.execute("UPDATE articles SET reporter_at=NULL, reporter_tries=0 WHERE reporter IS NULL").rowcount

@@ -163,3 +163,41 @@ def test_bulk_hide_and_kind(tmpdb, monkeypatch):
     with db.connect() as conn:
         rows = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT id, hidden, kind_override FROM articles")}
     assert rows == {"p": (1, None), "q": (1, "pr"), "q2": (1, "pr"), "r": (0, "pr")}
+
+
+def test_merge_both_directions_still_merges(tmpdb):
+    """같은 두 기사를 서로 반대 방향으로 합쳐도(A에 B, B에 A) 하나로 묶임 (예전에는 순환이라 아무것도 안 됨)."""
+    with db.connect() as conn:
+        for aid, title, ts in (("a", "충북인자위 직업계고 학부모 탐방", "2026-10-26T15:02"),
+                               ("b", "청주 고교생 취업 선호 급감", "2026-10-26T15:18"),
+                               ("c", "지역 중소기업 인식 개선 나서", "2026-10-26T17:00")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES (?, ?, ?, 'o', ?, 'u')", (aid, SYM, ts, title))
+        conn.execute("UPDATE articles SET story_with='b' WHERE id='a'")
+        conn.execute("UPDATE articles SET story_with='a' WHERE id='b'")
+        conn.execute("UPDATE articles SET story_with='b' WHERE id='c'")
+    articles.group_stories(SYM)
+    with db.connect() as conn:
+        st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
+    assert st["a"] == st["b"] == st["c"] == "a"              # 묶음 번호는 가장 이른 기사
+
+
+def test_merge_same_article_into_two_stories_keeps_both(tmpdb, monkeypatch):
+    """같은 기사를 다른 묶음에 또 합쳐도 앞서 합친 것이 지워지지 않음 → 세 묶음이 하나로."""
+    import logging
+    import cloud_job
+    monkeypatch.setattr(cloud_job, "load_settings", lambda: {"symbol": SYM})
+    with db.connect() as conn:
+        for aid, title, ts in (("a", "충북인자위 직업계고 학부모 탐방", "2026-10-26T15:02"),
+                               ("b", "청주 고교생 취업 선호 급감", "2026-10-26T15:18"),
+                               ("c", "지역 중소기업 인식 개선 나서", "2026-10-26T17:00")):
+            conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url) VALUES (?, ?, ?, 'o', ?, 'u')", (aid, SYM, ts, title))
+    log = logging.getLogger()
+    cloud_job.apply_inbox({"type": "article_merge", "id": "b", "into": "a"}, log)
+    cloud_job.apply_inbox({"type": "article_merge", "id": "b", "into": "c"}, log)
+    with db.connect() as conn:
+        st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
+    assert st["a"] == st["b"] == st["c"]
+    cloud_job.apply_inbox({"type": "article_merge", "id": "b", "into": None}, log)   # 빼기: b가 들어간 쌍을 모두 지움
+    with db.connect() as conn:
+        st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
+    assert len({st["a"], st["b"], st["c"]}) == 3
