@@ -1305,3 +1305,22 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dash-leg .dot { width: 7px; height: 7px; border-radius: 50%; }
 .dash-row .mix .zero { opacity: .35; }
 .dash-miss { margin: 10px 4px 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+
+/* ---- 누를 수 있는 곳 마우스 올림 효과 (공통). 지금 골라져 있는 칸(aria-pressed·aria-current)은 그대로 ---- */
+.brand { transition: opacity .15s; }
+.brand:hover { opacity: .8; }
+.engine:hover { color: #fff; }
+.engine:hover .engine-label { text-decoration: underline; text-underline-offset: 3px; }
+.seg button, .seg a { transition: background-color .15s, color .15s; }
+.seg button:not([aria-pressed="true"]):hover, .seg a:not([aria-pressed="true"]):not([aria-current]):hover { background: var(--canvas); color: var(--ink); }
+.rec-tabs button:not([aria-pressed="true"]):hover { background: var(--canvas); color: var(--ink); }
+.drawer-close { transition: background-color .15s, transform .2s; }
+.drawer-close:hover { background: var(--line); transform: rotate(90deg); }
+.method-toc a { transition: border-color .15s, color .15s; }
+.method-toc a:hover { border-color: var(--brand-blue); color: var(--brand-blue); }
+/* 글 속 링크(일별 표 날짜, 기사 제목, '기사 열기', '원문' 등): 파랗게 + 밑줄 */
+a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-underline-offset: 3px; }
+/* 1일 차트 급등·급락 이름표·고리 점: 마우스를 올리면 살짝 커짐 (누르면 원인 분석 창) */
+.ev-tag, .ev-ring { transition: transform .15s, box-shadow .15s, filter .15s; }
+.ev-tag:hover { transform: translate(-50%, -50%) scale(1.08); filter: brightness(1.08); box-shadow: 0 3px 10px rgba(20, 32, 51, .28); }
+.ev-ring:hover { transform: translate(-50%, -50%) scale(1.3); }

@@ -1871,14 +1871,14 @@
 
   // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
   function pageMethod() {
-    // 대제목마다 접고 펴기 (처음엔 '먼저 알아 둘 말'만 펼침)
-    const sec = (id, title, body) => `<details class="method-sec" id="m-${id}"${id === "words" ? " open" : ""}><summary><h2>${title}</h2></summary><div class="method-body">${body}</div></details>`;
-    const toc = [["words", "먼저 알아 둘 말"], ["prices", "주가 기록"], ["articles", "소식"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
+    // 대제목마다 접고 펴기 (처음엔 모두 접힘)
+    const sec = (id, title, body) => `<details class="method-sec" id="m-${id}"><summary><h2>${title}</h2></summary><div class="method-body">${body}</div></details>`;
+    const toc = [["words", "용어 설명"], ["prices", "주가 기록"], ["articles", "소식"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
       <div class="page-head"><div><h1 class="page-title">README</h1>
         <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
       <nav class="method-toc" aria-label="목차">${toc.map(([id, t]) => `<a href="#/method" data-to="m-${id}">${t}</a>`).join("")}</nav>
-      ${sec("words", "먼저 알아 둘 말", `
+      ${sec("words", "용어 설명", `
         <dl>
           <dt>반응일</dt><dd>기사·공시가 주가에 처음 반영될 수 있는 거래일입니다. 장 마감(15:30) 뒤나 휴장일에 나왔으면 다음 거래일입니다. 같은 내용의 공시가 36시간 안에 먼저 나왔으면 공시 시각부터 잽니다.</dd>
           <dt>평소 예상</dt><dd>그날 코스닥과 비교 종목이 움직인 만큼, 이 종목이 평소 관계대로라면 움직였을 값입니다. 평소 관계는 과거 주가로 추정합니다.</dd>
