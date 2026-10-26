@@ -356,40 +356,42 @@
       price.createPriceLine({ price: prevClose, color: dark ? "rgba(255,255,255,.4)" : css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed, axisLabelVisible: true, title: "전일 종가" });
     }
     if (events.length) {
-      const markers = events.map((e) => ({
-        id: String(e.id),
-        time: toTime(e.peak_ts || e.start_ts),     // 표시 숫자(움직임 크기)에 실제로 닿은 시각에 (시작 시각에 두면 엉뚱한 자리에 보임)
-        position: e.direction === "down" ? "aboveBar" : e.direction === "up" ? "belowBar" : "aboveBar",
-        shape: e.direction === "up" ? "arrowUp" : e.direction === "down" ? "arrowDown" : "circle",
-        color: kindColor(e.direction, dark),
-        size: 1,
-      })).sort((a, b) => a.time - b.time);
-      LW.createSeriesMarkers(price, markers);
-      // 숫자(-4.5% 등)는 차트 글자(작고 흐림) 대신 색 바탕 이름표로 화살표 바로 위(하락)·아래(상승)에. 차트를 움직이면 따라감
+      // 급등·급락 표시: 숫자(-4.5% 등)에 실제로 닿은 지점에 흰 속 고리 점, 그 점에서 색 바탕 이름표까지 세로선
+      // (하락은 위쪽, 상승은 아래쪽에 이름표. 선과 같은 파랑 계열이어도 흰 속 덕분에 지점이 또렷함). 누르면 원인 분석 창
       el.style.position = "relative";
       const tags = events.map((e) => {
-        const t = toTime(e.peak_ts || e.start_ts), b = bars.find((x) => toTime(x.t) === t);
-        const tag = document.createElement("button");
-        tag.type = "button";
-        tag.className = "ev-tag";
+        const t = toTime(e.peak_ts || e.start_ts), b = bars.find((x) => toTime(x.t) === t), color = kindColor(e.direction, dark);
+        const mk = (tagName, cls) => {
+          const n = document.createElement(tagName);
+          n.className = cls;
+          n.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
+          n.addEventListener("pointerup", (ev) => ev.stopPropagation());
+          if (onEvent) n.addEventListener("click", () => onEvent(e.id));
+          el.appendChild(n);
+          return n;
+        };
+        const lead = mk("div", "ev-lead"), ring = mk("button", "ev-ring"), tag = mk("button", "ev-tag");
+        ring.type = tag.type = "button";
+        ring.setAttribute("aria-label", `${pct(e.peak_return_5m, 1)} 원인 분석 열기`);
         tag.textContent = pct(e.peak_return_5m, 1);
-        tag.style.background = kindColor(e.direction, dark);
-        tag.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
-        tag.addEventListener("pointerup", (ev) => ev.stopPropagation());
-        if (onEvent) tag.addEventListener("click", () => onEvent(e.id));
-        el.appendChild(tag);
-        return { tag, t, px: b ? b.c : null, up: e.direction === "up" };
+        tag.style.background = lead.style.background = ring.style.borderColor = color;
+        return { tag, ring, lead, t, px: b ? b.c : null, up: e.direction === "up" };
       });
-      const placeTags = () => tags.forEach(({ tag, t, px, up }) => {
+      const placeTags = () => tags.forEach(({ tag, ring, lead, t, px, up }) => {
         const x = chart.timeScale().timeToCoordinate(t), y = px == null ? null : price.priceToCoordinate(px);
-        tag.hidden = x == null || y == null;
-        if (!tag.hidden) { tag.style.left = `${x}px`; tag.style.top = `${y + (up ? 36 : -36)}px`; }
+        const off = x == null || y == null;
+        tag.hidden = ring.hidden = lead.hidden = off;
+        if (off) return;
+        const ty = y + (up ? 40 : -40);
+        tag.style.left = ring.style.left = lead.style.left = `${x}px`;
+        tag.style.top = `${ty}px`;
+        ring.style.top = `${y}px`;
+        lead.style.top = `${Math.min(y, ty)}px`;
+        lead.style.height = `${Math.abs(ty - y)}px`;
       });
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);
-      // 차트의 급등·급락 표시를 누르면 목록과 같은 원인 분석 창을 엶
-      if (onEvent) chart.subscribeClick((p) => { if (p.hoveredObjectId) onEvent(+p.hoveredObjectId); });
     }
     if (extendTo) {
       // 장 끝까지 빈 칸이 보이도록 가장자리 고정을 풀고 범위를 직접 지정
@@ -825,7 +827,7 @@
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
           foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null,
-          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, live: true });
+          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, live: true });
       }
     } catch (_) {}
     const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
@@ -853,7 +855,7 @@
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-chart"></div>
           <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div>
-        </section><div class="tcard b-inv">${invHtml()}</div><div class="tcard b-seg">${segHtml()}</div></div>
+        </section><div class="tcard b-inv" role="button" tabindex="0" title="누르면 거래원 상위 창구 등 자세히">${invHtml()}</div><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
       // 위 카드 줄의 카드(가격·소식·급등락·KOSDAQ·거래량)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨)
       const grid = $("#rec-bento", box), card = $(".rec-card", grid), inv = $(".b-inv", grid);
@@ -891,6 +893,30 @@
       return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)</small></span>
           <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
             `<button type="button" class="seg-chip" data-ind="${esc(k)}" title="누르면 이 업종의 그날 오른·내린 종목">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></button>`).join("")}</span>`;
+    }
+    // 순매수 칸을 누르면: 확정치(개인·외국인·기관, 외국인 보유율, 5거래일 누적) 또는 장중 외국계 창구 추정, 거래원 매수·매도 상위 5
+    function openInvest() {
+      const i = selRow(), x = daily[i];
+      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
+      const inv = x.individual != null || x.foreign != null || x.organ != null, fe = !inv && x.foreign_est, tr = x.traders;
+      const cum = (k) => { const rs = daily.slice(Math.max(0, i - 4), i + 1).map((r) => r[k]); return rs.length === 5 && rs.every((v) => v != null) ? rs.reduce((a, b) => a + b, 0) : null; };
+      const cell = (k, v) => `<div><dt>${k}</dt><dd class="num">${v}</dd></div>`;
+      const list = (xs) => xs && xs.length
+        ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}${s.foreign ? ' <em class="fx">외국계</em>' : ""}</span><b>${int(s.qty)}주</b></li>`).join("")}</ul>`
+        : `<p class="muted">-</p>`;
+      const head = inv
+        ? `<dl class="key-stats">${cell("개인", signed(x.individual))}${cell("외국인", signed(x.foreign))}${cell("기관", signed(x.organ))}${x.foreign_ratio != null ? cell("외국인 보유율", `${x.foreign_ratio}%`) : ""}</dl>
+           <p class="muted">최근 5거래일 누적: 개인 ${signed(cum("individual"))} · 외국인 ${signed(cum("foreign"))} · 기관 ${signed(cum("organ"))}</p>
+           <p class="note">거래소 확정치(장 마감 뒤), 단위 주</p>`
+        : fe ? `<p class="ind-rate"><b>${signed(fe.buy - fe.sell)}</b><span class="muted">외국계 창구 순매수 · ${hhmm(fe.ts)} 기준</span></p>
+           <p class="muted">외국계 창구 매수 ${int(fe.buy)}주 · 매도 ${int(fe.sell)}주</p>
+           <p class="note">장중 값은 증권사 창구(거래원) 기준 추정치입니다. 거래소의 개인·외국인·기관 확정치는 장 마감 뒤에 나옵니다.</p>`
+        : `<p class="note">아직 집계 전입니다.</p>`;
+      $("#ind-title").textContent = `${mdOf(x.date)} 순매수`;
+      $("#ind-body").innerHTML = head + `<h3 class="d-sec">거래원 매수·매도 상위 5 <small class="muted">${tr && tr.ts ? `${hhmm(tr.ts)} 기준` : tr ? "장 마감" : ""}</small></h3>
+        ${tr ? `<div class="ind-cols"><div><h3 class="d-sec">매수</h3>${list(tr.buy)}</div><div><h3 class="d-sec">매도</h3>${list(tr.sell)}</div></div>`
+          : `<p class="muted">이 날은 거래원 기록이 없습니다.</p>`}`;
+      $("#ind-modal").hidden = false;
     }
     // 업종 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 많이 오른·내린 종목 5개씩
     function openIndustry(k) {
@@ -1069,6 +1095,7 @@
     box.onclick = async (ev) => {
       const ib = ev.target.closest("[data-ind]");
       if (ib) { openIndustry(ib.dataset.ind); return; }
+      if (ev.target.closest(".b-inv")) { openInvest(); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;

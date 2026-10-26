@@ -302,10 +302,11 @@ def api_intraday(q):
     with connect() as conn:
         ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
         ind_info = industry_info(conn).get(d)
+        tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe}
+            "prev_close": prev_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl}
 
 
 def api_events(q):
@@ -336,7 +337,7 @@ def api_daily(_q):
         inv = {r[0]: r[1:] for r in conn.execute(
             "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
             (sym,))}
-        ind, ind_info = industry_rates(conn), industry_info(conn)
+        ind, ind_info, tops = industry_rates(conn), industry_info(conn), trader_tops(conn, sym)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -347,7 +348,7 @@ def api_daily(_q):
                      "change": c / prev - 1 if prev else None,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
-                     "industries": ind.get(d), "industry_info": ind_info.get(d)})
+                     "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d)})
     return {"days": days}
 
 
@@ -363,6 +364,33 @@ def industry_rates(conn) -> dict:
         if rate is not None:
             out.setdefault(d, {})[name] = rate / 100
     return out
+
+
+def _tops(rows) -> dict:
+    """거래원 행 [(이름, 매수, 매도, 외국계, 매수5위안, 매도5위안)] → 매수·매도 상위 5 창구."""
+    buy = sorted([r for r in rows if r[4]], key=lambda r: -r[1])[:5]
+    sell = sorted([r for r in rows if r[5]], key=lambda r: -r[2])[:5]
+    return {"buy": [{"name": r[0], "qty": r[1], "foreign": bool(r[3])} for r in buy],
+            "sell": [{"name": r[0], "qty": r[2], "foreign": bool(r[3])} for r in sell]}
+
+
+def trader_tops(conn, sym: str) -> dict:
+    """순매수 칸을 누르면 뜨는 창용 {날짜: 장 마감 거래원 매수·매도 상위 5} (네이버, 장 마감 기록이 있는 날만)."""
+    by_day = {}
+    for d, *r in conn.execute("SELECT date, name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
+                              "WHERE symbol=? AND source='네이버'", (sym,)):
+        by_day.setdefault(d, []).append(r)
+    return {d: _tops(rows) for d, rows in by_day.items()}
+
+
+def trader_tops_live(conn, sym: str, day: str) -> dict | None:
+    """장중 오늘 거래원 매수·매도 상위 5 (가장 최근 1분 기록)."""
+    ts = conn.execute("SELECT MAX(ts) FROM trader_snapshots WHERE symbol=? AND substr(ts,1,10)=?", (sym, day)).fetchone()[0]
+    if not ts:
+        return None
+    rows = conn.execute("SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_snapshots WHERE symbol=? AND ts=?",
+                        (sym, ts)).fetchall()
+    return {**_tops([tuple(r) for r in rows]), "ts": ts}
 
 
 def industry_info(conn) -> dict:

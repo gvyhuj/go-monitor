@@ -198,6 +198,8 @@ button.tcard:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16
 .seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .seg-chip { padding: 3px 10px; border-radius: 999px; background: var(--canvas); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); }
 button.seg-chip { font-family: inherit; cursor: pointer; }
+.bento > .b-inv { cursor: pointer; }                 /* 순매수 칸: 누르면 자세히 */
+.bento > .b-inv:hover { border-color: var(--line-2); box-shadow: 0 2px 10px rgba(16, 32, 64, .06); }
 button.seg-chip:hover { border-color: var(--navy-2); color: var(--ink); }
 /* 업종 칸을 누르면 뜨는 창 */
 .ind-rate { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
@@ -285,7 +287,10 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 /* 1일 차트의 급등·급락 숫자 이름표 (화살표 위·아래, 누르면 원인 분석 창) */
 .ev-tag { position: absolute; z-index: 4; transform: translate(-50%, -50%); padding: 0 8px; border: 0; border-radius: 999px;
   color: #fff; font: 700 12.5px/20px var(--font); white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(20, 32, 51, .18); }
-.ev-tag[hidden] { display: none; }
+.ev-tag[hidden], .ev-ring[hidden], .ev-lead[hidden] { display: none; }
+.ev-ring { position: absolute; z-index: 5; width: 13px; height: 13px; padding: 0; border-radius: 50%; border: 3px solid; background: #fff;
+  transform: translate(-50%, -50%); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
+.ev-lead { position: absolute; z-index: 3; width: 2px; transform: translateX(-50%); cursor: pointer; }
 .range-sel { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 3;
   background: color-mix(in srgb, var(--brand-blue) 14%, transparent); border-left: 1px solid var(--brand-blue); border-right: 1px solid var(--brand-blue); }
 .range-hint { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
