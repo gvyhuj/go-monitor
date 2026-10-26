@@ -355,6 +355,7 @@
     if (prevClose) {
       price.createPriceLine({ price: prevClose, color: dark ? "rgba(255,255,255,.4)" : css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed, axisLabelVisible: true, title: "전일 종가" });
     }
+    let pinT = null, showAt = () => {};      // 이름표에 마우스를 올린 동안 위 줄(시각·가격·거래량)을 그 시각으로 고정 (아래 legend에서 채움)
     if (events.length) {
       // 급등·급락 표시: 숫자(-4.5% 등)에 실제로 닿은 지점에 흰 속 고리 점, 그 점에서 색 바탕 이름표까지 세로선
       // (하락은 위쪽, 상승은 아래쪽에 이름표. 선과 같은 파랑 계열이어도 흰 속 덕분에 지점이 또렷함). 누르면 원인 분석 창
@@ -367,6 +368,12 @@
           n.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
           n.addEventListener("pointerup", (ev) => ev.stopPropagation());
           if (onEvent) n.addEventListener("click", () => onEvent(e.id));
+          // 이름표 위에 마우스가 있으면 차트는 마우스가 나간 줄 알고 맨 위 줄에 마지막 봉(예: 15:30)을 보여 줌
+          // → 그 표시가 가리키는 시각·가격으로 십자선을 옮겨, 위 줄도 그 시각 값이 나오게
+          if (b) {
+            n.addEventListener("mouseenter", () => { chart.setCrosshairPosition(b.c, t, price); showAt(t); });
+            n.addEventListener("mouseleave", () => { chart.clearCrosshairPosition(); showAt(null); });
+          }
           el.appendChild(n);
           return n;
         };
@@ -408,7 +415,9 @@
         legendEl.innerHTML = `<span>${hhmm(b.t)}</span><span><b>${won(b.c)}원</b>${chg != null ? ` <span class="${dark ? "" : sgnCls(chg)}">${pct(chg)}</span>` : ""}</span><span>${barMinutes}분 거래량 <b>${int(b.v)}주</b></span>`;
       };
       show(null);
-      chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : null));
+      // 급등·급락 이름표 위에 있을 때(pinT)는 차트가 '마우스 나감'으로 알려도 그 표시 시각 값을 그대로 보여 줌
+      chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : pinT));
+      showAt = (t) => { pinT = t; show(t); };
     }
     return chart;
   }
