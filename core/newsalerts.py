@@ -1,10 +1,10 @@
 """기사·공시 알림 (GitHub 앱 푸시, 급등·급락 알림과 같은 방식).
 
 실행 한 번에 새로 들어온 것을 알림 글 하나로 묶어 보냅니다.
-  보도자료  같은 내용 묶음(story)에 그린광학 보도자료가 하나라도 있으면 묶음 전체를 보도자료로 보고,
-            실린 매체 수가 늘 때마다 알림 (예: 1개 매체 → 6개 매체)
-  외부 기사 보도자료 묶음이 아닌 새 기사, 들어올 때마다
-  공시      새 공시, 들어올 때마다 (지금 모으는 공시 전부)
+  기사  같은 내용 묶음(story, 사이트에서 'n개 매체'로 한 줄에 묶이는 것)마다 처음 들어왔을 때 한 번만.
+        같은 묶음에 매체가 더 붙어도 다시 알리지 않음. 묶음에 그린광학 보도자료가 하나라도 있으면 보도자료로 셈
+  공시  새 공시, 들어올 때마다 (지금 모으는 공시 전부)
+지난 기사를 뒤늦게 찾아 넣은 것(기사 시각이 WINDOW_DAYS보다 오래된 것)은 알리지 않음.
 
 보도자료 판단은 사이트와 같음: 직접 고른 구분(kind_override)이 먼저, 없으면 분류 '회사 발표'.
 단 제목에 악재 단어가 있으면 회사가 낸 기사로 보지 않음 (회사가 스스로 악재 기사를 내는 일은 드묾).
@@ -39,13 +39,13 @@ def is_pr(a: dict) -> bool:
 
 
 def snapshot(symbol: str, now: datetime) -> dict:
-    """지금 기록에 있는 것: 보도자료 묶음별 매체 수, 외부 기사 id, 공시 번호 (최근 WINDOW_DAYS일 처음 본 것)."""
+    """지금 기록에 있는 것: 최근 WINDOW_DAYS일에 나온 기사 묶음(묶음별 기사 id·보도자료 여부·매체 수), 공시 번호."""
     from .articles import _key_office
     since = (now - timedelta(days=WINDOW_DAYS)).isoformat(timespec="minutes")
     with connect() as conn:
         recent = [dict(r) for r in conn.execute(
-            "SELECT id, story FROM articles WHERE symbol=? AND first_seen>=? AND hidden=0 "
-            "AND mention_checked_at IS NOT NULL", (symbol, since))]
+            "SELECT id, story FROM articles WHERE symbol=? AND first_seen>=? AND ts>=? AND hidden=0 "
+            "AND mention_checked_at IS NOT NULL", (symbol, since, since))]
         stories = {r["story"] or r["id"] for r in recent}
         group = {}
         if stories:
@@ -57,35 +57,34 @@ def snapshot(symbol: str, now: datetime) -> dict:
                 group.setdefault(r["story"] or r["id"], []).append(dict(r))
         discl = [r[0] for r in conn.execute(
             "SELECT no FROM disclosures WHERE symbol=? AND first_seen>=?", (symbol, since[:16]))]
-    pr, ext = {}, []
-    recent_ids = {r["id"] for r in recent}
+    out = {}
     for sid, g in group.items():
-        if any(is_pr(a) for a in g):
-            # 실린 매체 수: 사이트와 같게, 네이버 묶음 수와 실제 모은 매체 수 중 큰 값
-            pr[sid] = max(max(int(a.get("outlets") or 1) for a in g), len({_key_office(a.get("office")) for a in g}))
-        else:
-            ext += [a["id"] for a in g if a["id"] in recent_ids]
-    return {"pr": pr, "ext": sorted(ext), "disc": sorted(discl)}
+        # 실린 매체 수: 사이트와 같게, 네이버 묶음 수와 실제 모은 매체 수 중 큰 값
+        out[sid] = {"ids": sorted(a["id"] for a in g), "pr": any(is_pr(a) for a in g),
+                    "outlets": max(max(int(a.get("outlets") or 1) for a in g), len({_key_office(a.get("office")) for a in g}))}
+    return {"stories": out, "disc": sorted(discl)}
 
 
 def diff(state: dict, snap: dict) -> dict:
-    """지난번 보낸 것과 비교해 새로 알릴 것."""
-    pr = [(sid, state["pr"].get(sid, 0), n) for sid, n in snap["pr"].items() if n > state["pr"].get(sid, 0)]
-    seen_ext, seen_disc = set(state["ext"]), set(state["disc"])
-    return {"pr": pr, "ext": [i for i in snap["ext"] if i not in seen_ext],
+    """지난번 보낸 것과 비교해 새로 알릴 것. 묶음 안 기사 중 하나라도 이미 알렸으면 그 묶음은 알린 것
+    (묶음 기준 기사가 바뀌어 묶음 번호가 달라져도 다시 알리지 않게)."""
+    seen, seen_disc = set(state["ids"]), set(state["disc"])
+    new = [st for st in snap["stories"].values() if not seen & set(st["ids"])]
+    return {"pr": [st for st in new if st["pr"]], "ext": [st for st in new if not st["pr"]],
             "disc": [d for d in snap["disc"] if d not in seen_disc]}
 
 
 def merge(state: dict, snap: dict) -> dict:
-    """보낸 뒤의 기록: 지금 기간 안에 있는 것만 남김 (보도자료 매체 수는 줄지 않게)."""
-    return {"pr": {sid: max(n, state["pr"].get(sid, 0)) for sid, n in snap["pr"].items()},
-            "ext": sorted(set(snap["ext"])), "disc": sorted(set(snap["disc"]))}
+    """보낸 뒤의 기록: 지금 기간 안에 있는 기사 id·공시 번호."""
+    return {"v": 2, "ids": sorted({i for st in snap["stories"].values() for i in st["ids"]}),
+            "disc": sorted(set(snap["disc"]))}
 
 
 def title_of(new: dict, now: datetime) -> str:
     parts = []
-    for _, before, after in new["pr"]:
-        parts.append(f"보도자료 {after}개 매체" if before == 0 else f"보도자료 {before}→{after}개 매체")
+    if new["pr"]:
+        n = max(st["outlets"] for st in new["pr"])
+        parts.append(f"보도자료 {len(new['pr'])}건" + (f" ({n}개 매체)" if len(new["pr"]) == 1 and n > 1 else ""))
     if new["ext"]:
         parts.append(f"외부 기사 {len(new['ext'])}건")
     if new["disc"]:
@@ -100,8 +99,8 @@ def send_new(symbol: str, now: datetime | None = None, log=None, post=None) -> s
     post = post or alerts._post_issue
     snap = snapshot(symbol, now)
     state = _load()
-    if state is None:               # 처음 켤 때: 지난 기사·공시로 알림이 쏟아지지 않게
-        set_state(KEY, json.dumps(merge({"pr": {}, "ext": [], "disc": []}, snap)))
+    if state is None or state.get("v") != 2:   # 처음 켤 때(또는 기록 형식이 바뀐 뒤): 지난 기사·공시로 알림이 쏟아지지 않게
+        set_state(KEY, json.dumps(merge({}, snap)))
         return None
     new = diff(state, snap)
     if not (new["pr"] or new["ext"] or new["disc"]):

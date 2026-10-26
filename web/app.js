@@ -616,9 +616,7 @@
 
   function renderFoot() {
     if (!STATUS) return;
-    const since = STATUS.first_bar_ts ? dayLabel(STATUS.first_bar_ts) : "-";
-    $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융(공식 제공 서비스가 아니어서 형식이 바뀌면 수신이 멈출 수 있습니다)</span>` +
-      `<span>${since}부터 기록, 1분봉 ${int(STATUS.bars_count)}건, 급등·급락 ${int(STATUS.events_count)}건${CLOUD ? ' · <a href="#" data-logout>로그아웃</a>' : ""}</span>`;
+    $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융</span>${CLOUD ? '<span><a href="#" data-logout>로그아웃</a></span>' : ""}`;
   }
 
   // ---------------------------------------------------------------- 오늘 한눈에 (위 카드 줄)
@@ -1064,6 +1062,8 @@
       });
       st.range = null;
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
+      const dayAsk = $("[data-day-ask]", art);
+      if (dayAsk) dayAsk.onclick = () => openDayAsk(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
     }
 
     // 고른 날 주요 숫자 (토스 '1일 범위·52주 범위'·투자자별, 네이버 시가·고가·저가·거래량 칸 참고)
@@ -1287,22 +1287,72 @@
     };
   }
 
-  /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음) */
-  function rangeContext(d, r, arts, prevDay, question) {
+  /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음). whole: 그날 장 전체(하루 움직임)를 묻는 경우 */
+  function rangeContext(d, r, arts, prevDay, question, whole = false) {
     const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
     const L = [];
-    L.push(`아래는 '${name}' 주가가 특정 구간에 갑자기 움직인 것에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-    L.push("이 구간의 움직임이 초점이지만, 원인을 이 시간 안에서만 찾지는 말아줘. 웹 검색으로 ① 전날 장 마감 뒤부터 이 시점까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이 구간 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
-    L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    if (whole) {
+      L.push(`아래는 '${name}' 주가의 ${d.date} 하루 움직임(전일 종가 대비 ${pct(r.fromPrev)})에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
+      L.push("웹 검색으로 ① 전날 장 마감 뒤부터 이날 장 마감까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이날 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
+      L.push("그리고 '이날 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 장중에 크게 꺾이거나 튄 시각이 있으면 그 시각도 짚어줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    } else {
+      L.push(`아래는 '${name}' 주가가 특정 구간에 갑자기 움직인 것에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
+      L.push("이 구간의 움직임이 초점이지만, 원인을 이 시간 안에서만 찾지는 말아줘. 웹 검색으로 ① 전날 장 마감 뒤부터 이 시점까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이 구간 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
+      L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
+    }
     L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
-    L.push(`[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
-    if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · 구간 끝 ${pct(r.fromPrev)} · 구간 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · 구간 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
-    L.push(`[KOSDAQ 같은 구간] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
-    L.push(`[거래량] 구간 ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
+    L.push(whole ? `[하루] ${d.date} ${r.from}~${r.to} · 시가 ${won(r.startPx)}원 → 종가 ${won(r.endPx)}원 (${pct(r.endPx / r.startPx - 1)})`
+      : `[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
+    if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · ${whole ? "종가" : "구간 끝"} ${pct(r.fromPrev)} · ${whole ? "장중" : "구간"} 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · ${whole ? "장중" : "구간"} 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
+    L.push(`[KOSDAQ ${whole ? "이날 (전일 대비)" : "같은 구간"}] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
+    L.push(`[거래량] ${whole ? "이날" : "구간"} ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
     const since = `${prevDay || d.date}T15:30`, until = `${d.date}T${r.to}`;
     (arts || []).filter((a) => a.category !== "단순 언급" && !a.hidden && a.ts && a.ts >= since && a.ts <= until).slice(0, 8)
       .forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」${a.office ? ` (${a.office})` : ""}`));
     return `${L.join("\n")}\n\n[질문] ${question}`;
+  }
+
+  /** 장 마감 뒤 하루 칸을 누르면: 그날 장 전체를 ChatGPT에게 묻는 창 (구간 묻기와 같은 자료·같은 기록 방식) */
+  function openDayAsk(d, arts, prevDay, px) {
+    const r = rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t));
+    if (!r) return;
+    const live = liveFor(d.date, d);
+    if (live && live.closed) { r.endPx = live.price; r.fromPrev = live.chg; }      // 거래소 종가 (15:30 뒤 시간외 가격이 아님)
+    if (px && px.kosdaq != null) r.kq = px.kosdaq;                                  // KOSDAQ도 전일 대비
+    if (px && px.volume != null) r.vol = px.volume;                                // 거래량도 일봉(거래소 집계)과 같게
+    const vol = r.vol;
+    openDrawer(`
+      <h2 class="d-title" id="drawer-title">${dayLabel(d.date)} 하루 <span class="${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</span></h2>
+      <p class="d-sub">전일 종가 ${won(d.prev_close)}원 → 종가 ${won(r.endPx)}원. 이날 장 전체(${r.from}~${r.to}) 숫자와 그날 기사를 ChatGPT에 넘겨 원인을 묻습니다.</p>
+      <dl class="facts four">
+        <div><dt>종가 등락</dt><dd class="num ${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</dd></div>
+        <div><dt>KOSDAQ</dt><dd class="num ${sgnCls(r.kq)}">${r.kq == null ? "-" : pct(r.kq)}</dd></div>
+        <div><dt>장중 최고 · 최저</dt><dd class="num"><span class="${sgnCls(r.high.fromPrev)}">${pct(r.high.fromPrev)}</span> · <span class="${sgnCls(r.low.fromPrev)}">${pct(r.low.fromPrev)}</span></dd></div>
+        <div><dt>거래량</dt><dd class="num">${int(vol)}주</dd></div>
+      </dl>
+      <div class="ask-row"><button class="btn primary" type="button" data-day-gpt title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">ChatGPT에게 묻기</button>
+        <button class="btn editable" type="button" data-day-rec>받은 답 기록하기</button></div>
+      <form class="mc-form editable" data-day-form hidden>
+        <label><span>받은 답 붙여넣기</span><textarea rows="6" data-df-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
+        <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-df-head></label>
+        <p class="note" style="margin:0">이날 장 전체(${r.from}~${r.to})가 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행 때 반영됩니다.</p>
+        <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
+      </form>
+      <span class="form-msg" data-day-msg></span>`);
+    const box = $("#drawer-body"), msg = $("[data-day-msg]", box);
+    $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
+    const form = $("[data-day-form]", box), body = $("[data-df-body]", box), head = $("[data-df-head]", box);
+    $("[data-day-rec]", box).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
+    head.oninput = () => { head.dataset.touched = "1"; };
+    body.oninput = () => { if (!head.dataset.touched) head.value = guessSummary(body.value).head; };
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const b = body.value.trim();
+      if (!b) { msg.className = "form-msg err"; msg.textContent = "ChatGPT 답을 붙여넣어 주세요."; return; }
+      const item = { type: "analyze", date: d.date, from: r.from, to: r.to, cause_body: b, cause_headline: head.value.replace(CONF_RE, "").trim() };
+      try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); form.hidden = true; }
+      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    };
   }
 
   /** ChatGPT 새 창에 자료를 채워 엶 (보내기는 사용자가 직접). 따로 묻고 싶은 것은 그 창에서 덧붙임 */
@@ -1353,7 +1403,9 @@
         <span class="day-total-val num ${sgnCls(chg)}">${pct(chg)}</span>`;
       dayTotal = dailyEv
         ? `<button type="button" class="day-total is-event" data-id="${dailyEv.id}">${inner}</button>`
-        : `<div class="day-total">${inner}</div>`;
+        : closed && !(live && live.open)
+          ? `<button type="button" class="day-total is-event" data-day-ask title="이날 하루 움직임을 ChatGPT에게 묻기">${inner}</button>`
+          : `<div class="day-total">${inner}</div>`;
       dayTotal += cause;          // 버튼 밖에 둬야 접기·펼치기가 이벤트 상세 열기와 겹치지 않음
     }
     const row = (e) => `

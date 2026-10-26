@@ -166,11 +166,12 @@ def reclassify(code: str) -> int:
 def _save(code: str, items: list[dict], source: str) -> int:
     name, now = company_name(), datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
-        if source == "google":   # 이미 받은 같은 매체·같은 제목은 다시 넣지 않음 (다른 매체의 같은 제목은 링크를 위해 남김)
-            have = {_key_title(r[0]) + "|" + _key_office(r[1]) for r in conn.execute(
-                "SELECT title, office FROM articles WHERE symbol=? AND ts >= ?", (code, min(i["ts"] for i in items)[:10]))} \
-                if items else set()
-            items = [i for i in items if _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
+        if source != "naver" and items:   # 이미 받은 기사·같은 매체 같은 제목은 다시 넣지 않음 (다른 매체의 같은 제목은 링크를 위해 남김)
+            got = conn.execute("SELECT id, title, office FROM articles WHERE symbol=? AND ts >= ?",
+                               (code, min(i["ts"] for i in items)[:10])).fetchall()
+            have = {_key_title(r[1]) + "|" + _key_office(r[2]) for r in got}
+            ids = {r[0] for r in got}          # 네이버 뉴스판 기사는 종목 뉴스와 번호가 같음 → 묶음 매체 수(outlets)를 덮어쓰지 않게
+            items = [i for i in items if i["id"] not in ids and _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
         items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]     # 모으는 기간 전 기사는 넣지 않음
         from . import relevance
         gone = relevance.dropped_ids(conn)                                     # 막은 매체·이름만 언급으로 지운 기사
@@ -238,6 +239,53 @@ def sync_google(code: str, now: datetime | None = None, max_queries: int = 6, lo
     return n
 
 
+NAVER_SEARCH_PAGES = 10        # 처음 한 번 거슬러 받는 쪽수 (한 쪽 100건, 네이버 검색 API는 1000건까지)
+
+
+def sync_naver_search(code: str, log=None) -> int:
+    """네이버 검색 API(뉴스)로 회사 이름을 검색해 빠진 기사를 보충.
+
+    네이버 종목 뉴스는 종목에 연결된 기사만, 구글 뉴스는 일부만 나와서 지역지 기사 등이 빠짐
+    (예: 제목에 회사 이름이 없는 탐방 기사). 검색 API는 본문 요약도 주므로 제목에 이름이 없어도 분류할 수 있음.
+    처음 한 번은 NAVER_SEARCH_PAGES쪽까지 거슬러 받고, 그 뒤로는 실행마다(10분 간격) 최신 100건.
+    """
+    from . import newssearch
+    from .db import get_state, set_state
+    name = company_name()
+    if name == NAME or not newssearch.naver_enabled():
+        return 0
+    first = not get_state("articles:naver_search_backfill_v1")
+    if newssearch._throttled("articles:naver_search", 10) and not first:      # 부를 때마다 시각을 남김
+        return 0
+    with connect() as conn:          # 주소의 매체 이름을 이미 아는 경우(구글 뉴스로 받은 기사 등)는 그 이름을 씀
+        known = {}
+        for office, url in conn.execute("SELECT office, url FROM articles WHERE symbol=? AND url NOT LIKE '%news.google.com%'", (code,)):
+            h = newssearch._host(url)
+            if h and office and "." not in office:
+                known.setdefault(h, office)
+    n = 0
+    for page in range(NAVER_SEARCH_PAGES if first else 1):
+        try:
+            items = newssearch.search(name, start=1 + page * 100, display=100)
+        except RuntimeError as e:
+            if log:
+                log(f"네이버 검색 기사 수집 실패: {e}")
+            return n
+        for i in items:
+            h = newssearch._host(i.get("orig") or "")
+            if h in known and "." in (i.get("office") or ""):
+                i["office"] = known[h]
+        items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]
+        n += _save(code, items, "naver_search") if items else 0
+        if len(items) < 100:
+            break
+    if first:
+        set_state("articles:naver_search_backfill_v1", datetime.now().isoformat(timespec="minutes"))
+    if n:
+        group_stories(code)
+    return n
+
+
 def drop_manual_duplicates(code: str) -> int:
     """한 번만: 직접 등록한 기사 중 자동으로 모은 기사와 같은 기사(주소나 제목이 같음)를 지움.
     (이후 새로 생기는 중복은 사이트의 '중복이라 삭제' 버튼으로 지움)"""
@@ -282,6 +330,10 @@ def sync_articles(code: str, pages: int = 1) -> int:
         n += sync_google(code)
     except Exception as e:      # noqa: BLE001 - 구글이 막혀도 네이버 수집은 그대로
         print(f"::warning title=구글 뉴스 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
+    try:
+        n += sync_naver_search(code, log=lambda m: print(f"::warning title=네이버 검색 기사::{m[:150]}", flush=True))
+    except Exception as e:      # noqa: BLE001 - 검색 API가 막혀도 다른 수집은 그대로
+        print(f"::warning title=네이버 검색 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
     try:
         from . import relevance
         gone = relevance.purge_blocked(code) + relevance.check(code, company_name())

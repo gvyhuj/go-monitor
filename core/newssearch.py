@@ -48,6 +48,9 @@ OFFICES = {
     "g-enews.com": "글로벌이코노믹", "seoul.co.kr": "서울신문", "kmib.co.kr": "국민일보", "segye.com": "세계일보",
     "dt.co.kr": "디지털타임스", "etnews.com": "전자신문", "biz.chosun.com": "조선비즈", "bizwatch.co.kr": "비즈워치",
     "jkn.co.kr": "재경일보", "nocutnews.co.kr": "노컷뉴스", "ohmynews.com": "오마이뉴스", "inews24.com": "아이뉴스24",
+    # 충북 지역 매체 (회사 소재지라 회사 기사가 자주 실림)
+    "inews365.com": "충북일보", "jbnews.com": "중부매일", "cctimes.kr": "충청타임즈", "ccreview.co.kr": "충청리뷰",
+    "gukjenews.com": "국제뉴스", "bbsi.co.kr": "BBS불교방송", "bbsfm.co.kr": "BBS NEWS", "bzeronews.com": "공뉴스",
 }
 
 

@@ -1,4 +1,4 @@
-"""기사·공시 알림: 보도자료 매체 수 증가, 외부 기사·공시 새로 들어옴, 처음 켤 때, 실패 시 다시."""
+"""기사·공시 알림: 같은 내용 묶음은 한 번만, 외부 기사·공시 새로 들어옴, 처음 켤 때, 실패 시 다시."""
 from __future__ import annotations
 
 import urllib.error
@@ -58,20 +58,57 @@ def test_first_run_only_marks_existing(tmpdb):
     assert run(T0 + timedelta(minutes=3), p) is None and p.titles == []
 
 
-def test_press_release_spread_example(tmpdb):
-    """9시 1건, 9시 반 5건, 10시 3건 → 1개 매체, 1→6, 6→9 세 번."""
+def test_same_story_alerts_once(tmpdb):
+    """9시 1건, 9시 반 5건, 10시 3건이 같은 묶음 → 처음 한 번만."""
     p = Post()
     run(T0 - timedelta(minutes=5), p)                    # 처음 켬
     art("s", "A일보", "그린광학 100억 수주", "회사 발표", T0)
-    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 보도자료 1개 매체")
+    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 보도자료 1건 (")
     for i in range(5):                                   # 받아 쓴 기사 중 하나는 분류가 '언론 분석'이어도 같은 묶음
         art(f"s{i}", f"B{i}신문", "그린광학 100억 수주 쾌거", "회사 발표" if i else "언론 분석", T0 + timedelta(minutes=30), story="s")
-    assert run(T0 + timedelta(minutes=33), p).startswith("[소식] 보도자료 1→6개 매체")
+    assert run(T0 + timedelta(minutes=33), p) is None
     for i in range(3):
         art(f"t{i}", f"C{i}뉴스", "그린광학, 100억 수주", "회사 발표", T0 + timedelta(hours=1), story="s")
-    assert run(T0 + timedelta(minutes=63), p).startswith("[소식] 보도자료 6→9개 매체")
-    assert run(T0 + timedelta(minutes=66), p) is None
-    assert len(p.titles) == 3
+    assert run(T0 + timedelta(minutes=63), p) is None
+    assert len(p.titles) == 1
+
+
+def test_story_first_alert_shows_outlets(tmpdb):
+    p = Post()
+    run(T0, p)
+    for i in range(3):
+        art(f"m{i}", f"M{i}일보", "그린광학 수주", "회사 발표", T0 + timedelta(minutes=1), story="m0")
+    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 보도자료 1건 (3개 매체)")
+
+
+def test_regrouped_story_not_realerted(tmpdb):
+    """더 이른 기사가 뒤늦게 들어와 묶음 번호가 바뀌어도 이미 알린 묶음이면 다시 알리지 않음."""
+    p = Post()
+    run(T0, p)
+    art("x2", "X일보", "그린광학 탐방", "언론 분석", T0 + timedelta(minutes=1))
+    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 외부 기사 1건")
+    art("x1", "Y일보", "그린광학 탐방", "언론 분석", T0 + timedelta(minutes=4), story="x1")
+    with connect() as conn:
+        conn.execute("UPDATE articles SET story='x1' WHERE id='x2'")
+    assert run(T0 + timedelta(minutes=6), p) is None
+
+
+def test_old_article_found_late_not_alerted(tmpdb):
+    p = Post()
+    run(T0, p)
+    art("o1", "Z일보", "그린광학 지난 기사", "언론 분석", T0 - timedelta(days=10))
+    with connect() as conn:                              # 기사는 열흘 전 것, 지금 처음 찾음
+        conn.execute("UPDATE articles SET first_seen=? WHERE id='o1'", ((T0 + timedelta(minutes=1)).isoformat(timespec="minutes"),))
+    assert run(T0 + timedelta(minutes=3), p) is None
+
+
+def test_old_state_format_resets_quietly(tmpdb):
+    from core.db import set_state
+    import json
+    art("a0", "A일보", "그린광학 수주", "회사 발표", T0 - timedelta(minutes=1))
+    set_state(newsalerts.KEY, json.dumps({"pr": {}, "ext": [], "disc": []}))
+    p = Post()
+    assert run(T0, p) is None and p.titles == []
 
 
 def test_external_and_disclosure_bundled(tmpdb):
@@ -99,7 +136,7 @@ def test_manual_kind_override(tmpdb):
     run(T0, p)
     art("k1", "G일보", "그린광학 대표 인터뷰", "언론 분석", T0 + timedelta(minutes=1), kind="pr")
     art("k2", "H일보", "그린광학 수주 기대", "회사 발표", T0 + timedelta(minutes=1), kind="ext")
-    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 보도자료 1개 매체 · 외부 기사 1건")
+    assert run(T0 + timedelta(minutes=3), p).startswith("[소식] 보도자료 1건 · 외부 기사 1건")
 
 
 def test_unchecked_and_hidden_wait(tmpdb):
