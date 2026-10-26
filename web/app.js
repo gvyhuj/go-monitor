@@ -2511,8 +2511,8 @@
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
     if (!a.manual && !isDisc) {
-      // 자동 판정 '회사 관련 보도'는 그린광학 보도자료 탭에 보이므로, 확인된 보도자료로 · 외부 기사로 둘 다 고를 수 있게
-      const toKinds = a.kind === "pr" ? ["ext"] : a.kind === "company" ? ["pr", "ext"] : ["pr"];
+      // 지금 들어 있는 탭의 반대쪽으로만: 그린광학 보도자료 탭(확인된 보도자료·회사 관련 보도)이면 '외부 기사로', 외부 기사면 '보도자료로'
+      const toKinds = a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"];
       html += `<div class="ask-row editable art-fix">
         ${toKinds.map((k) => `<button class="btn small" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}
         ${a.kind !== a.kind_auto && a.kind_auto ? `<button class="btn-link" type="button" data-kind="auto">자동 판정으로 되돌리기</button>` : ""}
