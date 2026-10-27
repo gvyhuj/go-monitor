@@ -2115,6 +2115,7 @@
           <li>기사·공시가 나온 시각을 0분으로 맞춰, 그 뒤 그린광학 주가가 어떻게 움직였는지 한 그래프에 겹쳐 봅니다. 회색 선이 기사 하나, 파란 굵은 선이 평균입니다. 표에서 기사를 누르면 그 기사는 빨간 선으로, 같은 시간 코스닥은 점선으로 보입니다.</li>
           <li>+30분·+60분 중 고른 시간까지 그리고, 아래 표에 기사별 이 종목·KOSDAQ 등락을 보여 줍니다. 종류(보도자료·외부기사·주요 공시), 공개 시점, 기간, 주제로 거르고, 'KOSDAQ 움직임 빼고 보기'로 시장 몫을 뺀 차이를 볼 수 있습니다.</li>
           <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 평균선이 0에서 꾸준히 벗어나는지를 보세요.</li>
+          <li>그 아래 '한쪽으로 쏠릴 확률'은 기사가 주가에 아무 영향이 없다고(오를 확률 반, 내릴 확률 반) 쳤을 때, 오른 건과 내린 건이 지금만큼 한쪽으로 기울 확률입니다(동전 던지기와 같은 계산). 이 확률이 작을수록 우연으로 보기 어렵고, 보통 5% 밑이면 '우연만으로는 설명하기 어렵다'고 봅니다. 오르내린 방향만 세므로 움직인 크기와 같은 날 다른 소식은 따지지 않습니다.</li>
         </ul>
         <h3>기사 상세: 발표 직후 반응</h3>
         <ul>
@@ -2180,6 +2181,29 @@
   // ---------------------------------------------------------------- 반응 모아보기
   // 기사·공시마다 공개 시각을 0분으로 맞춘 주가 경로(기준값 대비)를 한 그래프에 겹쳐 보고, 아래 표로 +30·60·120분·당일·다음날을 비교.
   // 통계 판정 없이 숫자 그대로 (같은 촘촘함의 봉끼리만 겹치도록 기본은 1분봉)
+  // 오른·내린 건수가 '아무 효과가 없어도(반반)' 이만큼 한쪽으로 쏠릴 확률 (동전 던지기, 양쪽)
+  function coinChance(up, dn) {
+    const n = up + dn, k = Math.max(up, dn);
+    if (!n || up === dn) return 1;
+    let lc = 0, sum = 0;                              // lc = log C(n, i)
+    for (let i = 1; i <= k - 1; i++) lc += Math.log(n - i + 1) - Math.log(i);
+    for (let i = k; i <= n; i++) {
+      if (i > 0) lc += Math.log(n - i + 1) - Math.log(i);
+      sum += Math.exp(lc - n * Math.LN2);
+    }
+    return Math.min(1, 2 * sum);
+  }
+  function chanceTxt(up, dn) {
+    if (up + dn < 10) return `<span class="muted">건수가 적어 아직 판단하기 이릅니다 (오르거나 내린 건이 10건 이상 모이면 알려 드립니다).</span>`;
+    const p = coinChance(up, dn), side = up > dn ? "오른 쪽" : "내린 쪽";
+    if (p >= 0.5) return `오른 건과 내린 건이 ${up === dn ? "같습니다" : "비슷합니다"} → 한쪽으로 기울었다고 볼 수 없습니다.`;
+    const pTxt = p < 0.01 ? "1% 미만" : `약 ${Math.round(p * 100)}%`;
+    const often = p >= 0.01 ? ` (약 ${Math.round(1 / p)}번 중 1번)` : "";
+    const verdict = p < 0.05 ? "<b>우연만으로는 설명하기 어렵습니다</b>"
+      : p < 0.2 ? "경향은 보이지만 <b>아직 우연일 수도 있습니다</b>" : "<b>우연으로도 흔히 나오는 정도</b>입니다";
+    return `<span title="동전을 ${up + dn}번 던져 한쪽이 ${Math.max(up, dn)}번 이상 나올 확률(앞·뒤 어느 쪽이든). 보통 5% 밑이면 우연으로 보기 어렵다고 합니다.">`
+      + `${side}이 많음. 아무 효과가 없어도 이만큼 한쪽으로 쏠릴 확률 ${pTxt}${often} → ${verdict}.</span>`;
+  }
   const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "all" };
   const REACT_KINDS = [["all", "전체"], ["pr", "보도자료"], ["ext", "외부기사"], ["disc", "주요 공시"]];
   // 공개 시점: 장 시작 전(전날 장 마감 뒤~당일 9시, 전날 종가부터) / 장중(9시~15시, 공개 직전 가격부터) / 15시 이후(그날 종가부터 다음 거래일)
@@ -2277,9 +2301,11 @@
       $("#rx-n").textContent = `${list.length}건${reactState.vsKq ? " · KOSDAQ 대비 차이" : ""}`;
       plot(list);
       const s = (m) => { const vs = list.map((x) => stepV(x, m)).filter((v) => v != null); if (!vs.length) return null;
-        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${pct(median(vs))}</b> (오른 ${vs.filter((v) => v > 0).length} · 내린 ${vs.filter((v) => v < 0).length}, ${vs.length}건)`; };
+        const up = vs.filter((v) => v > 0).length, dn = vs.filter((v) => v < 0).length;
+        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${pct(median(vs))}</b> (오른 ${up} · 내린 ${dn}, ${vs.length}건)`
+          + `<br>${chanceTxt(up, dn)}`; };
       $("#rx-sum").innerHTML = (s(reactState.h) || "")
-        + `<br><span class="muted">기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 평균선이 0에서 꾸준히 벗어나는지를 보세요. 같은 날 다른 소식·시장 움직임이 섞일 수 있습니다.</span>`;
+        + `<br><span class="muted">기사 하나하나는 잡음이 큽니다. 같은 날 다른 소식이 섞일 수 있습니다.${reactState.vsKq ? "" : " 시장 전체가 같이 움직인 몫은 'KOSDAQ 움직임 빼고 보기'를 켜면 빠집니다."}</span>`;
       table(list);
     }
     drawCtl(); draw();
