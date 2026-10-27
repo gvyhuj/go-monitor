@@ -392,25 +392,39 @@ INDUSTRY_BACKFILL_KEY = "industries:backfill_v1"
 INDUSTRY_RECORD_FROM = "2026-10-26"     # 이날부터는 네이버 값을 그대로 기록 (다시 계산한 값은 이 전 날에만)
 
 
-def backfill_industries(pages: int = 7, log=None) -> int:
+def backfill_industries(pages: int = 7, log=None, per_run: int = 1) -> int:
     """네이버 업종(WICS) 등락률은 지금 값만 주고 과거 기록이 없어서, 기록 전 날(2026-10-26 전)을 다시 계산해 채움.
 
-    네이버와 같은 방식: 그 업종 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균. pages: 종목마다 60거래일씩. 구성 종목은 지금 기준(그 사이 편입·편출은 반영 못 함), 주식 수는 지금과 같다고 봄.
-    INDUSTRY_RECORD_FROM 전 날만 계산하고, 그날부터는 네이버 값(snapshot_industries)만 씀. 기록이 빠진 날도 계산으로 채우지 않음. updated_at = 'calc' 로 다시 계산한 값임을 표시.
+    네이버와 같은 방식: 그 업종 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균. pages: 종목마다 60거래일씩.
+    구성 종목은 지금 기준(그 사이 편입·편출은 반영 못 함), 주식 수는 지금과 같다고 봄.
+    INDUSTRY_RECORD_FROM 전 날만 계산하고, 그날부터는 네이버 값(snapshot_industries)만 씀. 기록이 빠진 날도 계산으로 채우지 않음.
+    updated_at = 'calc' 로 다시 계산한 값임을 표시.
+    GitHub 실행 서버에서는 네이버까지 요청마다 느려서, 한 번에 업종 per_run개씩만(종목은 동시에 받음) 하고 진행 상황을 남김.
+    네 업종을 다 하면 INDUSTRY_BACKFILL_KEY를 남겨 다시 하지 않음.
     """
+    from concurrent.futures import ThreadPoolExecutor
+    from .db import get_state, set_state
     from .feed import WICS_PEERS
+    st = get_state(INDUSTRY_BACKFILL_KEY + ":done")
+    done = set(json.loads(st["value"])) if st and st.get("value") else set()
+    todo = [(no, name) for no, name in WICS_PEERS if name not in done][:per_run]
     n = 0
-    for no, name in WICS_PEERS:
-        rets: dict[str, list[tuple[float, float, str, str]]] = {}      # 날짜 → [(전일 시총, 등락률, 코드, 이름)]
-        for m in naver.fetch_industry_members(no):
-            if not m["code"] or not m["price"] or not m["mcap"]:
-                continue
+    for no, name in todo:
+        members = [m for m in naver.fetch_industry_members(no) if m["code"] and m["price"] and m["mcap"]]
+
+        def prices(m):
             try:            # 네이버 일별 시세: 등락 = 종가(넥스트레이드 포함) ÷ 기준가(전날 거래소 종가) − 1 → 업종 목록 등락과 같은 기준
-                rows = fetch_naver_prices(m["code"], pages)
+                return m, fetch_naver_prices(m["code"], pages)
             except naver.DataSourceError:
-                continue
+                return m, None
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            got = list(ex.map(prices, members))
+        if sum(rows is None for _, rows in got) > len(got) // 10:      # 많이 못 받았으면 이번엔 저장하지 않고 다음 실행에 다시
+            raise naver.DataSourceError(f"{name}: 구성 종목 {len(got)}개 중 {sum(r is None for _, r in got)}개 시세를 못 받음")
+        rets: dict[str, list[tuple[float, float, str, str]]] = {}      # 날짜 → [(기준가 시총, 등락률, 코드, 이름)]
+        for m, rows in got:
             shares = m["mcap"] / m["price"]                    # 억 원 / 원 → 주식 수에 비례 (가중치로만 씀)
-            for r in rows:
+            for r in rows or []:
                 if r["date"] < INDUSTRY_RECORD_FROM and r.get("base") and r["base"] > 0:
                     rets.setdefault(r["date"], []).append((shares * r["base"], r["close"] / r["base"] - 1, m["code"], m["name"]))
         out, movers = [], []
@@ -432,8 +446,12 @@ def backfill_industries(pages: int = 7, log=None) -> int:
             n += cur.rowcount
             conn.executemany("INSERT OR IGNORE INTO industry_movers(date, industry_no, name, movers, updated_at) "
                              "VALUES (?, ?, ?, ?, ?)", movers)
+        done.add(name)
+        set_state(INDUSTRY_BACKFILL_KEY + ":done", json.dumps(sorted(done), ensure_ascii=False))
         if log:
-            log(f"업종 등락 다시 계산: {name} {len(out)}일")
+            log(f"업종 등락 다시 계산: {name} {len(out)}일 (구성 종목 {len(members)}개)")
+    if all(name in done for _, name in WICS_PEERS):
+        set_state(INDUSTRY_BACKFILL_KEY, datetime.now().isoformat(timespec="minutes"))
     return n
 
 

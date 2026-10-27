@@ -168,9 +168,8 @@ class Collector:
             self._safe("종목토론방(최근 2주)", board.sync_board, self.code, now - timedelta(days=15), 20)
             self.log.info("원인 분석용 자료 수집 (같은 업종 %d개)", len(rel or []))
 
-        if not get_state(macro.INDUSTRY_BACKFILL_KEY):            # 기록 전 날 업종 등락을 한 번만 다시 계산 (장중에도, 1분 안팎)
-            if self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info) is not None:
-                set_state(macro.INDUSTRY_BACKFILL_KEY, now_iso())
+        if not get_state(macro.INDUSTRY_BACKFILL_KEY):            # 기록 전 날 업종 등락 다시 계산 (실행마다 업종 하나씩, 네 업종이면 끝)
+            self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info)
 
         if feed.is_market_window(now):
             minute = now.replace(second=0, microsecond=0)
