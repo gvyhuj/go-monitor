@@ -1495,3 +1495,14 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 .dash-q:focus { outline: 2px solid var(--brand-blue); outline-offset: -1px; }
 .dash-q + .dash-leg { margin-left: 10px; }
+/* 폰: 업종 4개를 옆으로 밀지 않아도 다 보이게 2×2 */
+@media (max-width: 720px) {
+  .bento > .b-seg.tcard { flex-direction: column; align-items: stretch; gap: 8px; }
+  .bento > .b-seg .seg-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; overflow: visible; }
+  .bento > .b-seg .seg-chip { display: flex; justify-content: space-between; gap: 4px; min-width: 0; padding: 3px 8px; font-size: 12px; letter-spacing: -.3px; }
+}
+
+/* 그날 주가 창: 제목을 누르면 그날 1일 차트로 */
+.dm-title-link { color: inherit; text-decoration: none; }
+.dm-title-link span { color: var(--brand-blue); font-weight: 700; margin-left: 2px; }
+.dm-title-link:hover { color: var(--brand-blue); text-decoration: underline; text-underline-offset: 3px; }

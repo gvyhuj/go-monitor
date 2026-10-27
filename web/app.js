@@ -703,14 +703,14 @@
     const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
     $("#q-news-label").textContent = `${when} 소식`;
     $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="소식 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
-      + `<span class="t-go" data-go="disc" title="소식 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="소식 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부 <b>${ext}</b></span>`;
+      + `<span class="t-go" data-go="disc" title="소식 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="소식 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
     const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...ar.filter((a) => !isPr(a)).map((a) => ({ k: "ext", a }))];
     const MAXL = 4;
     $("#q-news-list").innerHTML = lines.slice(0, MAXL).map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span><span class="tn-t">${esc(a.title)}</span></span>`).join("")
       + (lines.length > MAXL ? `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>` : "");
     // 실린 매체 수는 아래 작은 글씨로 (위 숫자 줄은 한 줄로)
-    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 소식 탭에서 열림` : "제목을 누르면 소식 탭에서 열림") : "이날 모인 기사·공시가 없습니다";
+    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 소식 탭에서 열림` : "제목을 누르면 소식 탭에서 열림") : "";
     const card = $("#q-news-card");
     if (card) card.onclick = (ev) => {
       const open = ev.target.closest("[data-open]");
@@ -1117,7 +1117,7 @@
           + cell("종가", `${won(x.close)}원 <b class="${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</b>`)
           + cell("KOSDAQ", `${x.kosdaq_close == null ? "" : `${x.kosdaq_close.toFixed(2)} `}<b class="${sgnCls(x.kosdaq)}">${x.kosdaq == null ? "-" : pct(x.kosdaq)}</b>`)
           + cell("거래량", `${int(x.volume)}주`)
-          + cell("소식", n.pr || n.disc || n.ext ? [n.pr ? `<span><i class="mk pr"></i>보도자료 <b>${n.pr}</b></span>` : "", n.disc ? `<span><i class="mk disc"></i>공시 <b>${n.disc}</b></span>` : "", n.ext ? `<span><i class="mk ext"></i>외부 <b>${n.ext}</b></span>` : ""].filter(Boolean).join(" ") : `<span class="muted">없음</span>`);
+          + cell("소식", n.pr || n.disc || n.ext ? [n.pr ? `<span><i class="mk pr"></i>보도자료 <b>${n.pr}</b></span>` : "", n.disc ? `<span><i class="mk disc"></i>공시 <b>${n.disc}</b></span>` : "", n.ext ? `<span><i class="mk ext"></i>외부기사 <b>${n.ext}</b></span>` : ""].filter(Boolean).join(" ") : `<span class="muted">없음</span>`);
       };
       const selRowOf = () => rows.find((x) => x.date === calState.sel) || rows[rows.length - 1];
       infoFor(selRowOf(), false);
@@ -2995,7 +2995,9 @@
   async function openDayModal(ds, curId, cur = null) {
     const body = $("#day-body");
     closeDayModal();
-    $("#day-title").textContent = `${dayLabel(ds)} 주가`;
+    // 제목을 누르면 주가 기록 화면의 그날 1일 차트로 이동
+    $("#day-title").innerHTML = `<a class="dm-title-link" href="#/day/${esc(ds)}" title="주가 기록 화면에서 이날 1일 차트 보기">${dayLabel(ds)} 주가 <span aria-hidden="true">›</span></a>`;
+    $("#day-title a").onclick = () => closeDayModal();
     body.innerHTML = `<p class="loading">불러오는 중…</p>`;
     $("#day-modal").hidden = false;
     let d = null, iv = 1;
