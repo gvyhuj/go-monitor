@@ -133,3 +133,28 @@ def test_backfill_skips_index_when_past_days_give_one_bar(database, monkeypatch)
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol='KOSDAQ' AND source='kis'").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol='X' AND source='kis'").fetchone()[0] == 381
+
+
+def jump_day(day, source):
+    """10:00~10:20 사이 100 → 107로 오르고 그대로 유지하는 하루."""
+    out = []
+    t0 = datetime.fromisoformat(f"{day}T09:00")
+    for i in range(381):
+        t = t0 + timedelta(minutes=i)
+        p = 100.0 if t.hour < 10 else min(107.0, 100.0 + (t.minute + (t.hour - 10) * 60) * 0.35)
+        out.append(("X", t.isoformat(timespec="minutes"), p, p, p, p, 1000, source))
+    return out
+
+
+def test_rescan_finds_intraday_moves_only_before_naver_days(database):
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol, date, close, base) VALUES ('X', ?, 107, 100)",
+                         [("2026-04-22",), ("2026-10-01",)])
+        conn.executemany("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                         jump_day("2026-04-22", "kis") + jump_day("2026-10-01", "naver_today"))
+    db.set_state(kis.STATE, json.dumps({"done": True}))
+    n = kis.rescan_if_due("X")
+    with db.connect() as conn:
+        days = [r[0] for r in conn.execute("SELECT DISTINCT substr(start_ts,1,10) FROM events WHERE symbol='X' AND event_type='intraday'")]
+    assert n >= 1 and days == ["2026-04-22"]                 # 네이버 기록이 있는 10/1은 그대로
+    assert kis.rescan_if_due("X") is None                     # 한 번만

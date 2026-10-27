@@ -227,4 +227,16 @@ def backfill(code: str, now: datetime, log=None, budget_sec: float = 360) -> dic
     else:
         st["done"] = True
     set_state(STATE, json.dumps(st, ensure_ascii=False))
-    return st
+    rescan_if_due(code, log)
+    return json.loads(get_state(STATE)["value"])
+
+
+def rescan_if_due(code: str, log=None) -> int | None:
+    """다 채운 뒤 한 번: 채운 날들의 장중 급등·급락 찾기 (네이버 기록이 있는 날은 그대로). 열쇠 없이도 돎."""
+    st = json.loads((get_state(STATE) or {}).get("value") or "{}")
+    if not st.get("done") or "rescanned" in st:
+        return None
+    from .detector import rescan_before_naver
+    st["rescanned"] = rescan_before_naver(code, log)
+    set_state(STATE, json.dumps(st, ensure_ascii=False))
+    return st["rescanned"]
