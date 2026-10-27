@@ -128,6 +128,15 @@ def apply_inbox(item: dict, log):
                     conn.execute("DELETE FROM article_links WHERE a=? OR b=?", (aid, aid))
                     conn.execute("UPDATE articles SET story_with=NULL WHERE id=? OR story_with=?", (aid, aid))
             log.info("사이트에서 기사 묶기: %s → %s", ", ".join(ids), into or "풀기")
+        elif t == "article_lead":               # 묶음의 대표 기사(제목·언론사) 직접 고르기 (id 없으면 자동으로 되돌림)
+            from core.articles import LEAD_PICKS, lead_picks
+            ids = {str(x) for x in (item.get("ids") or []) if x}
+            pick = str(item["id"]) if item.get("id") else None
+            picks = (lead_picks(conn) - ids - ({pick} if pick else set())) | ({pick} if pick else set())
+            conn.execute("INSERT INTO system_state(key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                         "value=excluded.value, updated_at=excluded.updated_at",
+                         (LEAD_PICKS, json.dumps(sorted(picks)), feed.kst_now().isoformat(timespec="minutes")))
+            log.info("사이트에서 대표 기사 %s: %s", "고름" if pick else "자동으로", pick or ", ".join(sorted(ids)))
         elif t == "analyze":
             from core.detector import requested_event
             day = str(item.get("date") or "")[:10]

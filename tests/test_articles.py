@@ -246,3 +246,21 @@ def test_false_negative_words_are_not_bad_news():
     t = "충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…그린광학 방문"
     assert not any(w in a.neg_text(t) for w in a.STRONG_NEG) and a.tone_of(t) >= 0
     assert any(w in a.neg_text("그린광학, 3분기 영업적자 확대") for w in a.STRONG_NEG)
+
+
+def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
+    import logging
+    import cloud_job
+    with db.connect() as conn:
+        _art(conn, "a", "2026-04-22T09:10", f"{NAME}, 82억 공급계약 체결")
+        _art(conn, "b", "2026-04-22T14:14", f"{NAME}, 소형무장헬기 유도탄 공급계약→매출 확대 기대")
+        conn.execute("UPDATE articles SET story='s1', office=CASE id WHEN 'a' THEN '뉴스핌' ELSE '톱스타뉴스' END")
+    auto = articles.article_rows("X")
+    assert [a["id"] for a in auto] == ["a"] and not auto[0].get("picked")
+    cloud_job.apply_inbox({"type": "article_lead", "id": "b", "ids": ["a", "b"]}, logging.getLogger())
+    lead = articles.article_rows("X")[0]
+    assert (lead["id"], lead["office"], lead["picked"]) == ("b", "톱스타뉴스", True)
+    assert lead["ts"] == "2026-04-22T09:10" and lead["own_ts"] == "2026-04-22T14:14"   # 반응 기준 시각은 처음 나온 때
+    assert [r["id"] for r in lead["related_titles"]] == ["a"]
+    cloud_job.apply_inbox({"type": "article_lead", "id": None, "ids": ["a", "b"]}, logging.getLogger())  # 자동으로
+    assert articles.article_rows("X")[0]["id"] == "a"

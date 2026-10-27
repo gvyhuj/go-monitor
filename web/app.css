@@ -1443,9 +1443,9 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dup-del { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
 .dup-del:hover { color: var(--brand-blue); text-decoration: underline; }
 /* 묶음에서 빼기·기사 합치기도 '삭제'처럼 눈에 덜 띄게 (본문 링크처럼 보이지 않게) */
-.btn-link.unmerge, #merge-open { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.btn-link.unmerge, .btn-link.lead-pick, #merge-open { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
 #merge-open { margin-left: 0; }
-.btn-link.unmerge:hover, #merge-open:hover { color: var(--brand-blue); text-decoration: underline; }
+.btn-link.unmerge:hover, .btn-link.lead-pick:hover, #merge-open:hover { color: var(--brand-blue); text-decoration: underline; }
 .dash-leg { margin-left: auto; display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); }
 .dash-leg > span { display: inline-flex; align-items: center; gap: 4px; }
 .dash-leg .dot { width: 7px; height: 7px; border-radius: 50%; }

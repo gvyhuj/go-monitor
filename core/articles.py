@@ -783,12 +783,25 @@ def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[
     return out
 
 
+LEAD_PICKS = "article_lead_picks"
+
+
+def lead_picks(conn) -> set:
+    """사이트에서 '대표로' 고른 기사 id (묶음마다 하나)."""
+    r = conn.execute("SELECT value FROM system_state WHERE key=?", (LEAD_PICKS,)).fetchone()
+    try:
+        return set(json.loads(r[0])) if r and r[0] else set()
+    except ValueError:
+        return set()
+
+
 def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     with connect() as conn:
         arts = [dict(r) for r in conn.execute(
             "SELECT * FROM articles WHERE symbol=? " + ("" if include_hidden else "AND hidden=0 ") + "ORDER BY ts DESC",
             (symbol,))]
         prs = [dict(r) for r in conn.execute("SELECT * FROM pr_events ORDER BY published_ts DESC")]
+        picks = lead_picks(conn)
     import re as _re
 
     def _key_url(u):
@@ -816,8 +829,13 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     table = topics.rules()
     out = []
     for sid, group in by_story.items():
-        group.sort(key=lambda a: (not a.get("manual"), a["ts"]))      # 직접 등록한 기사가 있으면 그것이 대표
+        # 대표: 사이트에서 직접 고른 기사 → 직접 등록한 기사 → 가장 먼저 나온 기사
+        group.sort(key=lambda a: (a["id"] not in picks, not a.get("manual"), a["ts"]))
         lead = dict(group[0])
+        first_ts = min(g["ts"] for g in group)
+        if lead["id"] in picks and len(group) > 1:
+            # 고른 기사의 제목·언론사로 보여 주되, 반응 계산의 기준 시각은 묶음에서 가장 먼저 나온 때 그대로
+            lead["picked"], lead["own_ts"], lead["ts"] = True, lead["ts"], first_ts
         # 묶음의 성격은 가장 '원천'에 가까운 기사 기준 (회사 발표 > 리서치 > 언론 분석 > …)
         best = min(group, key=lambda g: CATEGORIES.index(g["category"]) if g["category"] in CATEGORIES else 9)
         lead["category"] = best["category"]

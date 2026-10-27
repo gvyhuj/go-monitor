@@ -2835,10 +2835,14 @@
       html += ev ? `<section class="evidence">${ev}</section>` : "";
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
-    const outlets = [{ id: a.id, manual: a.manual, merged: !!a.story_with, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
+    const outlets = [{ id: a.id, manual: a.manual, merged: !!a.story_with, ts: a.own_ts || a.ts, office: a.office, title: a.title, url: a.url, lead: true }, ...(a.related_titles || [])];
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
+    // 대표(목록에 보이는 제목·언론사): 다른 매체 줄의 '대표로'를 누르면 그 기사로 바꿈 (반응 계산 시각은 가장 먼저 나온 때 그대로)
+    const leadBtn = (r) => (outlets.length < 2 ? ""
+      : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
+        : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
+    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
@@ -2897,6 +2901,14 @@
         } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
       };
     };
+    box.querySelectorAll(".lead-pick").forEach((b) => b.addEventListener("click", async () => {
+      const msg = $("#dup-msg");
+      try {
+        msg.className = "form-msg";
+        msg.textContent = await sendInbox({ type: "article_lead", id: b.dataset.lead || null, ids: outlets.map((r) => r.id).filter(Boolean), title: a.title });
+        b.disabled = true; b.textContent = "요청함";
+      } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    }));
     box.querySelectorAll("[data-unmerge]").forEach((b) => b.addEventListener("click", async () => {
       const msg = $("#dup-msg");
       try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_merge", id: b.dataset.unmerge, into: null, title: a.title }); b.disabled = true; b.textContent = "요청함"; }
