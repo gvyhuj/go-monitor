@@ -150,7 +150,8 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
                     t = parse_time(page)
                     if t and ts and abs((datetime.fromisoformat(t) - datetime.fromisoformat(ts[:16])).days) <= 2:
                         with connect() as conn:
-                            conn.execute("UPDATE articles SET ts=?, time_from='page' WHERE id=?", (t, aid))
+                            conn.execute("UPDATE articles SET ts=?, time_from='page' WHERE id=? "
+                                         "AND COALESCE(time_from, '') != 'manual'", (t, aid))     # 직접 고친 시각은 그대로
             except StopIteration:
                 pass
             except Exception as e:      # noqa: BLE001 - 한 기사가 안 열려도 계속

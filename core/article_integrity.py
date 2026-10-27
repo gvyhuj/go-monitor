@@ -14,7 +14,7 @@ def time_quality(article: dict) -> str:
     """Return reported, manually_entered or check_time; never rewrite source ts on suspicion alone.
 
     ts is replaced only by the publisher's own page time (time_from='page', see reporters.fill)."""
-    if article.get("manual"):
+    if article.get("manual") or article.get("time_from") == "manual":
         return "manually_entered"
     if article.get("time_from") == "page":
         return "reported"

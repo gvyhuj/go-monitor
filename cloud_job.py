@@ -128,6 +128,20 @@ def apply_inbox(item: dict, log):
                     conn.execute("DELETE FROM article_links WHERE a=? OR b=?", (aid, aid))
                     conn.execute("UPDATE articles SET story_with=NULL WHERE id=? OR story_with=?", (aid, aid))
             log.info("사이트에서 기사 묶기: %s → %s", ", ".join(ids), into or "풀기")
+        elif t == "article_time":               # 공개 시각 직접 고치기 (ts 없으면 원래 시각으로)
+            aid, ts = str(item.get("id") or ""), item.get("ts")
+            if aid.startswith("pr") and aid[2:].isdigit():          # 직접 등록한 기사
+                if ts:
+                    conn.execute("UPDATE pr_events SET published_ts=? WHERE id=?",
+                                 (datetime.fromisoformat(str(ts)).isoformat(timespec="minutes"), int(aid[2:])))
+            elif ts:
+                conn.execute("UPDATE articles SET ts_auto=COALESCE(ts_auto, ts), time_from_auto=CASE WHEN ts_auto IS NULL "
+                             "THEN time_from ELSE time_from_auto END, ts=?, time_from='manual' WHERE id=?",
+                             (datetime.fromisoformat(str(ts)).isoformat(timespec="minutes"), aid))
+            else:
+                conn.execute("UPDATE articles SET ts=ts_auto, time_from=time_from_auto, ts_auto=NULL, time_from_auto=NULL "
+                             "WHERE id=? AND ts_auto IS NOT NULL", (aid,))
+            log.info("사이트에서 기사 공개 시각 %s: %s %s", "고침" if ts else "원래대로", aid, ts or "")
         elif t == "article_lead":               # 묶음의 대표 기사(제목·언론사) 직접 고르기 (id 없으면 자동으로 되돌림)
             from core.articles import LEAD_PICKS, lead_picks
             ids = {str(x) for x in (item.get("ids") or []) if x}

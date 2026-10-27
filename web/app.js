@@ -2758,6 +2758,33 @@
       <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도 추정: ${esc(dc.window[0])}~${esc(dc.window[1])}, ${dc.n_obs}거래일` : "기록이 짧아 시장 1배로 단순 비교"}</p>`;
   }
 
+  // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
+  const timeSrc = (a) => ` <span class="time-src${a.time_quality === "check_time" ? " warn" : ""}" title="공개 시각을 어디서 읽었는지">시각 출처: ${esc(a.time_source || "-")}${a.time_quality === "check_time" ? " · 확인 필요" : ""}</span>`
+    + (a.manual ? "" : ` <button type="button" class="btn-link editable" data-time-open>시각 고치기</button>`);
+  function timeForm(a) {
+    if (a.manual) return "";
+    const v = (a.own_ts || a.ts || "").slice(0, 16);
+    return `<form class="time-form editable" data-time-form hidden>
+      <label>공개 시각 <input type="datetime-local" data-time-v value="${esc(v)}" required></label>
+      <button class="btn small primary" type="submit">저장</button>
+      ${a.ts_auto ? `<button class="btn small" type="button" data-time-reset title="자동으로 읽은 시각(${esc(a.ts_auto.slice(5, 16).replace("T", " "))})으로">원래대로</button>` : ""}
+      <span class="muted">기사 원문에 적힌 입력·승인 시각을 넣으세요. 반응 계산이 이 시각 기준으로 다시 됩니다.</span>
+      <span class="form-msg" data-time-msg></span></form>`;
+  }
+  function bindTimeForm(box, a) {
+    const open = $("[data-time-open]", box), form = $("[data-time-form]", box);
+    if (!open || !form) return;
+    const msg = $("[data-time-msg]", form);
+    const send = async (ts) => {
+      try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_time", id: a.id, ts, title: a.title }); }
+      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    };
+    open.onclick = () => { form.hidden = !form.hidden; };
+    form.onsubmit = (ev) => { ev.preventDefault(); const v = $("[data-time-v]", form).value; if (v) send(v); };
+    const rs = $("[data-time-reset]", form);
+    if (rs) rs.onclick = () => send(null);
+  }
+
   async function loadPR(id) {
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
@@ -2771,12 +2798,13 @@
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
     let html = `      <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
-        : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
+        : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
         ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
           const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : ""}</p>`;
+    if (!isDisc) html += timeForm(a);
     const notes = [];
     if (e.disclosure) {
       const dsc = [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title);
@@ -2842,7 +2870,7 @@
     const leadBtn = (r) => (outlets.length < 2 ? ""
       : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
         : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
-    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
+    const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
@@ -2851,6 +2879,7 @@
 </section>`;
     if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     box.innerHTML = html;
+    if (!isDisc) bindTimeForm(box, a);
     const act = $("#art-act");
     if (act) act.innerHTML = isDisc ? "" : a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
       : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`;

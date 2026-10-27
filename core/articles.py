@@ -786,6 +786,17 @@ def confounders(symbol: str, eff: dict, art_id: str, story: str | None) -> list[
 LEAD_PICKS = "article_lead_picks"
 
 
+def time_source(a: dict) -> str:
+    """공개 시각을 어디서 읽었나 (화면 표시용)."""
+    if a.get("manual"):
+        return "직접 등록"
+    if a.get("time_from") == "manual":
+        return "직접 고침"
+    if a.get("time_from") == "page":
+        return "원문 페이지"
+    return {"google": "구글 뉴스", "naver": "네이버 뉴스"}.get(a.get("source") or "", a.get("source") or "수집 출처")
+
+
 def lead_picks(conn) -> set:
     """사이트에서 '대표로' 고른 기사 id (묶음마다 하나)."""
     r = conn.execute("SELECT value FROM system_state WHERE key=?", (LEAD_PICKS,)).fetchone()
@@ -845,7 +856,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["outlets_total"] = max(max(int(g.get("outlets") or 1) for g in group),
                                     len({_key_office(g.get("office")) for g in group}))
         lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "merged": bool(g.get("story_with")),
-                                   "ts": g["ts"], "office": g["office"],
+                                   "ts": g["ts"], "office": g["office"], "time_source": time_source(g),
                                    "title": g["title"], "url": g["url"], "reporter": g.get("reporter"),
                                    "topic": topics.classify(g["title"], g.get("body") or "", table)[0]}
                                   for g in group[1:]]
@@ -859,6 +870,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         a["kind_auto"] = "company" if a["category"] == "회사 발표" else "ext"
         a["kind"] = a.get("kind_override") or ("pr" if a.get("manual") else a["kind_auto"])
         a["time_quality"] = time_quality(a)
+        a["time_source"] = time_source(a)
         a["topic"], a["topics"] = topics.classify(a["title"], a.get("body") or "", table)
         # 호재·악재: 보도자료는 표시하지 않고, 외부 기사는 뚜렷한 악재 단어가 있을 때만 '악재'
         auto_tone = 0 if a["kind"] == "pr" else (-1 if any(w in neg_text(a["title"] or "") for w in STRONG_NEG) else 0)

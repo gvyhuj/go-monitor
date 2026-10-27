@@ -278,7 +278,8 @@ _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override
                        "time_from": "TEXT",
                        "reporter_tries": "INTEGER",
                        "mention_checked_at": "TEXT",
-                       "story_with": "TEXT"}  # 사이트에서 '같은 내용'으로 직접 묶은 대상 기사 id (자동 묶음보다 우선)  # '이름만 언급' 기사인지 살펴본 시각  # 기사 페이지를 못 열어 다시 시도한 횟수     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각
+                       "story_with": "TEXT",
+                       "ts_auto": "TEXT", "time_from_auto": "TEXT"}  # 사이트에서 공개 시각을 직접 고치기 전의 시각·출처 (time_from='manual')  # 사이트에서 '같은 내용'으로 직접 묶은 대상 기사 id (자동 묶음보다 우선)  # '이름만 언급' 기사인지 살펴본 시각  # 기사 페이지를 못 열어 다시 시도한 횟수     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각
 # 공시 시각(KIND 접수 시각), DART 공시 종류(A~J)·제출인·비고
 _DISCLOSURE_MIGRATIONS = {"ts": "TEXT", "pblntf": "TEXT", "filer": "TEXT", "rm": "TEXT"}
 _CAUSE_MIGRATIONS = {"move": "REAL"}

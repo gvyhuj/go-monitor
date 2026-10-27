@@ -264,3 +264,21 @@ def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
     assert [r["id"] for r in lead["related_titles"]] == ["a"]
     cloud_job.apply_inbox({"type": "article_lead", "id": None, "ids": ["a", "b"]}, logging.getLogger())  # 자동으로
     assert articles.article_rows("X")[0]["id"] == "a"
+
+
+def test_time_fix_overrides_and_restores(tmpdb):
+    import logging
+    import cloud_job
+    with db.connect() as conn:
+        _art(conn, "g", "2026-04-22T16:00", f"{NAME}, 82억 공급계약 체결")
+        conn.execute("UPDATE articles SET source='google' WHERE id='g'")
+    a = articles.article_rows("X")[0]
+    assert a["time_source"] == "구글 뉴스" and a["time_quality"] == "check_time"
+    cloud_job.apply_inbox({"type": "article_time", "id": "g", "ts": "2026-04-22T14:14"}, logging.getLogger())
+    a = articles.article_rows("X")[0]
+    assert (a["ts"], a["time_source"], a["time_quality"], a["ts_auto"]) == ("2026-04-22T14:14", "직접 고침", "manually_entered", "2026-04-22T16:00")
+    cloud_job.apply_inbox({"type": "article_time", "id": "g", "ts": "2026-04-22T14:20"}, logging.getLogger())   # 다시 고쳐도 원래 시각은 처음 것
+    assert articles.article_rows("X")[0]["ts_auto"] == "2026-04-22T16:00"
+    cloud_job.apply_inbox({"type": "article_time", "id": "g", "ts": None}, logging.getLogger())
+    a = articles.article_rows("X")[0]
+    assert (a["ts"], a["time_source"], a["ts_auto"]) == ("2026-04-22T16:00", "구글 뉴스", None)
