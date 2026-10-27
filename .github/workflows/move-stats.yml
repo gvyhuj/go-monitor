@@ -29,3 +29,5 @@ jobs:
         run: python stats_moves.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
       - name: 일봉 자료 검증 (야후 파이낸스와 대조)
         run: python verify_daily.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
+      - name: 반응 모아보기 조건별 쏠릴 확률
+        run: python react_stats.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}

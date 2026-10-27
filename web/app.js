@@ -1187,7 +1187,10 @@
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
         <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
+        <label class="rc-jump" title="달력에서 고르거나 날짜를 넣으면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
+        ${calState.jumpNote ? `<span class="muted rc-jump-note">${esc(calState.jumpNote)}</span>` : ""}
         ${coarseIv ? coarseTip(coarseIv) : ""}</div>`;
+      calState.jumpNote = "";
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
@@ -1265,7 +1268,19 @@
       const del = ev.target.closest("[data-ev-del]");
       if (del) { deleteRecord(del); return; }
     };
-    box.onchange = (ev) => { const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
+    box.onchange = (ev) => {
+      const j = ev.target.closest("[data-jump]");
+      if (j) { jumpTo(j.value); return; }
+      const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
+    // 날짜로 가기: 장이 열린 날이면 그날, 아니면 그 전 거래일 (기록 첫날보다 앞이면 첫날)
+    function jumpTo(v) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v || "") || v === calState.sel) return;
+      let t = [...daily].reverse().find((x) => x.date <= v) || daily[0];
+      const md = (x) => `${+x.slice(5, 7)}/${+x.slice(8, 10)}`;
+      if (v < daily[0].date) calState.jumpNote = `기록은 ${daily[0].date.replace(/-/g, ".")}부터 → 첫날 차트`;
+      else if (t.date !== v) calState.jumpNote = `${md(v)}: 장이 열리지 않은 날 → ${md(t.date)} 차트`;
+      pick(t.date);
+    }
     renderQuote();
     if (recResize) window.removeEventListener("resize", recResize);
     let rz = null;

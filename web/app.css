@@ -1306,6 +1306,10 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 @media (max-width: 720px) { .rec-tabs { gap: 2px; } .rec-tabs button { padding: 6px 8px; } }
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 14px; }
 .rc-head b { font-size: 16px; }
+.rc-head { flex-wrap: wrap; }
+.rc-jump input { height: 30px; padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: 8px; }
+.rc-jump-note { font-size: 12.5px; }
 .rc-period { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px; }
 /* 차트 아래 날짜 정보 칸: 고른 날(마우스를 올리면 그날) 종가·KOSDAQ·거래량·소식 */
 .rc-info { display: grid; grid-template-columns: 1fr 1.3fr 1.2fr 1fr 1.8fr; gap: 0; margin: 10px 0 4px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--canvas); }
