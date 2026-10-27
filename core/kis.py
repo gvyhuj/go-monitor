@@ -243,6 +243,7 @@ def rescan_if_due(code: str, log=None) -> int | None:
 
 
 TRIM_KEY = "kis_rescan_trim_v1"
+TRIM_ON = False          # 급등·급락 기준(관찰을 남길지)을 정할 때까지 멈춤
 
 
 def trim_backfilled_observations(code: str, log=None) -> dict | None:

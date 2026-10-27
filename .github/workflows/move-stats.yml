@@ -1,0 +1,29 @@
+# 급등·급락 기준을 정하기 위한 숫자 (수동 실행 전용): 최신 백업을 풀어 평소 움직임 크기를 셈.
+# 공개 저장소라 실행 기록도 공개 → 가격은 찍지 않고 비율·분위수·날 수만.
+
+name: 급등락 기준 살펴보기
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GO_DATA_KEY: ${{ secrets.DATA_KEY }}
+      GO_SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q -r requirements.txt
+      - name: 최신 백업 내려받기
+        run: gh release download latest-backup -p monitor.db.enc -D bk -R "$GITHUB_REPOSITORY"
+      - name: 계산
+        run: python stats_moves.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
