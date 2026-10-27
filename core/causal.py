@@ -272,8 +272,9 @@ def window_return(code: str, day: date, until, start: datetime | None = None) ->
     """그날 until 시각 가격의 등락: start가 없으면 전일 종가 대비, 있으면 start 시각 가격 대비."""
     rows = _minutes(code, day.isoformat() + "T00:00", day.isoformat() + "T23:59")
     b = _price_at(rows, datetime.combine(day, until) if not isinstance(until, datetime) else until)
-    if start is None:
-        a = _prev_closes(code, (day - timedelta(days=10)).isoformat(), day.isoformat()).get(day.isoformat())
+    if start is None:       # 전 거래일 종가 (그날 일봉은 장 마감 뒤에야 생기므로 그날 줄 없이도 찾게)
+        prev = [r for r in _daily(code, (day - timedelta(days=10)).isoformat(), (day - timedelta(days=1)).isoformat()) if r[2]]
+        a = prev[-1][2] if prev else None
     else:
         a = _price_at(rows, start)
     return b / a - 1 if a and b else None

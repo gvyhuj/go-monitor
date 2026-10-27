@@ -709,7 +709,12 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         return None
     dc = decompose(symbol, d0)
     if not dc or dc.get("beta_market") is None:
-        return None
+        # 반응일이 오늘이면 일봉이 장 마감 뒤(15:50)에야 생겨 그날 몫 나누기가 안 됨. 30분 반응에 쓰는 건
+        # 그 전 거래일들로 추정한 민감도뿐이라, 직전 거래일 기준 민감도로 계산 (장중에도 그래프가 나오게)
+        prev = [d for d in trading_days(symbol) if d < d0]
+        dc = decompose(symbol, prev[-1]) if prev else None
+        if not dc or dc.get("beta_market") is None:
+            return None
     w = _window_split(symbol, dc, t0, t1)
     if not w or w.get("rarity") is None:
         return None
@@ -723,7 +728,8 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         if x:
             rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"),
                          **{k: x[k] for k in ("own", "market", "sector", "abnormal", "kosdaq")}})
-    return {**w, "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
+    # start: 그래프의 기준 시각 (장 전·15시 넘어 공개는 반응일 장 시작). 비어 있으면 그래프를 못 그려 '09:30 뒤 나옴'만 보였음
+    return {**w, "start": start.isoformat(timespec="minutes"), "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
                                                                              if p.get("kind") == "seg"])}
 
 
