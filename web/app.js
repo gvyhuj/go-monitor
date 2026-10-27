@@ -2041,7 +2041,7 @@
           <li><b>AI 메모</b>: AI가 쓴 원인 글입니다. 판단은 직접 하도록 접어 두었습니다. 숫자(KOSDAQ 같은 기간, 업종, 수급)는 메모와 따로 보입니다.</li>
           <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>급등·급락</b>: 감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
-          <li><b>검색</b>: 맨 위 검색창에 제목·매체·기자·상대 회사를 넣거나, 날짜(2026-04-22, 4/22, 4월), 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)을 넣습니다. 등락률로 찾으면 그날 기사·공시도 함께 나옵니다.</li>
+          <li><b>검색</b>: 맨 위 검색창에 날짜(9/8, 9월 8일, 2026-09-08)를 넣으면 그날 1일 차트로 바로 갑니다. 장이 열리지 않은 날이면 앞뒤 거래일 차트로 가는 버튼이 나옵니다. 달(4월, 2026-04)을 넣으면 그 달의 날짜·기사·공시와 '그 달 주가 차트 보기'가 나옵니다. 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)로 찾으면 그날 기사·공시도 함께 나오고, 제목·매체·기자·상대 회사로도 찾습니다.</li>
         </ul>`)}
       ${sec("articles", "소식", `
         <h3>탭과 건수</h3>
@@ -3141,7 +3141,8 @@
   }
 
   // ---------------------------------------------------------------- 전체 검색 (기사·공시·사건·날짜)
-  // 날짜: 2026-04-22 · 4/22 · 4월 22일 · 4월 · 2026-04 처럼 쓰면 그 날짜(달)를 찾음. 나머지는 제목·매체·기자·제출인·상대 회사
+  // 날짜: 2026-04-22 · 26.4.22 · 20260422 · 4/22 · 4-22 · 4월 22일 · 0422 · 4월 · 2026-04 처럼 쓰면 그 날짜(달)를 찾음. 나머지는 제목·매체·기자·제출인·상대 회사
+  // 하루 날짜가 거래일 하나로 정해지면 검색 결과 대신 바로 그날 1일 차트로 감
   // 등락률: +6.5%·6.5% → 6.5% 이상 오른 날, -5% → 5% 이상 내린 날
   function searchMove(q) {
     const m = q.replace(/\s+/g, "").replace("−", "-").match(/^([+-]?)(\d+(?:\.\d+)?)%$/);
@@ -3151,24 +3152,35 @@
   }
 
   function searchDates(q) {
-    const t = q.replace(/\s+/g, "");
-    let m = t.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
-    if (m) return { day: `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` };
-    m = t.match(/^(\d{1,2})(?:[/.]|월)(\d{1,2})일?$/);
-    if (m) return { md: `-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` };
+    const t = q.replace(/\s+/g, ""), p2 = (x) => x.padStart(2, "0");
+    const ok = (mo, d) => +mo >= 1 && +mo <= 12 && (d == null || (+d >= 1 && +d <= 31));
+    let m = t.match(/^(\d{4}|\d{2})(?:[-./]|년)(\d{1,2})(?:[-./]|월)(\d{1,2})일?$/) || t.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (m && ok(m[2], m[3])) return { day: `${m[1].length === 2 ? `20${m[1]}` : m[1]}-${p2(m[2])}-${p2(m[3])}` };
+    m = t.match(/^(\d{1,2})(?:[-/.]|월)(\d{1,2})일?$/) || t.match(/^(\d{2})(\d{2})$/);
+    if (m && ok(m[1], m[2])) return { md: `-${p2(m[1])}-${p2(m[2])}` };
     m = t.match(/^(\d{4})[-./](\d{1,2})$/) || t.match(/^(\d{4})년(\d{1,2})월$/);
-    if (m) return { month: `${m[1]}-${m[2].padStart(2, "0")}` };
+    if (m && ok(m[2])) return { month: `${m[1]}-${p2(m[2])}` };
     m = t.match(/^(\d{1,2})월$/);
-    if (m) return { mm: `-${m[1].padStart(2, "0")}-` };
+    if (m && ok(m[1])) return { mm: `-${p2(m[1])}-` };
     return null;
   }
 
+  const SEARCH_EX = [["9/8", "그날 차트"], ["4월", "한 달"], ["+5%", "5% 이상 오른 날"], ["-5%", "5% 이상 내린 날"], ["LIG", "기사·공시"]];
   async function pageSearch(q) {
     main.innerHTML = `<div class="wrap"><div class="page-head"><div><h1 class="page-title">검색</h1>
-      <p class="page-sub" id="search-sub"></p></div></div><div id="search-out"><p class="loading">찾는 중…</p></div></div>`;
+      <p class="page-sub" id="search-sub"></p></div></div>
+      <form class="search-box" id="search-form" role="search" autocomplete="off">
+        <input type="search" id="search-q" value="${esc(q)}" placeholder="날짜, 등락률, 기사 제목·매체·기자, 공시 제목" aria-label="검색어">
+        <button class="btn primary" type="submit">검색</button></form>
+      <p class="search-ex">예: ${SEARCH_EX.map(([x, t]) => `<a href="#/search/${encodeURIComponent(x)}"><b>${esc(x)}</b> <span class="muted">${t}</span></a>`).join("")}</p>
+      <div id="search-out"><p class="loading">찾는 중…</p></div></div>`;
+    $("#search-form").onsubmit = (ev) => { ev.preventDefault(); location.hash = `#/search/${encodeURIComponent($("#search-q").value.trim())}`; };
     const box = $("#gsearch-q");
     if (box && box.value !== q) box.value = q;
-    if (!q.trim()) { $("#search-out").innerHTML = `<div class="empty"><strong>찾을 말을 위 검색창에 넣어 주세요.</strong>예: LIG, 아라비르, 4월, 2026-04-22</div>`; return; }
+    if (!q.trim()) {
+      $("#search-out").innerHTML = `<div class="empty"><strong>찾을 말을 넣어 주세요.</strong>날짜(9/8, 2026-09-08)를 넣으면 그날 1일 차트로 바로 갑니다. 달(4월), 하루 등락률(+5%, -5%), 기사·공시 제목·매체·기자도 찾을 수 있습니다.</div>`;
+      $("#search-q").focus(); return;
+    }
     const [ad, dd, daily] = await Promise.all([
       api("/api/articles").catch(() => ({})), api("/api/disclosures").catch(() => ({})),
       api("/api/daily").then((d) => d.days || []).catch(() => []),
@@ -3177,6 +3189,9 @@
     const dt = mv ? null : searchDates(q);
     const onDay = (ts) => !!dt && !!ts && (dt.day ? ts.startsWith(dt.day) : dt.month ? ts.startsWith(dt.month)
       : dt.md ? ts.slice(4, 10) === dt.md : ts.slice(4, 8) === dt.mm);
+    const days = mv ? daily.filter((x) => mv.test(x.change)).reverse() : dt ? daily.filter((x) => onDay(x.date)).reverse() : [];
+    // 하루 날짜가 거래일 하나로 정해지면 바로 그날 1일 차트 (뒤로 가기는 검색 전 화면으로)
+    if ((dt?.day || dt?.md) && days.length === 1) { location.replace(`#/day/${days[0].date}`); return; }
     const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, "");
     const nq = norm(q);
     const hit = (...xs) => (dt || mv ? false : xs.some((x) => norm(x).includes(nq)));
@@ -3186,25 +3201,45 @@
       for (const r of [a, ...(a.related || [])]) if (onDay(r.ts) || hit(r.title, r.office, r.reporter)) arts.push({ ...r, kind: a.kind, category: a.category });
     }
     const discs = (dd.items || []).filter((x) => onDay(x.ts) || hit(x.title, x.filer, x.kind));
-    const days = mv ? daily.filter((x) => mv.test(x.change)).reverse() : dt ? daily.filter((x) => onDay(x.date)).reverse() : [];
     if (mv) {                          // 등락률 검색: 그날 소식도 함께 (날짜로 이어 봄)
       const set = new Set(days.map((x) => x.date));
       for (const a of ad.items || []) if (!a.hidden && a.ts && set.has(a.ts.slice(0, 10)) && a.category !== "단순 언급") arts.push(a);
       for (const x of dd.items || []) if (x.ts && set.has(x.ts.slice(0, 10)) && MAIN_DISC.has(x.pblntf)) discs.push(x);
     }
     arts.sort((x, y) => (x.ts < y.ts ? 1 : -1));
-    const li = (href, meta, title) => `<li><a href="${href}"><span class="al-meta">${meta}</span><span class="t">${esc(title)}</span></a></li>`;
-    const sec = (title, n, body) => (n ? `<section class="search-sec"><h2>${title} <small class="muted">${n}건</small></h2><ul class="search-list">${body}</ul></section>` : "");
-    const html = sec("날짜", days.length, days.slice(0, 300).map((x) => li(`#/calendar`, `<span class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</span><span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)} · 거래량 ${Math.round(x.volume || 0).toLocaleString("ko-KR")}주</span>`, `${x.date.slice(0, 4)}년 ${dayLabel(x.date)}`).replace('href="#/calendar"', `href="#/calendar" data-day="${esc(x.date)}"`)).join(""))
-      + sec("기사", arts.length, arts.slice(0, 80).map((a) => li(`#/pr/${esc(a.id)}`, `${kindTag({ kind: a.kind })}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)} · ${esc(a.office || "")}${a.reporter ? ` · ${esc(a.reporter)} 기자` : ""}</span>`, a.title)).join(""))
-      + sec("공시", discs.length, discs.slice(0, 80).map((x) => li(`#/pr/${esc(x.id)}`, `<span class="ktag k-disc">공시</span><span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)} · ${esc(x.filer || "")}</span>`, x.title)).join(""));
-    $("#search-sub").textContent = mv ? `하루 등락 ${mv.sign === "-" ? `−${(mv.v * 100).toFixed(1)}% 이하` : `+${(mv.v * 100).toFixed(1)}% 이상`} · 그날 소식 포함` : `“${q}”`;
-    const out = $("#search-out");
-    out.innerHTML = html || `<div class="empty"><strong>찾은 것이 없습니다.</strong>다른 말로 찾아보세요. 날짜는 2026-04-22, 4/22, 4월처럼 쓸 수 있습니다.</div>`;
-    out.onclick = (ev) => {
-      const a = ev.target.closest("a[data-day]"); if (!a) return;
-      calState.month = a.dataset.day.slice(0, 7); calState.sel = a.dataset.day;
-    };
+    // 글자 검색이면 제목에서 찾은 말을 칠함
+    const hlRe = !dt && !mv ? new RegExp(esc(q.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi") : null;
+    const hl = (t) => (hlRe ? esc(t).replace(hlRe, (x) => `<mark>${x}</mark>`) : esc(t));
+    const li = (href, meta, title) => `<li><a href="${href}"><span class="al-meta">${meta}</span><span class="t">${hl(title)}</span></a></li>`;
+    const more = (n, max) => (n > max ? `<li class="muted search-more">외 ${n - max}건 — 검색어를 더 좁혀 보세요.</li>` : "");
+    const sec = (title, n, body, extra = "") => (n ? `<section class="search-sec"><h2>${title} <small class="muted">${n}건</small>${extra}</h2><ul class="search-list">${body}</ul></section>` : "");
+    // 날짜 검색인데 그날 시세가 없으면(주말·휴일): 앞뒤 거래일로 이어 줌
+    let notice = "";
+    if ((dt?.day || dt?.md) && !days.length && daily.length) {
+      const last = daily[daily.length - 1].date;
+      let target = dt.day;
+      if (!target) { const y = +last.slice(0, 4); target = `${y}${dt.md}` <= last ? `${y}${dt.md}` : `${y - 1}${dt.md}`; }
+      const prev = [...daily].reverse().find((x) => x.date < target), next = daily.find((x) => x.date > target);
+      const go = (x, t) => (x ? `<a class="btn small" href="#/day/${esc(x.date)}">${t} ${dayLabel(x.date)} 차트</a>` : "");
+      notice = `<div class="search-notice"><strong>${target.slice(0, 4)}년 ${dayLabel(target)}은 시세가 없습니다.</strong>
+        <span class="muted">${target > last ? "아직 오지 않은 날입니다." : target < daily[0].date ? "기록을 모으기 전 날입니다." : "장이 열리지 않은 날(주말·휴일)입니다."}</span>
+        <div class="search-go">${go(prev, "이전 거래일")}${go(next, "다음 거래일")}</div></div>`;
+    }
+    // 달 검색: 그 달 전체 차트로 (여러 해에 걸치면 가장 최근 해)
+    let monthLink = "";
+    if ((dt?.month || dt?.mm) && days.length) {
+      const y = days[0].date.slice(0, 7), md = days.filter((x) => x.date.startsWith(y));
+      monthLink = ` <a class="btn small search-h-go" href="#/period/${md[md.length - 1].date}/${md[0].date}">${+y.slice(0, 4)}년 ${+y.slice(5)}월 주가 차트 보기 →</a>`;
+    }
+    const dayRow = (x) => `<li><a href="#/day/${esc(x.date)}"><span class="al-meta"><span class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</span><span class="muted">KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)} · 거래량 ${Math.round(x.volume || 0).toLocaleString("ko-KR")}주</span></span><span class="t">${x.date.slice(0, 4)}년 ${dayLabel(x.date)} <span class="search-go-t">1일 차트 →</span></span></a></li>`;
+    const html = notice
+      + sec("날짜", days.length, days.slice(0, 300).map(dayRow).join("") + more(days.length, 300), monthLink)
+      + sec("기사", arts.length, arts.slice(0, 80).map((a) => li(`#/pr/${esc(a.id)}`, `${kindTag({ kind: a.kind })}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)} · ${esc(a.office || "")}${a.reporter ? ` · ${esc(a.reporter)} 기자` : ""}</span>`, a.title)).join("") + more(arts.length, 80))
+      + sec("공시", discs.length, discs.slice(0, 80).map((x) => li(`#/pr/${esc(x.id)}`, `<span class="ktag k-disc">공시</span><span class="muted">${dayLabel(x.ts)} ${x.untimed ? "시각 미상" : hhmm(x.ts)} · ${esc(x.filer || "")}</span>`, x.title)).join("") + more(discs.length, 80));
+    const kindLabel = mv ? `하루 등락 ${mv.sign === "-" ? `−${(mv.v * 100).toFixed(1)}% 이하` : `+${(mv.v * 100).toFixed(1)}% 이상`} · 그날 소식 포함`
+      : dt ? `날짜로 찾음 · “${q}”` : `제목·매체·기자·제출인에서 찾음 · “${q}”`;
+    $("#search-sub").textContent = kindLabel;
+    $("#search-out").innerHTML = html || `<div class="empty"><strong>찾은 것이 없습니다.</strong>다른 말로 찾아보세요. 날짜는 9/8, 2026-09-08, 4월처럼 쓸 수 있습니다.</div>`;
   }
 
   async function route() {
@@ -3212,6 +3247,11 @@
     closeDrawer();
     const h = location.hash.replace(/^#/, "") || "/";
     const parts = h.split("/").filter(Boolean);
+    // 바로 가기 주소: #/day/2026-09-08 → 그날 1일 차트, #/period/시작/끝 → 그 기간 차트 (검색에서 씀). 주소는 #/로 바꿔 둠
+    const ymd = /^\d{4}-\d{2}-\d{2}$/;
+    if (parts[0] === "day" && ymd.test(parts[1] || "")) { calState.range = "1d"; calState.sel = parts[1]; }
+    else if (parts[0] === "period" && ymd.test(parts[1] || "") && ymd.test(parts[2] || "")) { calState.range = "custom"; [calState.from, calState.to] = [parts[1], parts[2]].sort(); calState.sel = calState.to; }
+    if (["day", "period"].includes(parts[0])) { history.replaceState(null, "", "#/"); return route(); }
     const page = parts[0] || "dash";
     if (page !== "pr") artState.day = null;
     document.querySelectorAll(".tabs a").forEach((a) => {

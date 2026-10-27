@@ -1145,6 +1145,21 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .search-list li a { display: block; padding: 10px 2px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
 .search-list li a:hover { background: var(--canvas); }
 .search-list .t { display: block; margin-top: 3px; color: var(--ink); }
+.search-list .t mark { background: rgba(255, 196, 0, 0.35); color: inherit; border-radius: 2px; padding: 0 1px; }
+.search-list .search-go-t { margin-left: 8px; font-size: 13px; font-weight: 600; color: var(--brand-blue); }
+.search-list .search-more { padding: 10px 2px; font-size: 13px; }
+.search-box { display: flex; gap: 8px; margin-top: 4px; max-width: 640px; }
+.search-box input { flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 12px; font-size: 15px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); }
+.search-box input:focus { outline: 2px solid var(--brand-blue); outline-offset: -1px; }
+.search-ex { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.search-ex a { color: inherit; text-decoration: none; }
+.search-ex a b { color: var(--brand-blue); }
+.search-ex a:hover b { text-decoration: underline; }
+.search-notice { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; }
+.search-notice strong { display: block; margin-bottom: 2px; }
+.search-go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.search-sec h2 .search-h-go { margin-left: 10px; vertical-align: middle; }
 @media (max-width: 720px) {
   .gsearch { order: 4; width: 100%; margin: 0 0 8px; }
   .gsearch input { width: 100%; }
