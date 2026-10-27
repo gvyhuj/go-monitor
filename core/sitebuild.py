@@ -256,10 +256,13 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
     lst = ws.api_articles({})
     keep("articles", lambda: lst, True)
+    art_det, disc_det = {}, {}
+
     def details():
         out = {}
         for a in lst.get("items") or []:
             out[a["id"]] = ws.api_article_detail({}, a["id"])
+        art_det.update(out)
         return out
     keep("article_details", details, True)
     dl = {}
@@ -271,8 +274,11 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         out = {}
         for r in dl.get("items") or []:
             out[r["id"]] = ws.api_disclosure_detail({}, r["id"])
+        disc_det.update(out)
         return out
     keep("disclosure_details", disc_details, True)
+    want.add("reactions")             # 반응 모아보기: 위에서 계산한 상세에서 바로 (다시 계산하지 않음)
+    keep("reactions", lambda: ws.reactions_from(lst.get("items") or [], art_det, dl.get("items") or [], disc_det), True)
     if not {"articles", "article_details", "disclosures", "disclosure_details"}.issubset(fresh):
         raise RuntimeError("기사·공시 재계산 실패: 이전 계산값으로 새 사이트를 배포하지 않습니다.")
 

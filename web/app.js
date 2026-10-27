@@ -242,6 +242,7 @@
     if (p === "/api/disclosures") return kv("disclosures");
     if (p === "/api/daily") return kv("daily");
     if (p === "/api/coarse") return kv("coarse").catch(() => ({ days: {} }));
+    if (p === "/api/reactions") return kv("reactions");
     m = p.match(/^\/api\/disclosures\/(.+)$/);
     if (m) {
       const all = await kv("disclosure_details");
@@ -2197,7 +2198,130 @@
     };
   }
 
-  const artViewSeg = (pivot) => `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${!pivot}">목록</a><a href="#/pivot" aria-pressed="${pivot}">대시보드</a></div>`;
+  const artViewSeg = (view) => { const v = view === true ? "pivot" : view || "list";      // 예전 호출: true = 대시보드
+    return `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${v === "list"}">목록</a><a href="#/pivot" aria-pressed="${v === "pivot"}">대시보드</a><a href="#/react" aria-pressed="${v === "react"}">반응 모아보기</a></div>`; };
+
+  // ---------------------------------------------------------------- 반응 모아보기
+  // 기사·공시마다 공개 시각을 0분으로 맞춘 주가 경로(기준값 대비)를 한 그래프에 겹쳐 보고, 아래 표로 +30·60·120분·당일·다음날을 비교.
+  // 통계 판정 없이 숫자 그대로 (같은 촘촘함의 봉끼리만 겹치도록 기본은 1분봉)
+  const reactState = { kind: "all", mode: "all", res: "1", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "all" };
+  const REACT_KINDS = [["all", "전체"], ["pr", "보도자료"], ["ext", "외부기사"], ["disc", "주요 공시"]];
+  const REACT_MODES = [["all", "전체"], ["open", "장 전 공개"], ["session", "장중 공개"], ["late", "장 뒤 공개"]];
+  const REACT_RES = [["1", "1분봉"], ["5", "야후 5분봉"], ["60", "야후 60분봉"], ["all", "전체"]];
+  const MODE_TXT = { open: "장 전", session: "장중", late: "장 뒤" };
+  async function pageReact() {
+    main.innerHTML = `<div class="wrap dash">
+      <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">기사·공시가 나온 시각을 0분으로 맞춰 그 뒤 주가가 어떻게 움직였는지 겹쳐 봅니다. 숫자는 공개 직전 가격(장 전 공개는 전날 종가) 대비입니다.</p></div>${artViewSeg("react")}</div>
+      <div id="rx-ctl" class="rx-ctl"></div>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span></span></div>
+        <div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-sum"></p></section>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>기사별 반응</h3><small class="muted">머리글을 누르면 정렬, 줄을 누르면 그래프에서 강조</small><span class="spacer"></span><button class="btn small" type="button" id="rx-csv">엑셀로</button></div>
+        <div class="rx-table-wrap"><table class="rx-table" id="rx-table"></table></div></section></div>`;
+    let items = [];
+    try { items = (await api("/api/reactions")).items || []; }
+    catch (e) { $("#rx-plot").innerHTML = `<div class="empty"><strong>반응 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
+    if (!$("#rx-plot")) return;
+    const topics = [...new Set(items.map((x) => x.topic).filter(Boolean))].sort();
+    const kindOk = (x) => reactState.kind === "all" || (reactState.kind === "pr" ? x.kind === "pr" || x.kind === "company"
+      : reactState.kind === "disc" ? x.kind === "disc" && MAIN_DISC.has(x.pblntf || "") : x.kind === "ext");
+    const sinceOf = () => (reactState.range === "all" ? "" : isoDate(new Date(Date.now() - +reactState.range * 864e5)));
+    const pass = (x) => kindOk(x) && x.category !== "단순 언급" && (reactState.mode === "all" || x.mode === reactState.mode)
+      && (reactState.res === "all" || String(x.interval) === reactState.res) && (!reactState.topic || x.topic === reactState.topic)
+      && (!sinceOf() || (x.ts || "") >= sinceOf());
+    const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${String(reactState[key]) === v}">${t}</button>`).join("")}</div>`;
+    const drawCtl = () => {
+      const cnt = (res) => items.filter((x) => kindOk(x) && x.category !== "단순 언급" && String(x.interval) === res).length;
+      $("#rx-ctl").innerHTML = `${seg("kind", REACT_KINDS)}${seg("mode", REACT_MODES)}
+        ${seg("res", REACT_RES.map(([v, t]) => [v, v === "all" ? t : `${t} ${cnt(v)}`]))}
+        ${seg("range", [["all", "전체 기간"], ["365", "1년"], ["92", "3달"]])}
+        <select class="dash-sel" id="rx-topic" aria-label="주제"><option value="">주제 전체</option>${topics.map((t) => `<option${t === reactState.topic ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
+        <label class="rx-chk"><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기</label>`;
+    };
+    // 경로: [분, 값] → 그 분의 값 (앞선 가장 가까운 점, 봉 사이는 그대로 이어짐)
+    const at = (path, m) => { let v = null; for (const [t, y] of path || []) { if (t <= m) v = y; else break; } return v; };
+    const series = (x) => {
+      const own = (x.path && x.path.own) || [];
+      if (!reactState.vsKq) return own;
+      const kq = (x.path && x.path.kq) || [];
+      return own.map(([t, y]) => { const k = at(kq, t); return k == null ? null : [t, y - k]; }).filter(Boolean);
+    };
+    const stepV = (x, m) => { const s0 = (x.steps || {})[m]; if (!s0 || s0.own == null) return null; return reactState.vsKq ? (s0.kq == null ? null : s0.own - s0.kq) : s0.own; };
+    const dayV = (x, k) => { const d = x.daily; if (!d || d[k] == null) return null; return reactState.vsKq ? (d[`kq_${k}`] == null ? null : d[k] - d[`kq_${k}`]) : d[k]; };
+    const median = (vs) => { const a = vs.filter((v) => v != null).sort((p, q) => p - q); if (!a.length) return null; const h = a.length >> 1; return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; };
+    function plot(list) {
+      const el = $("#rx-plot"), W = el.clientWidth || 800, H = Math.max(240, Math.min(380, W * 0.42)), L = 44, R = 12, T = 12, B = 26;
+      const lines = list.map((x) => ({ x, s: series(x) })).filter((o) => o.s.length >= 2);
+      if (!lines.length) { el.innerHTML = `<div class="empty"><strong>그릴 경로가 없습니다.</strong>조건을 넓혀 보세요. 지난 기사는 1분봉이 없을 수 있어 '야후 5분봉·60분봉'에 있습니다.</div>`; return; }
+      const vals = lines.flatMap((o) => o.s.map((p) => p[1]));
+      let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+      const pad = Math.max(0.005, (hi - lo) * 0.08); lo -= pad; hi += pad;
+      const xs = (m) => L + ((m + 30) / 180) * (W - L - R), ys = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+      const step = reactState.res === "60" ? 60 : reactState.res === "5" ? 5 : 1;
+      const avg = [];
+      for (let m = -30; m <= 150; m += step) { const vs = lines.map((o) => at(o.s, m)).filter((v) => v != null); if (vs.length >= Math.max(2, lines.length * 0.5)) avg.push([m, vs.reduce((a, b) => a + b, 0) / vs.length]); }
+      const d = (s) => s.map(([m, v], i) => `${i ? "L" : "M"}${xs(m).toFixed(1)},${ys(v).toFixed(1)}`).join("");
+      // 눈금: 0을 지나는 깔끔한 간격 (0.1·0.2·0.5·1·2·5%…)
+      const stepY = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2].find((g) => (hi - lo) / g <= 6) || 0.5;
+      const tick = (v) => `${v > 1e-9 ? "+" : v < -1e-9 ? "−" : ""}${Math.abs(v * 100).toFixed(stepY < 0.01 ? 1 : 0)}%`;
+      const yt = []; for (let k = Math.ceil(lo / stepY); k * stepY <= hi + 1e-12; k++) yt.push(k * stepY);
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="공개 뒤 주가 경로 ${lines.length}건">
+        ${yt.map((v) => `<line class="rx-grid" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text class="rx-ax" x="${L - 6}" y="${ys(v) + 4}" text-anchor="end">${tick(v)}</text>`).join("")}
+        <line class="rx-zero" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>
+        <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
+        ${[-30, 0, 30, 60, 90, 120, 150].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "공개" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
+        ${lines.map((o) => `<path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" data-id="${esc(o.x.id)}" d="${d(o.s)}"><title>${esc(dayLabel(o.x.ts))} ${esc(o.x.title)}</title></path>`).join("")}
+        ${avg.length > 1 ? `<path class="rx-avg" d="${d(avg)}"/>` : ""}
+        ${reactState.pick ? (() => { const o = lines.find((q) => q.x.id === reactState.pick); return o ? `<path class="rx-one on top" d="${d(o.s)}"/>` : ""; })() : ""}
+      </svg>`;
+    }
+    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["60", "+60분"], ["120", "+120분"], ["d0", "반응일 종가"], ["d1", "다음날"], ["kq_d0", "KOSDAQ 반응일"]];
+    const valOf = (x, k) => (["30", "60", "120"].includes(k) ? stepV(x, k) : ["d0", "d1"].includes(k) ? dayV(x, k) : k === "kq_d0" ? (x.daily || {}).kq_d0 : x[k]);
+    function table(list) {
+      const k = reactState.sort, dir = reactState.dir;
+      const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
+      const num = (v) => `<td class="num ${sgnCls(v)}">${v == null ? "-" : pct(v)}</td>`;
+      const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
+      $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}>${t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+        <tbody>${sorted.map((x) => `<tr data-id="${esc(x.id)}"${reactState.pick === x.id ? ' class="on"' : ""}>
+          <td class="nowrap">${x.ts ? `${x.ts.slice(2, 10).replace(/-/g, ".")} ${x.untimed ? "시각 미상" : hhmm(x.ts)}` : "-"}${x.mode ? ` <small class="muted">${MODE_TXT[x.mode] || ""}</small>` : ""}${x.time_quality === "check_time" ? ' <small class="time-src warn" title="공개 시각 확인 필요">시각?</small>' : ""}</td>
+          <td class="nowrap">${kindTxt(x)}</td>
+          <td class="rx-title"><a href="#/pr/${esc(x.id)}">${esc(x.title)}</a> <small class="muted">${esc(x.office || "")}</small></td>
+          <td class="nowrap muted">${x.interval ? `${x.interval}분` : "-"}</td>
+          ${num(stepV(x, "30"))}${num(stepV(x, "60"))}${num(stepV(x, "120"))}${num(dayV(x, "d0"))}${num(dayV(x, "d1"))}${num((x.daily || {}).kq_d0)}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
+    }
+    function draw() {
+      const list = items.filter(pass);
+      $("#rx-n").textContent = `${list.length}건${reactState.vsKq ? " · KOSDAQ 대비 차이" : ""}`;
+      plot(list);
+      const s = (m) => { const vs = list.map((x) => stepV(x, m)).filter((v) => v != null); if (!vs.length) return null;
+        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${pct(median(vs))}</b> (오른 ${vs.filter((v) => v > 0).length} · 내린 ${vs.filter((v) => v < 0).length}, ${vs.length}건)`; };
+      const d0 = list.map((x) => dayV(x, "d0")).filter((v) => v != null);
+      $("#rx-sum").innerHTML = [s("30"), s("60"), s("120"), d0.length ? `반응일 종가 중앙값 <b class="${sgnCls(median(d0))}">${pct(median(d0))}</b> (${d0.length}건)` : ""].filter(Boolean).join(" · ")
+        + `<br><span class="muted">기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 평균선이 0에서 꾸준히 벗어나는지를 보세요. 같은 날 다른 소식·시장 움직임이 섞일 수 있습니다.</span>`;
+      table(list);
+    }
+    drawCtl(); draw();
+    $("#rx-ctl").onclick = (ev) => { const b = ev.target.closest("button[data-k]"); if (!b) return; reactState[b.dataset.k] = b.dataset.v; drawCtl(); draw(); };
+    $("#rx-ctl").onchange = (ev) => {
+      if (ev.target.id === "rx-topic") reactState.topic = ev.target.value;
+      if (ev.target.id === "rx-vskq") reactState.vsKq = ev.target.checked;
+      draw();
+    };
+    $("#rx-table").onclick = (ev) => {
+      const th = ev.target.closest("th[data-sort]");
+      if (th) { const c = th.dataset.sort; reactState.dir = reactState.sort === c ? -reactState.dir : c === "title" || c === "kind" ? 1 : -1; reactState.sort = c; draw(); return; }
+      if (ev.target.closest("a")) return;
+      const tr = ev.target.closest("tr[data-id]"); if (!tr) return;
+      reactState.pick = reactState.pick === tr.dataset.id ? null : tr.dataset.id; draw();
+    };
+    $("#rx-plot").onclick = (ev) => { const p = ev.target.closest("path[data-id]"); if (p) { reactState.pick = reactState.pick === p.dataset.id ? null : p.dataset.id; draw(); } };
+    $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map((c) => c[1]).concat(["주제", "언론사"]),
+      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "60", "120", "d0", "d1", "kq_d0"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
+    if (dashResize) window.removeEventListener("resize", dashResize);
+    let rz = null;
+    dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rx-plot")) draw(); }, 200); };
+    window.addEventListener("resize", dashResize);
+  }
 
   // 기사 대시보드: 월별·주제·언론사·기자 막대를 누르면 서로 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
   const pivotState = { range: "all", unit: "outlet", kind: "all", f: {}, pages: { office: 0, reporter: 0, feed: 0 }, q: { office: "", reporter: "" } };
@@ -3349,7 +3473,7 @@
     const page = parts[0] || "dash";
     if (page !== "pr") artState.day = null;
     document.querySelectorAll(".tabs a").forEach((a) => {
-      const on = a.dataset.route === (["dash", "calendar", "events", "days"].includes(page) ? "dash" : page === "pivot" ? "pr" : page);
+      const on = a.dataset.route === (["dash", "calendar", "events", "days"].includes(page) ? "dash" : ["pivot", "react"].includes(page) ? "pr" : page);
       if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
     const dashView = { dash: "recent", calendar: "recent", events: "recent", days: "days" }[page];
@@ -3361,6 +3485,7 @@
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
     else if (page === "pr") { document.title = "소식 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "pivot") { document.title = "기사 대시보드 | 주가 모니터"; await pagePivot(); }
+    else if (page === "react") { document.title = "반응 모아보기 | 주가 모니터"; await pageReact(); }
     else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
     else if (page === "status") { document.title = "수집 현황 | 주가 모니터"; await pageStatus(); }
     else if (page === "search") { document.title = "검색 | 주가 모니터"; await pageSearch(decodeURIComponent(parts.slice(1).join("/"))); }

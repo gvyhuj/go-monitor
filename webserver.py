@@ -801,6 +801,61 @@ def api_disclosure_detail(_q, did):
     return out
 
 
+def reaction_row(d: dict, item: dict | None = None) -> dict:
+    """기사·공시 상세 하나 → '반응 모아보기'용 한 줄: 공개 시각을 0분으로 맞춘 주가 경로(이 종목·KOSDAQ, 기준값 대비),
+    +30·60·120분 등락, 반응일·다음날·3일 뒤 종가 등락, 어떤 봉으로 쟀는지."""
+    a, e = d["article"], d.get("effect") or {}
+    item = item or {}
+    iw, ic, rc = d.get("intraday"), d.get("intraday_coarse"), d.get("reaction_chart")
+    w = iw or ic
+    row = {"id": a["id"], "ts": a.get("own_ts") or a["ts"], "title": a["title"], "office": a.get("office") or "",
+           "kind": a.get("kind") or item.get("kind"), "category": a.get("category") or item.get("category"),
+           "topic": item.get("topic") or a.get("topic"), "pblntf": a.get("pblntf"),
+           "time_quality": a.get("time_quality") or item.get("time_quality"), "untimed": bool(a.get("untimed")),
+           "reaction_day": e.get("reaction_day"), "interval": (1 if iw else ic.get("interval")) if w else None,
+           "mode": w.get("kind") if w else None, "start": w.get("start") if w else None, "steps": {}, "path": None}
+    for r in (w or {}).get("rows") or []:
+        row["steps"][str(r["minutes"])] = {"own": r.get("own"), "kq": r.get("kosdaq")}
+    if rc and rc.get("base_own") and rc.get("start"):
+        t0 = datetime.fromisoformat(rc["start"])
+
+        def path(rows, base):
+            out = []
+            for x in rows:
+                m = round((datetime.fromisoformat(x["t"]) - t0).total_seconds() / 60)
+                if base and -30 <= m <= 150:
+                    out.append([m, round(x["c"] / base - 1, 5)])
+            return out
+        row["path"] = {"own": path(rc["own"], rc["base_own"]), "kq": path(rc.get("kq") or [], rc.get("base_kq"))}
+    dl = e.get("daily") or {}
+    kq = dl.get("kosdaq") or {}
+    row["daily"] = {k: dl.get(k) for k in ("d0", "d1", "d3")} | {f"kq_{k}": kq.get(k) for k in ("d0", "d1", "d3")} if dl else None
+    return row
+
+
+def reactions_from(art_items: list, art_details: dict, disc_items: list, disc_details: dict) -> dict:
+    rows = []
+    for it in art_items:
+        d = art_details.get(it["id"])
+        if d and not it.get("hidden"):
+            rows.append(reaction_row(d, it))
+    for it in disc_items:
+        d = disc_details.get(it["id"])
+        if d:
+            rows.append(reaction_row(d, {**it, "kind": "disc"}))
+    rows.sort(key=lambda r: r["ts"] or "", reverse=True)
+    return {"items": rows}
+
+
+def api_reactions(_q):
+    """반응 모아보기 (서버 화면용: 기사·공시 상세를 모두 계산하므로 무거움. 사이트는 자동 실행 때 미리 만든 값)."""
+    arts = (api_articles({}).get("items") or [])
+    discs = (api_disclosures({}).get("items") or [])
+    ad = {a["id"]: api_article_detail({}, a["id"]) for a in arts}
+    dd = {x["id"]: api_disclosure_detail({}, x["id"]) for x in discs}
+    return reactions_from(arts, ad, discs, dd)
+
+
 def api_article_hide(aid, hidden: bool):
     with connect() as conn:
         conn.execute("UPDATE articles SET hidden=? WHERE id=? OR story=?", (1 if hidden else 0, aid, aid))
@@ -829,6 +884,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/articles/(pr\d+|\d+)$"), api_article_detail),
     (re.compile(r"^/api/disclosures$"), api_disclosures),
     (re.compile(r"^/api/disclosures/(dK?\d+)$"), api_disclosure_detail),
+    (re.compile(r"^/api/reactions$"), api_reactions),
     (re.compile(r"^/api/share$"), api_share),
     (re.compile(r"^/api/cloud$"), api_cloud),
 ]

@@ -1513,3 +1513,33 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 @media (prefers-color-scheme: dark) { .time-src.warn { color: #f0a54a; } }
 .time-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
 .time-form input { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+
+/* 반응 모아보기 */
+.rx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+.rx-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.rx-plot { width: 100%; min-height: 240px; }
+.rx-plot svg { display: block; overflow: visible; }
+.rx-grid { stroke: var(--line); stroke-width: 1; }
+.rx-zero { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.rx-t0 { stroke: var(--brand-blue); stroke-width: 1; opacity: .6; }
+.rx-ax { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.rx-one { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .35; cursor: pointer; }
+.rx-one:hover { opacity: .9; stroke-width: 2; }
+.rx-one.on { stroke: var(--up); opacity: 1; stroke-width: 2.2; }
+.rx-avg { fill: none; stroke: var(--brand-blue); stroke-width: 3; pointer-events: none; }
+.rx-leg { display: inline-flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.rx-leg i { display: inline-block; width: 16px; height: 0; vertical-align: middle; margin-right: 5px; border-top: 2px solid var(--muted); }
+.rx-leg i.rx-l-one { opacity: .5; border-top-width: 1px; }
+.rx-leg i.rx-l-avg { border-top: 3px solid var(--brand-blue); }
+.rx-table-wrap { overflow-x: auto; }
+.rx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rx-table th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 6px 8px; border-bottom: 1px solid var(--line-2); white-space: nowrap; cursor: pointer; user-select: none; }
+.rx-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rx-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rx-table .nowrap { white-space: nowrap; }
+.rx-table .rx-title { min-width: 220px; }
+.rx-table tr[data-id] { cursor: pointer; }
+.rx-table tr[data-id]:hover, .rx-table tr.on { background: var(--canvas); }
+.rx-table tr.on td:first-child { box-shadow: inset 3px 0 0 var(--up); }
+.rx-ctl .seg button { white-space: nowrap; }
+@media (max-width: 720px) { .rx-ctl .seg { flex-wrap: wrap; } .rx-ctl .seg button { padding-left: 10px; padding-right: 10px; } }
