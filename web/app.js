@@ -30,6 +30,9 @@
   const parseT = (t) => { const [d, hm] = t.split("T"); const [y, m, dd] = d.split("-").map(Number); const [h, mi] = (hm || "00:00").split(":").map(Number); return { y, m, d: dd, h, mi }; };
   const toTime = (t) => { const p = parseT(t); return Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi) / 1000; };
   const hhmm = (t) => (t ? t.slice(11, 16) : "");
+  // ⓘ 설명 (마우스를 올리거나 폰은 누르면)
+  const infoTip = (lines, title = "") => `<span class="tip" tabindex="0" aria-label="${esc(title || "설명")}">ⓘ<span class="tip-box" role="tooltip">${title ? `<b>${esc(title)}</b>` : ""}${lines.map((l) => `<span>${esc(l)}</span>`).join("")}</span></span>`;
+  const coarseTip = (iv) => infoTip([`이날은 1분봉 기록이 없어 야후 파이낸스 ${iv}분봉으로 그렸습니다.`]);
   const dayLabel = (t) => { const p = parseT(t); const w = new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); return `${p.m}월 ${p.d}일 (${WEEK[w]})`; };
   const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const utcHHMM = (sec) => { const d = new Date(sec * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
@@ -1182,7 +1185,7 @@
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
         <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
-        ${coarseIv ? `<span class="muted">1분봉이 없어 야후 ${coarseIv}분봉</span>` : ""}</div>`;
+        ${coarseIv ? coarseTip(coarseIv) : ""}</div>`;
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
@@ -2720,7 +2723,8 @@
         : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
         ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
-          return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
+          const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
+          return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : ""}</p>`;
     const notes = [];
     if (e.disclosure) {
@@ -2783,7 +2787,7 @@
     const outlets = [{ id: a.id, manual: a.manual, merged: !!a.story_with, ts: a.ts, office: a.office, title: a.title, url: a.url }, ...(a.related_titles || [])];
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <span class="tier watch" title="자동으로 묶이지 않아 직접 합친 기사 (그 기사와 같이 묶여 있던 기사도 함께 들어옴)">직접 합침</span> <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
+    const link = (r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list"><h3 class="d-sec">이 기사를 실은 매체 <small class="muted">${a.outlets_total || outlets.length}곳</small></h3>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
@@ -2937,7 +2941,7 @@
     if (dayModalChart) { try { dayModalChart.remove(); } catch (_) {} charts = charts.filter((c) => c !== dayModalChart); dayModalChart = null; }
     $("#day-body").innerHTML = "";
   };
-  async function openDayModal(ds, curId) {
+  async function openDayModal(ds, curId, cur = null) {
     const body = $("#day-body");
     closeDayModal();
     $("#day-title").textContent = `${dayLabel(ds)} 주가`;
@@ -2956,14 +2960,24 @@
       api("/api/disclosures").then((r) => r.items || []).catch(() => []),
     ]);
     if ($("#day-modal").hidden) return;
+    // 그날 나온 소식 (같은 내용으로 묶인 다른 매체 기사도 각자 공개 시각에). 지금 연 기사·공시는 종류·날짜와 상관없이 늘 넣음
+    // (전날 장 마감 뒤 공개라 반응일 차트를 열었으면 첫 봉에 표시)
     const on = (x) => x.ts && x.ts.slice(0, 10) === ds && !x.untimed;
     const isPrA = (a) => a.kind === "pr" || a.kind === "company";
-    const news = [...arts.filter((a) => on(a) && !a.hidden && a.category !== "단순 언급").map((a) => ({ ts: a.ts, k: isPrA(a) ? "pr" : "ext", title: a.title, id: a.id, cur: a.id === curId })),
-      ...discs.filter((x) => on(x) && MAIN_DISC.has(x.pblntf || "")).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id, cur: x.id === curId }))];
+    const news = [];
+    for (const a of arts) {
+      if (a.hidden || a.category === "단순 언급") continue;
+      const k = isPrA(a) ? "pr" : "ext";
+      for (const r of [a, ...(a.related_titles || [])])
+        if (r.id === curId ? r.ts && !r.untimed && r.ts.slice(0, 10) <= ds : on(r)) news.push({ ts: r.ts, k, title: r.title, id: r.id, cur: r.id === curId });
+    }
+    for (const x of discs)
+      if (x.id === curId ? x.ts && !x.untimed && x.ts.slice(0, 10) <= ds : on(x) && MAIN_DISC.has(x.pblntf || "")) news.push({ ts: x.ts, k: "disc", title: x.title, id: x.id, cur: x.id === curId });
+    if (cur && cur.ts && cur.ts.slice(0, 10) <= ds && !news.some((x) => x.cur)) news.push({ ...cur, id: curId, cur: true });   // 목록에 따로 없는 묶음 속 기사
     const bars = d.bars, last = bars[bars.length - 1].c, base = d.prev_close;
     const hi = Math.max(...bars.map((b) => b.h || b.c)), lo = Math.min(...bars.map((b) => b.l || b.c));
     const r = (v) => (base ? pct(v / base - 1) : "-");
-    body.innerHTML = `<p class="dm-sub">${base ? `기준가 ${won(base)}원 → ` : ""}${won(last)}원 <b class="${base ? sgnCls(last - base) : ""}">${r(last)}</b> · 장중 최고 <span class="${base ? sgnCls(hi - base) : ""}">${r(hi)}</span> / 최저 <span class="${base ? sgnCls(lo - base) : ""}">${r(lo)}</span>${iv > 1 ? ` · 1분봉이 없어 야후 ${iv}분봉` : ""}</p>
+    body.innerHTML = `<p class="dm-sub">${base ? `기준가 ${won(base)}원 → ` : ""}${won(last)}원 <b class="${base ? sgnCls(last - base) : ""}">${r(last)}</b> · 장중 최고 <span class="${base ? sgnCls(hi - base) : ""}">${r(hi)}</span> / 최저 <span class="${base ? sgnCls(lo - base) : ""}">${r(lo)}</span>${iv > 1 ? ` ${coarseTip(iv)}` : ""}</p>
       <div class="day-legend"></div><div class="dm-chart"></div>
       <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div>`;
     const closed = bars[bars.length - 1].t.slice(11) >= "15:30";
@@ -2974,7 +2988,7 @@
       onNews: (id) => { closeDayModal(); location.hash = `#/pr/${id}`; },
     });
   }
-  document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-daychart]"); if (b) openDayModal(b.dataset.daychart, b.dataset.cur); });
+  document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-daychart]"); if (b) openDayModal(b.dataset.daychart, b.dataset.cur, { ts: b.dataset.curTs, k: b.dataset.curK, title: b.dataset.curTitle }); });
   $("#day-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-dclose]")) closeDayModal(); });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#day-modal").hidden) closeDayModal(); });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("#ind-modal").hidden = true; });
