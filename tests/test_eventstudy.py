@@ -415,3 +415,25 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
     assert reaction(dates[100] + "T10:00") is None                      # 분봉 없는 옛 기사
     json.dumps(hit, allow_nan=False)
 
+
+
+def test_recently_listed_short_history_fills_with_news_days():
+    dates, own, market, sector = sample()
+    listed = dates[100:]                       # 상장 뒤 80거래일만 기록
+    own = {d: own[d] for d in listed}
+    day = dates[170]
+    news = set(dates[100:160:2])               # 소식 있던 날이 많아 빼면 50거래일이 안 됨
+    result = analyze_returns(own, market, day, sector, calendar=dates, exclude=news)
+    assert result["ok"] and result["news_days_included"] and result["excluded_news_days"] == 0
+    assert result["est_from"] == dates[105]   # 상장 첫 5거래일은 뺌
+    assert result["n_est"] == 55 and not result["short_history"]
+
+
+def test_short_history_minimum():
+    dates, own, market, _ = sample()
+    own = {d: own[d] for d in dates[130:]}
+    result = analyze_returns(own, market, dates[175], calendar=dates)
+    assert result["ok"] and result["short_history"] and result["n_est"] == 30
+    own = {d: own[d] for d in dates[140:]}
+    result = analyze_returns(own, market, dates[175], calendar=dates)
+    assert not result["ok"] and "30거래일 이상" in result["reason"]

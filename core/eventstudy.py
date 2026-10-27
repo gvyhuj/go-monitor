@@ -15,6 +15,10 @@ WINDOWS = {
 }
 
 
+MIN_EST = 30          # 평소 관계 추정에 필요한 최소 거래일 (50거래일 미만이면 '기록 짧음'으로 표시)
+LISTING_SKIP = 5      # 상장 첫 5거래일은 추정에서 뺌
+
+
 def summary_critical_values(count: int) -> list:
     return [None, None] + [float(student_t.ppf(0.975, size - 1)) for size in range(2, count + 1)]
 
@@ -74,15 +78,28 @@ def analyze_returns(own: dict, market: dict, day: str, sector: dict | None = Non
     if day not in dates or day not in own or day not in market:
         return None
     event_index = dates.index(day)
-    candidates = estimation_days(dates, event_index, est_len, gap, exclude)
-    estimation = [day for day in candidates if day in own and day in market
-                  and np.isfinite(own[day]) and np.isfinite(market[day])]
-    if len(estimation) < 50:
-        return {"ok": False, "reason": f"평소 관계를 계산할 기록이 부족합니다 ({len(estimation)}거래일)."}
+    # 상장한 지 얼마 안 된 종목: 상장 첫 거래일들(공모가 대비 큰 출렁임)은 평소 관계 추정에서 뺌
+    own_days = sorted(d for d in own if d in market)
+    skip = set(own_days[:LISTING_SKIP]) if own_days and own_days[0] > dates[0] else set()
+
+    def usable(days):
+        return [d for d in days if d in own and d in market and d not in skip
+                and np.isfinite(own[d]) and np.isfinite(market[d])]
+
+    estimation = usable(estimation_days(dates, event_index, est_len, gap, exclude))
+    news_included = False
+    if len(estimation) < 50 and exclude:
+        # 기록이 짧아 소식 있던 날을 빼면 모자라면: 그날들도 넣어 채움 (평소 출렁임이 조금 커질 수 있음)
+        wider = usable(estimation_days(dates, event_index, est_len, gap))
+        if len(wider) > len(estimation):
+            estimation, news_included = wider, True
+    if len(estimation) < MIN_EST:
+        return {"ok": False, "reason": f"평소 관계를 계산할 기록이 부족합니다 ({len(estimation)}거래일, {MIN_EST}거래일 이상 필요"
+                                       f"{' · 상장한 지 얼마 안 된 종목' if skip else ''})."}
     use_sector = False
     if sector:
         covered = [day for day in estimation if day in sector and np.isfinite(sector[day])]
-        if len(covered) >= max(50, int(np.ceil(0.8 * len(estimation)))):
+        if len(covered) >= max(MIN_EST, int(np.ceil(0.8 * len(estimation)))):
             probe = np.array([[1.0, market[day], sector[day]] for day in covered])
             use_sector = np.linalg.matrix_rank(probe) == 3
             if use_sector:
@@ -146,8 +163,9 @@ def analyze_returns(own: dict, market: dict, day: str, sector: dict | None = Non
             **{key: current[key] for key in ("se", "t", "p", "ci_low", "ci_high")},
             "car": windows, "pending_windows": pending,
             "pre_drift": bool(pre and pre["p"] < 0.05 and pre["car"] * current["car"] > 0),
-            "excluded_news_days": len([d for d in dates[:max(0, event_index - gap)]
-                                       if exclude and d in exclude and d >= estimation[0]]),
+            "excluded_news_days": 0 if news_included else len([d for d in dates[:max(0, event_index - gap)]
+                                                               if exclude and d in exclude and d >= estimation[0]]),
+            "news_days_included": news_included, "short_history": len(estimation) < 50,
             "basis": "일별 종가로 계산하므로 기사 공개 전의 당일 움직임도 포함합니다.",
             "assumptions": "오차가 서로 독립이고 분산이 일정한 정규분포라고 가정한 검정입니다. 여러 구간의 p값은 다중 검정 보정 전입니다."}
 
