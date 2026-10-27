@@ -872,7 +872,7 @@
     let daily, arts, discs;
     try {
       [daily, arts, discs] = await Promise.all([
-        api("/api/daily").then((d) => d.days || []),
+        api("/api/daily").then(keepDaily),
         api("/api/articles").then((d) => d.items || []).catch(() => []),
         api("/api/disclosures").then((d) => d.items || []).catch(() => []),
       ]);
@@ -889,7 +889,8 @@
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
           foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null,
-          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, live: true });
+          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, peers: lv.peers_live || null, live: true });
+        DAY_ROWS[lv.date] = daily[daily.length - 1];
       } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
         last.foreign_est = lv.foreign_est;       // 장 마감 뒤 일봉은 생겼지만 거래소 개인·외국인·기관 확정치는 아직 → 장중 추정을 이어서 보여 줌
       }
@@ -1491,8 +1492,10 @@
         <p class="note" style="margin:0">${now ? "장 시작부터 지금까지" : "이날 장 전체"}(${r.from}~${r.to})가 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행 때 반영됩니다.</p>
         <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
       </form>
-      <span class="form-msg" data-day-msg></span>`);
+      <span class="form-msg" data-day-msg></span>
+      <section class="evidence"><section class="d-block" data-ev-rel></section><section class="d-block"><div data-ev-flow></div></section></section>`);
     const box = $("#drawer-body"), msg = $("[data-day-msg]", box);
+    fillDayEvidence(box, d.date, r.fromPrev, { rel: true, flow: true });
     $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, now ? "오늘 장 시작부터 지금까지 주가 움직임의 원인을 찾아 줘." : "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
     const form = $("[data-day-form]", box), body = $("[data-df-body]", box), head = $("[data-df-head]", box);
     $("[data-day-rec]", box).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
@@ -1807,6 +1810,43 @@
         ${e_isDailyNote(c) ? `<p class="note">${e_isDailyNote(c)}</p>` : ""}`
         : `<p class="note">이 시간대 비교 종목 시세가 없습니다.</p>`}`;
   }
+  // 그날 일봉 자료 (비교 종목 등락·투자자별 순매수·장 마감 거래원). 자동 분석이 없는 날의 메인 기록 창에서 씀
+  let PEERS = [], dailyP = null;
+  const DAY_ROWS = {};
+  function keepDaily(d) { PEERS = d.peers || PEERS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
+  const ensureDaily = () => (dailyP ||= api("/api/daily").then(keepDaily).catch(() => { dailyP = null; return []; }));
+  function dayRelatedBlock(ds, own) {
+    const ch = (DAY_ROWS[ds] || {}).peers;
+    if (!PEERS.length) return "";
+    const html = relatedBlock({ related: PEERS.map((p, i) => ({ name: p.name, source: p.source, change: ch ? ch[i] : null })), segments: [] }, own);
+    return ch ? `${html}<p class="note">그날 하루 등락(전일 대비)입니다.</p>` : html.replace("이 시간대 비교 종목 시세가 없습니다.", "이날 비교 종목 시세가 아직 없습니다.");
+  }
+  function dayFlowBlock(ds) {
+    const x = DAY_ROWS[ds] || {}, t = x.traders;
+    const inv = x.foreign != null || x.organ != null || x.individual != null
+      ? { foreign_net: x.foreign || 0, organ_net: x.organ || 0, individual_net: x.individual || 0 } : null;
+    const hasT = t && ((t.buy || []).length || (t.sell || []).length);
+    if (!inv && !hasT) return flowBlock(null);
+    let html = inv ? flowBlock({ investor_day: inv }) : `<h3 class="d-sec">누가 사고 팔았나</h3><p class="note">그날 투자자별(외국인·기관·개인) 확정 순매수는 장 마감 후 추가됩니다.</p>`;
+    if (hasT) {
+      const max = Math.max(1, ...[...(t.buy || []), ...(t.sell || [])].map((r) => r.qty || 0));
+      const row = (r, side) => `<li><span class="nm">${esc(r.name)}${r.foreign ? '<em class="fx">외국계</em>' : ""}</span>
+        <span class="fbar"><i class="${side}" style="width:${((r.qty || 0) / max) * 100}%"></i></span><span class="num v">${int(r.qty || 0)}</span></li>`;
+      html += `<h4 class="sub">증권사 창구 ${t.ts ? `${hhmm(t.ts)} 기준` : "장 마감 기록"} (매수·매도 상위 5, 주)</h4>
+        <div class="flows"><div><h4>매수 상위</h4><ul>${(t.buy || []).map((r) => row(r, "b")).join("") || '<li class="muted">없음</li>'}</ul></div>
+        <div><h4>매도 상위</h4><ul>${(t.sell || []).map((r) => row(r, "s")).join("") || '<li class="muted">없음</li>'}</ul></div></div>`;
+    }
+    return html;
+  }
+  function fillDayEvidence(box, ds, own, want) {
+    const rel = $("[data-ev-rel]", box), flow = $("[data-ev-flow]", box);
+    const fill = () => {
+      if (!box.contains(rel)) return;
+      if (want.rel && rel) rel.innerHTML = dayRelatedBlock(ds, own ?? (DAY_ROWS[ds] || {}).change);
+      if (want.flow && flow) flow.innerHTML = dayFlowBlock(ds);
+    };
+    if (DAY_ROWS[ds] && PEERS.length) fill(); else ensureDaily().then(fill);
+  }
   const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
 
   /** 공시 (뉴스 목록은 화면에서 뺌: 이 종목 기사는 '이 종목 기사' 칸에 있음. ChatGPT 자료에는 그대로 넣음) */
@@ -1842,10 +1882,13 @@
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
-        <section class="d-block">${relatedBlock(c, e.own_change)}</section>
+        <section class="d-block" data-ev-rel>${relatedBlock(c, e.own_change)}</section>
         ${disclosureBlock(c)}
-        <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
+        <section class="d-block"><div data-ev-flow>${c && (c.flows || c.investor_day) ? flowBlock(c) : ""}</div>${followupBlock(d.followups)}</section>
       </section>`;
+    // 자동 분석에 비교 종목·거래원 자료가 없으면 그날 일봉 자료로 채움
+    fillDayEvidence($("#drawer-body"), e.start_ts.slice(0, 10), daily ? mv : null,
+      { rel: !relatedBlock(c, e.own_change), flow: !(c && (c.flows || c.investor_day)) });
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     const dDel = $("#drawer-body [data-ev-del]");
     if (dDel) dDel.onclick = () => deleteRecord(dDel);

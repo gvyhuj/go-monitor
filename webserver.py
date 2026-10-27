@@ -316,10 +316,17 @@ def api_intraday(q):
         ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
         ind_info = industry_info(conn).get(d)
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
+        # 장중 오늘: 비교 종목 일봉이 아직 없으므로 1분봉으로 그날 등락 (목록 순서는 api_daily의 peers와 같음)
+        pl = None
+        if d == dates[0]:
+            rel = conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?) ORDER BY source DESC, code",
+                               (sym, KOSDAQ)).fetchall()
+            pl = [causes._daily_change(r[0], d) for r in rel]
+            pl = [None if v is None else round(v, 5) for v in pl] if any(v is not None for v in pl) else None
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl}
+            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl, "peers_live": pl}
 
 
 def api_events(q):
@@ -352,6 +359,7 @@ def api_daily(_q):
             (sym,))}
         calc = set()
         ind, ind_info, tops = industry_rates(conn, calc), industry_info(conn), trader_tops(conn, sym)
+        peers, peer_chg = peer_changes(conn, sym)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -363,8 +371,25 @@ def api_daily(_q):
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
                      "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d),
-                     "industries_calc": d in calc})
-    return {"days": days}
+                     "industries_calc": d in calc, "peers": peer_chg.get(d)})
+    return {"days": days, "peers": peers}
+
+
+def peer_changes(conn, sym: str) -> tuple[list[dict], dict]:
+    """메인 기록 창의 '사업 분야별 비교 종목'용: 비교 종목 목록 [{name, source}]와 {날짜: [그날 등락률(목록 순서), 없으면 None]}.
+    그날 자동 분석이 없는 날(장중의 오늘, 60일보다 오래된 날)도 일봉으로 보여 주려고."""
+    rel = [dict(r) for r in conn.execute("SELECT code, name, source FROM related_stocks WHERE code NOT IN (?, ?) "
+                                         "ORDER BY source DESC, code", (sym, KOSDAQ))]
+    out: dict = {}
+    for i, r in enumerate(rel):
+        prev = None
+        for d, c, base in conn.execute("SELECT date, close, base FROM daily_bars WHERE symbol=? AND close > 0 ORDER BY date",
+                                       (r["code"],)):
+            b = base or prev
+            if b:
+                out.setdefault(d, [None] * len(rel))[i] = round(c / b - 1, 5)
+            prev = c
+    return [{"name": r["name"], "source": r["source"]} for r in rel], out
 
 
 # 사업 분야 칸에 보여 줄 네이버 업종(WICS) = 비교 종목 묶음과 같은 네 업종. 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
