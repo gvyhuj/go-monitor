@@ -681,6 +681,10 @@ def main(argv) -> int:
                              f"{' · 오류 ' + r['last_error'] if r.get('last_error') else ''}")
             except Exception as e:  # noqa: BLE001 - 부가 작업이라 실패해도 계속
                 annotate("warning", f"한국투자증권 지난 1분봉 받기 실패: {e}")
+        try:                      # 한 번: 채운 지난 날의 장중 '관찰'(±3~5%) 기록 지우기 (±5% 이상만 남김)
+            kis.trim_backfilled_observations(code, log=lambda m: annotate("notice", m))
+        except Exception as e:  # noqa: BLE001
+            annotate("warning", f"지난 날 관찰 기록 정리 실패: {e}")
         try:                      # 다 채운 뒤 한 번 (열쇠를 지운 뒤라도): 채운 날들의 장중 급등·급락 찾기
             n_re = kis.rescan_if_due(code)
             if n_re is not None:

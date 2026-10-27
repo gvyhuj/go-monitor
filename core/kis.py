@@ -240,3 +240,27 @@ def rescan_if_due(code: str, log=None) -> int | None:
     st["rescanned"] = rescan_before_naver(code, log)
     set_state(STATE, json.dumps(st, ensure_ascii=False))
     return st["rescanned"]
+
+
+TRIM_KEY = "kis_rescan_trim_v1"
+
+
+def trim_backfilled_observations(code: str, log=None) -> dict | None:
+    """한 번: 채운 지난 날(네이버 1분봉 첫날 전)의 장중 '관찰'(±3~5%) 기록을 지움. ±5% 이상(일반·대형)과 하루 기록은 그대로.
+    지우기 전 단계별 건수를 돌려줌."""
+    if get_state(TRIM_KEY):
+        return None
+    from .detector import first_naver_day
+    first = first_naver_day(code)
+    if not first:
+        return None
+    with connect() as conn:
+        by = dict(conn.execute("SELECT tier, COUNT(*) FROM events WHERE symbol=? AND event_type='intraday' AND start_ts < ? "
+                               "GROUP BY tier", (code, first)).fetchall())
+        n = conn.execute("DELETE FROM events WHERE symbol=? AND event_type='intraday' AND tier='관찰' AND start_ts < ?",
+                         (code, first)).rowcount
+    out = {"before": first, "by_tier": by, "deleted": n}
+    set_state(TRIM_KEY, json.dumps(out, ensure_ascii=False))
+    if log:
+        log(f"채운 지난 날({first} 전) 장중 기록: " + ", ".join(f"{k} {v}건" for k, v in by.items()) + f" → 관찰 {n}건 지움")
+    return out

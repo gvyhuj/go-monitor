@@ -642,6 +642,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
         ddays = [r[0] for r in conn.execute("SELECT date FROM daily_bars WHERE symbol=? AND date>=? ORDER BY date",
                                             (symbol, max(lookback, since or lookback)))]
     today = now.date().isoformat()
+    first = first_naver_day(symbol)
     new = 0
     with connect() as conn:
         for day in sorted(set(days) | set(ddays)):
@@ -651,7 +652,8 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
             day_over = day < today or now.time() >= datetime.strptime("15:35", "%H:%M").time()
             evs = []
             if bars is not None:
-                evs += intraday_events(bars, _prev_close(symbol, day), s, day_over)
+                evs += [ev for ev in intraday_events(bars, _prev_close(symbol, day), s, day_over)
+                        if not (ev["tier"] == "관찰" and backfilled_day(day, first))]   # 채운 지난 날은 ±5% 이상만
             if day_over and (day < today or now.weekday() < 5):
                 dv = daily_event(symbol, day, s, bars)
                 if dv:
@@ -684,13 +686,22 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
     return new
 
 
+def first_naver_day(symbol: str) -> str | None:
+    """네이버 1분봉이 처음 생긴 날. 그 전 날의 1분봉은 나중에 한국투자증권으로 채운 것."""
+    with connect() as conn:
+        return conn.execute("SELECT MIN(substr(ts,1,10)) FROM minute_bars WHERE symbol=? AND source LIKE 'naver%'",
+                            (symbol,)).fetchone()[0]
+
+
+def backfilled_day(day: str, first: str | None) -> bool:
+    return bool(first) and day < first
+
+
 def rescan_before_naver(symbol: str, log=None) -> int:
     """나중에 채운 지난 1분봉(한국투자증권)으로 장중 급등·급락만 다시 찾음.
     네이버 1분봉이 처음 생긴 날 전만 (그 뒤는 네이버 기준 기록 그대로), 하루 기준 기록은 건드리지 않음. 새로 생긴 수."""
     s = load_settings()
-    with connect() as conn:
-        first = conn.execute("SELECT MIN(substr(ts,1,10)) FROM minute_bars WHERE symbol=? AND source LIKE 'naver%'",
-                             (symbol,)).fetchone()[0]
+    first = first_naver_day(symbol)
     df = load_bars(symbol)
     if df.empty:
         return 0
@@ -699,7 +710,8 @@ def rescan_before_naver(symbol: str, log=None) -> int:
     with connect() as conn:
         for day, bars in df.groupby(df["date"].astype(str)):
             for ev in intraday_events(bars, _prev_close(symbol, day), s, True):
-                new += _upsert(conn, symbol, ev)
+                if ev["tier"] != "관찰":       # 채운 지난 날은 ±5% 이상만 (상장 직후 잦은 ±3% 출렁임이 목록을 덮지 않게)
+                    new += _upsert(conn, symbol, ev)
     if log:
         log(f"지난 1분봉으로 장중 급등·급락 다시 찾기 ({first or '-'} 전): 새로 {new}건")
     return new

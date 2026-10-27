@@ -158,3 +158,30 @@ def test_rescan_finds_intraday_moves_only_before_naver_days(database):
         days = [r[0] for r in conn.execute("SELECT DISTINCT substr(start_ts,1,10) FROM events WHERE symbol='X' AND event_type='intraday'")]
     assert n >= 1 and days == ["2026-04-22"]                 # 네이버 기록이 있는 10/1은 그대로
     assert kis.rescan_if_due("X") is None                     # 한 번만
+
+
+def test_trim_removes_only_observation_on_backfilled_days(database):
+    with db.connect() as conn:
+        conn.execute("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES ('X','2026-09-23T09:00',1,1,1,1,1,'naver_today')")
+        rows = [("2026-04-22T10:00", "intraday", "관찰"), ("2026-04-22T11:00", "intraday", "일반"), ("2026-04-23T10:00", "intraday", "대형"),
+                ("2026-04-22T09:00", "daily", "관찰"), ("2026-10-01T10:00", "intraday", "관찰")]
+        conn.executemany("INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, tier) VALUES ('X', ?, ?, ?, 'up', ?)",
+                         [(t, t, k, tier) for t, k, tier in rows])
+    out = kis.trim_backfilled_observations("X")
+    assert out["deleted"] == 1 and out["by_tier"] == {"관찰": 1, "일반": 1, "대형": 1}
+    with db.connect() as conn:
+        left = sorted((r[0], r[1]) for r in conn.execute("SELECT start_ts, tier FROM events"))
+    assert left == [("2026-04-22T09:00", "관찰"), ("2026-04-22T11:00", "일반"), ("2026-04-23T10:00", "대형"), ("2026-10-01T10:00", "관찰")]
+    assert kis.trim_backfilled_observations("X") is None                 # 한 번만
+
+
+def test_rescan_skips_observation_moves(database):
+    """채운 지난 날에 +4%만 오른 날은 '관찰'이라 기록하지 않음."""
+    def small_jump(day, source):
+        return [(r[0], r[1], *[100 + (x - 100) * 4 / 7 for x in r[2:6]], r[6], r[7]) for r in jump_day(day, source)]
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol, date, close, base) VALUES ('X', ?, 104, 100)", [("2026-04-22",), ("2026-10-01",)])
+        conn.executemany("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,?)",
+                         small_jump("2026-04-22", "kis") + jump_day("2026-10-01", "naver_today"))
+    db.set_state(kis.STATE, json.dumps({"done": True}))
+    assert kis.rescan_if_due("X") == 0
