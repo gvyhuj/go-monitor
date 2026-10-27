@@ -2209,7 +2209,7 @@
   // 공개 시점: 장 시작 전(전날 장 마감 뒤~당일 9시, 전날 종가부터) / 장중(9시~15시, 공개 직전 가격부터) / 15시 이후(그날 종가부터 다음 거래일)
   const REACT_MODES = [["all", "전체", ""], ["open", "장 시작 전", "전날 장 마감 뒤~당일 9시 공개: 전날 종가부터 그날 9시 이후"],
     ["session", "장중", "9시~15시 공개: 공개 직전 가격부터"], ["late", "15시 이후", "15시~15시 30분 공개: 남은 거래가 짧아 그날 종가부터 다음 거래일 9시 이후"]];
-  const REACT_H = [["30", "+30분"], ["60", "+60분"], ["120", "+120분"]];
+  const REACT_H = [["30", "+30분"], ["60", "+60분"]];
   const MODE_TXT = { open: "장 시작 전", session: "장중", late: "15시 이후" };
   async function pageReact() {
     main.innerHTML = `<div class="wrap dash">
@@ -2276,8 +2276,8 @@
         ${reactState.pick ? (() => { const o = lines.find((q) => q.x.id === reactState.pick); return o ? `<path class="rx-one on top" d="${d(o.s)}"/>` : ""; })() : ""}
       </svg>`;
     }
-    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["60", "+60분"], ["120", "+120분"], ["d0", "반응일 종가"], ["d1", "다음날"], ["kq_d0", "KOSDAQ 반응일"]];
-    const valOf = (x, k) => (["30", "60", "120"].includes(k) ? stepV(x, k) : ["d0", "d1"].includes(k) ? dayV(x, k) : k === "kq_d0" ? (x.daily || {}).kq_d0 : x[k]);
+    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["60", "+60분"], ["d0", "반응일 종가"], ["d1", "다음날"], ["kq_d0", "KOSDAQ 반응일"]];
+    const valOf = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : ["d0", "d1"].includes(k) ? dayV(x, k) : k === "kq_d0" ? (x.daily || {}).kq_d0 : x[k]);
     function table(list) {
       const k = reactState.sort, dir = reactState.dir;
       const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
@@ -2290,7 +2290,7 @@
           <td class="nowrap">${kindTxt(x)}</td>
           <td class="rx-title"><a href="#/pr/${esc(x.id)}">${esc(x.title)}</a> <small class="muted">${esc(x.office || "")}</small></td>
           <td class="nowrap muted" title="${BAR_TIP}">${x.interval ? `${x.interval}분${x.kq_interval && x.kq_interval !== x.interval ? ` <small>(KOSDAQ ${x.kq_interval}분)</small>` : ""}` : "-"}</td>
-          ${["30", "60", "120"].map((m) => num(stepV(x, m), m === reactState.h)).join("")}${num(dayV(x, "d0"))}${num(dayV(x, "d1"))}${num((x.daily || {}).kq_d0)}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
+          ${["30", "60"].map((m) => num(stepV(x, m), m === reactState.h)).join("")}${num(dayV(x, "d0"))}${num(dayV(x, "d1"))}${num((x.daily || {}).kq_d0)}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
     }
     function draw() {
       const list = items.filter(pass);
@@ -2319,7 +2319,7 @@
     };
     $("#rx-plot").onclick = (ev) => { const p = ev.target.closest("path[data-id]"); if (p) { reactState.pick = reactState.pick === p.dataset.id ? null : p.dataset.id; draw(); } };
     $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map((c) => c[1]).concat(["주제", "언론사"]),
-      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "60", "120", "d0", "d1", "kq_d0"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
+      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "60", "d0", "d1", "kq_d0"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
     if (dashResize) window.removeEventListener("resize", dashResize);
     let rz = null;
     dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rx-plot")) draw(); }, 200); };
