@@ -643,6 +643,20 @@ def main(argv) -> int:
             except Exception as e:  # noqa: BLE001 - 부가 자료라 실패해도 계속
                 collect_status.mark("야후 5분봉·60분봉", False, e)
                 annotate("warning", f"야후 분봉 받기 실패: {e}")
+        # 한국투자증권 오픈API로 지난 1분봉 한 번 채우기 (열쇠가 있을 때만, 장 시간 밖, 다 채우면 멈춤)
+        from core import kis
+        if kis.enabled() and not ("09:00" <= now.strftime("%H:%M") <= "15:40"):
+            try:
+                r = kis.backfill(code, now, log=lambda m: annotate("warning", m))
+                if not r.get("skipped"):
+                    annotate("notice", f"한국투자증권 지난 1분봉: {r.get('filled', 0)}일 채움 ({r.get('first', '-')} ~ {r.get('last', '-')})"
+                             f", 시각 옮김 {r.get('offset')}분 (대조일 {r.get('offset_checked') or '없음'})"
+                             f", 코스닥 지수 {'받음' if r.get('index') is not None else '못 받음 ' + str(r.get('index_error') or '')}"
+                             f"{', 빈 날 ' + str(r['empty']) + '일' if r.get('empty') else ''}"
+                             f"{' · 다 채움 → 이제 GitHub Secrets의 KIS_APP_KEY·KIS_APP_SECRET을 지워도 됩니다' if r.get('done') else ' · 다음 실행에서 이어서'}"
+                             f"{' · 오류 ' + r['last_error'] if r.get('last_error') else ''}")
+            except Exception as e:  # noqa: BLE001 - 부가 작업이라 실패해도 계속
+                annotate("warning", f"한국투자증권 지난 1분봉 받기 실패: {e}")
     except Exception as e:  # noqa: BLE001 - 수집이 실패해도 사이트와 기록은 저장
         failed = e
         log.exception("수집·분석 중 오류: %s", e)
