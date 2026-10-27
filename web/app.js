@@ -2213,11 +2213,10 @@
     const p = coinChance(up, dn), side = up > dn ? "오른 쪽" : "내린 쪽";
     if (p >= 0.5) return `오른 건과 내린 건이 ${up === dn ? "같습니다" : "비슷합니다"} → 한쪽으로 기울었다고 볼 수 없습니다.`;
     const pTxt = p < 0.01 ? "1% 미만" : `약 ${Math.round(p * 100)}%`;
-    const often = p >= 0.01 ? ` (약 ${Math.round(1 / p)}번 중 1번)` : "";
     const verdict = p < 0.05 ? "<b>우연만으로는 설명하기 어렵습니다</b>"
       : p < 0.2 ? "경향은 보이지만 <b>아직 우연일 수도 있습니다</b>" : "<b>우연으로도 흔히 나오는 정도</b>입니다";
     return `<span title="동전을 ${up + dn}번 던져 한쪽이 ${Math.max(up, dn)}번 이상 나올 확률(앞·뒤 어느 쪽이든). 보통 5% 밑이면 우연으로 보기 어렵다고 합니다.">`
-      + `${side}이 많음. 아무 효과가 없어도 이만큼 한쪽으로 쏠릴 확률 ${pTxt}${often} → ${verdict}.</span>`;
+      + `${side}이 많음. 아무 효과가 없어도 이만큼 한쪽으로 쏠릴 확률 ${pTxt} → ${verdict}.</span>`;
   }
   const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "all" };
   const REACT_KINDS = [["all", "전체"], ["pr", "보도자료"], ["ext", "외부기사"], ["disc", "주요 공시"]];
