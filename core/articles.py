@@ -645,7 +645,7 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
                 out["daily_next"] = {"day": nxt, **{k: own2.get(k) for k in ("d0", "d1", "d3")},
                                      "kosdaq": {k: kq2.get(k) for k in ("d0", "d1", "d3")}}
 
-    if d0:
+    if d0 and EVENT_STUDY:
         from . import causal
         out["event_study"] = causal.event_study(symbol, d0)
         from .feed import kst_now
@@ -742,10 +742,17 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
                                                                              if p.get("kind") == "seg"])}
 
 
+# 기사마다 도는 사건연구(평소 관계로 추정한 반응일 '예상 대비 차이'·95% 범위). 결과를 화면에 싣지 않게 되어 꺼 둠
+# (켜면 기사 목록에 '반응일 실제'와, 계산이 안 될 때 '계산 자료 부족' 표시가 다시 나옴)
+EVENT_STUDY = False
+
+
 def _verdict(eff: dict, tone: int, category: str):
     """대표 수치는 반응일 사건연구의 예상 대비 차이와 95% 범위만 사용. 계산이 된 기사엔 판정 문구 없음."""
     study = eff.get("event_study")
-    if not study or not study.get("ok"):
+    if study is None:                       # 계산을 꺼 둠 → 표시 없음
+        return None, "none", None
+    if not study.get("ok"):
         reason = (study or {}).get("reason") or "반응일 또는 평소 시세 기록이 부족합니다."
         return f"{'분석 대기' if (study or {}).get('pending') else '계산 자료 부족'}: {reason}", "none", None
     measure = {"label": "반응일 예상 대비 차이", "value": study["ar"], "method": "event-study-v2",

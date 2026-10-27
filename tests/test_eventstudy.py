@@ -176,6 +176,7 @@ def test_daily_study_reaches_article_detail_with_peer_data(tmp_path, monkeypatch
     from datetime import datetime
 
     from core import articles, db
+    monkeypatch.setattr(articles, "EVENT_STUDY", True)      # 꺼 둔 계산을 켰을 때도 맞게 도는지
 
     monkeypatch.setattr(db, "DATA_DIR", tmp_path)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
@@ -242,7 +243,10 @@ def test_unavailable_new_model_never_falls_back_to_old_value(study):
     verdict, classification, measure = _verdict(
         {"event_study": study, "decomp": {"d0": {"abnormal": 0.0041}}}, 0, "회사 발표")
     assert classification == "none" and measure is None
-    assert "부족" in verdict
+    if study is None:                      # 계산을 꺼 둠(EVENT_STUDY=False) → 표시 없음
+        assert verdict is None
+    else:
+        assert "부족" in verdict
 
 
 def test_non_significance_does_not_claim_market_caused_the_drop():
