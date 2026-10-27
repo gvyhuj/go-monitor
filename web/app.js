@@ -32,7 +32,8 @@
   const hhmm = (t) => (t ? t.slice(11, 16) : "");
   // ⓘ 설명 (마우스를 올리거나 폰은 누르면)
   const infoTip = (lines, title = "") => `<span class="tip" tabindex="0" aria-label="${esc(title || "설명")}">ⓘ<span class="tip-box" role="tooltip">${title ? `<b>${esc(title)}</b>` : ""}${lines.map((l) => `<span>${esc(l)}</span>`).join("")}</span></span>`;
-  const coarseTip = (iv) => infoTip([`이날은 1분봉 기록이 없어 야후 파이낸스 ${iv}분봉으로 그렸습니다.`]);
+  const COARSE_WHY = "야후는 5분봉을 최근 약 60일치만 주고(60분봉은 약 2년), 받아 둔 날만 남습니다. 그래서 야후 분봉을 받기 시작한 날보다 60일 넘게 앞선 날은 60분봉뿐입니다.";
+  const coarseTip = (iv) => infoTip([`이날은 1분봉 기록이 없어 야후 파이낸스 ${iv}분봉으로 그렸습니다.`, ...(+iv === 60 ? [COARSE_WHY] : [])]);
   const dayLabel = (t) => { const p = parseT(t); const w = new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); return `${p.m}월 ${p.d}일 (${WEEK[w]})`; };
   const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const utcHHMM = (sec) => { const d = new Date(sec * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
@@ -2759,7 +2760,7 @@
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
         <div class="rx-steps">${ic.rows.map((r) => `<span${r.minutes === 30 ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">KOSDAQ</small> ${pct(r.kosdaq)}</span>`).join("")}</div>
-        <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).</div></section>`;
+        <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).${+ic.interval === 60 ? ` ${COARSE_WHY}` : ""}</div></section>`;
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;

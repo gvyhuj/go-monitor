@@ -232,9 +232,17 @@ def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
         else:
             from core import yahoo
             iv = ic["interval"]
-            q = "SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND ts BETWEEN ? AND ? ORDER BY ts"
-            own = conn.execute(q, (sym, iv, lo, hi)).fetchall()
-            kq = conn.execute(q, (yahoo.INDEX, iv, lo, hi)).fetchall()
+            # 굵은 봉은 2시간 창에 한두 개뿐이라 선이 안 그려짐(60분봉은 14:00 봉에서 끝남) → 공개 시각 앞 봉 두세 개부터 그날 장 마감까지
+            lo = min(lo, (start - timedelta(minutes=3 * iv)).isoformat(timespec="minutes"))
+            hi = max(hi, f"{d0}T15:30")
+            q = "SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND ts BETWEEN ? AND ? AND substr(ts,1,10)=? ORDER BY ts"
+            own = conn.execute(q, (sym, iv, lo, hi, d0)).fetchall()
+            kq = conn.execute(q, (yahoo.INDEX, iv, lo, hi, d0)).fetchall()
+            # 야후 봉은 마지막 30분·종가 동시호가가 빠짐 → 15:30에 거래소 종가 한 점 (api_coarse와 같게)
+            for code, rows in ((sym, own), (KOSDAQ, kq)):
+                c = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (code, d0)).fetchone()
+                if c and c[0] and rows and rows[-1][0][11:16] < "15:30":
+                    rows.append((f"{d0}T15:30", c[0]))
         prev = lambda code: (conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                                           (code, d0)).fetchone() or [None])[0]
         p_own, p_kq = prev(sym), prev(KOSDAQ)
@@ -244,7 +252,7 @@ def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
     def at(rows, fallback):           # 공개 시각에 끝난 마지막 봉의 종가 (봉 시작 + 간격 <= 공개 시각)
         best = None
         for t, c in rows:
-            if datetime.fromisoformat(t) + timedelta(minutes=iv) <= start:
+            if t[11:16] < "15:30" and datetime.fromisoformat(t) + timedelta(minutes=iv) <= start:
                 best = c
         return best if best is not None else fallback
     b_own, b_kq = (p_own, p_kq) if kind in ("open", "late") else (at(own, p_own), at(kq, p_kq))

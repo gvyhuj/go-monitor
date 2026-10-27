@@ -89,6 +89,21 @@ def test_reaction_chart_bars_and_base(database):
     assert rc["interval"] == 5 and rc["base_own"] == 50 and [b["c"] for b in rc["own"]] == [50, 51]
 
 
+def test_reaction_chart_hourly_bars_cover_rest_of_day(database):
+    """60분봉만 있는 날 14:14 공개: 2시간 창이면 14:00 봉 하나뿐이라 선이 안 그려졌음 → 앞 봉부터 장 마감 종가까지."""
+    import webserver
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol, date, close) VALUES (?, ?, ?)",
+                         [("Z", "2026-04-21", 900), ("Z", "2026-04-22", 990), ("KOSDAQ", "2026-04-21", 800), ("KOSDAQ", "2026-04-22", 810)])
+        for sym, c0 in (("Z", 950), ("KOSDAQ", 805)):
+            conn.executemany("INSERT INTO coarse_bars(symbol, interval, ts, close) VALUES (?, 60, ?, ?)",
+                             [(sym, f"2026-04-22T{h:02d}:00", c0 + h) for h in range(9, 15)])
+    rc = webserver._reaction_chart("Z", {"reaction_day": "2026-04-22"}, None,
+                                   {"start": "2026-04-22T14:14", "kind": "session", "interval": 60})
+    assert [b["t"][11:] for b in rc["own"]] == ["12:00", "13:00", "14:00", "15:30"]
+    assert rc["base_own"] == 963 and rc["own"][-1]["c"] == 990 and rc["kq"][-1]["c"] == 810   # 13:00 봉이 14:00에 끝남
+
+
 def test_late_article_measured_from_close_to_next_open(database):
     """15시 넘어 공개: 그날 마지막 봉 종가 → 다음 거래일 장 시작 뒤."""
     with db.connect() as conn:
