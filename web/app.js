@@ -2882,6 +2882,15 @@
       <p class="note" style="margin-top:6px">${dc.method !== "단순" ? `민감도 추정: ${esc(dc.window[0])}~${esc(dc.window[1])}, ${dc.n_obs}거래일` : "기록이 짧아 시장 1배로 단순 비교"}</p>`;
   }
 
+  // 단순 숫자: +N분 이 종목 · KOSDAQ · 차이 (통계 없이 그대로)
+  const simpleSteps = (rows, main) => `<table class="simple-steps"><thead><tr><th></th>${rows.map((r) => `<th${r.minutes === main ? ' class="main"' : ""}>+${r.minutes}분</th>`).join("")}</tr></thead><tbody>
+      <tr><th>이 종목</th>${rows.map((r) => `<td class="${sgnCls(r.own)}${r.minutes === main ? " main" : ""}">${pct(r.own)}</td>`).join("")}</tr>
+      <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
+      <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? r.own - r.kq : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
+  // 반응일·다음날·3일 뒤 종가 (반응일 전날 종가 대비 누적)
+  const dayRow = (dl) => (!dl || dl.d0 == null ? "" : `<table class="simple-steps day"><thead><tr><th><small class="muted">전날 종가 대비</small></th><th>반응일 종가</th><th>다음날</th><th>3일 뒤</th></tr></thead><tbody>
+      <tr><th>이 종목</th>${["d0", "d1", "d3"].map((k) => `<td class="${sgnCls(dl[k])}">${pct(dl[k])}</td>`).join("")}</tr>
+      <tr><th>KOSDAQ</th>${["d0", "d1", "d3"].map((k) => `<td class="${sgnCls((dl.kosdaq || {})[k])}">${pct((dl.kosdaq || {})[k])}</td>`).join("")}</tr></tbody></table>`);
   // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
   const timeSrc = (a) => ` <span class="time-src${a.time_quality === "check_time" ? " warn" : ""}" title="공개 시각을 어디서 읽었는지">시각 출처: ${esc(a.time_source || "-")}${a.time_quality === "check_time" ? " · 확인 필요" : ""}</span>`
     + (a.manual ? "" : ` <button type="button" class="btn-link editable" data-time-open>시각 고치기</button>`);
@@ -2946,11 +2955,15 @@
       const span = iw.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
         : iw.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(iw.day)}) 장 시작 뒤` : `${hhmm(iw.start)} 공개부터`;
       const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, sector: iw.sector, abnormal: iw.abnormal }];
-      html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
+      html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span} · 1분봉 기준</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
-        <div class="rx-steps">${rows.map((r) => `<span${r.minutes === iw.minutes ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">고유</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
-        <div class="vb-note">+${iw.minutes}분 고유 움직임: 평소 같은 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}</div>
+        ${simpleSteps(rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), iw.minutes)}
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
+        ${dayRow(dl)}
+        <details class="stat-more"><summary>통계로 보기 (참고)</summary>
+          <div class="rx-steps">${rows.map((r) => `<span><small class="muted">+${r.minutes}분 고유 움직임</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
+          <div class="vb-note">고유 움직임 = 이 종목 등락 − (시장·업종이 움직인 만큼 평소 관계로 예상한 등락). +${iw.minutes}분 기준으로 평소 같은 길이 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}. 기사 하나만으로 판단하기엔 잡음이 큽니다.</div>
+        </details>
 </section>`;
     }
     // 1분봉이 없는 지난 기사: 야후 5분봉(없으면 60분봉)으로 +30·60·120분 (업종 분봉이 없어 KOSDAQ와만 비교)
@@ -2958,11 +2971,13 @@
     if (ic) {
       const span = ic.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
         : ic.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(ic.day)}) 장 시작 뒤` : `${hhmm(ic.start)} 공개부터`;
-      html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span}</small></div>
+      html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span} · 야후 ${ic.interval}분봉 기준</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
-        <div class="rx-steps">${ic.rows.map((r) => `<span${r.minutes === 30 ? ' class="iw-main"' : ""}><small class="muted">+${r.minutes}분</small> <b class="${sgnCls(r.own)}">${pct(r.own)}</b> <small class="muted">KOSDAQ</small> ${pct(r.kosdaq)}</span>`).join("")}</div>
+        ${simpleSteps(ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
+        ${dayRow(dl)}
         <div class="vb-note">이 기사 무렵은 1분봉 기록이 없어 야후 파이낸스 ${ic.interval}분봉으로 계산했습니다 (봉이 끝난 시각 기준이라 공개 시각과 최대 ${ic.interval}분 어긋날 수 있음, 업종 분봉이 없어 KOSDAQ와만 비교).${+ic.interval === 60 ? ` ${COARSE_WHY}` : ""}</div></section>`;
     }
+    if (!iw && !ic && dl) html += `<section class="verdict-box intraday-box"><div class="vb-head">반응일 주가 <small class="muted">${e.reaction_day ? `반응일 ${esc(e.reaction_day)} · ` : ""}일봉 기준 (공개 무렵 분봉 없음${a.untimed ? "·접수 시각 미상" : ""})</small></div>${dayRow(dl)}</section>`;
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
