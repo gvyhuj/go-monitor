@@ -111,8 +111,6 @@ def main(argv) -> int:
             print(f"| 종류 | 단계 | 네이버 1분봉 첫날({first}) 전/후 | 건수 |\n|---|---|---|---|")
             for t, tier, when, n in rows:
                 print(f"| {'하루' if t == 'daily' else '장중'} | {tier} | {when} | {n} |")
-            trim = conn.execute("SELECT value FROM system_state WHERE key='kis_rescan_trim_v1'").fetchone()
-            print(f"\n지난 날 관찰 정리: {'실행됨 ' + trim[0] if trim else '실행 안 됨'}")
     return 0
 
 

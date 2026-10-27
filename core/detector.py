@@ -689,31 +689,3 @@ def retier_events(symbol: str, log=None) -> dict | None:
         log(f"급등·급락 기준 변경(관찰 ±{watch*100:.0f}%·급등락 ±{main_th*100:.0f}%·대형 ±{big*100:.0f}%): "
             f"기록 {out['deleted']}건 지움, {out['changed']}건 단계 바꿈, {out['kept']}건 그대로")
     return out
-
-
-def first_naver_day(symbol: str) -> str | None:
-    """네이버 1분봉이 처음 생긴 날. 그 전 날의 1분봉은 나중에 한국투자증권으로 채운 것."""
-    with connect() as conn:
-        return conn.execute("SELECT MIN(substr(ts,1,10)) FROM minute_bars WHERE symbol=? AND source LIKE 'naver%'",
-                            (symbol,)).fetchone()[0]
-
-
-def rescan_before_naver(symbol: str, log=None) -> int:
-    """나중에 채운 지난 1분봉(한국투자증권)으로 장중 급등·급락만 다시 찾음.
-    네이버 1분봉이 처음 생긴 날 전만 (그 뒤는 네이버 기준 기록 그대로), 하루 기준 기록은 건드리지 않음. 새로 생긴 수."""
-    s = load_settings()
-    first = first_naver_day(symbol)
-    df = load_bars(symbol)
-    if df.empty:
-        return 0
-    df = df[df["date"].astype(str) < first] if first else df
-    new = 0
-    with connect() as conn:
-        for day, bars in df.groupby(df["date"].astype(str)):
-            for ev in intraday_events(bars, _prev_close(symbol, day), s, True):
-                new += _upsert(conn, symbol, ev)
-    if log:
-        log(f"지난 1분봉으로 장중 급등·급락 다시 찾기 ({first or '-'} 전): 새로 {new}건")
-    return new
-
-
