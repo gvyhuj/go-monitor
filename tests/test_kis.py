@@ -115,3 +115,21 @@ def test_backfill_stops_on_api_error_and_retries_that_day(database, monkeypatch)
     st = kis.backfill("X", datetime(2026, 10, 27, 18, 0))
     assert not st.get("done") and st["cursor"] == "2026-04-21" and "2026-04-22" in st["last_error"]
     assert json.loads(db.get_state(kis.STATE)["value"])["cursor"] == "2026-04-21"
+
+
+def test_backfill_skips_index_when_past_days_give_one_bar(database, monkeypatch):
+    monkeypatch.setenv("KIS_APP_KEY", "k")
+    monkeypatch.setenv("KIS_APP_SECRET", "s")
+    monkeypatch.setenv("KIS_BACKFILL", "1")
+    monkeypatch.setattr(kis.Client, "_token", lambda self: "t")
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol, date, close) VALUES ('X', ?, 100)", [("2026-04-22",), ("2026-10-01",)])
+        conn.executemany("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'naver_today')",
+                         [(s, b.ts, b.open, b.high, b.low, b.close, b.volume) for s in ("X", "KOSDAQ") for b in minutes("2026-10-01")])
+    monkeypatch.setattr(kis, "day_minutes", lambda cl, code, day, market="J", pause=0:
+                        minutes(day, n=1) if market == "U" else minutes(day))
+    st = kis.backfill("X", datetime(2026, 10, 27, 18, 0))
+    assert st["done"] and st["index"] is None and "지수" in st["index_error"]
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol='KOSDAQ' AND source='kis'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol='X' AND source='kis'").fetchone()[0] == 381

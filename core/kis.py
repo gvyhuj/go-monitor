@@ -181,6 +181,10 @@ def backfill(code: str, now: datetime, log=None, budget_sec: float = 360) -> dic
                 with connect() as conn:
                     have = dict(conn.execute("SELECT ts, close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=?",
                                              (KOSDAQ, test)).fetchall())
+                # 지난 날짜 지수는 봉이 1개만 오는 것을 확인함(2026-10 'KIS 확인') → 하루치(300개 이상)가 올 때만 씀
+                kb = kb if len(kb) >= 300 else []
+                if not kb:
+                    st["index_error"] = "지난 날짜 코스닥 지수 분봉을 주지 않음"
                 off = best_offset(kb, {k: round(v, 2) for k, v in have.items()}) if kb else None
                 if off is None and kb:      # 지수는 소수점 반올림이 달라 종가 대조가 안 맞을 수 있음 → 종목과 같은 옮김
                     off = st["offset"]
