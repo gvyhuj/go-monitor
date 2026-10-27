@@ -923,11 +923,11 @@
             <aside class="rec-side" id="rec-side"></aside></div>
         </section><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
-      // 위 카드 줄의 카드(소식·급등락·KOSDAQ)를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨).
-      // 가격 칸은 차트 칸 머리로, 거래량 칸은 오른쪽 '주요 숫자'로 옮겨 숨긴 위 줄에 둠 (값은 계속 기록)
+      // 위 카드 줄의 소식 카드를 격자 안으로 옮김 (값은 계속 같은 카드에서 갱신됨).
+      // 가격 칸은 차트 칸 머리로, KOSDAQ은 머리 오른쪽으로, 거래량 칸은 오른쪽 '주요 숫자'로 옮겨 숨긴 위 줄에 둠 (급등·급락 칸은 머리의 표시로 대신)
       const grid = $("#rec-bento", box), seg = $(".b-seg", grid);
-      const [, nc, ec, kc] = TODAY_CARDS.map((id) => document.getElementById(id));
-      [nc, ec, kc].forEach((el) => grid.insertBefore(el, seg));
+      const [, nc] = TODAY_CARDS.map((id) => document.getElementById(id));
+      grid.insertBefore(nc, seg);
       $("#hero").hidden = true;
       const side = $("#rec-side", grid);
       if (window.ResizeObserver) {         // 오른쪽 숫자 칸 높이가 바뀌면 종가 선 차트 높이를 다시 맞춤
@@ -945,7 +945,7 @@
       const ds = calState.sel, px = price[ds];
       if (!px) return "";
       const live = ds === latest ? liveFor(ds) : null;
-      const close = live ? live.price : px.close, chg = live ? live.chg : px.change;
+      const close = live ? live.price : px.close, chg = live ? live.chg : px.change, kq = px.kosdaq;
       const base = px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;
       const done = !(live && live.open);
@@ -956,9 +956,10 @@
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${r(hi)}</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${r(lo)}</span></span></span>
+        <span class="rh-kq"><small>KOSDAQ</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b>${kq != null && chg != null ? `<small>종목이 시장보다 ${pct(chg - kq).replace("%", "%p")}</small>` : ""}</span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
-      </button>${ev && ev.cause_headline ? `<div class="rh-cause">${aiMemo(ev.cause_headline)}</div>` : ""}`;
+      </button>`;
     }
     // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
     // ⓘ에 마우스를 올리거나(폰은 누르면) 설명 (네이버 종목 화면 설명 그대로)
@@ -1515,8 +1516,6 @@
     msg.textContent = "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내고, 받은 답을 복사해 여기에 붙여넣으세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
   }
 
-  /** AI가 쓴 원인 글: 판단은 사용자가 하므로 접어 둠 */
-  const aiMemo = (text) => (text ? `<details class="ai-memo"><summary>AI 메모</summary><span class="cause-text">${esc(text)}</span></details>` : "");
 
   function dayChange(d) {
     if (!d.prev_close || !d.bars.length) return null;
@@ -1545,7 +1544,6 @@
       const head = dailyEv
         ? `<span class="day-total-tags"><span class="chip ${dailyEv.direction}">${kindOf(dailyEv)}</span>${tierTag(dailyEv)}</span>`
         : "";
-      const cause = dailyEv && dailyEv.cause_headline ? `<div class="day-total-cause">${aiMemo(dailyEv.cause_headline)}</div>` : "";
       const inner = `
         <div class="day-total-main">
           <span class="day-total-label">${dayLabel(d.date)}${isLatest ? `<span class="day-now">${live && live.closed ? "장 마감" : closed && !(live && live.open) ? "최근 거래일" : `${nowAt} 현재`}</span>` : ""}${head}</span>
@@ -1557,13 +1555,12 @@
         : closed && !(live && live.open)
           ? `<button type="button" class="day-total is-event" data-day-ask title="이날 하루 움직임을 ChatGPT에게 묻기">${inner}</button>`
           : `<div class="day-total">${inner}</div>`;
-      dayTotal += cause;          // 버튼 밖에 둬야 접기·펼치기가 이벤트 상세 열기와 겹치지 않음
     }
     const row = (e) => `
         <li><button class="tl-row" type="button" data-id="${e.id}">
           <span class="tl-time num">${hhmm(e.start_ts)}<small class="tl-to">~${hhmm(e.peak_ts)}</small></span>
           <span><span class="chip ${e.direction}">${kindOf(e)}</span>${tierTag(e)}</span>
-          <span class="tl-rule">${esc(compareLine(e))}${e.cause_headline ? ' <span class="tier watch">AI 메모</span>' : ""}</span>
+          <span class="tl-rule">${esc(compareLine(e))}</span>
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${moveBasis(e)}</small></span>
         </button>${e.tier === "요청" ? `<div class="tl-actions editable"><button type="button" class="btn-link" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></div>` : ""}</li>`;
     const chart = d.bars.length
@@ -2039,7 +2036,6 @@
         <ul>
           <li><b>차트</b>: 처음에는 1일(최근 거래일 1분 차트)이 보입니다. 기간 탭(1일·1주·1달·3달·1년·전체·기간 지정)으로 종가 선을 봅니다. 기간 지정은 시작·끝 날짜를 직접 고르며, 일별 표에도 같은 칸이 있습니다. 선 위의 점은 그날 소식(보도자료·주요 공시·외부 기사)이고, 마우스를 올리면 그날 종가·등락·KOSDAQ·소식 수가 나옵니다. 점이나 선을 누르면 그날을 고릅니다. 1일 탭은 고른 날의 1분 차트이고, 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다. 1분봉이 없는 날은 야후 파이낸스 5분봉(없으면 60분봉)으로 그리고, 마지막 점은 거래소 종가입니다.</li>
           <li><b>날마다 등락</b>: 차트 아래 한 칸이 하루입니다(빨강 오름 · 파랑 내림, 진할수록 크게). '등락 고르기'로 몇 % 이상 오르거나 내린 날만 표시하고, 전체 기간에서 맞는 날짜를 모아 보여 줍니다.</li>
-          <li><b>AI 메모</b>: AI가 쓴 원인 글입니다. 판단은 직접 하도록 접어 두었습니다. 숫자(KOSDAQ 같은 기간, 업종, 수급)는 메모와 따로 보입니다.</li>
           <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>급등·급락</b>: 감지 기준(±5%, 관찰 ±3~5%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>검색</b>: 맨 위 검색창에 날짜(9/8, 9월 8일, 2026-09-08)를 넣으면 그날 1일 차트로 바로 갑니다. 장이 열리지 않은 날이면 앞뒤 거래일 차트로 가는 버튼이 나옵니다. 달(4월, 2026-04)을 넣으면 그 달의 날짜·기사·공시와 '그 달 주가 차트 보기'가 나옵니다. 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)로 찾으면 그날 기사·공시도 함께 나오고, 제목·매체·기자·상대 회사로도 찾습니다.</li>
