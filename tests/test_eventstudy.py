@@ -434,6 +434,10 @@ def test_short_history_minimum():
     own = {d: own[d] for d in dates[130:]}
     result = analyze_returns(own, market, dates[175], calendar=dates)
     assert result["ok"] and result["short_history"] and result["n_est"] == 30
-    own = {d: own[d] for d in dates[140:]}
+    own = {d: own[d] for d in dates[140:]}         # 30거래일 미만: 시장 1배 비교 (5거래일 전까지, 상장 첫 5일 뺌)
     result = analyze_returns(own, market, dates[175], calendar=dates)
-    assert not result["ok"] and "30거래일 이상" in result["reason"]
+    assert result["ok"] and result["simple_model"] and result["n_est"] == 25 and result["beta"] == 1.0
+    assert result["expected"] == market[dates[175]] and result["ci_low"] < result["ar"] < result["ci_high"]
+    own = {d: own[d] for d in dates[160:]}
+    result = analyze_returns(own, market, dates[175], calendar=dates)
+    assert not result["ok"] and "10거래일 이상" in result["reason"]
