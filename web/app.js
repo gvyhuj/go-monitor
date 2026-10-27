@@ -1010,7 +1010,6 @@
       const ratio = (k, per) => { const d = numOf(info[per]); return lq && d > 0 ? `${(lq.price / d).toFixed(2)}배` : now(k); };
       const cap = lq && lq.market_cap ? capTxt(lq.market_cap) : now("marketValue");
       const asOf = lq ? hhmm(lq.traded_at.slice(0, 16)) : nv.fetched_at ? hhmm(nv.fetched_at) : "";
-      const qt = nv.quarter;
       return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시/고/저, 거래량/거래대금, 52주 최고/최저는 KRX+NXT 통합 기준으로 제공됩니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
@@ -1021,8 +1020,7 @@
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${asOf}</small></span>
-          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per", "eps"))}${kv(tipK("PBR"), ratio("pbr", "bps"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
-            ${qt ? `<dt class="rs-q">${esc(qt.title || "")}(분기)</dt><dd class="rs-q">매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억</dd>` : ""}</dl></div>` : ""}`;
+          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per", "eps"))}${kv(tipK("PBR"), ratio("pbr", "bps"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
@@ -1362,8 +1360,10 @@
   function rangeStats(d, a, b) {
     const inR = d.bars.filter((x) => { const t = toTime(x.t); return t >= a && t <= b; });
     if (!inR.length) return null;
-    const first = inR[0], last = inR[inR.length - 1];
-    const startPx = first.o ?? first.c, endPx = last.c;
+    const first = inR[0], last = inR[inR.length - 1], pc = d.prev_close;
+    // 장 첫 봉부터 고르면 시작 가격 = 전일 종가 (시가에 이미 오른·내린 만큼을 빼먹지 않게 — 차트 위 표시·급등락 감지와 같은 기준)
+    const fromOpen = first === d.bars[0] && !!pc;
+    const startPx = fromOpen ? pc : first.o ?? first.c, endPx = last.c;
     const lo = (x) => x.l ?? x.c, hi = (x) => x.h ?? x.c;
     const low = inR.reduce((m, x) => (lo(x) < lo(m) ? x : m)), high = inR.reduce((m, x) => (hi(x) > hi(m) ? x : m));
     const kq = d.kosdaq || [];
@@ -1372,10 +1372,9 @@
     const vol = inR.reduce((s, x) => s + (x.v || 0), 0);
     const out = d.bars.filter((x) => { const t = toTime(x.t); return t < a || t > b; });
     const outAvg = out.length ? out.reduce((s, x) => s + (x.v || 0), 0) / out.length : null;
-    const pc = d.prev_close;
     return {
       from: hhmm(first.t), to: hhmm(last.t), minutes: inR.length,
-      own: endPx / startPx - 1, startPx, endPx,
+      own: endPx / startPx - 1, startPx, endPx, fromOpen,
       fromPrev: pc ? endPx / pc - 1 : null,
       low: { at: hhmm(low.t), fromPrev: pc ? lo(low) / pc - 1 : null },
       high: { at: hhmm(high.t), fromPrev: pc ? hi(high) / pc - 1 : null },
@@ -1397,7 +1396,7 @@
     }
     panel.innerHTML = `<div class="range-box">
       <div class="range-head"><b>${r.from} ~ ${r.to} 구간</b>
-        <span>이 종목 <b class="num ${sgnCls(r.own)}">${pct(r.own)}</b>${r.fromPrev != null ? ` <span class="muted">(전일 대비 ${pct(r.fromPrev)})</span>` : ""}</span>
+        <span>이 종목 <b class="num ${sgnCls(r.own)}">${pct(r.own)}</b> <span class="muted">${r.fromOpen ? "(전일 종가부터)" : `(${r.from} 시작 가격부터${r.fromPrev != null ? ` · 전일 대비 ${pct(r.fromPrev)}` : ""})`}</span></span>
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
@@ -1442,8 +1441,8 @@
       L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     }
     L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
-    L.push(whole ? `[하루] ${d.date} ${r.from}~${r.to} · 시가 ${won(r.startPx)}원 → ${r.endLabel || "종가"} ${won(r.endPx)}원 (${pct(r.endPx / r.startPx - 1)})`
-      : `[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
+    L.push(whole ? `[하루] ${d.date} ${r.from}~${r.to} · ${r.fromOpen ? "전일 종가" : "시가"} ${won(r.startPx)}원 → ${r.endLabel || "종가"} ${won(r.endPx)}원 (${pct(r.endPx / r.startPx - 1)})`
+      : `[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${r.fromOpen ? "전일 종가 " : ""}${won(r.startPx)}원 → ${won(r.endPx)}원)`);
     if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · ${whole ? r.endLabel || "종가" : "구간 끝"} ${pct(r.fromPrev)} · ${whole ? "장중" : "구간"} 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · ${whole ? "장중" : "구간"} 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
     L.push(`[KOSDAQ ${whole ? "이날 (전일 대비)" : "같은 구간"}] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
     L.push(`[거래량] ${whole ? "이날" : "구간"} ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
