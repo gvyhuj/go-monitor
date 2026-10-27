@@ -328,8 +328,11 @@
     // 선 색: 전일 종가(없으면 첫 봉)보다 위면 빨강, 아래면 파랑 (네이버·증권사 앱처럼)
     const ref = prevClose || (bars.length ? bars[0].c : null), last = bars.length ? bars[bars.length - 1].c : null;
     const lineColor = kindColor(ref && last != null && last < ref ? "down" : "up", dark);
-    const price = chart.addSeries(LW.LineSeries, {
-      color: lineColor, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
+    // 선 아래를 선 색으로 옅게 채우고 아래로 갈수록 투명하게 (그라데이션)
+    const rgba = (a) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(lineColor).trim()); if (!m) return "transparent";
+      const v = parseInt(m[1], 16); return `rgba(${v >> 16}, ${(v >> 8) & 255}, ${v & 255}, ${a})`; };
+    const price = chart.addSeries(LW.AreaSeries, {
+      lineColor, topColor: rgba(0.3), bottomColor: rgba(0.02), lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
       priceFormat: { type: "custom", minMove: 1, formatter: (v) => won(v) },
       crosshairMarkerRadius: 4,
     }, 0);
