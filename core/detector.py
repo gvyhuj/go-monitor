@@ -653,7 +653,8 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
     return new
 
 
-TIERS_KEY = "detector_tiers_v2"      # v2: 관찰 ±5% · 급등·급락 ±10% · 대형 ±15% (그린광학 평소 출렁임에 맞춤, 2026-10)
+TIERS_KEY = "detector_tiers_v3"      # v2: 관찰 ±5% · 급등·급락 ±10% · 대형 ±15% (그린광학 평소 출렁임에 맞춤, 2026-10)
+                                      # v3: 같은 기준, 지난 날짜 장중 차트(사이트)도 다시 만들게 한 번 더
 
 
 def retier_events(symbol: str, log=None) -> dict | None:
@@ -680,8 +681,8 @@ def retier_events(symbol: str, log=None) -> dict | None:
                 out["changed"] += 1
             else:
                 out["kept"] += 1
-        try:                                # 사이트의 급등·급락 상세도 새 단계로 다시 만들게
-            conn.execute("DELETE FROM site_items WHERE key LIKE 'event:%'")
+        try:                                # 사이트의 급등·급락 상세와 지난 날짜 장중 차트(그날 기록 목록)도 새 단계로 다시 만들게
+            conn.execute("DELETE FROM site_items WHERE key LIKE 'event:%' OR key LIKE 'intraday:%'")
         except Exception:  # noqa: BLE001
             pass
     set_state(TIERS_KEY, json.dumps(out))

@@ -188,10 +188,16 @@ def test_retier_events_once_with_new_thresholds(tmpdb, monkeypatch):
         conn.executemany("INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, tier, peak_return_5m) "
                          "VALUES ('S', '2026-10-01T10:00', '2026-10-01T10:30', 'intraday', 'down', ?, ?)",
                          [("관찰", -0.04), ("일반", -0.06), ("대형", -0.12), ("대형", 0.16), ("요청", -0.01)])
+        from core.sitebuild import _TABLE
+        conn.execute(_TABLE)
+        conn.executemany("INSERT INTO site_items(key, value, b64, built_at) VALUES (?, '{}', 0, '2026-10-27')",
+                         [("event:1",), ("intraday:2026-10-01",), ("daily",)])
     monkeypatch.setattr(detector, "load_settings", lambda: {"event_watch_pct": 5.0, "event_move_pct": 10.0, "event_big_pct": 15.0})
     out = detector.retier_events("S")
     assert out == {"deleted": 1, "changed": 2, "kept": 1}
     with db.connect() as conn:
         tiers = sorted((round(r[0], 2), r[1]) for r in conn.execute("SELECT peak_return_5m, tier FROM events"))
+        left = [r[0] for r in conn.execute("SELECT key FROM site_items")]
     assert tiers == [(-0.12, "일반"), (-0.06, "관찰"), (-0.01, "요청"), (0.16, "대형")]
+    assert left == ["daily"]          # 상세와 지난 날짜 장중 차트(그날 기록 목록)는 다시 만듦
     assert detector.retier_events("S") is None
