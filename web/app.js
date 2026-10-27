@@ -323,7 +323,7 @@
   const kindColor = (k, dark) => (dark ? { up: "#FF6B7D", down: "#7FA6FF", flat: "#F2BE4B" } : { up: css("--up"), down: css("--down"), flat: css("--vol") })[k];
 
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
-  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, barMinutes = 1 } = {}) {
+  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], news = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, onNews = null, barMinutes = 1 } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
     // 선 색: 전일 종가(없으면 첫 봉)보다 위면 빨강, 아래면 파랑 (네이버·증권사 앱처럼)
     const ref = prevClose || (bars.length ? bars[0].c : null), last = bars.length ? bars[bars.length - 1].c : null;
@@ -395,6 +395,36 @@
       tag.style.color = ring.style.borderColor = color;
       return { tag, ring, t, px: b ? b.c : null, up: e.direction === "up" };
     });
+    // 그날 소식: 기간 차트와 같은 모양(보도자료 ●, 공시 ■, 외부 기사 ▲)을 공개 시각의 선 위에.
+    // 장 시작 전 공개는 첫 봉, 장 마감 뒤 공개는 마지막 봉에. 같은 봉의 같은 종류는 하나로(마우스를 올리면 제목들), 누르면 소식 탭
+    const SHAPE = { pr: '<circle cx="8" cy="8" r="6"/>', disc: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/>', ext: '<path d="M8,1.5L14.5,13.5L1.5,13.5Z"/>' };
+    const NAME = { pr: "보도자료", disc: "공시", ext: "외부 기사" };
+    const dots = [];
+    if (bars.length && news.length) {
+      const t0 = toTime(bars[0].t), t1 = toTime(bars[bars.length - 1].t), groups = new Map();
+      for (const a of news) {
+        const ta = toTime(a.ts), tt = ta <= t0 ? t0 : ta >= t1 ? t1 : ta;
+        const b = bars.find((x) => toTime(x.t) >= tt) || bars[bars.length - 1], key = `${b.t}|${a.k}`;
+        if (!groups.has(key)) groups.set(key, { b, k: a.k, items: [] });
+        groups.get(key).items.push(a);
+      }
+      const order = { pr: 0, disc: 1, ext: 2 }, perBar = {};
+      [...groups.values()].sort((p, q) => order[p.k] - order[q.k]).forEach((g) => {
+        const n = document.createElement("button"), t = toTime(g.b.t);
+        n.type = "button"; n.className = `nw-mk ${g.k}`;
+        n.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${SHAPE[g.k]}</svg>`;
+        n.title = g.items.map((a) => `${hhmm(a.ts)} ${NAME[g.k]} · ${a.title}`).join(String.fromCharCode(10));
+        n.setAttribute("aria-label", `${NAME[g.k]} ${g.items.length}건 소식 탭에서 열기`);
+        n.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+        n.addEventListener("pointerup", (ev) => ev.stopPropagation());
+        if (onNews) n.addEventListener("click", () => onNews(g.items[0].id));
+        n.addEventListener("mouseenter", () => { chart.setCrosshairPosition(g.b.c, t, price); showAt(t); });
+        n.addEventListener("mouseleave", () => { chart.clearCrosshairPosition(); showAt(null); });
+        el.appendChild(n);
+        const slot = perBar[g.b.t] = (perBar[g.b.t] || 0) + 1;       // 같은 봉에 여러 종류면 옆으로 조금씩
+        dots.push({ n, t, px: g.b.c, dx: (slot - 1) * 13 });
+      });
+    }
     // 그날 최고·최저 (종가 선 기준): 작은 빈 점 + '최고 10,750' / '최저 10,350' 글자 (최고는 위, 최저는 아래)
     const marks = [];
     if (bars.length > 1) {
@@ -423,7 +453,7 @@
         const inside = ([, ty]) => ty - h / 2 >= 0 && ty + h / 2 <= H;
         // 후보 자리: 점 위(상승·최고)나 아래(하락·최저)로 조금씩 멀리, 최고·최저(side)는 막히면 점 옆(좌우)
         const cands = [16, 32, 48].map((k) => [clampX(x), y + d * k]);
-        if (side) cands.push([clampX(x + w / 2 + 12), y - d * 6], [clampX(x - w / 2 - 12), y - d * 6]);
+        if (side) for (const gap of [12, 28]) cands.push([clampX(x + w / 2 + gap), y - d * 6], [clampX(x - w / 2 - gap), y - d * 6]);
         cands.push([clampX(x), y - d * 16], [clampX(x), y - d * 32]);
         const [cx, ty] = cands.find((c) => inside(c) && !placed.some((p) => hit(p, box(c)))) ?? cands.find(inside) ?? cands[0];
         placed.push(box([cx, ty]), { l: x - 7, r: x + 7, t: y - 7, b: y + 7 });
@@ -431,10 +461,17 @@
         tag.style.top = `${ty}px`; ring.style.top = `${y}px`;
       };
       const pos = (g) => ({ g, x: chart.timeScale().timeToCoordinate(g.t), y: g.px == null ? null : price.priceToCoordinate(g.px) });
+      dots.forEach((g) => {                        // 소식 표시는 선 위 그 자리 (글자들이 피해 가도록 먼저 자리 차지)
+        const { x, y } = pos(g);
+        g.n.hidden = x == null || y == null;
+        if (g.n.hidden) return;
+        g.n.style.left = `${x + g.dx}px`; g.n.style.top = `${y}px`;
+        placed.push({ l: x + g.dx - 8, r: x + g.dx + 8, t: y - 8, b: y + 8 });
+      });
       tags.map(pos).sort((p, q) => (p.x ?? 0) - (q.x ?? 0)).forEach(place);
       marks.map(pos).forEach((p) => place(p, true));
     };
-    if (tags.length || marks.length) {
+    if (tags.length || marks.length || dots.length) {
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);
@@ -1154,6 +1191,9 @@
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
+        news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
+          ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
+        onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
         extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
       });
       st.range = null;

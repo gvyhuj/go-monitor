@@ -359,6 +359,15 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .ev-tag[hidden], .ev-ring[hidden], .hl-tag[hidden], .hl-dot[hidden] { display: none; }
 .ev-ring { position: absolute; z-index: 5; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 2.5px solid; background: var(--surface);
   transform: translate(-50%, -50%); cursor: pointer; }
+/* 1일 차트의 그날 소식 (기간 차트와 같은 모양·색, 흰 테두리로 선과 뗌) */
+.nw-mk { position: absolute; z-index: 4; width: 16px; height: 16px; padding: 0; border: 0; background: none; cursor: pointer;
+  transform: translate(-50%, -50%); transition: transform .15s ease-out; }
+.nw-mk[hidden] { display: none; }
+.nw-mk svg { display: block; width: 16px; height: 16px; overflow: visible; stroke: var(--surface); stroke-width: 2.5; stroke-linejoin: round; }
+.nw-mk.pr svg { fill: var(--mk-pr); }
+.nw-mk.disc svg { fill: var(--mk-disc); }
+.nw-mk.ext svg { fill: var(--muted); }
+.nw-mk:hover { transform: translate(-50%, -50%) scale(1.35); }
 /* 그날 최고·최저 표시 */
 .hl-dot { position: absolute; z-index: 3; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid; background: var(--surface);
   transform: translate(-50%, -50%); pointer-events: none; }
