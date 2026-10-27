@@ -27,3 +27,5 @@ jobs:
         run: gh release download latest-backup -p monitor.db.enc -D bk -R "$GITHUB_REPOSITORY"
       - name: 계산
         run: python stats_moves.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
+      - name: 일봉 자료 검증 (야후 파이낸스와 대조)
+        run: python verify_daily.py bk/monitor.db.enc | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
