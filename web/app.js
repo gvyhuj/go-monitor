@@ -411,7 +411,7 @@
       const order = { pr: 0, disc: 1, ext: 2 }, perBar = {};
       [...groups.values()].sort((p, q) => order[p.k] - order[q.k]).forEach((g) => {
         const n = document.createElement("button"), t = toTime(g.b.t);
-        n.type = "button"; n.className = `nw-mk ${g.k}`;
+        n.type = "button"; n.className = `nw-mk ${g.k}${g.items.some((a) => a.cur) ? " cur" : ""}`;   // cur: 지금 열어 둔 기사·공시
         n.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${SHAPE[g.k]}</svg>`;
         n.title = g.items.map((a) => `${hhmm(a.ts)} ${NAME[g.k]} · ${a.title}`).join(String.fromCharCode(10));
         n.setAttribute("aria-label", `${NAME[g.k]} ${g.items.length}건 소식 탭에서 열기`);
@@ -2717,7 +2717,11 @@
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
     let html = `      <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
-        : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}</p>`;
+        : `${esc(a.office)} · ${dayLabel(a.ts)} ${hhmm(a.ts)} 공개${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
+        ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
+          const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
+          return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
+        })() : ""}</p>`;
     const notes = [];
     if (e.disclosure) {
       const dsc = [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title);
@@ -2926,6 +2930,53 @@
   const shareBtn = $("#share-btn");
   if (shareBtn) shareBtn.onclick = () => { location.hash = "#/cloud"; };
   $("#ind-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-iclose]")) $("#ind-modal").hidden = true; });
+  // 기사·공시 상세의 '그날 주가 차트': 페이지를 옮기지 않고 창으로 그날 1일 차트 (주가 기록 탭과 같은 차트, 지금 기사 표시는 강조)
+  let dayModalChart = null;
+  const closeDayModal = () => {
+    $("#day-modal").hidden = true;
+    if (dayModalChart) { try { dayModalChart.remove(); } catch (_) {} charts = charts.filter((c) => c !== dayModalChart); dayModalChart = null; }
+    $("#day-body").innerHTML = "";
+  };
+  async function openDayModal(ds, curId) {
+    const body = $("#day-body");
+    closeDayModal();
+    $("#day-title").textContent = `${dayLabel(ds)} 주가`;
+    body.innerHTML = `<p class="loading">불러오는 중…</p>`;
+    $("#day-modal").hidden = false;
+    let d = null, iv = 1;
+    try { d = await api(`/api/intraday?date=${ds}`); } catch (_) { d = null; }
+    if (d && d.date !== ds) d = null;
+    if (!d || !d.bars || !d.bars.length) {           // 1분봉이 없는 날: 야후 5분·60분봉
+      try { const c = ((await api("/api/coarse")).days || {})[ds]; if (c && c.bars.length) { d = { date: ds, bars: c.bars, events: [], prev_close: c.prev_close }; iv = c.interval; } } catch (_) {}
+    }
+    if ($("#day-modal").hidden) return;
+    if (!d || !d.bars || !d.bars.length) { body.innerHTML = `<p class="muted">이날 분봉 기록이 없습니다.</p>`; return; }
+    const [arts, discs] = await Promise.all([
+      api("/api/articles").then((r) => r.items || []).catch(() => []),
+      api("/api/disclosures").then((r) => r.items || []).catch(() => []),
+    ]);
+    if ($("#day-modal").hidden) return;
+    const on = (x) => x.ts && x.ts.slice(0, 10) === ds && !x.untimed;
+    const isPrA = (a) => a.kind === "pr" || a.kind === "company";
+    const news = [...arts.filter((a) => on(a) && !a.hidden && a.category !== "단순 언급").map((a) => ({ ts: a.ts, k: isPrA(a) ? "pr" : "ext", title: a.title, id: a.id, cur: a.id === curId })),
+      ...discs.filter((x) => on(x) && MAIN_DISC.has(x.pblntf || "")).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id, cur: x.id === curId }))];
+    const bars = d.bars, last = bars[bars.length - 1].c, base = d.prev_close;
+    const hi = Math.max(...bars.map((b) => b.h || b.c)), lo = Math.min(...bars.map((b) => b.l || b.c));
+    const r = (v) => (base ? pct(v / base - 1) : "-");
+    body.innerHTML = `<p class="dm-sub">${base ? `기준가 ${won(base)}원 → ` : ""}${won(last)}원 <b class="${base ? sgnCls(last - base) : ""}">${r(last)}</b> · 장중 최고 <span class="${base ? sgnCls(hi - base) : ""}">${r(hi)}</span> / 최저 <span class="${base ? sgnCls(lo - base) : ""}">${r(lo)}</span>${iv > 1 ? ` · 1분봉이 없어 야후 ${iv}분봉` : ""}</p>
+      <div class="day-legend"></div><div class="dm-chart"></div>
+      <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div>`;
+    const closed = bars[bars.length - 1].t.slice(11) >= "15:30";
+    dayModalChart = priceVolumeChart($(".dm-chart", body), $(".day-legend", body), bars, {
+      events: (d.events || []).filter((e) => !isDaily(e)), news, prevClose: base, interactive: false, barMinutes: iv,
+      extendTo: closed || iv > 1 ? null : `${ds}T15:30`,
+      onEvent: (id) => { closeDayModal(); openEvent(id); },
+      onNews: (id) => { closeDayModal(); location.hash = `#/pr/${id}`; },
+    });
+  }
+  document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-daychart]"); if (b) openDayModal(b.dataset.daychart, b.dataset.cur); });
+  $("#day-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-dclose]")) closeDayModal(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#day-modal").hidden) closeDayModal(); });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("#ind-modal").hidden = true; });
   $("#share-modal").addEventListener("click", (ev) => { if (ev.target.closest("[data-mclose]")) { $("#share-modal").hidden = true; clearInterval(shareTimer); } });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#share-modal").hidden) { $("#share-modal").hidden = true; clearInterval(shareTimer); } });
