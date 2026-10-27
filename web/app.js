@@ -339,7 +339,7 @@
     const vol = chart.addSeries(LW.HistogramSeries, {
       priceFormat: { type: "custom", minMove: 1, formatter: (v) => int(v) }, priceLineVisible: false, lastValueVisible: false,
     }, 1);
-    price.priceScale().applyOptions({ scaleMargins: { top: 0.16, bottom: 0.14 } });   // 위·아래 여백: 최고·최저·급등락 글자 자리
+    price.priceScale().applyOptions({ scaleMargins: { top: 0.16, bottom: 0.14 } });   // 위·아래 여백: 급등락 글자 자리
     chart.panes()[1].setStretchFactor(0.32);
     chart.panes()[0].setStretchFactor(1);
 
@@ -425,25 +425,11 @@
         dots.push({ n, t, px: g.b.c, dx: (slot - 1) * 13 });
       });
     }
-    // 그날 최고·최저 (종가 선 기준): 작은 빈 점 + '최고 10,750' / '최저 10,350' 글자 (최고는 위, 최저는 아래)
-    const marks = [];
-    if (bars.length > 1) {
-      const hi = bars.reduce((a, b) => (b.c > a.c ? b : a)), lo = bars.reduce((a, b) => (b.c < a.c ? b : a));
-      for (const [b, up, label] of [[hi, true, "최고"], [lo, false, "최저"]]) {
-        if (hi.c === lo.c && !up) break;
-        const dot = document.createElement("i"), txt = document.createElement("span");
-        dot.className = "hl-dot"; txt.className = "hl-tag";
-        txt.textContent = `${label} ${won(b.c)}`;
-        dot.style.borderColor = lineColor;
-        el.append(dot, txt);
-        marks.push({ tag: txt, ring: dot, t: toTime(b.t), px: b.c, up });
-      }
-    }
-    // 글자끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 더 멀리 띄우거나 반대쪽으로. 급등·급락 숫자를 먼저 놓음
+    // 글자끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 더 멀리 띄우거나 반대쪽으로
     const placeTags = () => {
       const H = chart.panes()[0].getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
       const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
-      const place = ({ g: { tag, ring, up }, x, y }, side = false) => {
+      const place = ({ g: { tag, ring, up }, x, y }) => {
         const off = x == null || y == null;
         tag.hidden = ring.hidden = off;
         if (off) return;
@@ -451,9 +437,8 @@
         const clampX = (v) => Math.min(Math.max(v, w / 2 + 2), W - w / 2 - 2);   // 좌우 끝에서 글자가 잘리지 않게
         const box = ([cx, ty]) => ({ l: cx - w / 2, r: cx + w / 2, t: ty - h / 2, b: ty + h / 2 });
         const inside = ([, ty]) => ty - h / 2 >= 0 && ty + h / 2 <= H;
-        // 후보 자리: 점 위(상승·최고)나 아래(하락·최저)로 조금씩 멀리, 최고·최저(side)는 막히면 점 옆(좌우)
+        // 후보 자리: 점 위(상승)나 아래(하락)로 조금씩 멀리, 막히면 반대쪽
         const cands = [16, 32, 48].map((k) => [clampX(x), y + d * k]);
-        if (side) for (const gap of [12, 28]) cands.push([clampX(x + w / 2 + gap), y - d * 6], [clampX(x - w / 2 - gap), y - d * 6]);
         cands.push([clampX(x), y - d * 16], [clampX(x), y - d * 32]);
         const [cx, ty] = cands.find((c) => inside(c) && !placed.some((p) => hit(p, box(c)))) ?? cands.find(inside) ?? cands[0];
         placed.push(box([cx, ty]), { l: x - 7, r: x + 7, t: y - 7, b: y + 7 });
@@ -469,9 +454,8 @@
         placed.push({ l: x + g.dx - 8, r: x + g.dx + 8, t: y - 8, b: y + 8 });
       });
       tags.map(pos).sort((p, q) => (p.x ?? 0) - (q.x ?? 0)).forEach(place);
-      marks.map(pos).forEach((p) => place(p, true));
     };
-    if (tags.length || marks.length || dots.length) {
+    if (tags.length || dots.length) {
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);

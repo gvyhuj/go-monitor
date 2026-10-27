@@ -356,7 +356,7 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .ev-tag { position: absolute; z-index: 4; transform: translate(-50%, -50%); padding: 0 2px; border: 0; background: none;
   font: 750 12.5px/18px var(--font); white-space: nowrap; cursor: pointer;
   text-shadow: 0 0 2px var(--surface), 0 0 2px var(--surface), 0 0 3px var(--surface), 0 0 4px var(--surface); }
-.ev-tag[hidden], .ev-ring[hidden], .hl-tag[hidden], .hl-dot[hidden] { display: none; }
+.ev-tag[hidden], .ev-ring[hidden] { display: none; }
 .ev-ring { position: absolute; z-index: 5; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 2.5px solid; background: var(--surface);
   transform: translate(-50%, -50%); cursor: pointer; }
 /* 1일 차트의 그날 소식 (기간 차트와 같은 모양·색, 흰 테두리로 선과 뗌) */
@@ -368,12 +368,6 @@ h2.sec { font-size: 18px; font-weight: 700; letter-spacing: -.015em; margin: 0 0
 .nw-mk.disc svg { fill: var(--mk-disc); }
 .nw-mk.ext svg { fill: var(--muted); }
 .nw-mk:hover { transform: translate(-50%, -50%) scale(1.35); }
-/* 그날 최고·최저 표시 */
-.hl-dot { position: absolute; z-index: 3; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid; background: var(--surface);
-  transform: translate(-50%, -50%); pointer-events: none; }
-.hl-tag { position: absolute; z-index: 3; transform: translate(-50%, -50%); font: 600 11.5px/16px var(--font); color: var(--muted);
-  white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 2px var(--surface), 0 0 2px var(--surface), 0 0 3px var(--surface); }
 .range-sel { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 3;
   background: color-mix(in srgb, var(--brand-blue) 14%, transparent); border-left: 1px solid var(--brand-blue); border-right: 1px solid var(--brand-blue); }
 .range-hint { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
