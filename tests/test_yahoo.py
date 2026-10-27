@@ -115,3 +115,23 @@ def test_late_article_measured_from_close_to_next_open(database):
     r = yahoo.reaction("X", "2026-08-12T15:13", "2026-08-12", 95, 990)
     assert r["kind"] == "late" and r["day"] == "2026-08-13" and r["start"] == "2026-08-13T09:00"
     assert r["rows"][0]["minutes"] == 30 and r["rows"][0]["own"] == pytest.approx(0.06) and r["rows"][0]["kosdaq"] == pytest.approx(0.01)
+
+
+def test_backfilled_minutes_used_with_coarse_kosdaq(database):
+    """한국투자증권으로 채운 날: 이 종목은 1분봉, 코스닥은 야후 60분봉뿐 → 각각의 봉으로 +30·60·120분."""
+    import webserver
+    from datetime import datetime, timedelta
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol, date, close) VALUES (?, ?, ?)",
+                         [("W", "2026-04-21", 100), ("W", "2026-04-22", 106), ("KOSDAQ", "2026-04-21", 800), ("KOSDAQ", "2026-04-22", 808)])
+        t0 = datetime(2026, 4, 22, 9, 0)
+        conn.executemany("INSERT INTO minute_bars(symbol, ts, open, high, low, close, volume) VALUES ('W', ?, ?, ?, ?, ?, 1)",
+                         [((t0 + timedelta(minutes=i)).isoformat(timespec="minutes"),) + (100 + i / 100,) * 4 for i in range(381)])
+        conn.executemany("INSERT INTO coarse_bars(symbol, interval, ts, close) VALUES ('KOSDAQ', 60, ?, ?)",
+                         [(f"2026-04-22T{h:02d}:00", 800 + h) for h in range(9, 15)])
+    r = yahoo.reaction("W", "2026-04-22T10:15", "2026-04-22", 100, 800)
+    assert (r["interval"], r["kq_interval"], r["kind"]) == (1, 60, "session")
+    assert [x["minutes"] for x in r["rows"]] == [30, 60, 120]
+    assert r["rows"][0]["own"] == pytest.approx(101.04 / 100.74 - 1)   # 10:14 봉(10:15에 끝남) 100.74 → 10:44 봉 101.04
+    rc = webserver._reaction_chart("W", {"reaction_day": "2026-04-22"}, None, r)
+    assert (rc["interval"], rc["kq_interval"]) == (1, 60) and len(rc["own"]) == 151 and rc["kq"][-1]["c"] == 808

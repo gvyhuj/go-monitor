@@ -635,6 +635,15 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
                            for k in ("d0", "d1", "d3")},
                 "bench_name": "같은 업종 평균" if pavg else "KOSDAQ",
             }
+        # 15시 넘어 공개(장 마감 전): 발표 직후 반응은 그날 종가 → 다음 거래일로 재므로, 일봉도 그날 종가 대비 다음 거래일부터
+        # (반응일 종가를 공개 전 움직임까지 담은 '그날 종가'로 보면 +30분 숫자와 기준이 어긋남)
+        if not off and ts.date().isoformat() == d0 and ts.time() > time(15, 0):
+            nxt = next((x for x in days if x > d0), None)
+            own2 = _ret_path(symbol, nxt) if nxt else None
+            if own2:
+                kq2 = _ret_path(KOSDAQ, nxt) or {}
+                out["daily_next"] = {"day": nxt, **{k: own2.get(k) for k in ("d0", "d1", "d3")},
+                                     "kosdaq": {k: kq2.get(k) for k in ("d0", "d1", "d3")}}
 
     if d0:
         from . import causal
