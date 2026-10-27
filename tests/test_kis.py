@@ -69,6 +69,7 @@ def test_best_offset_matches_naver_bar_start_times():
 def test_backfill_fills_missing_days_once_and_resumes(database, monkeypatch):
     monkeypatch.setenv("KIS_APP_KEY", "k")
     monkeypatch.setenv("KIS_APP_SECRET", "s")
+    monkeypatch.setenv("KIS_BACKFILL", "1")
     monkeypatch.setattr(kis.Client, "_token", lambda self: "t")
     days = ["2026-04-21", "2026-04-22", "2026-10-01"]
     with db.connect() as conn:
@@ -101,6 +102,7 @@ def test_backfill_fills_missing_days_once_and_resumes(database, monkeypatch):
 def test_backfill_stops_on_api_error_and_retries_that_day(database, monkeypatch):
     monkeypatch.setenv("KIS_APP_KEY", "k")
     monkeypatch.setenv("KIS_APP_SECRET", "s")
+    monkeypatch.setenv("KIS_BACKFILL", "1")
     monkeypatch.setattr(kis.Client, "_token", lambda self: "t")
     with db.connect() as conn:
         conn.executemany("INSERT INTO daily_bars(symbol, date, close) VALUES ('X', ?, 100)", [("2026-04-21",), ("2026-04-22",)])

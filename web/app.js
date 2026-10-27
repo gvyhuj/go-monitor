@@ -1361,9 +1361,10 @@
     const inR = d.bars.filter((x) => { const t = toTime(x.t); return t >= a && t <= b; });
     if (!inR.length) return null;
     const first = inR[0], last = inR[inR.length - 1], pc = d.prev_close;
-    // 장 첫 봉부터 고르면 시작 가격 = 전일 종가 (시가에 이미 오른·내린 만큼을 빼먹지 않게 — 차트 위 표시·급등락 감지와 같은 기준)
-    const fromOpen = first === d.bars[0] && !!pc;
-    const startPx = fromOpen ? pc : first.o ?? first.c, endPx = last.c;
+    // 시작 가격 = 구간 바로 앞 봉의 종가 (차트 선과 같은 값 — 첫 봉 시가로 재면 그 1분 움직임이 빠짐).
+    // 장 첫 봉부터 고르면 전일 종가 (시가에 이미 오른·내린 만큼까지, 차트 위 표시·급등락 감지와 같은 기준)
+    const i0 = d.bars.indexOf(first), fromOpen = i0 === 0 && !!pc;
+    const startPx = fromOpen ? pc : i0 > 0 ? d.bars[i0 - 1].c : first.o ?? first.c, endPx = last.c;
     const lo = (x) => x.l ?? x.c, hi = (x) => x.h ?? x.c;
     const low = inR.reduce((m, x) => (lo(x) < lo(m) ? x : m)), high = inR.reduce((m, x) => (hi(x) > hi(m) ? x : m));
     const kq = d.kosdaq || [];
@@ -1374,7 +1375,8 @@
     const outAvg = out.length ? out.reduce((s, x) => s + (x.v || 0), 0) / out.length : null;
     return {
       from: hhmm(first.t), to: hhmm(last.t), minutes: inR.length,
-      own: endPx / startPx - 1, startPx, endPx, fromOpen,
+      own: endPx / startPx - 1, startPx, endPx, fromOpen, startAt: fromOpen ? null : hhmm((d.bars[i0 - 1] || first).t),
+      swingHi: hi(high) / startPx - 1, swingLo: lo(low) / startPx - 1, hiAt: hhmm(high.t), loAt: hhmm(low.t),
       fromPrev: pc ? endPx / pc - 1 : null,
       low: { at: hhmm(low.t), fromPrev: pc ? lo(low) / pc - 1 : null },
       high: { at: hhmm(high.t), fromPrev: pc ? hi(high) / pc - 1 : null },
@@ -1396,7 +1398,8 @@
     }
     panel.innerHTML = `<div class="range-box">
       <div class="range-head"><b>${r.from} ~ ${r.to} 구간</b>
-        <span>이 종목 <b class="num ${sgnCls(r.own)}">${pct(r.own)}</b> <span class="muted">${r.fromOpen ? "(전일 종가부터)" : `(${r.from} 시작 가격부터${r.fromPrev != null ? ` · 전일 대비 ${pct(r.fromPrev)}` : ""})`}</span></span>
+        <span>이 종목 <b class="num ${sgnCls(r.own)}">${pct(r.own)}</b> <span class="muted">${r.fromOpen ? "(전일 종가부터 끝까지)" : `(${r.startAt} 가격 ${won(r.startPx)}원 → ${r.to} ${won(r.endPx)}원${r.fromPrev != null ? ` · 전일 대비 ${pct(r.fromPrev)}` : ""})`}</span></span>
+        <span>구간 안 최고 <b class="num ${sgnCls(r.swingHi)}">${pct(r.swingHi)}</b><span class="muted">(${r.hiAt})</span> · 최저 <b class="num ${sgnCls(r.swingLo)}">${pct(r.swingLo)}</b><span class="muted">(${r.loAt})</span></span>
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>

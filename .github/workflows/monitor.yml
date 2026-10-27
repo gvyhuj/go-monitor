@@ -58,6 +58,7 @@ jobs:
       DART_API_KEY: ${{ secrets.DART_API_KEY }}                # 공시 목록 (금융감독원 DART, 없으면 예전처럼 네이버)
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}                  # 선택·한 번만: 한국투자증권 오픈API로 지난 1분봉 채우기 (다 채우면 지워도 됨)
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      KIS_BACKFILL: ${{ vars.KIS_BACKFILL }}                   # 저장소 변수 1로 켜야 지난 1분봉 채우기가 돎 (열쇠만으로는 안 돎)
       GO_INTERVAL_MIN: "5"
       GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
       GITHUB_TOKEN: ${{ github.token }}

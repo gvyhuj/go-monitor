@@ -1,6 +1,6 @@
 """한국투자증권 오픈API로 지난 1분봉을 한 번 채움 (사이트가 1분봉을 모으기 전 날: 상장일 ~ 네이버 1분봉 첫날 전날).
 
-- 열쇠(KIS_APP_KEY / KIS_APP_SECRET, GitHub Secrets)가 있을 때만 돌고, 다 채우면 멈춤. 열쇠를 지우면 아무것도 안 함.
+- 열쇠(KIS_APP_KEY / KIS_APP_SECRET, GitHub Secrets)와 저장소 변수 KIS_BACKFILL=1 이 있을 때만 돌고, 다 채우면 멈춤.
 - 한국투자증권은 지난 분봉을 최대 1년 보관 → 그보다 오래된 날은 못 받음.
 - 주식일별분봉조회[국내주식-213]: 한 번에 최대 120개, 날짜·시각을 주면 그 시각부터 거꾸로.
 - 이미 있는 1분봉(네이버)은 그대로 두고 빈 날만 넣음. 분봉 시각 표기(봉 시작/끝)는 네이버 1분봉이 있는 날과 맞춰 봐서 정함.
@@ -28,8 +28,13 @@ class KisError(Exception):
     pass
 
 
-def enabled() -> bool:
+def has_keys() -> bool:
     return bool(os.environ.get("KIS_APP_KEY") and os.environ.get("KIS_APP_SECRET"))
+
+
+def enabled() -> bool:
+    """채우기는 열쇠만으로 돌지 않음: 저장소 변수 KIS_BACKFILL=1 로 따로 켜야 함 (열쇠는 먼저 '확인' 실행에만 쓰도록)."""
+    return has_keys() and os.environ.get("KIS_BACKFILL") == "1"
 
 
 class Client:
