@@ -214,6 +214,7 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .rs-inv small, .rs-ret small { display: block; color: var(--muted); font-size: 11.5px; }
 .rs-inv b, .rs-ret b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .rs-inv p { grid-column: 1 / -1; margin: 2px 0; font-size: 12px; }
+.rs-inv small em { font-style: normal; }
 .rs-now { border-top: 1px dashed var(--line); padding-top: 8px; }
 .rs-kv .rs-q { white-space: nowrap; }                 /* 분기 실적: 이름과 값을 한 행 한 줄로 */
 .rs-kv dd.rs-q { font-size: 12.5px; letter-spacing: -.2px; }

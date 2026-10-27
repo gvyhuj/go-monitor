@@ -901,9 +901,10 @@
       const tag = ds === latest ? `<span class="day-now">${live && live.open ? `${live.at} 현재` : "장 마감"}</span>` : "";
       const r = (v) => (base && v ? pct(v / base - 1) : "-");
       const ext = live ? live.ext : false;
+      const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
       return `<button type="button" class="rh-box${done ? " is-click" : ""}" data-head ${done ? `title="${ev ? "이날 급등·급락 기록 자세히" : "이날 하루 분석"}"` : "disabled"}>
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
-          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(px.high && base ? px.high - base : 0)}">${r(px.high)}</span> / 최저 <span class="${sgnCls(px.low && base ? px.low - base : 0)}">${r(px.low)}</span></span></span>
+          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${r(hi)}</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${r(lo)}</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
       </button>${ev && ev.cause_headline ? `<div class="rh-cause">${aiMemo(ev.cause_headline)}</div>` : ""}`;
@@ -928,9 +929,14 @@
       const hi52 = Math.max(...yr.map((x) => x.high || x.close)), lo52 = Math.min(...yr.map((x) => x.low || x.close));
       const close = live ? live.price : px.close, pos = hi52 > lo52 ? Math.min(1, Math.max(0, (close - lo52) / (hi52 - lo52))) : 0;
       const full = daily[0].date <= from;
-      const base = px.base;
+      // 오늘(장중·장 마감 직후)은 일봉이 아직 없어 기준가가 비므로 네이버 현재가에서 (현재가 − 전일 대비)
+      const lq = live && q && q.price != null ? q : null;
+      const base = px.base || (lq && lq.change != null ? lq.price - lq.change : null);
       const colored = (v) => `<span class="${base && v ? sgnCls(v - base) : ""}">${v ? won(v) : "-"}</span>`;
-      const vol = live && q && q.volume != null ? q.volume : px.volume;
+      // 시가·고가·저가·거래량·대금: 오늘은 네이버 현재가 한 번 받은 값으로 모두 맞춤 (분봉 합계·10분마다 받는 숫자와 섞이지 않게)
+      const vol = lq && lq.volume != null ? lq.volume : px.volume;
+      const op = (lq && lq.open) || px.open, hi = (lq && lq.high) || px.high, lo = (lq && lq.low) || px.low;
+      const value = lq && lq.value_text ? lq.value_text : info.accumulatedTradingValue || "-";
       const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
       // 수익률: 네이버와 같은 방식 (고른 날 종가 ÷ N개월 전 날짜 이후 첫 거래일 종가, 기록이 짧으면 첫 거래일)
@@ -941,18 +947,29 @@
       };
       const ret = (m, label) => { const v = back(m); return `<div><small>${label}</small><b class="${sgnCls(v)}">${v == null ? "-" : pct(v)}</b></div>`; };
       const inv = px.individual != null || px.foreign != null || px.organ != null;
+      // 장중: 거래소 개인·외국인·기관은 장 마감 뒤에만 나오므로, 외국인 자리에 증권사 외국계 창구 추정(매수 − 매도)
+      const fe = !inv && px.foreign_est && px.foreign_est.date === ds && px.foreign_est.buy != null ? px.foreign_est : null;
       const now = (k) => info[k] || "-";
+      // 시총·PER·PBR은 가격 따라 바뀌므로 가격과 같은 순간 값으로: 시총은 현재가 응답, PER·PBR = 현재가 ÷ EPS·BPS (네이버 정의 그대로)
+      const numOf = (s) => { const v = parseFloat(String(s || "").replace(/[^0-9.\-]/g, "")); return isFinite(v) ? v : null; };
+      const capTxt = (v) => { const e = Math.round(v / 1e8), jo = Math.floor(e / 1e4), r = e % 1e4;
+        return jo ? `${jo}조${r ? ` ${r.toLocaleString("ko-KR")}억` : ""}` : `${r.toLocaleString("ko-KR")}억`; };
+      const ratio = (k, per) => { const d = numOf(info[per]); return lq && d > 0 ? `${(lq.price / d).toFixed(2)}배` : now(k); };
+      const cap = lq && lq.market_cap ? capTxt(lq.market_cap) : now("marketValue");
+      const asOf = lq ? hhmm(lq.traded_at.slice(0, 16)) : nv.fetched_at ? hhmm(nv.fetched_at) : "";
       const qt = nv.quarter;
       return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시/고/저, 거래량/거래대금, 52주 최고/최저는 KRX+NXT 통합 기준으로 제공됩니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
-        <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(px.open))}${kv("고가", colored(px.high))}${kv("저가", colored(px.low))}
-          ${kv("거래량", `${int(vol)}주`)}${isLatest ? kv("대금", now("accumulatedTradingValue")) : ""}</dl>
+        <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}
+          ${kv("거래량", `${int(vol)}주`)}${isLatest ? kv("대금", value) : ""}</dl>
         <div class="rs-inv">${inv ? `<div><small>개인</small><b>${signed(px.individual)}</b></div><div><small>외국인</small><b>${signed(px.foreign)}</b></div><div><small>기관</small><b>${signed(px.organ)}</b></div>`
+          : fe ? `<div><small>개인</small><b class="muted">-</b></div><div><small>외국인 <em class="muted">추정</em></small><b>${signed(fe.buy - fe.sell)}</b></div><div><small>기관</small><b class="muted">-</b></div>
+            <p class="muted">${fe.ts ? `${hhmm(fe.ts)} ` : ""}외국계 창구 추정. 개인·기관과 거래소 확정치는 장 마감 뒤</p>`
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
-        ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${nv.fetched_at ? hhmm(nv.fetched_at) : ""}</small></span>
-          <dl class="rs-kv">${kv("시총", now("marketValue"))}${kv(tipK("PER"), now("per"))}${kv(tipK("PBR"), now("pbr"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
+        ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${asOf}</small></span>
+          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per", "eps"))}${kv(tipK("PBR"), ratio("pbr", "bps"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}
             ${qt ? `<dt class="rs-q">${esc(qt.title || "")}(분기)</dt><dd class="rs-q">매출 ${esc(qt.sales || "-")}억 · 영업이익 ${esc(qt.op || "-")}억</dd>` : ""}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
