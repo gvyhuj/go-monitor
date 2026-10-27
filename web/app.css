@@ -1523,8 +1523,11 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .rx-zero { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .rx-t0 { stroke: var(--brand-blue); stroke-width: 1; opacity: .6; }
 .rx-ax { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.rx-one { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .35; cursor: pointer; }
-.rx-one:hover { opacity: .9; stroke-width: 2; }
+.rx-one { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .35; pointer-events: none; }
+.rx-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; pointer-events: stroke; }
+.rx-g:hover .rx-one:not(.on) { opacity: .95; stroke-width: 2; stroke: var(--ink-2); }
+.rx-hover { margin-left: 10px; font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.rx-chk .tip-i { color: var(--muted); font-size: 12px; }
 .rx-one.on { stroke: var(--up); opacity: 1; stroke-width: 2.2; }
 .rx-avg { fill: none; stroke: var(--brand-blue); stroke-width: 3; pointer-events: none; }
 .rx-leg { display: inline-flex; gap: 12px; font-size: 12px; color: var(--muted); }
@@ -1546,7 +1549,8 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 @media (max-width: 720px) { .rx-ctl .seg { flex-wrap: wrap; } .rx-ctl .seg button { padding-left: 10px; padding-right: 10px; } }
 
 /* 기사 반응: 단순 숫자 표 (통계는 접어 둠) */
-.simple-steps { border-collapse: collapse; margin: 10px 0 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.simple-steps { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.simple-steps th:first-child { width: 84px; }
 .simple-steps th, .simple-steps td { padding: 4px 12px 4px 0; text-align: right; white-space: nowrap; }
 .simple-steps thead th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .simple-steps tbody th { text-align: left; font-weight: 600; color: var(--ink-2); }

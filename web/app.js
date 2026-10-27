@@ -2189,7 +2189,7 @@
     main.innerHTML = `<div class="wrap dash">
       <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">기사·공시가 나온 시각을 0분으로 맞춰 그 뒤 주가가 어떻게 움직였는지 겹쳐 봅니다. 숫자는 공개 직전 가격(장 전 공개는 전날 종가) 대비입니다.</p></div>${artViewSeg("react")}</div>
       <div id="rx-ctl" class="rx-ctl"></div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span><span title="표에서 기사를 누르면 그 기사의 같은 시간 KOSDAQ"><i class="rx-l-kq"></i>고른 기사의 KOSDAQ</span></span></div>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="rx-hover" id="rx-hover"></span><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span><span title="표에서 기사를 누르면 그 기사의 같은 시간 KOSDAQ"><i class="rx-l-kq"></i>고른 기사의 KOSDAQ</span></span></div>
         <div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-sum"></p></section>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사별 반응</h3><small class="muted">머리글을 누르면 정렬, 줄을 누르면 그래프에서 강조</small><span class="spacer"></span><button class="btn small" type="button" id="rx-csv">엑셀로</button></div>
         <div class="rx-table-wrap"><table class="rx-table" id="rx-table"></table></div></section></div>`;
@@ -2209,7 +2209,7 @@
       $("#rx-ctl").innerHTML = `${seg("h", REACT_H, "공개 뒤 얼마까지")}${seg("kind", REACT_KINDS)}${seg("mode", REACT_MODES, "공개 시점")}
         ${seg("range", [["all", "전체 기간"], ["365", "1년"], ["92", "3달"]])}
         <select class="dash-sel" id="rx-topic" aria-label="주제"><option value="">주제 전체</option>${topics.map((t) => `<option${t === reactState.topic ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
-        <label class="rx-chk"><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기</label>`;
+        <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값으로 봅니다 (예: 그린광학 +2.0%, KOSDAQ +0.5% → +1.5%p). 시장 전체가 같이 움직인 만큼을 빼고 그린광학만 따로 움직인 만큼을 볼 때."><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기 <span class="tip-i" aria-hidden="true">ⓘ</span></label>`;
     };
     // 경로: [분, 값] → 그 분의 값 (앞선 가장 가까운 점, 봉 사이는 그대로 이어짐)
     const at = (path, m) => { let v = null; for (const [t, y] of path || []) { if (t <= m) v = y; else break; } return v; };
@@ -2244,7 +2244,7 @@
         <line class="rx-zero" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>
         <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
         ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "공개" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
-        ${lines.map((o) => `<path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" data-id="${esc(o.x.id)}" d="${d(o.s)}"><title>${esc(dayLabel(o.x.ts))} ${esc(o.x.title)}</title></path>`).join("")}
+        ${lines.map((o) => { const dd = d(o.s); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" d="${dd}"/><path class="rx-hit" d="${dd}"/></g>`; }).join("")}
         ${avg.length > 1 ? `<path class="rx-avg" d="${d(avg)}"/>` : ""}
         ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
           const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
@@ -2253,7 +2253,7 @@
       </svg>`;
     }
     // +N분: 이 종목(‘KOSDAQ 빼고 보기’면 차이) · 같은 시간 KOSDAQ
-    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["kq30", "KOSDAQ +30분"], ["60", "+60분"], ["kq60", "KOSDAQ +60분"]];
+    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "그린광학 +30분"], ["kq30", "KOSDAQ +30분"], ["60", "그린광학 +60분"], ["kq60", "KOSDAQ +60분"]];
     const kqV = (x, m) => { const s0 = (x.steps || {})[m]; return s0 && s0.kq != null ? s0.kq : null; };
     const valOf = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : k === "kq30" ? kqV(x, "30") : k === "kq60" ? kqV(x, "60") : x[k]);
     function table(list) {
@@ -2262,7 +2262,7 @@
       const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : pct(v)}</td>`;
       const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
       const tips = { interval: BAR_TIP, 30: reactState.vsKq ? "이 종목 − KOSDAQ" : "공개 직전 가격(장 시작 전 공개는 전날 종가) 대비", 60: reactState.vsKq ? "이 종목 − KOSDAQ" : "공개 직전 가격(장 시작 전 공개는 전날 종가) 대비", kq30: "같은 시간 KOSDAQ", kq60: "같은 시간 KOSDAQ" };
-      $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+      $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${reactState.vsKq && (c === "30" || c === "60") ? `그린광학−KOSDAQ +${c}분` : t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
         <tbody>${sorted.map((x) => `<tr data-id="${esc(x.id)}"${reactState.pick === x.id ? ' class="on"' : ""}>
           <td class="nowrap">${x.ts ? `${x.ts.slice(2, 10).replace(/-/g, ".")} ${x.untimed ? "시각 미상" : hhmm(x.ts)}` : "-"}${x.mode ? ` <small class="muted">${MODE_TXT[x.mode] || ""}</small>` : ""}${x.time_quality === "check_time" ? ' <small class="time-src warn" title="공개 시각 확인 필요">시각?</small>' : ""}</td>
           <td class="nowrap">${kindTxt(x)}</td>
@@ -2294,7 +2294,10 @@
       const tr = ev.target.closest("tr[data-id]"); if (!tr) return;
       reactState.pick = reactState.pick === tr.dataset.id ? null : tr.dataset.id; draw();
     };
-    $("#rx-plot").onclick = (ev) => { const p = ev.target.closest("path[data-id]"); if (p) { reactState.pick = reactState.pick === p.dataset.id ? null : p.dataset.id; draw(); } };
+    // 선은 가늘게 두고, 그 밑에 보이지 않는 넓은 영역(rx-hit)으로 누르기 쉽게. 올리면 그 선을 강조하고 제목을 위에 보여 줌
+    $("#rx-plot").onclick = (ev) => { const g = ev.target.closest("g[data-id]"); if (g) { reactState.pick = reactState.pick === g.dataset.id ? null : g.dataset.id; draw(); } };
+    $("#rx-plot").onmouseover = (ev) => { const g = ev.target.closest("g[data-id]"); $("#rx-hover").textContent = g ? g.dataset.t : ""; };
+    $("#rx-plot").onmouseleave = () => { $("#rx-hover").textContent = ""; };
     $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map((c) => c[1]).concat(["주제", "언론사"]),
       items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "kq30", "60", "kq60"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
     if (dashResize) window.removeEventListener("resize", dashResize);
