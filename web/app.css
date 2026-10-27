@@ -1549,8 +1549,7 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 @media (max-width: 720px) { .rx-ctl .seg { flex-wrap: wrap; } .rx-ctl .seg button { padding-left: 10px; padding-right: 10px; } }
 
 /* 기사 반응: 단순 숫자 표 (통계는 접어 둠) */
-.simple-steps { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.simple-steps th:first-child { width: 84px; }
+.simple-steps { border-collapse: collapse; margin: 10px 0 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .simple-steps th, .simple-steps td { padding: 4px 12px 4px 0; text-align: right; white-space: nowrap; }
 .simple-steps thead th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .simple-steps tbody th { text-align: left; font-weight: 600; color: var(--ink-2); }
