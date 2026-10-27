@@ -186,7 +186,8 @@ def api_status(_q):
         "viewer": viewer, "share": share.status() if viewer == "local" else None,
         "cloud": cloud.status() if viewer == "local" else None,
         "rules": {
-            "move_pct": s.get("event_move_pct", 5.0), "big_pct": s.get("event_big_pct", 10.0),
+            "move_pct": s.get("event_move_pct", 10.0), "big_pct": s.get("event_big_pct", 15.0),
+            "watch_pct": s.get("event_watch_pct", 5.0),
             "window_min": s.get("event_window_minutes", 30), "hold_min": s.get("event_hold_minutes", 5),
         },
     }

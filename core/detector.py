@@ -69,8 +69,6 @@ def load_settings() -> dict:
     return s
 
 
-
-
 def robust_z(value: float, samples: list[float]) -> float:
     """중앙값·MAD 기반 이상도. 거래가 뜸해 MAD가 0이면 평균절대편차로 대체."""
     vals = [float(x) for x in samples if x is not None]
@@ -488,32 +486,6 @@ def recovered_at(day: pd.DataFrame, prev_close, s: dict) -> str | None:
     return f"{g['ts'].iloc[-1]:%H:%M}" if all(abs(r) < th for r in last) else None
 
 
-def multiday_events(symbol: str, s: dict, until: str) -> list[dict]:
-    """여러 날에 걸친 누적 등락: N거래일 전 종가 → 그날 종가가 ±M% 이상인 날 (장 마감 뒤 확정 종가 기준).
-
-    하루 -3%씩 사흘처럼 날마다는 기준 밑이라 놓치는 흐름을 잡음. 같은 방향은 누적이 ±절반(5%) 안으로
-    돌아오기 전까지 한 번만 기록합니다.
-    """
-    n = int(s.get("multiday_days", 5))
-    th = float(s.get("multiday_pct", 10.0)) / 100
-    rearm = th / 2
-    with connect() as conn:
-        rows = [dict(r) for r in conn.execute(
-            "SELECT date, close FROM daily_bars WHERE symbol=? AND date<=? AND close>0 ORDER BY date", (symbol, until))]
-    out, armed = [], {"up": True, "down": True}
-    for i in range(n, len(rows)):
-        a, b = rows[i - n], rows[i]
-        r = b["close"] / a["close"] - 1
-        if abs(r) < rearm:
-            armed = {"up": True, "down": True}
-        d = "up" if r > 0 else "down"
-        if abs(r) >= th and armed[d]:
-            armed[d] = False
-            out.append({"date": b["date"], "from": a["date"], "direction": d, "return": r, "days": n,
-                        "from_close": a["close"], "close": b["close"]})
-    return out
-
-
 def daily_event(symbol: str, day: str, s: dict, bars: pd.DataFrame | None):
     main_th = float(s.get("event_move_pct", 5.0)) / 100
     th = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
@@ -618,7 +590,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
 
     - 장중: 30분 안에 ±5% 이상 움직이고 유지된 구간
     - 하루: 종가가 전일보다 ±5% 이상 (장 마감 뒤 기록)
-    - ±10% 이상은 '대형', ±3~5%는 '관찰'(사이트 기록만, 알림 없음)
+    - ±15% 이상은 '대형', ±5~10%는 '관찰'(사이트 기록만, 알림 없음) — 기준 숫자는 settings.json
     처음 실행하거나 기준이 바뀌면 받아 둔 기간 전체를 다시 훑음. 이후에는 오늘(과 어제)만.
     Returns: 새로 생긴 이벤트 수
     """
@@ -626,6 +598,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
     from .feed import kst_now
     now = now or kst_now().replace(tzinfo=None)
     _ensure_version(symbol, log)
+    retier_events(symbol, log)
     _rescan_daily_krx(symbol, s, now, log)
     st = get_state(_state_key(symbol))
     if rescan and target_date is not None:
@@ -642,7 +615,6 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
         ddays = [r[0] for r in conn.execute("SELECT date FROM daily_bars WHERE symbol=? AND date>=? ORDER BY date",
                                             (symbol, max(lookback, since or lookback)))]
     today = now.date().isoformat()
-    first = first_naver_day(symbol)
     new = 0
     with connect() as conn:
         for day in sorted(set(days) | set(ddays)):
@@ -652,8 +624,7 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
             day_over = day < today or now.time() >= datetime.strptime("15:35", "%H:%M").time()
             evs = []
             if bars is not None:
-                evs += [ev for ev in intraday_events(bars, _prev_close(symbol, day), s, day_over)
-                        if not (ev["tier"] == "관찰" and backfilled_day(day, first))]   # 채운 지난 날은 ±5% 이상만
+                evs += intraday_events(bars, _prev_close(symbol, day), s, day_over)
             if day_over and (day < today or now.weekday() < 5):
                 dv = daily_event(symbol, day, s, bars)
                 if dv:
@@ -679,11 +650,45 @@ def detect_symbol(symbol: str, target_date=None, rescan: bool = False, now: date
                 new += _upsert(conn, symbol, ev)
     if days:
         set_state(_state_key(symbol), days[-1])
-    # 여러 날 누적 (확정 종가만: 장 마감 전에는 어제까지)
-    over = now.time() >= datetime.strptime("15:35", "%H:%M").time()
-    until = today if over else (now - timedelta(days=1)).date().isoformat()
-    set_state(multiday_key(symbol), json.dumps(multiday_events(symbol, s, until)[-30:]))
     return new
+
+
+TIERS_KEY = "detector_tiers_v2"      # v2: 관찰 ±5% · 급등·급락 ±10% · 대형 ±15% (그린광학 평소 출렁임에 맞춤, 2026-10)
+
+
+def retier_events(symbol: str, log=None) -> dict | None:
+    """기준을 바꾼 뒤 한 번: 지금 기록의 단계를 새 기준으로 다시 매김 (각 기록의 등락 크기로).
+    관찰 기준 밑은 지움. 직접 기록한 구간(요청)은 그대로. 바뀐 수를 돌려줌."""
+    if get_state(TIERS_KEY):
+        return None
+    s = load_settings()
+    main_th, big = float(s.get("event_move_pct", 10.0)) / 100, float(s.get("event_big_pct", 15.0)) / 100
+    watch = min(main_th, float(s.get("event_watch_pct", main_th * 100)) / 100)
+    out = {"deleted": 0, "changed": 0, "kept": 0}
+    with connect() as conn:
+        rows = conn.execute("SELECT id, tier, peak_return_5m FROM events WHERE symbol=? AND COALESCE(tier,'') != '요청'",
+                            (symbol,)).fetchall()
+        for eid, tier, mv in rows:
+            mv = abs(mv or 0)
+            if mv < watch:
+                conn.execute("DELETE FROM events WHERE id=?", (eid,))
+                out["deleted"] += 1
+                continue
+            new = _tier(mv, main_th, big)
+            if new != tier:
+                conn.execute("UPDATE events SET tier=? WHERE id=?", (new, eid))
+                out["changed"] += 1
+            else:
+                out["kept"] += 1
+        try:                                # 사이트의 급등·급락 상세도 새 단계로 다시 만들게
+            conn.execute("DELETE FROM site_items WHERE key LIKE 'event:%'")
+        except Exception:  # noqa: BLE001
+            pass
+    set_state(TIERS_KEY, json.dumps(out))
+    if log:
+        log(f"급등·급락 기준 변경(관찰 ±{watch*100:.0f}%·급등락 ±{main_th*100:.0f}%·대형 ±{big*100:.0f}%): "
+            f"기록 {out['deleted']}건 지움, {out['changed']}건 단계 바꿈, {out['kept']}건 그대로")
+    return out
 
 
 def first_naver_day(symbol: str) -> str | None:
@@ -691,10 +696,6 @@ def first_naver_day(symbol: str) -> str | None:
     with connect() as conn:
         return conn.execute("SELECT MIN(substr(ts,1,10)) FROM minute_bars WHERE symbol=? AND source LIKE 'naver%'",
                             (symbol,)).fetchone()[0]
-
-
-def backfilled_day(day: str, first: str | None) -> bool:
-    return bool(first) and day < first
 
 
 def rescan_before_naver(symbol: str, log=None) -> int:
@@ -710,12 +711,9 @@ def rescan_before_naver(symbol: str, log=None) -> int:
     with connect() as conn:
         for day, bars in df.groupby(df["date"].astype(str)):
             for ev in intraday_events(bars, _prev_close(symbol, day), s, True):
-                if ev["tier"] != "관찰":       # 채운 지난 날은 ±5% 이상만 (상장 직후 잦은 ±3% 출렁임이 목록을 덮지 않게)
-                    new += _upsert(conn, symbol, ev)
+                new += _upsert(conn, symbol, ev)
     if log:
         log(f"지난 1분봉으로 장중 급등·급락 다시 찾기 ({first or '-'} 전): 새로 {new}건")
     return new
 
 
-def multiday_key(symbol: str) -> str:
-    return f"detector_multiday:{symbol}"

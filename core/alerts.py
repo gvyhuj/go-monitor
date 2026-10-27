@@ -6,9 +6,8 @@ GitHub 휴대폰 앱이 '언급' 알림을 푸시로 보내 줍니다. 글은 �
 저장소가 공개라서 알림 글에는 '급등 +8.7% (10:12)' 같은 공개 시세 정보만 적고,
 원인 분석은 비밀번호가 걸린 사이트에서만 보게 합니다.
 
-같은 날 같은 방향은 한 번만, 그 뒤 ±10% 이상('대형')으로 커지면 한 번 더 보냅니다.
-장중에 ±3% 안으로 회복했다가 다시 기준을 넘으면 한 번 더 보냅니다.
-여러 날 누적(5거래일 ±10%)도 알립니다.
+같은 날 같은 방향은 한 번만, 그 뒤 ±15% 이상('대형')으로 커지면 한 번 더 보냅니다.
+장중에 관찰 기준(±5%) 안으로 회복했다가 다시 기준을 넘으면 한 번 더 보냅니다.
 """
 from __future__ import annotations
 
@@ -120,43 +119,6 @@ def send_new(symbol: str, log=None) -> int:
             sent.add(key)
             if tier == "대형":
                 sent.add(f"{e['start_ts'][:10]}:{e['direction']}:일반{sfx}")
-            n += 1
-            if log:
-                log(f"알림 보냄: {title}")
-        except (urllib.error.URLError, KeyError, ValueError) as ex:
-            if log:
-                log(f"알림 실패: {ex}")
-            break
-    _save(sent)
-    return n + send_multiday(symbol, log)
-
-
-def send_multiday(symbol: str, log=None) -> int:
-    """여러 날 누적 급등·급락 알림 (장 마감 뒤 확정 종가 기준, 최근 3일 안의 기록만)."""
-    from .detector import multiday_key
-    st = get_state(multiday_key(symbol))
-    try:
-        items = json.loads(st["value"]) if st else []
-    except (ValueError, TypeError):
-        return 0
-    sent = _sent()
-    keys = {f"multi:{m['date']}:{m['direction']}": m for m in items}
-    if not get_state("alerts:multiday_init"):     # 처음 켤 때 지난 기록으로 알림이 쏟아지지 않게
-        _save(sent | set(keys))
-        set_state("alerts:multiday_init", datetime.now().isoformat(timespec="minutes"))
-        return 0
-    recent = (datetime.now() - timedelta(days=3)).date().isoformat()
-    n = 0
-    for key, m in keys.items():
-        if key in sent or m["date"] < recent:
-            continue
-        word = "상승" if m["direction"] == "up" else "하락"
-        md = lambda d: d[5:10].replace("-", "/")
-        title = f"{m['days']}일 누적 {word} {m['return']*100:+.1f}% ({md(m['from'])} 종가 → {md(m['date'])} 종가)"
-        try:
-            _post_issue(title, _body(f"주가가 {m['days']}거래일 동안 {m['return']*100:+.1f}% 움직였습니다 "
-                                      "(하루하루는 기준 밑이어도 쌓이면 알립니다)."))
-            sent.add(key)
             n += 1
             if log:
                 log(f"알림 보냄: {title}")

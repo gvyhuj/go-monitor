@@ -24,6 +24,11 @@ def tmpdb(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DATA_DIR", tmp_path)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
     db.init_db()
+    # 알림 동작(한 번만, 회복 뒤 한 번 더 등)을 보는 시험이라 기준 숫자는 예전 값(±3·5·10%)으로 고정
+    real = detector.load_settings
+    monkeypatch.setattr(detector, "load_settings",
+                        lambda: {**real(), "event_watch_pct": 3.0, "event_move_pct": 5.0, "event_big_pct": 10.0})
+    db.set_state(detector.TIERS_KEY, "test")         # 단계 다시 매기기는 따로 시험
     sent = []
     monkeypatch.setattr(alerts, "_post_issue", lambda title, body: sent.append(title) or 1)
     return sent
@@ -103,7 +108,6 @@ def test_one_alert_for_one_drop(tmpdb):
 def test_recover_then_drop_again_alerts_twice(tmpdb):
     today = date.today().isoformat()
     db.set_state("alerts:sent", json.dumps(["init"]))
-    db.set_state("alerts:multiday_init", "x")
     _put(today, _path(SLOW_DROP), prev_day="2000-01-01")
     detector.detect_symbol(SYM, now=datetime.fromisoformat(f"{today}T11:49"))
     assert alerts.send_new(SYM) == 1
@@ -141,37 +145,6 @@ def _daily(closes, start=date(2026, 9, 1)):
             d += timedelta(days=1)
 
 
-def test_multiday_slow_bleed_once_until_rearm(tmpdb):
-    # 하루 -3%씩 닷새(어느 날도 -5% 아님) → 5일 누적 -14% 한 번. 계속 빠져도 다시 안 셈
-    closes = [10000] * 6 + [10000 * 0.97 ** i for i in range(1, 9)]
-    _daily(closes)
-    evs = detector.multiday_events(SYM, {"multiday_days": 5, "multiday_pct": 10.0}, "2099-01-01")
-    assert len(evs) == 1 and evs[0]["direction"] == "down" and evs[0]["return"] <= -0.10
-
-
-def test_multiday_rearms_after_recovery(tmpdb):
-    down = [10000 * 0.97 ** i for i in range(1, 6)]
-    flat = [down[-1]] * 6                       # 5일 누적이 0으로 돌아옴 → 다시 셀 수 있음
-    again = [down[-1] * 0.97 ** i for i in range(1, 6)]
-    _daily([10000] * 6 + down + flat + again)
-    evs = detector.multiday_events(SYM, {"multiday_days": 5, "multiday_pct": 10.0}, "2099-01-01")
-    assert len(evs) == 2
-
-
-def test_multiday_alert_not_flooded_on_first_run(tmpdb):
-    db.set_state("alerts:sent", json.dumps(["init"]))
-    today = date.today().isoformat()
-    db.set_state(detector.multiday_key(SYM), json.dumps([
-        {"date": "2026-01-05", "from": "2025-12-29", "direction": "down", "return": -0.12, "days": 5}]))
-    assert alerts.send_multiday(SYM) == 0       # 처음: 지난 기록은 보낸 것으로 표시만
-    items = json.loads(db.get_state(detector.multiday_key(SYM))["value"])
-    items.append({"date": today, "from": today, "direction": "down", "return": -0.11, "days": 5})
-    db.set_state(detector.multiday_key(SYM), json.dumps(items))
-    assert alerts.send_multiday(SYM) == 1
-    assert "5일 누적 하락" in tmpdb[-1]
-    assert alerts.send_multiday(SYM) == 0
-
-
 def test_krx_daily_rescan_fixes_numbers_and_drops_below_threshold(tmpdb):
     # 넥스트레이드가 섞인 예전 일봉으로 만든 '급등 +6.97%' 기록 → 거래소 종가로는 +2.41%라 지워짐,
     # 거래소 종가로 -11.25%인 날은 같은 번호에 숫자만 고쳐 씀. 붙여넣은 원인은 그대로 남음
@@ -206,3 +179,19 @@ def test_small_trade_value_is_still_detected():
     evs = detector.intraday_events(bars, PREV, S, day_over=False)
     assert [e for e in evs if e["direction"] == "down"]
     assert detector.running_daily_event(bars, PREV, S) is not None
+
+
+def test_retier_events_once_with_new_thresholds(tmpdb, monkeypatch):
+    """기준을 바꾸면 한 번: 관찰 밑은 지우고 나머지는 새 단계로 (직접 기록한 요청은 그대로)."""
+    with db.connect() as conn:
+        conn.execute("DELETE FROM system_state WHERE key=?", (detector.TIERS_KEY,))
+        conn.executemany("INSERT INTO events(symbol, start_ts, last_ts, event_type, direction, tier, peak_return_5m) "
+                         "VALUES ('S', '2026-10-01T10:00', '2026-10-01T10:30', 'intraday', 'down', ?, ?)",
+                         [("관찰", -0.04), ("일반", -0.06), ("대형", -0.12), ("대형", 0.16), ("요청", -0.01)])
+    monkeypatch.setattr(detector, "load_settings", lambda: {"event_watch_pct": 5.0, "event_move_pct": 10.0, "event_big_pct": 15.0})
+    out = detector.retier_events("S")
+    assert out == {"deleted": 1, "changed": 2, "kept": 1}
+    with db.connect() as conn:
+        tiers = sorted((round(r[0], 2), r[1]) for r in conn.execute("SELECT peak_return_5m, tier FROM events"))
+    assert tiers == [(-0.12, "일반"), (-0.06, "관찰"), (-0.01, "요청"), (0.16, "대형")]
+    assert detector.retier_events("S") is None
