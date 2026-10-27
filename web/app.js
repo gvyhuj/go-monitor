@@ -927,7 +927,7 @@
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-head"></div>
           <div class="rec-main"><div class="rec-left"><div id="rec-chart"></div>
-            <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span><span class="muted">선 위 점을 누르면 그날로</span></div></div>
+            <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div></div>
             <aside class="rec-side" id="rec-side"></aside></div>
         </section><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
@@ -943,7 +943,7 @@
         new ResizeObserver(() => {
           const h = Math.round(side.getBoundingClientRect().height);
           if (h === lastH) return; lastH = h;
-          clearTimeout(t); t = setTimeout(() => { if (grid.isConnected && calState.range !== "1d") lineChart(); }, 150);
+          clearTimeout(t); t = setTimeout(() => { if (!grid.isConnected) return; if (calState.range !== "1d") lineChart(); else fitDayChart(); }, 150);
         }).observe(side);
       }
     }
@@ -1161,6 +1161,16 @@
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
     }
 
+    // 1일 탭: 그날 급등·급락 줄이 없거나 적어 왼쪽 칸이 오른쪽 '주요 숫자'보다 짧으면, 남는 만큼 1분 차트를 키워 빈칸을 없앰
+    function fitDayChart() {
+      const el = $("#rec-chart"), c = el && $(".rc-day .day-chart", el), left = el && el.closest(".rec-left"), side = $("#rec-side");
+      if (!c || !left || !side) return;
+      c.style.height = "";                                   // 기본 높이(CSS)로 되돌린 뒤 다시 잼
+      if (getComputedStyle(left.parentElement).gridTemplateColumns.split(" ").length !== 2) return;   // 좁은 화면(한 줄)은 그대로
+      const spare = side.getBoundingClientRect().bottom - left.lastElementChild.getBoundingClientRect().bottom;
+      if (spare > 8) c.style.height = `${Math.min(600, c.offsetHeight + spare)}px`;
+    }
+
     // 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
     async function dayChart() {
       const seq = ++loadSeq, ds = calState.sel;
@@ -1200,6 +1210,7 @@
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
       const dayAsk = $("[data-day-ask]", art);
       if (dayAsk) dayAsk.onclick = () => openDay(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
+      requestAnimationFrame(fitDayChart);
     }
 
     // 고른 날 주요 숫자 (토스 '1일 범위·52주 범위'·투자자별, 네이버 시가·고가·저가·거래량 칸 참고)
