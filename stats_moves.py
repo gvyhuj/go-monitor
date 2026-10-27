@@ -84,7 +84,13 @@ def main(argv) -> int:
         db.write_bytes(data)
         with closing(sqlite3.connect(db)) as conn:
             row = conn.execute("SELECT value FROM system_state WHERE key='private_config'").fetchone()
-            sym = (json.loads(row[0]) if row else {}).get("symbol")
+            priv = json.loads(row[0]) if row else {}
+            sym = priv.get("symbol")
+            # 기록 속 비공개 설정: 항목 이름만 (값은 안 찍음), 급등·급락 기준 숫자가 들어 있으면 그 값만
+            print("## 기록 속 비공개 설정 (private_config)")
+            print("- 항목: " + (", ".join(sorted(priv)) or "없음"))
+            th = {k: priv[k] for k in priv if k.startswith("event_") or k.startswith("multiday")}
+            print("- 급등·급락 기준 숫자: " + (json.dumps(th, ensure_ascii=False) if th else "없음 → settings.json 값을 씀") + "\n")
             if not sym:
                 sym = conn.execute("SELECT symbol FROM daily_bars WHERE symbol != 'KOSDAQ' GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 1").fetchone()[0]
             own = daily_returns(conn, sym)[LISTING_SKIP:]
