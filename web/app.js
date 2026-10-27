@@ -475,6 +475,8 @@
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);
+      // 차트 높이가 바뀌면(1일 탭에서 빈칸만큼 키울 때 등) 가격 축이 다시 그려진 뒤 표시를 다시 놓음 (위 구독은 폭 변화만 알림)
+      if (window.ResizeObserver) new ResizeObserver(() => requestAnimationFrame(() => requestAnimationFrame(placeTags))).observe(el);
     }
     if (extendTo) {
       // 장 끝까지 빈 칸이 보이도록 가장자리 고정을 풀고 범위를 직접 지정
