@@ -325,15 +325,18 @@
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
   function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, barMinutes = 1 } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
-    const lineColor = dark ? "#FFFFFF" : (matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2"));
+    // 선 색: 전일 종가(없으면 첫 봉)보다 위면 빨강, 아래면 파랑 (네이버·증권사 앱처럼)
+    const ref = prevClose || (bars.length ? bars[0].c : null), last = bars.length ? bars[bars.length - 1].c : null;
+    const lineColor = kindColor(ref && last != null && last < ref ? "down" : "up", dark);
     const price = chart.addSeries(LW.LineSeries, {
-      color: lineColor, lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+      color: lineColor, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true,
       priceFormat: { type: "custom", minMove: 1, formatter: (v) => won(v) },
       crosshairMarkerRadius: 4,
     }, 0);
     const vol = chart.addSeries(LW.HistogramSeries, {
       priceFormat: { type: "custom", minMove: 1, formatter: (v) => int(v) }, priceLineVisible: false, lastValueVisible: false,
     }, 1);
+    price.priceScale().applyOptions({ scaleMargins: { top: 0.16, bottom: 0.14 } });   // 위·아래 여백: 최고·최저·급등락 글자 자리
     chart.panes()[1].setStretchFactor(0.32);
     chart.panes()[0].setStretchFactor(1);
 
@@ -362,57 +365,73 @@
       price.createPriceLine({ price: prevClose, color: dark ? "rgba(255,255,255,.4)" : css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed, axisLabelVisible: true, title: "전일 종가" });
     }
     let pinT = null, showAt = () => {};      // 이름표에 마우스를 올린 동안 위 줄(시각·가격·거래량)을 그 시각으로 고정 (아래 legend에서 채움)
-    if (events.length) {
-      // 급등·급락 표시: 숫자(-4.5% 등)에 실제로 닿은 지점에 흰 속 고리 점, 그 점에서 색 바탕 이름표까지 세로선
-      // (하락은 위쪽, 상승은 아래쪽에 이름표. 선과 같은 파랑 계열이어도 흰 속 덕분에 지점이 또렷함). 누르면 원인 분석 창
-      el.style.position = "relative";
-      const tags = events.map((e) => {
-        const t = toTime(e.peak_ts || e.start_ts), b = bars.find((x) => toTime(x.t) === t), color = kindColor(e.direction, dark);
-        const mk = (tagName, cls) => {
-          const n = document.createElement(tagName);
-          n.className = cls;
-          n.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
-          n.addEventListener("pointerup", (ev) => ev.stopPropagation());
-          if (onEvent) n.addEventListener("click", () => onEvent(e.id));
-          // 이름표 위에 마우스가 있으면 차트는 마우스가 나간 줄 알고 맨 위 줄에 마지막 봉(예: 15:30)을 보여 줌
-          // → 그 표시가 가리키는 시각·가격으로 십자선을 옮겨, 위 줄도 그 시각 값이 나오게
-          if (b) {
-            n.addEventListener("mouseenter", () => { chart.setCrosshairPosition(b.c, t, price); showAt(t); });
-            n.addEventListener("mouseleave", () => { chart.clearCrosshairPosition(); showAt(null); });
-          }
-          el.appendChild(n);
-          return n;
-        };
-        const lead = mk("div", "ev-lead"), ring = mk("button", "ev-ring"), tag = mk("button", "ev-tag");
-        ring.type = tag.type = "button";
-        ring.setAttribute("aria-label", `${pct(e.peak_return_5m, 1)} 원인 분석 열기`);
-        tag.textContent = pct(e.peak_return_5m, 1);
-        tag.style.background = lead.style.background = ring.style.borderColor = color;
-        return { tag, ring, lead, t, px: b ? b.c : null, up: e.direction === "up" };
-      });
-      // 이름표끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 반대쪽으로 뒤집거나 더 멀리 띄움
-      const placeTags = () => {
-        const H = el.clientHeight, placed = [];
-        const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
-        tags.map((g) => ({ g, x: chart.timeScale().timeToCoordinate(g.t), y: g.px == null ? null : price.priceToCoordinate(g.px) }))
-          .sort((p, q) => (p.x ?? 0) - (q.x ?? 0))
-          .forEach(({ g: { tag, ring, lead, up }, x, y }) => {
-            const off = x == null || y == null;
-            tag.hidden = ring.hidden = lead.hidden = off;
-            if (off) return;
-            const w = tag.offsetWidth || 52, h = tag.offsetHeight || 22, d = up ? 1 : -1;
-            const box = (ty) => ({ l: x - w / 2, r: x + w / 2, t: ty - h / 2, b: ty + h / 2 });
-            const inside = (ty) => ty - h / 2 >= 2 && ty + h / 2 <= H - 2;
-            const cands = [40, -40, 70, -70, 100, -100].map((k) => y + d * k);
-            const ty = cands.find((c) => inside(c) && !placed.some((p) => hit(p, box(c)))) ?? cands.find(inside) ?? cands[0];
-            placed.push(box(ty));
-            tag.style.left = ring.style.left = lead.style.left = `${x}px`;
-            tag.style.top = `${ty}px`;
-            ring.style.top = `${y}px`;
-            lead.style.top = `${Math.min(y, ty)}px`;
-            lead.style.height = `${Math.abs(ty - y)}px`;
-          });
+    el.style.position = "relative";
+    // 급등·급락 표시: 숫자(-4.5% 등)에 실제로 닿은 지점에 흰 속 고리 점, 그 옆(상승은 위, 하락은 아래)에 색 글자.
+    // 바탕 상자 없이 글자만(흰 테두리 글씨) 두어 선을 가리지 않음. 누르면 원인 분석 창
+    const tags = events.map((e) => {
+      const t = toTime(e.peak_ts || e.start_ts), b = bars.find((x) => toTime(x.t) === t), color = kindColor(e.direction, dark);
+      const mk = (tagName, cls) => {
+        const n = document.createElement(tagName);
+        n.className = cls;
+        n.addEventListener("pointerdown", (ev) => ev.stopPropagation());   // 차트 구간 고르기와 겹치지 않게
+        n.addEventListener("pointerup", (ev) => ev.stopPropagation());
+        if (onEvent) n.addEventListener("click", () => onEvent(e.id));
+        // 이름표 위에 마우스가 있으면 차트는 마우스가 나간 줄 알고 맨 위 줄에 마지막 봉(예: 15:30)을 보여 줌
+        // → 그 표시가 가리키는 시각·가격으로 십자선을 옮겨, 위 줄도 그 시각 값이 나오게
+        if (b) {
+          n.addEventListener("mouseenter", () => { chart.setCrosshairPosition(b.c, t, price); showAt(t); });
+          n.addEventListener("mouseleave", () => { chart.clearCrosshairPosition(); showAt(null); });
+        }
+        el.appendChild(n);
+        return n;
       };
+      const ring = mk("button", "ev-ring"), tag = mk("button", "ev-tag");
+      ring.type = tag.type = "button";
+      ring.setAttribute("aria-label", `${pct(e.peak_return_5m, 1)} 원인 분석 열기`);
+      tag.textContent = pct(e.peak_return_5m, 1);
+      tag.style.color = ring.style.borderColor = color;
+      return { tag, ring, t, px: b ? b.c : null, up: e.direction === "up" };
+    });
+    // 그날 최고·최저 (종가 선 기준): 작은 빈 점 + '최고 10,750' / '최저 10,350' 글자 (최고는 위, 최저는 아래)
+    const marks = [];
+    if (bars.length > 1) {
+      const hi = bars.reduce((a, b) => (b.c > a.c ? b : a)), lo = bars.reduce((a, b) => (b.c < a.c ? b : a));
+      for (const [b, up, label] of [[hi, true, "최고"], [lo, false, "최저"]]) {
+        if (hi.c === lo.c && !up) break;
+        const dot = document.createElement("i"), txt = document.createElement("span");
+        dot.className = "hl-dot"; txt.className = "hl-tag";
+        txt.textContent = `${label} ${won(b.c)}`;
+        dot.style.borderColor = lineColor;
+        el.append(dot, txt);
+        marks.push({ tag: txt, ring: dot, t: toTime(b.t), px: b.c, up });
+      }
+    }
+    // 글자끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 더 멀리 띄우거나 반대쪽으로. 급등·급락 숫자를 먼저 놓음
+    const placeTags = () => {
+      const H = chart.panes()[0].getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
+      const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
+      const place = ({ g: { tag, ring, up }, x, y }, side = false) => {
+        const off = x == null || y == null;
+        tag.hidden = ring.hidden = off;
+        if (off) return;
+        const w = tag.offsetWidth || 52, h = tag.offsetHeight || 18, d = up ? -1 : 1;
+        const clampX = (v) => Math.min(Math.max(v, w / 2 + 2), W - w / 2 - 2);   // 좌우 끝에서 글자가 잘리지 않게
+        const box = ([cx, ty]) => ({ l: cx - w / 2, r: cx + w / 2, t: ty - h / 2, b: ty + h / 2 });
+        const inside = ([, ty]) => ty - h / 2 >= 0 && ty + h / 2 <= H;
+        // 후보 자리: 점 위(상승·최고)나 아래(하락·최저)로 조금씩 멀리, 최고·최저(side)는 막히면 점 옆(좌우)
+        const cands = [16, 32, 48].map((k) => [clampX(x), y + d * k]);
+        if (side) cands.push([clampX(x + w / 2 + 12), y - d * 6], [clampX(x - w / 2 - 12), y - d * 6]);
+        cands.push([clampX(x), y - d * 16], [clampX(x), y - d * 32]);
+        const [cx, ty] = cands.find((c) => inside(c) && !placed.some((p) => hit(p, box(c)))) ?? cands.find(inside) ?? cands[0];
+        placed.push(box([cx, ty]), { l: x - 7, r: x + 7, t: y - 7, b: y + 7 });
+        tag.style.left = `${cx}px`; ring.style.left = `${x}px`;
+        tag.style.top = `${ty}px`; ring.style.top = `${y}px`;
+      };
+      const pos = (g) => ({ g, x: chart.timeScale().timeToCoordinate(g.t), y: g.px == null ? null : price.priceToCoordinate(g.px) });
+      tags.map(pos).sort((p, q) => (p.x ?? 0) - (q.x ?? 0)).forEach(place);
+      marks.map(pos).forEach((p) => place(p, true));
+    };
+    if (tags.length || marks.length) {
       chart.timeScale().subscribeVisibleLogicalRangeChange(placeTags);
       chart.timeScale().subscribeSizeChange(placeTags);
       requestAnimationFrame(placeTags);
@@ -1124,6 +1143,7 @@
       const i = daily.findIndex((x) => x.date === ds);
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
+        <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
         ${coarseIv ? `<span class="muted">1분봉이 없어 야후 ${coarseIv}분봉</span>` : ""}</div>`;
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
@@ -1188,6 +1208,7 @@
         else lineChart();
         return;
       }
+      if (ev.target.closest("[data-today]")) { pick(latest); return; }
       const step = ev.target.closest("[data-step]");
       if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
       const pk = ev.target.closest("[data-pick]");
@@ -1567,69 +1588,6 @@
     renderEventDrawer(d);
   }
 
-  const TIMING_CLS = { "선행": "lead", "동시": "same", "후행": "late", "확인 필요": "same" };
-
-  function splitBlock(sp) {
-    if (!sp || sp.own == null) return "";
-    const fp = sp.factor_parts;
-    const rows = fp ? [
-      { k: "이 종목 실제 변동", v: sp.own, cls: "me" },
-      { k: `시장 몫 <small>KOSDAQ ${pct(fp[0].factor)} × 민감도 ${fp[0].beta.toFixed(2)}</small>`, v: sp.market },
-      ...fp.slice(1).map((f) => ({ k: `분야 몫 · ${esc(f.name)} <small>${f.kind === "seg" ? "비교 종목 평균" : "ETF"} ${pct(f.factor)} 중 시장과 무관한 부분 ${pct(f.factor_resid)} × 민감도 ${f.beta.toFixed(2)}</small>`, v: f.contrib })),
-      { k: "이 종목 고유 몫 <small>= 실제 − 시장 몫 − 분야 몫</small>", v: sp.specific, cls: "abn" },
-    ] : [
-      { k: "이 종목 실제 변동", v: sp.own, cls: "me" },
-      { k: `시장 몫 <small>KOSDAQ ${pct(sp.kosdaq)}${sp.beta_market ? ` × 민감도 ${sp.beta_market.toFixed(2)}` : ""}</small>`, v: sp.market },
-      { k: `업종 몫 <small>${sp.sector_avg != null ? `같은 업종 평균 ${pct(sp.sector_avg)}` : "같은 업종 시세 없음"}</small>`, v: sp.sector },
-      { k: "이 종목 고유 몫 <small>= 실제 − 시장 몫 − 업종 몫</small>", v: sp.specific, cls: "abn" },
-    ];
-    const max = Math.max(0.005, ...rows.map((r) => Math.abs(r.v || 0)));
-    const share = sp.external_share;
-    const judge = share == null ? "" : `시장·업종 몫 비율 <b>${Math.round(share * 100)}%</b>.`;
-    return `<ul class="rel decomp">${rows.map((r) => `<li class="${r.cls || ""}"><span class="nm">${r.k}</span>
-        <span class="dbar"><i class="${(r.v || 0) >= 0 ? "b" : "s"}" style="${(r.v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(r.v) / max) * 50}%`};width:${(Math.abs(r.v || 0) / max) * 50}%"></i></span>
-        <span class="num v ${sgnCls(r.v)}">${pct(r.v)}</span></li>`).join("")}</ul>
-      <p class="flow-sum" style="margin-top:8px">${judge}${sp.abn_p != null ? ` 고유 몫은 ${esc(sp.abn_basis || "평소 기록 대비")}, 이만큼 이상 움직인 경우가 <b>${sp.abn_p < 0.01 ? "1% 미만" : `${(sp.abn_p * 100).toFixed(sp.abn_p < 0.1 ? 1 : 0)}%`}</b>입니다.` : ""}</p>`;
-  }
-
-  function causalBlock(ca, mv) {
-    if (!ca) return "";
-    const rows = [];
-    const verdict = (ok, txt) => `<span class="cv ${ok === true ? "pass" : ok === false ? "fail" : "na"}">${txt}</span>`;
-    const es = ca.event_study;
-    if (es && es.ok) {
-      const pre = (es.car || []).find((x) => x.window.startsWith("사전"));
-      rows.push(`<li><div class="ch"><b>${esc(es.method || "시장 회귀")}</b><small>추정에 사용한 ${es.n_est}거래일</small></div>
-        <p>평소 관계로 예상되는 등락 ${pct(es.expected)} 대비 실제 ${pct(es.actual)} → 비정상수익률 <b>${pct(es.ar)}</b> (모형 가정에 따른 양측 p=${es.p.toFixed(3)}).
-        ${pre ? ` 직전 5일 비정상수익률 합계 ${pct(pre.car)}(p=${pre.p.toFixed(2)})` : ""}
-        ${es.vol_ratio ? ` 거래량은 평소의 ${es.vol_ratio.toFixed(1)}배.` : ""}</p></li>`);
-    } else if (es) rows.push(`<li><div class="ch">${verdict(null, "자료 부족")}<b>시장만 감안한 계산</b></div><p>${esc(es.reason || "")}</p></li>`);
-    const fa = ca.factor;
-    if (fa && fa.ok) {
-      rows.push(`<li><div class="ch"><b>① 몫 나누기 계산식</b><small>시장(KOSDAQ) + 업종 ETF 회귀, 직전 ${fa.n_est}거래일</small></div>
-        <p>${fa.parts.map((x) => `${esc(x.name)} ${pct(x.contrib)}`).join(" + ")} + 고유 <b>${pct(fa.specific)}</b> = 실제 ${pct(fa.actual)}.
-        고유 몫은 평소 고유 변동(하루 ±${(fa.sigma * 100).toFixed(1)}%)의 ${Math.abs(fa.z).toFixed(1)}배(p=${fa.p.toFixed(3)}). 설명 비율(R²) ${(fa.r2 * 100).toFixed(0)}%.</p></li>`);
-    }
-    const ti = ca.intensity;
-    if (ti && ti.vol_x) {
-      rows.push(`<li><div class="ch"><b>③ 거래 강도</b><small>20일 평균 대비 거래량 · 같은 돈 대비 움직임</small></div>
-        <p>거래량 ${int(ti.volume)}주로 20일 평균의 <b>${ti.vol_x.toFixed(1)}배</b>, 거래대금 ${eok(ti.value)}(평균 ${eok(ti.adval)}).
-        ${ti.impact_x ? `같은 거래대금 대비 주가 움직임은 평소의 ${ti.impact_x.toFixed(1)}배입니다.` : ""}
-</p></li>`);
-    }
-    if (!rows.length) return "";
-    return `<details class="causal-more"><summary>계산 근거 자세히 보기</summary><ul class="causal">${rows.join("")}</ul></details>`;
-  }
-
-  // 숫자로 본 움직임 (자동 기록). 원인 결론·후보는 싣지 않음 — 원인은 직접 붙여넣은 글로
-  function factsBlock(c) {
-    const head = `<div class="sec-head"><h3 class="d-sec">숫자로 본 움직임</h3>
-      <span class="stage">${c ? `자동 기록, ${esc((c.analyzed_at || "").slice(5, 16).replace("T", " "))} 기준` : "아직 계산 전"}</span></div>`;
-    if (!c) return head + `<div class="empty"><strong>아직 계산 전입니다.</strong>다음 자동 수집 때 채워집니다.</div>`;
-    return head + `<h4 class="d-sub-h">몫 나누기 · 시장 몫 + 업종 몫 + 이 종목 고유 몫</h4>${splitBlock(c.split) || '<p class="note">시장·업종 비교 자료가 없어 나누지 못했습니다.</p>'}
-      ${causalBlock(c.causal, c.move)}`;
-  }
-
   // 원인: ChatGPT 등에서 받은 답을 붙여넣은 글
   // 붙여넣은 답의 마크다운(### 제목, **굵게**, - 목록, 1. 번호, [글](주소), 주소)을 화면 형식으로
   function mdInline(t) {
@@ -1841,11 +1799,9 @@
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
-        <section class="d-block">${factsBlock(c)}</section>
         <section class="d-block">${relatedBlock(c, e.own_change)}</section>
         ${disclosureBlock(c)}
         <section class="d-block">${flowBlock(c)}${followupBlock(d.followups)}</section>
-        <div class="rule-full"><b>감지 근거</b><br>${esc(e.rule)}</div>
       </section>`;
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     const dDel = $("#drawer-body [data-ev-del]");
