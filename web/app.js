@@ -956,9 +956,9 @@
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${r(hi)}</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${r(lo)}</span></span></span>
-        <span class="rh-kq"><small>KOSDAQ</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b>${kq != null && chg != null ? `<small>종목이 시장보다 ${pct(chg - kq).replace("%", "%p")}</small>` : ""}</span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
+        <span class="rh-kq"><small>KOSDAQ</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b>${kq != null && chg != null ? `<small>종목이 시장보다 ${pct(chg - kq).replace("%", "%p")}</small>` : ""}</span>
       </button>`;
     }
     // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
@@ -2155,7 +2155,7 @@
   const artViewSeg = (pivot) => `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${!pivot}">목록</a><a href="#/pivot" aria-pressed="${pivot}">대시보드</a></div>`;
 
   // 기사 대시보드: 월별·주제·언론사·기자 막대를 누르면 서로 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
-  const pivotState = { range: "all", unit: "outlet", kind: "all", f: {}, pages: { office: 0, reporter: 0, feed: 0 } };
+  const pivotState = { range: "all", unit: "outlet", kind: "all", f: {}, pages: { office: 0, reporter: 0, feed: 0 }, q: { office: "", reporter: "" } };
   const DASH_PER = 10;           // 순위·기사 목록 한 쪽에 보이는 줄 수
   // 쪽 번호: ‹ 1 2 3 … 9 › (지금 쪽 앞뒤 2쪽과 처음·끝)
   function dashPager(key, page, total) {
@@ -2257,8 +2257,8 @@
       <div id="dash-kpi" class="dash-kpis"></div>
       <section class="panel dash-card d-trend"><div class="dash-card-head"><h3>기사 추이 <small class="muted">월별</small></h3></div><div id="dash-month"></div></section>
       <section class="panel dash-card d-topic"><div class="dash-card-head"><h3>주제</h3></div><div id="dash-topic" class="dash-chips-row"></div></section>
-        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">10곳씩</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
-        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">10명씩 · 같은 이름도 언론사가 다르면 따로</small><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>상위 언론사</h3><small class="muted">10곳씩</small><input type="search" class="dash-q" data-q="office" placeholder="언론사 찾기" aria-label="언론사 이름으로 찾기" autocomplete="off"><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-office"></div></section>
+        <section class="panel dash-card d-half"><div class="dash-card-head"><h3>자주 쓴 기자</h3><small class="muted">10명씩 · 같은 이름도 언론사가 다르면 따로</small><input type="search" class="dash-q" data-q="reporter" placeholder="기자·언론사 찾기" aria-label="기자 이름으로 찾기" autocomplete="off"><span class="dash-leg"><span><i class="dot s-pr"></i>보도자료</span><span><i class="dot s-ext"></i>외부 기사</span></span></div><div id="dash-reporter"></div></section>
       <section class="panel dash-card d-full"><div class="dash-card-head"><h3>기사 <small class="muted" id="dash-n"></small></h3><select id="dash-feed-month" class="dash-sel" aria-label="기사 목록 달"></select><span class="spacer"></span>
         <span class="dash-dl"><button class="btn small" type="button" id="piv-csv">지금 조건 엑셀로</button>
         <button class="btn small" type="button" id="piv-csv-all">원본 전체 엑셀로</button></span></div>
@@ -2281,7 +2281,10 @@
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
     function board(el, dim) {
       const all = base.filter((r) => pass(r, dim));
-      const full = dashAgg(all, dim);
+      // 이름 찾기: 순위는 전체 기준 그대로 두고, 찾는 말이 들어간 줄만 보여 줌 (기자는 '이름 · 언론사'에서 찾음)
+      const nq = (pivotState.q[dim] || "").toLowerCase().replace(/\s+/g, "");
+      const ranked = dashAgg(all, dim).map((x, i) => ({ ...x, rank: i + 1 }));
+      const full = nq ? ranked.filter((x) => x.key.toLowerCase().replace(/\s+/g, "").includes(nq)) : ranked;
       const pages = pivotState.pages, last = Math.max(0, Math.ceil(full.length / DASH_PER) - 1);
       pages[dim] = Math.min(pages[dim] || 0, last);
       const from = pages[dim] * DASH_PER, list = full.slice(from, from + DASH_PER);
@@ -2292,12 +2295,12 @@
         const [name, sub] = dim === "reporter" ? x.key.split(" · ") : [x.key, ""];
         const pr = x.by["그린광학 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
-          <span class="rk">${from + i + 1}</span>
+          <span class="rk">${x.rank}</span>
           <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
             <b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
           <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
           <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
-      }).join("")}</ol>${dashPager(dim, pages[dim], full.length)}` : `<p class="muted">해당 기사가 없습니다.</p>`;
+      }).join("")}</ol>${dashPager(dim, pages[dim], full.length)}` : `<p class="muted">${nq ? `“${esc(pivotState.q[dim])}”이(가) 들어간 ${dim === "reporter" ? "기자" : "언론사"}가 없습니다.` : "해당 기사가 없습니다."}</p>`;
       if (dim === "reporter") {               // 기자 이름을 못 읽은 기사도 숫자로 (언론사별)
         const miss = all.filter((r) => !r.reporter);
         if (miss.length) {
@@ -2354,6 +2357,11 @@
         || `<li class="empty"><strong>조건에 맞는 기사가 없습니다.</strong></li>`;
     }
     draw();
+    document.querySelectorAll(".dash-q").forEach((inp) => {      // 언론사·기자 이름 찾기 (그 칸만 다시 그림 → 입력 중 커서 유지)
+      const dim = inp.dataset.q;
+      inp.value = pivotState.q[dim] || "";
+      inp.oninput = () => { pivotState.q[dim] = inp.value.trim(); pivotState.pages[dim] = 0; board($(`#dash-${dim}`), dim); };
+    });
     let rz = null;                    // 창 폭이 바뀌면 추이 그래프를 다시 (대시보드를 떠나면 한 번만 남는 처리기는 아무것도 안 함)
     if (dashResize) window.removeEventListener("resize", dashResize);
     dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#dash-month")) draw(); }, 200); };

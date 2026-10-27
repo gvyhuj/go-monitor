@@ -197,7 +197,7 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .rh-p { display: block; font-size: 28px; font-weight: 800; letter-spacing: -.5px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rh-p small { font-size: 14px; font-weight: 600; margin: 0 10px 0 2px; }
 .rh-box:has(.rh-kq) { grid-template-columns: minmax(0, 1fr) auto auto; }
-.rh-kq { display: flex; flex-direction: column; align-items: flex-end; padding-right: 24px; border-right: 1px solid var(--line); white-space: nowrap; }
+.rh-kq { display: flex; flex-direction: column; align-items: flex-end; padding-left: 24px; border-left: 1px solid var(--line); white-space: nowrap; }
 .rh-kq small { font-size: 12.5px; color: var(--muted); }
 .rh-kq b { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.25; }
 /* 차트 + 오른쪽 '주요 숫자' */
@@ -293,7 +293,7 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
   .rec-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; }
   .rh-box, .rh-box:has(.rh-kq) { grid-template-columns: 1fr; }
   .rh-r { text-align: left; order: -1; }
-  .rh-kq { flex-direction: row; align-items: baseline; gap: 8px; padding-right: 0; border-right: 0; }
+  .rh-kq { flex-direction: row; align-items: baseline; gap: 8px; padding-left: 0; border-left: 0; }
   .rh-kq b { font-size: 15px; }
   .rh-p { font-size: 24px; }
   .bento > #q-events-card { border-radius: var(--r-md) 0 0 var(--r-md); }
@@ -1491,3 +1491,9 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .art-list button[aria-current="true"]:hover, .pr-list button[aria-current="true"]:hover { box-shadow: inset 3px 0 0 var(--navy), 0 6px 18px rgba(16, 32, 64, .10); }
 .tl-row:hover::after, .art-list button:hover::after, .pr-list button:hover::after, .day-total.is-event:hover::after {
   border-color: var(--brand-blue); opacity: 1; transform: translateX(2px) rotate(45deg); }
+
+/* 기사 대시보드: 언론사·기자 이름 찾기 */
+.dash-q { margin-left: auto; flex: 0 1 170px; min-width: 110px; height: 30px; padding: 0 10px; font-size: 13px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.dash-q:focus { outline: 2px solid var(--brand-blue); outline-offset: -1px; }
+.dash-q + .dash-leg { margin-left: 10px; }
