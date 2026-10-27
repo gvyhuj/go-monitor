@@ -26,6 +26,10 @@ on:
         description: "알림 시험 보내기"
         type: boolean
         default: false
+      kis_backfill:
+        description: "한국투자증권으로 지난 1분봉 채우기 (열쇠 필요, 다 채우면 멈춤)"
+        type: boolean
+        default: false
   push:
     branches: [main]                    # 코드를 고치면 바로 한 번 실행
 
@@ -58,7 +62,8 @@ jobs:
       DART_API_KEY: ${{ secrets.DART_API_KEY }}                # 공시 목록 (금융감독원 DART, 없으면 예전처럼 네이버)
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}                  # 선택·한 번만: 한국투자증권 오픈API로 지난 1분봉 채우기 (다 채우면 지워도 됨)
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-      KIS_BACKFILL: ${{ vars.KIS_BACKFILL }}                   # 저장소 변수 1로 켜야 지난 1분봉 채우기가 돎 (열쇠만으로는 안 돎)
+      # 지난 1분봉 채우기는 열쇠만으로는 안 돎: 수동 실행에서 'kis_backfill'을 켜거나 저장소 변수 KIS_BACKFILL=1
+      KIS_BACKFILL: ${{ (vars.KIS_BACKFILL == '1' || (github.event_name == 'workflow_dispatch' && inputs.kis_backfill)) && '1' || '' }}
       GO_INTERVAL_MIN: "5"
       GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
       GITHUB_TOKEN: ${{ github.token }}

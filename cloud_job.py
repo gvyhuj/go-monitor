@@ -647,7 +647,7 @@ def main(argv) -> int:
         from core import kis
         if kis.enabled() and not ("09:00" <= now.strftime("%H:%M") <= "15:40"):
             try:
-                r = kis.backfill(code, now, log=lambda m: annotate("warning", m))
+                r = kis.backfill(code, now, log=lambda m: annotate("warning", m), budget_sec=540)
                 if not r.get("skipped"):
                     annotate("notice", f"한국투자증권 지난 1분봉: {r.get('filled', 0)}일 채움 ({r.get('first', '-')} ~ {r.get('last', '-')})"
                              f", 시각 옮김 {r.get('offset')}분 (대조일 {r.get('offset_checked') or '없음'})"
