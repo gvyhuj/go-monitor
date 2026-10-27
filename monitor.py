@@ -168,6 +168,10 @@ class Collector:
             self._safe("종목토론방(최근 2주)", board.sync_board, self.code, now - timedelta(days=15), 20)
             self.log.info("원인 분석용 자료 수집 (같은 업종 %d개)", len(rel or []))
 
+        if not get_state(macro.INDUSTRY_BACKFILL_KEY):            # 기록 전 날 업종 등락을 한 번만 다시 계산 (장중에도, 1분 안팎)
+            if self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info) is not None:
+                set_state(macro.INDUSTRY_BACKFILL_KEY, now_iso())
+
         if feed.is_market_window(now):
             minute = now.replace(second=0, microsecond=0)
             if minute != self.last_trader_minute:
@@ -205,9 +209,6 @@ class Collector:
                 self.eod_theme_on = today
                 self._safe("테마 마감 등락", macro.snapshot_themes, self.code, now, today.isoformat())
                 self._safe("업종 마감 등락", macro.snapshot_industries, now, today.isoformat())
-            if not get_state(macro.INDUSTRY_BACKFILL_KEY):        # 기록 전 날 업종 등락을 한 번 다시 계산 (장 밖에서, 1~2분)
-                if self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info) is not None:
-                    set_state(macro.INDUSTRY_BACKFILL_KEY, now_iso())
             if feed.is_weekday(today) and now.time() >= feed.time(15, 50) and self.eod_daily_on != today:
                 self.eod_daily_on = today
                 self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.related_codes() + self.factor_codes())

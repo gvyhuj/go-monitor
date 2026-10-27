@@ -964,8 +964,7 @@
         <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}
           ${kv("거래량", `${int(vol)}주`)}${isLatest ? kv("대금", value) : ""}</dl>
         <div class="rs-inv">${inv ? `<div><small>개인</small><b>${signed(px.individual)}</b></div><div><small>외국인</small><b>${signed(px.foreign)}</b></div><div><small>기관</small><b>${signed(px.organ)}</b></div>`
-          : fe ? `<div><small>개인</small><b class="muted">-</b></div><div><small>외국인 <em class="muted">추정</em></small><b>${signed(fe.buy - fe.sell)}</b></div><div><small>기관</small><b class="muted">-</b></div>
-            <p class="muted">${fe.ts ? `${hhmm(fe.ts)} ` : ""}외국계 창구 추정. 개인·기관과 거래소 확정치는 장 마감 뒤</p>`
+          : fe ? `<div><small>개인</small><b class="muted">-</b></div><div><small>외국인 <em class="muted">추정</em> ${tip("", [`${fe.ts ? `${hhmm(fe.ts)} 기준 ` : ""}외국계 창구 추정입니다.`, "개인·기관과 거래소 확정치는 장 마감 뒤에 나옵니다."])}</small><b>${signed(fe.buy - fe.sell)}</b></div><div><small>기관</small><b class="muted">-</b></div>`
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${asOf}</small></span>
