@@ -389,13 +389,14 @@ def snapshot_industries(now: datetime, trading_day: str) -> int:
 
 
 INDUSTRY_BACKFILL_KEY = "industries:backfill_v1"
+INDUSTRY_RECORD_FROM = "2026-10-26"     # 이날부터는 네이버 값을 그대로 기록 (다시 계산한 값은 이 전 날에만)
 
 
 def backfill_industries(pages: int = 7, log=None) -> int:
     """네이버 업종(WICS) 등락률은 지금 값만 주고 과거 기록이 없어서, 기록 전 날(2026-10-26 전)을 다시 계산해 채움.
 
     네이버와 같은 방식: 그 업종 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균. pages: 종목마다 60거래일씩. 구성 종목은 지금 기준(그 사이 편입·편출은 반영 못 함), 주식 수는 지금과 같다고 봄.
-    이미 기록이 있는 날은 건드리지 않음(INSERT OR IGNORE). updated_at = 'calc' 로 다시 계산한 값임을 표시.
+    INDUSTRY_RECORD_FROM 전 날만 계산하고, 그날부터는 네이버 값(snapshot_industries)만 씀. 기록이 빠진 날도 계산으로 채우지 않음. updated_at = 'calc' 로 다시 계산한 값임을 표시.
     """
     from .feed import WICS_PEERS
     n = 0
@@ -410,7 +411,7 @@ def backfill_industries(pages: int = 7, log=None) -> int:
                 continue
             shares = m["mcap"] / m["price"]                    # 억 원 / 원 → 주식 수에 비례 (가중치로만 씀)
             for r in rows:
-                if r.get("base") and r["base"] > 0:
+                if r["date"] < INDUSTRY_RECORD_FROM and r.get("base") and r["base"] > 0:
                     rets.setdefault(r["date"], []).append((shares * r["base"], r["close"] / r["base"] - 1, m["code"], m["name"]))
         out, movers = [], []
         for d, xs in rets.items():
@@ -424,6 +425,8 @@ def backfill_industries(pages: int = 7, log=None) -> int:
             movers.append((d, no, name, json.dumps({"up": pick([y for y in srt if y[1] > 0][:5]),
                                                     "down": pick([y for y in reversed(srt) if y[1] < 0][:5])}, ensure_ascii=False), "calc"))
         with connect() as conn:
+            for t in ("industry_daily", "industry_movers"):     # 기록 시작일부터는 다시 계산한 값을 두지 않음 (네이버 값만)
+                conn.execute(f"DELETE FROM {t} WHERE updated_at='calc' AND date >= ?", (INDUSTRY_RECORD_FROM,))
             cur = conn.executemany("INSERT OR IGNORE INTO industry_daily(date, industry_no, name, change_rate, rise, fall, total, "
                                    "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
             n += cur.rowcount
