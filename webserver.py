@@ -802,7 +802,7 @@ def api_disclosure_detail(_q, did):
 
 def reaction_row(d: dict, item: dict | None = None) -> dict:
     """기사·공시 상세 하나 → '반응 모아보기'용 한 줄: 공개 시각을 0분으로 맞춘 주가 경로(이 종목·KOSDAQ, 기준값 대비),
-    +30·60·120분 등락, 반응일·다음날·3일 뒤 종가 등락, 어떤 봉으로 쟀는지."""
+    +N분 등락(이 종목·KOSDAQ), 어떤 봉으로 쟀는지."""
     a, e = d["article"], d.get("effect") or {}
     item = item or {}
     iw, ic, rc = d.get("intraday"), d.get("intraday_coarse"), d.get("reaction_chart")
@@ -826,11 +826,6 @@ def reaction_row(d: dict, item: dict | None = None) -> dict:
                     out.append([m, round(x["c"] / base - 1, 5)])
             return out
         row["path"] = {"own": path(rc["own"], rc["base_own"]), "kq": path(rc.get("kq") or [], rc.get("base_kq"))}
-    # 15시 넘어 공개는 그날 종가 대비 다음 거래일부터 (발표 직후 숫자와 같은 기준)
-    dl = e.get("daily_next") or e.get("daily") or {}
-    kq = dl.get("kosdaq") or {}
-    row["daily"] = {k: dl.get(k) for k in ("d0", "d1", "d3")} | {f"kq_{k}": kq.get(k) for k in ("d0", "d1", "d3")} if dl else None
-    row["daily_day"] = (e.get("daily_next") or {}).get("day") or e.get("reaction_day")
     row["kq_interval"] = (ic or {}).get("kq_interval") if not iw else 1
     return row
 

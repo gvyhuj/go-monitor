@@ -2215,7 +2215,7 @@
     main.innerHTML = `<div class="wrap dash">
       <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">기사·공시가 나온 시각을 0분으로 맞춰 그 뒤 주가가 어떻게 움직였는지 겹쳐 봅니다. 숫자는 공개 직전 가격(장 전 공개는 전날 종가) 대비입니다.</p></div>${artViewSeg("react")}</div>
       <div id="rx-ctl" class="rx-ctl"></div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span></span></div>
+      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span><span title="표에서 기사를 누르면 그 기사의 같은 시간 KOSDAQ"><i class="rx-l-kq"></i>고른 기사의 KOSDAQ</span></span></div>
         <div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-sum"></p></section>
       <section class="panel dash-card"><div class="dash-card-head"><h3>기사별 반응</h3><small class="muted">머리글을 누르면 정렬, 줄을 누르면 그래프에서 강조</small><span class="spacer"></span><button class="btn small" type="button" id="rx-csv">엑셀로</button></div>
         <div class="rx-table-wrap"><table class="rx-table" id="rx-table"></table></div></section></div>`;
@@ -2246,7 +2246,6 @@
       return own.map(([t, y]) => { const k = at(kq, t); return k == null ? null : [t, y - k]; }).filter(Boolean);
     };
     const stepV = (x, m) => { const s0 = (x.steps || {})[m]; if (!s0 || s0.own == null) return null; return reactState.vsKq ? (s0.kq == null ? null : s0.own - s0.kq) : s0.own; };
-    const dayV = (x, k) => { const d = x.daily; if (!d || d[k] == null) return null; return reactState.vsKq ? (d[`kq_${k}`] == null ? null : d[k] - d[`kq_${k}`]) : d[k]; };
     const median = (vs) => { const a = vs.filter((v) => v != null).sort((p, q) => p - q); if (!a.length) return null; const h = a.length >> 1; return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; };
     function plot(list) {
       const el = $("#rx-plot"), W = el.clientWidth || 800, H = Math.max(240, Math.min(380, W * 0.42)), L = 44, R = 12, T = 12, B = 26;
@@ -2273,24 +2272,29 @@
         ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "공개" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
         ${lines.map((o) => `<path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" data-id="${esc(o.x.id)}" d="${d(o.s)}"><title>${esc(dayLabel(o.x.ts))} ${esc(o.x.title)}</title></path>`).join("")}
         ${avg.length > 1 ? `<path class="rx-avg" d="${d(avg)}"/>` : ""}
-        ${reactState.pick ? (() => { const o = lines.find((q) => q.x.id === reactState.pick); return o ? `<path class="rx-one on top" d="${d(o.s)}"/>` : ""; })() : ""}
+        ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
+          const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
+          const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1))}"/>` : "";
+          return `${kq}<path class="rx-one on top" d="${d(o.s)}"/>`; })() : ""}
       </svg>`;
     }
-    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["60", "+60분"], ["d0", "반응일 종가"], ["d1", "다음날"], ["kq_d0", "KOSDAQ 반응일"]];
-    const valOf = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : ["d0", "d1"].includes(k) ? dayV(x, k) : k === "kq_d0" ? (x.daily || {}).kq_d0 : x[k]);
+    // +N분: 이 종목(‘KOSDAQ 빼고 보기’면 차이) · 같은 시간 KOSDAQ
+    const cols = [["ts", "공개"], ["kind", "종류"], ["title", "제목"], ["interval", "봉"], ["30", "+30분"], ["kq30", "KOSDAQ +30분"], ["60", "+60분"], ["kq60", "KOSDAQ +60분"]];
+    const kqV = (x, m) => { const s0 = (x.steps || {})[m]; return s0 && s0.kq != null ? s0.kq : null; };
+    const valOf = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : k === "kq30" ? kqV(x, "30") : k === "kq60" ? kqV(x, "60") : x[k]);
     function table(list) {
       const k = reactState.sort, dir = reactState.dir;
       const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
       const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : pct(v)}</td>`;
       const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
-      const tips = { interval: BAR_TIP, d0: "반응일 종가 ÷ 전날 종가 (15시 이후 공개는 공개한 날 종가 대비 다음 거래일 종가)", d1: "반응일 다음 거래일 종가, 같은 기준", kq_d0: "같은 날 KOSDAQ" };
+      const tips = { interval: BAR_TIP, 30: reactState.vsKq ? "이 종목 − KOSDAQ" : "공개 직전 가격(장 시작 전 공개는 전날 종가) 대비", 60: reactState.vsKq ? "이 종목 − KOSDAQ" : "공개 직전 가격(장 시작 전 공개는 전날 종가) 대비", kq30: "같은 시간 KOSDAQ", kq60: "같은 시간 KOSDAQ" };
       $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
         <tbody>${sorted.map((x) => `<tr data-id="${esc(x.id)}"${reactState.pick === x.id ? ' class="on"' : ""}>
           <td class="nowrap">${x.ts ? `${x.ts.slice(2, 10).replace(/-/g, ".")} ${x.untimed ? "시각 미상" : hhmm(x.ts)}` : "-"}${x.mode ? ` <small class="muted">${MODE_TXT[x.mode] || ""}</small>` : ""}${x.time_quality === "check_time" ? ' <small class="time-src warn" title="공개 시각 확인 필요">시각?</small>' : ""}</td>
           <td class="nowrap">${kindTxt(x)}</td>
           <td class="rx-title"><a href="#/pr/${esc(x.id)}">${esc(x.title)}</a> <small class="muted">${esc(x.office || "")}</small></td>
           <td class="nowrap muted" title="${BAR_TIP}">${x.interval ? `${x.interval}분${x.kq_interval && x.kq_interval !== x.interval ? ` <small>(KOSDAQ ${x.kq_interval}분)</small>` : ""}` : "-"}</td>
-          ${["30", "60"].map((m) => num(stepV(x, m), m === reactState.h)).join("")}${num(dayV(x, "d0"))}${num(dayV(x, "d1"))}${num((x.daily || {}).kq_d0)}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
+          ${["30", "60"].map((m) => num(stepV(x, m), m === reactState.h) + `<td class="num muted ${sgnCls(kqV(x, m))}">${kqV(x, m) == null ? "-" : pct(kqV(x, m))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
     }
     function draw() {
       const list = items.filter(pass);
@@ -2298,8 +2302,7 @@
       plot(list);
       const s = (m) => { const vs = list.map((x) => stepV(x, m)).filter((v) => v != null); if (!vs.length) return null;
         return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${pct(median(vs))}</b> (오른 ${vs.filter((v) => v > 0).length} · 내린 ${vs.filter((v) => v < 0).length}, ${vs.length}건)`; };
-      const d0 = list.map((x) => dayV(x, "d0")).filter((v) => v != null);
-      $("#rx-sum").innerHTML = [s(reactState.h), d0.length ? `반응일 종가 중앙값 <b class="${sgnCls(median(d0))}">${pct(median(d0))}</b> (${d0.length}건)` : ""].filter(Boolean).join(" · ")
+      $("#rx-sum").innerHTML = (s(reactState.h) || "")
         + `<br><span class="muted">기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 평균선이 0에서 꾸준히 벗어나는지를 보세요. 같은 날 다른 소식·시장 움직임이 섞일 수 있습니다.</span>`;
       table(list);
     }
@@ -2319,7 +2322,7 @@
     };
     $("#rx-plot").onclick = (ev) => { const p = ev.target.closest("path[data-id]"); if (p) { reactState.pick = reactState.pick === p.dataset.id ? null : p.dataset.id; draw(); } };
     $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map((c) => c[1]).concat(["주제", "언론사"]),
-      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "60", "d0", "d1", "kq_d0"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
+      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "kq30", "60", "kq60"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || ""]));
     if (dashResize) window.removeEventListener("resize", dashResize);
     let rz = null;
     dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rx-plot")) draw(); }, 200); };
@@ -2893,10 +2896,6 @@
       <tr><th>이 종목</th>${rows.map((r) => `<td class="${sgnCls(r.own)}${r.minutes === main ? " main" : ""}">${pct(r.own)}</td>`).join("")}</tr>
       <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
       <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? r.own - r.kq : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
-  // 반응일·다음날·3일 뒤 종가 (반응일 전날 종가 대비 누적)
-  const dayRow = (dl) => (!dl || dl.d0 == null ? "" : `<table class="simple-steps day"><thead><tr><th><small class="muted">${dl.basis ? esc(dl.basis) : "전날 종가 대비"}</small></th><th>반응일 종가</th><th>다음날</th><th>3일 뒤</th></tr></thead><tbody>
-      <tr><th>이 종목</th>${["d0", "d1", "d3"].map((k) => `<td class="${sgnCls(dl[k])}">${pct(dl[k])}</td>`).join("")}</tr>
-      <tr><th>KOSDAQ</th>${["d0", "d1", "d3"].map((k) => `<td class="${sgnCls((dl.kosdaq || {})[k])}">${pct((dl.kosdaq || {})[k])}</td>`).join("")}</tr></tbody></table>`);
   // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
   const timeSrc = (a) => ` <span class="time-src${a.time_quality === "check_time" ? " warn" : ""}" title="공개 시각을 어디서 읽었는지">시각 출처: ${esc(a.time_source || "-")}${a.time_quality === "check_time" ? " · 확인 필요" : ""}</span>`
     + (a.manual ? "" : ` <button type="button" class="btn-link editable" data-time-open>시각 고치기</button>`);
@@ -2932,8 +2931,6 @@
     try { d = await api(isDisc ? `/api/disclosures/${id}` : `/api/articles/${id}`); }
     catch (e) { box.innerHTML = `<div class="empty"><strong>불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
-    // 15시 넘어 공개: 일봉도 그날 종가 대비 다음 거래일부터 (발표 직후 숫자와 같은 기준)
-    const dlx = e.daily_next ? { ...e.daily_next, basis: `15시 넘어 공개 → 그날 종가 대비 · 반응일 ${+e.daily_next.day.slice(5, 7)}/${+e.daily_next.day.slice(8, 10)}` } : dl;
     if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
@@ -2967,7 +2964,6 @@
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
         ${simpleSteps(rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), iw.minutes)}
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
-        ${dayRow(dlx)}
         <details class="stat-more"><summary>통계로 보기 (참고)</summary>
           <div class="rx-steps">${rows.map((r) => `<span><small class="muted">+${r.minutes}분 고유 움직임</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
           <div class="vb-note">고유 움직임 = 이 종목 등락 − (시장·업종이 움직인 만큼 평소 관계로 예상한 등락). +${iw.minutes}분 기준으로 평소 같은 길이 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}. 기사 하나만으로 판단하기엔 잡음이 큽니다.</div>
@@ -2982,10 +2978,8 @@
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span} · ${barLabel(ic.interval, ic.kq_interval)}</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
         ${simpleSteps(ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
-        ${dayRow(dlx)}
         <div class="vb-note">업종 분봉이 없어 KOSDAQ와만 비교했습니다 (평소 관계를 뺀 '고유 움직임' 계산은 하지 않음).</div></section>`;
     }
-    if (!iw && !ic && dl) html += `<section class="verdict-box intraday-box"><div class="vb-head">반응일 주가 <small class="muted">${e.reaction_day ? `반응일 ${esc(e.reaction_day)} · ` : ""}일봉 기준 (공개 무렵 분봉 없음${a.untimed ? "·접수 시각 미상" : ""})</small></div>${dayRow(dlx)}</section>`;
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)

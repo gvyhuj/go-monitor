@@ -24,7 +24,6 @@ def test_reaction_row_aligns_path_at_publication_and_keeps_resolution():
     assert r["path"]["own"] == [[-14, 0.0], [76, 0.04]]          # 공개 30분 전보다 앞선 봉(13:00, 09:00)은 뺌
     assert r["path"]["kq"] == [[-14, 0.0], [76, 0.01]]
     assert r["steps"] == {"60": {"own": 0.03, "kq": 0.01}}
-    assert r["daily"]["d0"] == 0.04 and r["daily"]["kq_d0"] == 0.01
     assert webserver.reaction_row(detail())["interval"] == 1
 
 
