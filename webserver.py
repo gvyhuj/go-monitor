@@ -342,7 +342,8 @@ def api_daily(_q):
         inv = {r[0]: r[1:] for r in conn.execute(
             "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
             (sym,))}
-        ind, ind_info, tops = industry_rates(conn), industry_info(conn), trader_tops(conn, sym)
+        calc = set()
+        ind, ind_info, tops = industry_rates(conn, calc), industry_info(conn), trader_tops(conn, sym)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -353,7 +354,8 @@ def api_daily(_q):
                      "change": c / prev - 1 if prev else None, "base": prev,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
-                     "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d)})
+                     "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d),
+                     "industries_calc": d in calc})
     return {"days": days}
 
 
@@ -361,13 +363,16 @@ def api_daily(_q):
 INDUSTRY_NAMES = [name for _, name in feed.WICS_PEERS]
 
 
-def industry_rates(conn) -> dict:
-    """{날짜: {업종: 등락률(소수)}} — 기록을 시작한 날(2026-10-26)부터. 없는 날은 키가 없음."""
+def industry_rates(conn, calc: set | None = None) -> dict:
+    """{날짜: {업종: 등락률(소수)}}. 없는 날은 키가 없음.
+    2026-10-26부터는 네이버 값을 기록, 그 전 날은 구성 종목으로 다시 계산한 값(updated_at='calc') → calc에 그 날짜를 담음."""
     out = {}
-    q = "SELECT date, name, change_rate FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
-    for d, name, rate in conn.execute(q, INDUSTRY_NAMES):
+    q = "SELECT date, name, change_rate, updated_at FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
+    for d, name, rate, upd in conn.execute(q, INDUSTRY_NAMES):
         if rate is not None:
             out.setdefault(d, {})[name] = rate / 100
+            if calc is not None and upd == "calc":
+                calc.add(d)
     return out
 
 

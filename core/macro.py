@@ -388,6 +388,52 @@ def snapshot_industries(now: datetime, trading_day: str) -> int:
     return len(groups)
 
 
+INDUSTRY_BACKFILL_KEY = "industries:backfill_v1"
+
+
+def backfill_industries(pages: int = 7, log=None) -> int:
+    """네이버 업종(WICS) 등락률은 지금 값만 주고 과거 기록이 없어서, 기록 전 날(2026-10-26 전)을 다시 계산해 채움.
+
+    네이버와 같은 방식: 그 업종 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균. pages: 종목마다 60거래일씩. 구성 종목은 지금 기준(그 사이 편입·편출은 반영 못 함), 주식 수는 지금과 같다고 봄.
+    이미 기록이 있는 날은 건드리지 않음(INSERT OR IGNORE). updated_at = 'calc' 로 다시 계산한 값임을 표시.
+    """
+    from .feed import WICS_PEERS
+    n = 0
+    for no, name in WICS_PEERS:
+        rets: dict[str, list[tuple[float, float, str, str]]] = {}      # 날짜 → [(전일 시총, 등락률, 코드, 이름)]
+        for m in naver.fetch_industry_members(no):
+            if not m["code"] or not m["price"] or not m["mcap"]:
+                continue
+            try:            # 네이버 일별 시세: 등락 = 종가(넥스트레이드 포함) ÷ 기준가(전날 거래소 종가) − 1 → 업종 목록 등락과 같은 기준
+                rows = fetch_naver_prices(m["code"], pages)
+            except naver.DataSourceError:
+                continue
+            shares = m["mcap"] / m["price"]                    # 억 원 / 원 → 주식 수에 비례 (가중치로만 씀)
+            for r in rows:
+                if r.get("base") and r["base"] > 0:
+                    rets.setdefault(r["date"], []).append((shares * r["base"], r["close"] / r["base"] - 1, m["code"], m["name"]))
+        out, movers = [], []
+        for d, xs in rets.items():
+            w = sum(x[0] for x in xs)
+            if not w:
+                continue
+            rate = sum(x[0] * x[1] for x in xs) / w
+            out.append((d, no, name, round(rate * 100, 2), sum(x[1] > 0 for x in xs), sum(x[1] < 0 for x in xs), len(xs), "calc"))
+            srt = sorted(xs, key=lambda x: -x[1])
+            pick = lambda ys: [{"code": y[2], "name": y[3], "change": y[1]} for y in ys]
+            movers.append((d, no, name, json.dumps({"up": pick([y for y in srt if y[1] > 0][:5]),
+                                                    "down": pick([y for y in reversed(srt) if y[1] < 0][:5])}, ensure_ascii=False), "calc"))
+        with connect() as conn:
+            cur = conn.executemany("INSERT OR IGNORE INTO industry_daily(date, industry_no, name, change_rate, rise, fall, total, "
+                                   "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
+            n += cur.rowcount
+            conn.executemany("INSERT OR IGNORE INTO industry_movers(date, industry_no, name, movers, updated_at) "
+                             "VALUES (?, ?, ?, ?, ?)", movers)
+        if log:
+            log(f"업종 등락 다시 계산: {name} {len(out)}일")
+    return n
+
+
 def _num(v) -> float:
     try:
         return float(str(v).replace(",", ""))

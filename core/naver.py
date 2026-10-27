@@ -318,7 +318,8 @@ def fetch_industry_members(no: int) -> list[dict]:
         for s in stocks:
             out.append({"code": s.get("itemCode"), "name": s.get("stockName") or "",
                         "market": ((s.get("stockExchangeType") or {}).get("name") or ""),
-                        "mcap": _int(s.get("marketValue")), "change": _pct(s.get("fluctuationsRatio"))})
+                        "mcap": _int(s.get("marketValue")), "change": _pct(s.get("fluctuationsRatio")),
+                        "price": _int(s.get("closePrice"))})
         if len(out) >= int(d.get("totalCount") or 0) or not stocks:
             break
     return out

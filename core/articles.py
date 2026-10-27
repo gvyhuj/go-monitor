@@ -175,6 +175,8 @@ def reclassify(code: str) -> int:
 
 def _save(code: str, items: list[dict], source: str) -> int:
     name, now = company_name(), datetime.now().isoformat(timespec="minutes")
+    from . import offices
+    items = [{**i, "office": offices.canonical(i.get("office"))} for i in items]      # 언론사 이름을 한글 이름 하나로
     with connect() as conn:
         if source != "naver" and items:   # 이미 받은 기사·같은 매체 같은 제목은 다시 넣지 않음 (다른 매체의 같은 제목은 링크를 위해 남김)
             got = conn.execute("SELECT id, title, office FROM articles WHERE symbol=? AND ts >= ?",
@@ -347,6 +349,12 @@ def sync_articles(code: str, pages: int = 1) -> int:
         n += sync_naver_search(code, log=lambda m: print(f"::warning title=네이버 검색 기사::{m[:150]}", flush=True))
     except Exception as e:      # noqa: BLE001 - 검색 API가 막혀도 다른 수집은 그대로
         print(f"::warning title=네이버 검색 기사::{type(e).__name__}: {str(e)[:150]}", flush=True)
+    try:
+        from . import offices
+        if offices.normalize(code):              # 예전에 다른 표기로 들어간 이름도 맞추고, 매체 수를 다시 셈
+            group_stories(code)
+    except Exception as e:      # noqa: BLE001 - 이름 맞추기는 부가 작업
+        print(f"::warning title=언론사 이름::{type(e).__name__}: {str(e)[:150]}", flush=True)
     try:
         from . import relevance
         gone = relevance.purge_blocked(code) + relevance.check(code, company_name())

@@ -902,7 +902,7 @@
       const r = (v) => (base && v ? pct(v / base - 1) : "-");
       const ext = live ? live.ext : false;
       const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
-      return `<button type="button" class="rh-box${done ? " is-click" : ""}" data-head ${done ? `title="${ev ? "이날 급등·급락 기록 자세히" : "이날 하루 분석"}"` : "disabled"}>
+      return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? "종가 " : ""}${won(close)}원${ext ? " (시간외 포함)" : ""} · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${r(hi)}</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${r(lo)}</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
@@ -991,11 +991,11 @@
     // 아래 작은 칸: 고른 날 사업 분야
     const selRow = () => { const i = daily.findIndex((x) => x.date === calState.sel); return i >= 0 ? i : daily.length - 1; };
     const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
-    // 사업 분야: 네이버 업종(WICS) 고른 날 등락률 (2026-10-26부터 기록, 그 전 날은 '-')
+    // 사업 분야: 네이버 업종(WICS) 고른 날 등락률 (2026-10-26부터 기록, 그 전 날은 구성 종목으로 다시 계산한 값)
     const INDUSTRY_LABELS = [["우주항공과국방", "우주항공·국방"], ["반도체와반도체장비", "반도체"], ["디스플레이장비및부품", "디스플레이 장비·부품"], ["디스플레이패널", "디스플레이 패널"]];
     function segHtml() {
       const x = daily[selRow()], ind = x.industries || {};
-      return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)</small></span>
+      return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)${x.industries_calc ? " · 구성 종목으로 다시 계산" : ""}</small></span>
           <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
             `<button type="button" class="seg-chip" data-ind="${esc(k)}" title="누르면 이 업종의 그날 오른·내린 종목">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></button>`).join("")}</span>`;
     }
@@ -1006,9 +1006,10 @@
       const list = (xs) => xs && xs.length ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}</span><b class="${sgnCls(s.change)}">${pct(s.change)}</b></li>`).join("")}</ul>` : `<p class="muted">-</p>`;
       $("#ind-title").textContent = `${mdOf(x.date)} ${label}`;
       $("#ind-body").innerHTML = rate == null && !info
-        ? `<p class="note">이 날은 업종 기록이 없습니다. 네이버 업종(WICS) 등락률은 2026-10-26부터 기록합니다.</p>`
+        ? `<p class="note">이 날은 업종 기록이 없습니다.</p>`
         : `<p class="ind-rate"><b class="${rate == null ? "" : sgnCls(rate)}">${rate == null ? "-" : pct(rate)}</b>
              <span class="muted">네이버 업종(WICS) '${esc(k)}'${x.live ? " · 장중 값" : ""}</span></p>
+           ${x.industries_calc ? `<p class="note">네이버는 업종 등락률의 지난 기록을 주지 않아(2026-10-26부터 직접 기록), 이 날은 지금의 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균해 다시 계산했습니다. 네이버 값과 0.1~0.2%p 안팎 다를 수 있고, 그 사이 편입·편출된 종목은 반영되지 않습니다.</p>` : ""}
            ${info ? `<p class="muted">오른 종목 ${int(info.rise)} · 내린 종목 ${int(info.fall)} · 전체 ${int(info.total)}</p>
            <div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}`;
       $("#ind-modal").hidden = false;
@@ -1365,7 +1366,7 @@
     const L = [];
     if (whole) {
       L.push(`아래는 '${name}' 주가의 ${d.date} 하루 움직임(전일 종가 대비 ${pct(r.fromPrev)})에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-      L.push("웹 검색으로 ① 전날 장 마감 뒤부터 이날 장 마감까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이날 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
+      L.push(`웹 검색으로 ① 전날 장 마감 뒤부터 ${r.endLabel ? "지금까지" : "이날 장 마감까지"} 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이날 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.`);
       L.push("그리고 '이날 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 장중에 크게 꺾이거나 튄 시각이 있으면 그 시각도 짚어줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     } else {
       L.push(`아래는 '${name}' 주가가 특정 구간에 갑자기 움직인 것에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
@@ -1373,9 +1374,9 @@
       L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     }
     L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
-    L.push(whole ? `[하루] ${d.date} ${r.from}~${r.to} · 시가 ${won(r.startPx)}원 → 종가 ${won(r.endPx)}원 (${pct(r.endPx / r.startPx - 1)})`
+    L.push(whole ? `[하루] ${d.date} ${r.from}~${r.to} · 시가 ${won(r.startPx)}원 → ${r.endLabel || "종가"} ${won(r.endPx)}원 (${pct(r.endPx / r.startPx - 1)})`
       : `[구간] ${d.date} ${r.from}~${r.to} (${r.minutes}분) · 이 종목 ${pct(r.own)} (${won(r.startPx)}원 → ${won(r.endPx)}원)`);
-    if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · ${whole ? "종가" : "구간 끝"} ${pct(r.fromPrev)} · ${whole ? "장중" : "구간"} 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · ${whole ? "장중" : "구간"} 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
+    if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · ${whole ? r.endLabel || "종가" : "구간 끝"} ${pct(r.fromPrev)} · ${whole ? "장중" : "구간"} 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · ${whole ? "장중" : "구간"} 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
     L.push(`[KOSDAQ ${whole ? "이날 (전일 대비)" : "같은 구간"}] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
     L.push(`[거래량] ${whole ? "이날" : "구간"} ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
     const since = `${prevDay || d.date}T15:30`, until = `${d.date}T${r.to}`;
@@ -1398,17 +1399,19 @@
   function openDayAsk(d, arts, prevDay, px) {
     const r = rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t));
     if (!r) return;
-    const live = liveFor(d.date);
-    const fin = live && !live.open ? live.price : d.close;                         // 네이버 종가 (넥스트레이드 포함)
+    const live = liveFor(d.date), now = live && live.open;                        // now: 장중 (지금까지의 하루)
+    const fin = live ? live.price : d.close;                                        // 네이버 종가·현재가 (넥스트레이드 포함)
     if (fin) { r.endPx = fin; r.fromPrev = fin / d.prev_close - 1; }
+    if (now) { r.endLabel = `${live.at} 현재가`; r.to = live.at; }
     if (px && px.kosdaq != null) r.kq = px.kosdaq;                                  // KOSDAQ도 전일 대비
-    if (px && px.volume != null) r.vol = px.volume;                                // 거래량도 일봉(거래소 집계)과 같게
+    if (now && STATUS.quote.volume != null) r.vol = STATUS.quote.volume;          // 장중: 네이버 현재가의 누적 거래량
+    else if (px && px.volume != null) r.vol = px.volume;                           // 거래량도 일봉(거래소 집계)과 같게
     const vol = r.vol;
     openDrawer(`
-      <h2 class="d-title" id="drawer-title">${dayLabel(d.date)} 하루 <span class="${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</span></h2>
-      <p class="d-sub">전일 종가 ${won(d.prev_close)}원 → 종가 ${won(r.endPx)}원. 이날 장 전체(${r.from}~${r.to}) 숫자와 그날 기사를 ChatGPT에 넘겨 원인을 묻습니다.</p>
+      <h2 class="d-title" id="drawer-title">${dayLabel(d.date)} ${now ? `${live.at} 현재` : "하루"} <span class="${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</span></h2>
+      <p class="d-sub">전일 종가 ${won(d.prev_close)}원 → ${now ? `${live.at} 현재가` : "종가"} ${won(r.endPx)}원. ${now ? `장 시작부터 지금까지(${r.from}~${r.to})` : `이날 장 전체(${r.from}~${r.to})`} 숫자와 그날 기사를 ChatGPT에 넘겨 원인을 묻습니다.</p>
       <dl class="facts four">
-        <div><dt>종가 등락</dt><dd class="num ${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</dd></div>
+        <div><dt>${now ? "지금 등락" : "종가 등락"}</dt><dd class="num ${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</dd></div>
         <div><dt>KOSDAQ</dt><dd class="num ${sgnCls(r.kq)}">${r.kq == null ? "-" : pct(r.kq)}</dd></div>
         <div><dt>장중 최고 · 최저</dt><dd class="num"><span class="${sgnCls(r.high.fromPrev)}">${pct(r.high.fromPrev)}</span> · <span class="${sgnCls(r.low.fromPrev)}">${pct(r.low.fromPrev)}</span></dd></div>
         <div><dt>거래량</dt><dd class="num">${int(vol)}주</dd></div>
@@ -1418,12 +1421,12 @@
       <form class="mc-form editable" data-day-form hidden>
         <label><span>받은 답 붙여넣기</span><textarea rows="6" data-df-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
         <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-df-head></label>
-        <p class="note" style="margin:0">이날 장 전체(${r.from}~${r.to})가 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행 때 반영됩니다.</p>
+        <p class="note" style="margin:0">${now ? "장 시작부터 지금까지" : "이날 장 전체"}(${r.from}~${r.to})가 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행 때 반영됩니다.</p>
         <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
       </form>
       <span class="form-msg" data-day-msg></span>`);
     const box = $("#drawer-body"), msg = $("[data-day-msg]", box);
-    $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
+    $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, now ? "오늘 장 시작부터 지금까지 주가 움직임의 원인을 찾아 줘." : "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
     const form = $("[data-day-form]", box), body = $("[data-df-body]", box), head = $("[data-df-head]", box);
     $("[data-day-rec]", box).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
     head.oninput = () => { head.dataset.touched = "1"; };

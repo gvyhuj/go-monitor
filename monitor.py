@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from core import board, articles, causes, cloud, feed, macro, newssearch
-from core.db import init_db, now_iso, set_state
+from core.db import get_state, init_db, now_iso, set_state
 from core.detector import detect_symbol, load_settings
 from core import naver
 from core.naver import DataSourceError
@@ -205,6 +205,9 @@ class Collector:
                 self.eod_theme_on = today
                 self._safe("테마 마감 등락", macro.snapshot_themes, self.code, now, today.isoformat())
                 self._safe("업종 마감 등락", macro.snapshot_industries, now, today.isoformat())
+            if not get_state(macro.INDUSTRY_BACKFILL_KEY):        # 기록 전 날 업종 등락을 한 번 다시 계산 (장 밖에서, 1~2분)
+                if self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info) is not None:
+                    set_state(macro.INDUSTRY_BACKFILL_KEY, now_iso())
             if feed.is_weekday(today) and now.time() >= feed.time(15, 50) and self.eod_daily_on != today:
                 self.eod_daily_on = today
                 self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.related_codes() + self.factor_codes())
