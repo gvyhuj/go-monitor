@@ -802,7 +802,7 @@ def api_disclosure_detail(_q, did):
 
 
 def reaction_row(d: dict, item: dict | None = None) -> dict:
-    """기사·공시 상세 하나 → '반응 모아보기'용 한 줄: 공개 시각을 0분으로 맞춘 주가 경로(이 종목·KOSDAQ, 기준값 대비),
+    """기사·공시 상세 하나 → '뉴스 반응'용 한 줄: 공개 시각을 0분으로 맞춘 주가 경로(이 종목·KOSDAQ, 기준값 대비),
     +N분 등락(이 종목·KOSDAQ), 어떤 봉으로 쟀는지."""
     a, e = d["article"], d.get("effect") or {}
     item = item or {}
@@ -846,7 +846,7 @@ def reactions_from(art_items: list, art_details: dict, disc_items: list, disc_de
 
 
 def api_reactions(_q):
-    """반응 모아보기 (서버 화면용: 기사·공시 상세를 모두 계산하므로 무거움. 사이트는 자동 실행 때 미리 만든 값)."""
+    """뉴스 반응 (서버 화면용: 기사·공시 상세를 모두 계산하므로 무거움. 사이트는 자동 실행 때 미리 만든 값)."""
     arts = (api_articles({}).get("items") or [])
     discs = (api_disclosures({}).get("items") or [])
     ad = {a["id"]: api_article_detail({}, a["id"]) for a in arts}

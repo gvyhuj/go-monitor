@@ -1,6 +1,6 @@
-"""반응 모아보기에서 '한쪽으로 쏠릴 확률'이 숫자로 나오는 조건 목록 (수동 실행 '급등락 기준 살펴보기'에 함께).
+"""뉴스 반응에서 '한쪽으로 쏠릴 확률'이 숫자로 나오는 조건 목록 (수동 실행 '급등락 기준 살펴보기'에 함께).
 
-자동 실행이 미리 만들어 기록에 넣어 둔 반응 모아보기 자료(site_items 'reactions')를 사이트와 같은 조건으로 걸러서
+자동 실행이 미리 만들어 기록에 넣어 둔 뉴스 반응 자료(site_items 'reactions')를 사이트와 같은 조건으로 걸러서
 조건마다 중앙값·오른 수·내린 수·쏠릴 확률(동전 던지기, 양쪽)을 셈. 공개 저장소라 가격·제목은 찍지 않고 비율·건수만.
 
 python react_stats.py <백업 파일>   (열쇠: GO_DATA_KEY, 없으면 GO_SITE_PASSWORD)
@@ -70,7 +70,7 @@ def main(argv) -> int:
         with closing(sqlite3.connect(db)) as conn:
             r = conn.execute("SELECT value FROM site_items WHERE key='reactions'").fetchone()
     items = [x for x in (json.loads(r[0]).get("items") or []) if x.get("category") != "단순 언급"] if r else []
-    print(f"## 반응 모아보기: 조건별 쏠릴 확률 (전체 기간, 자료 {len(items)}건)\n")
+    print(f"## 뉴스 반응: 조건별 쏠릴 확률 (전체 기간, 자료 {len(items)}건)\n")
     print("확률이 숫자로 나오려면 오르거나 내린 건이 10건 이상이어야 함. 확률이 작은 순.\n")
     rows = []
     for h in ("30", "60"):

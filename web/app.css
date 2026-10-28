@@ -250,7 +250,7 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
   .bento > .t-news:has(> .tn-list:empty) > .t-news-row { margin: 0; }
   .bento > .t-news:has(> .tn-list:empty) > .ts { align-self: center; justify-self: end; margin-right: 22px; }
 }
-/* 소식 칸 안의 그날 기사·공시 제목 (누르면 소식 탭의 그 기사) */
+/* 소식 칸 안의 그날 기사·공시 제목 (누르면 뉴스 탭의 그 기사) */
 .tn-list { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 2px; min-width: 0; }
 .tn-item { display: flex; align-items: center; gap: 6px; font-size: 13.5px; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; min-width: 0; }
 .tn-item:hover { background: var(--canvas); }
@@ -1518,7 +1518,7 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .time-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
 .time-form input { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 
-/* 반응 모아보기 */
+/* 뉴스 반응 */
 .rx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
 .rx-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .rx-plot { width: 100%; min-height: 240px; }

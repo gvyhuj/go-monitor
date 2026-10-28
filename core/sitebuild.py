@@ -277,7 +277,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         disc_det.update(out)
         return out
     keep("disclosure_details", disc_details, True)
-    want.add("reactions")             # 반응 모아보기: 위에서 계산한 상세에서 바로 (다시 계산하지 않음)
+    want.add("reactions")             # 뉴스 반응: 위에서 계산한 상세에서 바로 (다시 계산하지 않음)
     keep("reactions", lambda: ws.reactions_from(lst.get("items") or [], art_det, dl.get("items") or [], disc_det), True)
     if not {"articles", "article_details", "disclosures", "disclosure_details"}.issubset(fresh):
         raise RuntimeError("기사·공시 재계산 실패: 이전 계산값으로 새 사이트를 배포하지 않습니다.")

@@ -401,7 +401,7 @@
       return { tag, ring, t, px: b ? b.c : null, up: e.direction === "up" };
     });
     // 그날 소식: 기간 차트와 같은 모양(보도자료 ●, 공시 ■, 외부 기사 ▲)을 공개 시각의 선 위에.
-    // 장 시작 전 공개는 첫 봉, 장 마감 뒤 공개는 마지막 봉에. 같은 봉의 같은 종류는 하나로(마우스를 올리면 제목들), 누르면 소식 탭
+    // 장 시작 전 공개는 첫 봉, 장 마감 뒤 공개는 마지막 봉에. 같은 봉의 같은 종류는 하나로(마우스를 올리면 제목들), 누르면 뉴스 탭
     const SHAPE = { pr: '<circle cx="8" cy="8" r="6"/>', disc: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/>', ext: '<path d="M8,1.5L14.5,13.5L1.5,13.5Z"/>' };
     const NAME = { pr: "보도자료", disc: "공시", ext: "외부 기사" };
     const dots = [];
@@ -419,7 +419,7 @@
         n.type = "button"; n.className = `nw-mk ${g.k}${g.items.some((a) => a.cur) ? " cur" : ""}`;   // cur: 지금 열어 둔 기사·공시
         n.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${SHAPE[g.k]}</svg>`;
         n.title = g.items.map((a) => `${hhmm(a.ts)} ${NAME[g.k]} · ${a.title}`).join(String.fromCharCode(10));
-        n.setAttribute("aria-label", `${NAME[g.k]} ${g.items.length}건 소식 탭에서 열기`);
+        n.setAttribute("aria-label", `${NAME[g.k]} ${g.items.length}건 뉴스 탭에서 열기`);
         n.addEventListener("pointerdown", (ev) => ev.stopPropagation());
         n.addEventListener("pointerup", (ev) => ev.stopPropagation());
         if (onNews) n.addEventListener("click", () => onNews(g.items[0].id));
@@ -703,15 +703,15 @@
     const outlets = pr.reduce((t, a) => t + (a.outlets_total || 1), 0);
     const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
     $("#q-news-label").textContent = `${when} 소식`;
-    $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="소식 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
-      + `<span class="t-go" data-go="disc" title="소식 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="소식 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
+    $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="뉴스 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
+      + `<span class="t-go" data-go="disc" title="뉴스 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="뉴스 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
     const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...ar.filter((a) => !isPr(a)).map((a) => ({ k: "ext", a }))];
     const MAXL = 4;
     $("#q-news-list").innerHTML = lines.slice(0, MAXL).map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span><span class="tn-t">${esc(a.title)}</span></span>`).join("")
       + (lines.length > MAXL ? `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>` : "");
     // 실린 매체 수는 아래 작은 글씨로 (위 숫자 줄은 한 줄로)
-    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 소식 탭에서 열림` : "제목을 누르면 소식 탭에서 열림") : "";
+    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 뉴스 탭에서 열림` : "제목을 누르면 뉴스 탭에서 열림") : "";
     const card = $("#q-news-card");
     if (card) card.onclick = (ev) => {
       const open = ev.target.closest("[data-open]");
@@ -2073,7 +2073,7 @@
   function pageMethod() {
     // 대제목마다 접고 펴기 (처음엔 모두 접힘)
     const sec = (id, title, body) => `<details class="method-sec" id="m-${id}"><summary><h2>${title}</h2></summary><div class="method-body">${body}</div></details>`;
-    const toc = [["words", "용어 설명"], ["prices", "주가 기록"], ["articles", "소식"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
+    const toc = [["words", "용어 설명"], ["prices", "주가 기록"], ["articles", "뉴스"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
     main.innerHTML = `<div class="wrap method">
       <div class="page-head"><div><h1 class="page-title">README</h1>
         <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
@@ -2081,7 +2081,7 @@
       ${sec("words", "용어 설명", `
         <dl>
           <dt>반응일</dt><dd>기사·공시가 주가에 처음 반영될 수 있는 거래일입니다. 장 마감(15:30) 뒤나 휴장일에 나왔으면 다음 거래일입니다. 같은 내용의 공시가 36시간 안에 먼저 나왔으면 공시 시각부터 잽니다.</dd>
-          <dt>이 종목 · KOSDAQ · 차이</dt><dd>기사 화면과 반응 모아보기의 기본 숫자입니다. 공개 직전 가격(장 시작 전 공개는 전날 종가)부터 +30분·+60분 뒤까지 그린광학과 코스닥이 각각 몇 % 움직였는지, 그리고 둘의 차이(%p)입니다. 차이는 시장 전체와 상관없이 그린광학만 따로 움직인 만큼입니다.</dd>
+          <dt>이 종목 · KOSDAQ · 차이</dt><dd>기사 화면과 뉴스 반응의 기본 숫자입니다. 공개 직전 가격(장 시작 전 공개는 전날 종가)부터 +30분·+60분 뒤까지 그린광학과 코스닥이 각각 몇 % 움직였는지, 그리고 둘의 차이(%p)입니다. 차이는 시장 전체와 상관없이 그린광학만 따로 움직인 만큼입니다.</dd>
           <dt>고유 움직임</dt><dd>기사 화면 '통계로 보기 (참고)'에 있습니다. 실제 등락에서 시장 몫과 업종 몫(평소 관계로 추정)을 뺀 나머지입니다. 회사 소식, 수급, 그 밖의 이유가 모두 섞여 있습니다.</dd>
           <dt>평소 같은 구간 중 이보다 크게 움직인 비율</dt><dd>역시 '통계로 보기'에 있습니다. 최근 같은 길이 구간들의 고유 움직임 중 이번 이상으로 컸던 비율입니다. 3%면 평소 그런 구간 100개 중 3개꼴이라는 뜻입니다.</dd>
           <dt>평소 예상 · 예상 대비 차이</dt><dd>아래 '소식 없는 날과 비교' 표에만 씁니다. 그날 코스닥·비교 종목이 움직인 만큼 이 종목이 평소 관계대로라면 움직였을 값이 평소 예상이고, 실제 등락 − 평소 예상이 차이입니다.</dd>
@@ -2094,7 +2094,7 @@
           <li><b>급등·급락</b>: 감지 기준(급등·급락 ±10%, 대형 ±15%, 관찰 ±5~10%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
           <li><b>검색</b>: 맨 위 검색창에 날짜(9/8, 9월 8일, 2026-09-08)를 넣으면 그날 1일 차트로 바로 갑니다. 장이 열리지 않은 날이면 앞뒤 거래일 차트로 가는 버튼이 나옵니다. 달(4월, 2026-04)을 넣으면 그 달의 날짜·기사·공시와 '그 달 주가 차트 보기'가 나옵니다. 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)로 찾으면 그날 기사·공시도 함께 나오고, 제목·매체·기자·상대 회사로도 찾습니다.</li>
         </ul>`)}
-      ${sec("articles", "소식", `
+      ${sec("articles", "뉴스", `
         <h3>탭과 건수</h3>
         <ul>
           <li><b>건수</b>: '기사'는 같은 내용을 하나로 센 수, '보도'는 그 기사를 실은 매체마다 하나로 센 수입니다. 예: 6월 22일 LIG 공급계약 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 기사 1건, 보도 3건입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
@@ -2125,7 +2125,7 @@
             <div class="method-now" id="m-cut">지금 기준값을 불러오는 중…</div></li>
           <li>기사 자체의 효과가 아니라 '소식이 있던 날'과 '없던 날'의 차이입니다. 사건(예: 계약) 자체의 영향, 같은 날의 다른 소식, 수집하지 못한 소식이 섞여 있습니다.</li>
         </ul>
-        <h3>반응 모아보기</h3>
+        <h3>뉴스 반응</h3>
         <ul>
           <li>기사·공시가 나온 시각을 0분으로 맞춰, 그 뒤 그린광학 주가가 어떻게 움직였는지 한 그래프에 겹쳐 봅니다. 회색 선이 기사 하나, 파란 굵은 선이 평균입니다. 표에서 기사를 누르면 그 기사는 빨간 선으로, 같은 시간 코스닥은 점선으로 보입니다.</li>
           <li>+30분·+60분 중 고른 시간까지 그리고, 아래 표에 기사별 이 종목·KOSDAQ 등락을 보여 줍니다. 종류(보도자료·외부기사·주요 공시), 공개 시점, 기간, 주제로 거르고, 'KOSDAQ 움직임 빼고 보기'로 시장 몫을 뺀 차이를 볼 수 있습니다.</li>
@@ -2191,9 +2191,9 @@
   }
 
   const artViewSeg = (view) => { const v = view === true ? "pivot" : view || "list";      // 예전 호출: true = 대시보드
-    return `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${v === "list"}">목록</a><a href="#/pivot" aria-pressed="${v === "pivot"}">대시보드</a><a href="#/react" aria-pressed="${v === "react"}">반응 모아보기</a></div>`; };
+    return `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${v === "list"}">목록</a><a href="#/pivot" aria-pressed="${v === "pivot"}">대시보드</a><a href="#/react" aria-pressed="${v === "react"}">뉴스 반응</a></div>`; };
 
-  // ---------------------------------------------------------------- 반응 모아보기
+  // ---------------------------------------------------------------- 뉴스 반응
   // 기사·공시마다 공개 시각을 0분으로 맞춘 주가 경로(기준값 대비)를 한 그래프에 겹쳐 보고, 아래 표로 +30·60·120분·당일·다음날을 비교.
   // 통계 판정 없이 숫자 그대로 (같은 촘촘함의 봉끼리만 겹치도록 기본은 1분봉)
   // 오른·내린 건수가 '아무 효과가 없어도(반반)' 이만큼 한쪽으로 쏠릴 확률 (동전 던지기, 양쪽)
@@ -2227,7 +2227,7 @@
   const MODE_TXT = { open: "장 시작 전", session: "장중", late: "15시 이후" };
   async function pageReact() {
     main.innerHTML = `<div class="wrap dash">
-      <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">기사·공시가 나온 시각을 0분으로 맞춰 그 뒤 주가가 어떻게 움직였는지 겹쳐 봅니다. 숫자는 공개 직전 가격(장 전 공개는 전날 종가) 대비입니다.</p></div>${artViewSeg("react")}</div>
+      <div class="page-head"><div><h1 class="page-title">뉴스</h1><p class="page-sub">기사·공시가 나온 시각을 0분으로 맞춰 그 뒤 주가가 어떻게 움직였는지 겹쳐 봅니다. 숫자는 공개 직전 가격(장 전 공개는 전날 종가) 대비입니다.</p></div>${artViewSeg("react")}</div>
       <div id="rx-ctl" class="rx-ctl"></div>
       <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="rx-hover" id="rx-hover"></span><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>평균</span><span title="표에서 기사를 누르면 그 기사의 같은 시간 KOSDAQ"><i class="rx-l-kq"></i>고른 기사의 KOSDAQ</span></span></div>
         <div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-sum"></p></section>
@@ -2247,7 +2247,7 @@
     const seg = (key, opts, label = "") => `<div class="seg" role="group"${label ? ` aria-label="${label}"` : ""}>${opts.map(([v, t, tip]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${String(reactState[key]) === v}"${tip ? ` title="${esc(tip)}"` : ""}>${t}</button>`).join("")}</div>`;
     const drawCtl = () => {
       $("#rx-ctl").innerHTML = `${seg("h", REACT_H, "공개 뒤 얼마까지")}${seg("kind", REACT_KINDS)}${seg("mode", REACT_MODES, "공개 시점")}
-        ${seg("range", [["all", "전체 기간"], ["365", "1년"], ["92", "3달"]])}
+        ${seg("range", [["all", "전체 기간"], ["92", "3달"]])}
         <select class="dash-sel" id="rx-topic" aria-label="주제"><option value="">주제 전체</option>${topics.map((t) => `<option${t === reactState.topic ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
         <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값으로 봅니다 (예: 그린광학 +2.0%, KOSDAQ +0.5% → +1.5%p). 시장 전체가 같이 움직인 만큼을 빼고 그린광학만 따로 움직인 만큼을 볼 때."><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기 <span class="tip-i" aria-hidden="true">ⓘ</span></label>`;
     };
@@ -2444,7 +2444,7 @@
   let dashResize = null, dashPick = null, dashClick = null;
   async function pagePivot() {
     main.innerHTML = `<div class="wrap dash">
-      <div class="page-head"><div><h1 class="page-title">소식</h1><p class="page-sub">선·순위·타일을 누르면 그 조건으로 나머지가 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
+      <div class="page-head"><div><h1 class="page-title">뉴스</h1><p class="page-sub">선·순위·타일을 누르면 그 조건으로 나머지가 함께 걸러집니다. 다시 누르면 풀립니다.</p></div>${artViewSeg(true)}</div>
       <div class="dash-bar-top" id="piv-ctl"></div>
       <div id="dash-chips" class="dash-chips"></div>
       <div class="dash-bento">
@@ -2590,7 +2590,7 @@
 
   async function pagePR(selId) {
     main.innerHTML = `<div class="wrap">
-      <div class="page-head"><div><h1 class="page-title">소식</h1>
+      <div class="page-head"><div><h1 class="page-title">뉴스</h1>
         <p class="page-sub" id="art-sub"></p></div>${artViewSeg(false)}</div>
       <div id="pr-score"></div>
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
@@ -3498,9 +3498,9 @@
     else if (page === "calendar") { document.title = "주가 모니터"; await pageDashboard(); }
     else if (page === "days") { document.title = "일별 표 | 주가 모니터"; await pageDashboard("days"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
-    else if (page === "pr") { document.title = "소식 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "pivot") { document.title = "기사 대시보드 | 주가 모니터"; await pagePivot(); }
-    else if (page === "react") { document.title = "반응 모아보기 | 주가 모니터"; await pageReact(); }
+    else if (page === "react") { document.title = "뉴스 반응 | 주가 모니터"; await pageReact(); }
     else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
     else if (page === "status") { document.title = "수집 현황 | 주가 모니터"; await pageStatus(); }
     else if (page === "search") { document.title = "검색 | 주가 모니터"; await pageSearch(decodeURIComponent(parts.slice(1).join("/"))); }
