@@ -31,6 +31,19 @@ def _art(conn, aid, ts, title, outlets=1, category=None):
                  "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (aid, "X", ts, "매체", title, "", "", outlets, cat, 0, "제목"))
 
 
+def test_same_publisher_portal_and_direct_links_count_as_one_outlet(tmpdb):
+    with db.connect() as conn:
+        _art(conn, "portal", "2026-09-08T19:00", f"{NAME}, 카메라 공동 개발")
+        _art(conn, "direct", "2026-09-08T19:00", f"{NAME}, 카메라 공동 개발")
+        _art(conn, "other", "2026-09-08T09:28", f"{NAME}, 카메라 공동 개발")
+        conn.execute("UPDATE articles SET story='story', office='머니투데이'")
+        conn.execute("UPDATE articles SET office='이데일리' WHERE id='other'")
+    rows = articles.article_rows("X")
+    assert len(rows) == 1
+    assert rows[0]["outlets_total"] == 2
+    assert len(rows[0]["related_titles"]) == 2  # Three article links, two publishers.
+
+
 def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
     with db.connect() as conn:
         _art(conn, "a", "2026-09-08T08:00", f"{NAME}-SDT, SWIR 카메라 공동 개발 협력", outlets=2)
