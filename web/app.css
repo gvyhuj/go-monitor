@@ -1519,6 +1519,9 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .time-form input { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
 
 /* 뉴스 반응 */
+.rx-period { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rx-period input { height: 32px; padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: 8px; }
 .rx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
 .rx-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .rx-plot { width: 100%; min-height: 240px; }

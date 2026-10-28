@@ -2129,6 +2129,7 @@
         <ul>
           <li>기사·공시가 나온 시각을 0분으로 맞춰, 그 뒤 그린광학 주가가 어떻게 움직였는지 한 그래프에 겹쳐 봅니다. 회색 선이 기사 하나, 파란 굵은 선이 평균입니다. 표에서 기사를 누르면 그 기사는 빨간 선으로, 같은 시간 코스닥은 점선으로 보입니다.</li>
           <li>+30분·+60분 중 고른 시간까지 그리고, 아래 표에 기사별 이 종목·KOSDAQ 등락을 보여 줍니다. 종류(보도자료·외부기사·주요 공시), 공개 시점, 기간, 주제로 거르고, 'KOSDAQ 움직임 빼고 보기'로 시장 몫을 뺀 차이를 볼 수 있습니다.</li>
+          <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다. 1년이면 실적 발표·연례 행사가 한 바퀴씩 들어가 '보통 이렇다'를 보기에 맞고, 3달·6달로 좁히면 '요즘 분위기'를 볼 수 있지만 건수가 적어 판단 보류가 잦습니다. 직접 고르기로 시작·끝 날짜를 정할 수도 있습니다.</li>
           <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 평균선이 0에서 꾸준히 벗어나는지를 보세요.</li>
           <li>그 아래 '한쪽으로 쏠릴 확률'은 기사가 주가에 아무 영향이 없다고(오를 확률 반, 내릴 확률 반) 쳤을 때, 오른 건과 내린 건이 지금만큼 한쪽으로 기울 확률입니다(동전 던지기와 같은 계산). 이 확률이 작을수록 우연으로 보기 어렵고, 보통 5% 밑이면 '우연만으로는 설명하기 어렵다'고 봅니다. 오르내린 방향만 세므로 움직인 크기와 같은 날 다른 소식은 따지지 않습니다.</li>
         </ul>
@@ -2218,7 +2219,7 @@
     return `<span title="동전을 ${up + dn}번 던져 한쪽이 ${Math.max(up, dn)}번 이상 나올 확률(앞·뒤 어느 쪽이든). 보통 5% 밑이면 우연으로 보기 어렵다고 합니다.">`
       + `${side}이 많음. 아무 효과가 없어도 이만큼 한쪽으로 쏠릴 확률 ${pTxt} → ${verdict}.</span>`;
   }
-  const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "all" };
+  const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "365", from: "", to: "" };   // 기간 기본: 최근 1년
   const REACT_KINDS = [["all", "전체"], ["pr", "보도자료"], ["ext", "외부기사"], ["disc", "주요 공시"]];
   // 공개 시점: 장 시작 전(전날 장 마감 뒤~당일 9시, 전날 종가부터) / 장중(9시~15시, 공개 직전 가격부터) / 15시 이후(그날 종가부터 다음 거래일)
   const REACT_MODES = [["all", "전체", ""], ["open", "장 시작 전", "전날 장 마감 뒤~당일 9시 공개: 전날 종가부터 그날 9시 이후"],
@@ -2240,16 +2241,23 @@
     const topics = [...new Set(items.map((x) => x.topic).filter(Boolean))].sort();
     const kindOk = (x) => reactState.kind === "all" || (reactState.kind === "pr" ? x.kind === "pr" || x.kind === "company"
       : reactState.kind === "disc" ? x.kind === "disc" && MAIN_DISC.has(x.pblntf || "") : x.kind === "ext");
-    const sinceOf = () => (reactState.range === "all" ? "" : isoDate(new Date(Date.now() - +reactState.range * 864e5)));
+    // 기사를 모으는 기간 (반응을 재는 시간 +30·60분과는 별개): 전체 / 최근 3·6달·1년 / 직접 고르기
+    const RX_RANGES = [["all", "전체 기간"], ["92", "최근 3달"], ["183", "최근 6달"], ["365", "최근 1년"], ["custom", "직접 고르기…"]];
+    const inRange = (x) => {
+      const d = (x.ts || "").slice(0, 10), r = reactState.range;
+      if (r === "all") return true;
+      if (r === "custom") return (!reactState.from || d >= reactState.from) && (!reactState.to || d <= reactState.to);
+      return d >= isoDate(new Date(Date.now() - +r * 864e5));
+    };
     const pass = (x) => kindOk(x) && x.category !== "단순 언급" && (reactState.mode === "all" || x.mode === reactState.mode)
-      && (!reactState.topic || x.topic === reactState.topic)
-      && (!sinceOf() || (x.ts || "") >= sinceOf());
+      && (!reactState.topic || x.topic === reactState.topic) && inRange(x);
     const seg = (key, opts, label = "") => `<div class="seg" role="group"${label ? ` aria-label="${label}"` : ""}>${opts.map(([v, t, tip]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${String(reactState[key]) === v}"${tip ? ` title="${esc(tip)}"` : ""}>${t}</button>`).join("")}</div>`;
     const drawCtl = () => {
       $("#rx-ctl").innerHTML = `${seg("h", REACT_H, "공개 뒤 얼마까지")}${seg("kind", REACT_KINDS)}${seg("mode", REACT_MODES, "공개 시점")}
-        ${seg("range", [["all", "전체 기간"], ["92", "3달"]])}
+        <select class="dash-sel" id="rx-range" aria-label="기사를 모으는 기간" title="언제 나온 기사·공시를 모아 볼지 (반응은 늘 +30분·+60분만 잽니다)">${RX_RANGES.map(([v, t]) => `<option value="${v}"${v === reactState.range ? " selected" : ""}>${t}</option>`).join("")}</select>
         <select class="dash-sel" id="rx-topic" aria-label="주제"><option value="">주제 전체</option>${topics.map((t) => `<option${t === reactState.topic ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
-        <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값으로 봅니다 (예: 그린광학 +2.0%, KOSDAQ +0.5% → +1.5%p). 시장 전체가 같이 움직인 만큼을 빼고 그린광학만 따로 움직인 만큼을 볼 때."><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기 <span class="tip-i" aria-hidden="true">ⓘ</span></label>`;
+        <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값으로 봅니다 (예: 그린광학 +2.0%, KOSDAQ +0.5% → +1.5%p). 시장 전체가 같이 움직인 만큼을 빼고 그린광학만 따로 움직인 만큼을 볼 때."><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기 <span class="tip-i" aria-hidden="true">ⓘ</span></label>
+        ${reactState.range === "custom" ? `<span class="rx-period"><input type="date" id="rx-from" aria-label="시작 날짜" value="${esc(reactState.from)}"> ~ <input type="date" id="rx-to" aria-label="끝 날짜" value="${esc(reactState.to)}"></span>` : ""}`;
     };
     // 경로: [분, 값] → 그 분의 값 (앞선 가장 가까운 점, 봉 사이는 그대로 이어짐)
     const at = (path, m) => { let v = null; for (const [t, y] of path || []) { if (t <= m) v = y; else break; } return v; };
@@ -2326,6 +2334,18 @@
     $("#rx-ctl").onclick = (ev) => { const b = ev.target.closest("button[data-k]"); if (!b) return; reactState[b.dataset.k] = b.dataset.v; drawCtl(); draw(); };
     $("#rx-ctl").onchange = (ev) => {
       if (ev.target.id === "rx-topic") reactState.topic = ev.target.value;
+      if (ev.target.id === "rx-range") {
+        reactState.range = ev.target.value;
+        if (reactState.range === "custom" && !reactState.from) {      // 처음 고르면 최근 3달로 채워 둠
+          reactState.to = isoDate(new Date()); reactState.from = isoDate(new Date(Date.now() - 92 * 864e5));
+        }
+        drawCtl();
+      }
+      if (ev.target.id === "rx-from" || ev.target.id === "rx-to") {
+        reactState[ev.target.id === "rx-from" ? "from" : "to"] = ev.target.value;
+        if (reactState.from && reactState.to && reactState.from > reactState.to) [reactState.from, reactState.to] = [reactState.to, reactState.from];
+        drawCtl();
+      }
       if (ev.target.id === "rx-vskq") reactState.vsKq = ev.target.checked;
       draw();
     };
