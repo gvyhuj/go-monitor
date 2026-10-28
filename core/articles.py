@@ -367,12 +367,13 @@ def sync_articles(code: str, pages: int = 1) -> int:
 
 
 def group_stories(code: str):
-    """같은 내용을 여러 매체가 낸 기사를 하나로 묶음 (가장 먼저 나온 기사 기준)."""
+    """제목 유사도는 후보로 저장하고 명시적 연결만 묶습니다."""
     name = company_name()
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT id, ts, title FROM articles WHERE symbol=? ORDER BY ts DESC LIMIT 2000", (code,))]
     rows.sort(key=lambda r: r["ts"])
+    candidates = []
     stories = []   # (story_id, ts, tokens)
     assign = {}
     for r in rows:
@@ -387,7 +388,8 @@ def group_stories(code: str):
             if (j >= 0.3 or (shared >= 2 and j >= 0.2)) and (best is None or j > best[1]):
                 best = (sid, j)
         if best:
-            assign[r["id"]] = best[0]
+            assign[r["id"]] = r["id"]
+            candidates.append((r["id"], best[0], best[1]))
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
@@ -413,8 +415,10 @@ def group_stories(code: str):
                 keep, drop = (a, b) if (first[a], a) <= (first[b], b) else (b, a)
                 parent[drop] = keep
     if parent:
-        assign = {k: root(v) for k, v in assign.items()}     # 그 기사와 자동으로 같이 묶여 있던 기사도 함께
+        assign = {k: root(v) for k, v in assign.items()}     # 명시적으로 연결된 기사만 함께
     with connect() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS article_candidates (a TEXT, b TEXT, score REAL, PRIMARY KEY(a,b))")
+        conn.executemany("INSERT OR REPLACE INTO article_candidates VALUES(?,?,?)", candidates)
         conn.executemany("UPDATE articles SET story=? WHERE id=?", [(s, i) for i, s in assign.items()])
 
 
@@ -840,6 +844,7 @@ def lead_picks(conn) -> set:
 
 
 def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
+    group_stories(symbol)
     with connect() as conn:
         arts = [dict(r) for r in conn.execute(
             "SELECT * FROM articles WHERE symbol=? " + ("" if include_hidden else "AND hidden=0 ") + "ORDER BY ts DESC",

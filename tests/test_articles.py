@@ -37,6 +37,7 @@ def test_same_publisher_portal_and_direct_links_count_as_one_outlet(tmpdb):
         _art(conn, "direct", "2026-09-08T19:00", f"{NAME}, 카메라 공동 개발")
         _art(conn, "other", "2026-09-08T09:28", f"{NAME}, 카메라 공동 개발")
         conn.execute("UPDATE articles SET story='story', office='머니투데이'")
+        conn.executemany("INSERT INTO article_links(a,b) VALUES(?,?)", [("portal","direct"),("portal","other")])
         conn.execute("UPDATE articles SET office='이데일리' WHERE id='other'")
     rows = articles.article_rows("X")
     assert len(rows) == 1
@@ -269,6 +270,8 @@ def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
         _art(conn, "a", "2026-04-22T09:10", f"{NAME}, 82억 공급계약 체결")
         _art(conn, "b", "2026-04-22T14:14", f"{NAME}, 소형무장헬기 유도탄 공급계약→매출 확대 기대")
         conn.execute("UPDATE articles SET story='s1', office=CASE id WHEN 'a' THEN '뉴스핌' ELSE '톱스타뉴스' END")
+    with db.connect() as conn:
+        conn.execute("INSERT INTO article_links(a,b) VALUES('a','b')")
     auto = articles.article_rows("X")
     assert [a["id"] for a in auto] == ["a"] and not auto[0].get("picked")
     cloud_job.apply_inbox({"type": "article_lead", "id": "b", "ids": ["a", "b"]}, logging.getLogger())

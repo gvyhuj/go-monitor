@@ -1899,6 +1899,11 @@
     </ul></section>`;
   }
 
+  function contributionBlock(sp) {
+    if (!sp || sp.own == null) return '';
+    return `<section class="d-block"><h3>모형 추정 기여분 (저장 당시)</h3><dl class="facts">${[['그린광학 실제 등락률',pct(sp.own)],['시장 추정 기여분',points(sp.market)],['업종 추정 기여분',points(sp.sector)],['종목 고유 추정분',points(sp.specific)]].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl><p class="note">과거 관계에 따른 모형 추정이며 실제 상승·하락 원인을 확정하지 않습니다. 종목 고유 추정분에는 누락 요인과 모형 오차도 포함됩니다.</p></section>`;
+  }
+
   function renderEventDrawer(d) {
     const e = d.event, c = d.cause;
     const daily = isDaily(e);
@@ -1923,6 +1928,7 @@
         <div><dt>거래대금${daily ? " (저장 당시)" : ""}</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       ${daily ? `<p class="note">${esc(dailyEvidenceNote(e))}</p>` : ""}
+      ${contributionBlock(c && c.split)}
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
@@ -2002,7 +2008,7 @@
     const L = [];
     L.push(`아래는 '${name}' 주가 움직임에 대해 내 사이트가 자동으로 모은 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
     L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
-    L.push("[몫 나누기]의 이 종목 고유 몫이 평소에도 흔한 크기(아래 '드문 정도'가 5% 이상)라면 이 종목만의 원인은 따로 없을 수 있어. 그때는 ①② 시장·업종이 그날 왜 움직였는지를 먼저 밝히고, ③ 종목 소식은 고유 몫을 설명할 근거가 있을 때만 원인으로 써줘.");
+    L.push("시장·업종·종목 고유 추정분은 모형 추정치이며 실제 원인이 아닙니다. 기여 비중이나 주도 판정을 하지 말고, 음수 또는 실제 등락보다 큰 추정치를 그대로 제시하세요.");
     L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     L.push("검색한 자료는 아래 거래일 날짜와 맞는지 꼭 확인하고, 검색으로 확인한 지수·등락률이 아래 숫자와 다르면 다르다고 적어줘.");
     L.push("답의 첫 줄은 '한 줄 요약'으로 써줘. 한국어 존댓말로.", "");
@@ -2023,9 +2029,9 @@
     if (sp && sp.own != null) {
       const kq = sp.kosdaq != null ? sp.kosdaq : e.kosdaq_change;
       const mk = sp.beta_market != null && kq != null ? ` (KOSDAQ ${pct(kq)} × 이 종목의 평소 시장 민감도 ${sp.beta_market.toFixed(2)})` : "";
-      L.push(`[몫 나누기] 실제 ${pct(sp.own)} = 시장 ${pct(sp.market)}${mk} + 업종 ${pct(sp.sector)} + 이 종목 고유 ${pct(sp.specific)}`);
+      L.push(`[몫 나누기] 그린광학 실제 등락률: ${pct(sp.own)}; 시장 추정 기여분: ${points(sp.market)}${mk}; 업종 추정 기여분: ${points(sp.sector)}; 종목 고유 추정분: ${points(sp.specific)}`);
       const parts = (sp.factor_parts || []).slice(1).filter((p) => p.contrib != null && Math.abs(p.contrib) >= 0.0005);
-      if (sp.method === "분야별 회귀") L.push(`[업종 몫 계산법] 비교 종목 평균을 그대로 더한 값이 아님. 분야별 등락에서 시장과 같이 움직인 부분을 빼고, 이 종목이 평소 그 분야와 얼마나 같이 움직였는지(직전 약 120거래일)를 곱한 합${parts.length ? ` — ${parts.map((p) => `${p.name} ${pct(p.contrib)}(분야 등락 ${pct(p.factor)}${p.factor_resid != null ? `, 시장 몫 뺀 뒤 ${pct(p.factor_resid)}` : ""})`).join(", ")}` : ""}`);
+      if (sp.method === "분야별 회귀") L.push(`[업종 몫 계산법] 비교 종목 평균을 그대로 더한 값이 아님. 분야별 등락에서 시장과 같이 움직인 부분을 빼고, 이 종목이 평소 그 분야와 얼마나 같이 움직였는지(직전 약 120거래일)를 곱한 합${parts.length ? ` — ${parts.map((p) => `${p.name} ${points(p.contrib)}(분야 등락 ${pct(p.factor)}${p.factor_resid != null ? `, 시장 몫 뺀 뒤 ${pct(p.factor_resid)}` : ""})`).join(", ")}` : ""}`);
       if (sp.rarity != null) L.push(`[고유 몫 드문 정도] 평소 ${sp.n_null}거래일의 고유 움직임 중 이만큼 이상 컸던 날 ${(sp.rarity * 100).toFixed(0)}%`);
       else if (sp.z != null) L.push(`[고유 몫 크기] 평소 하루 고유 변동폭의 ${Math.abs(sp.z).toFixed(1)}배`);
     }
@@ -2258,7 +2264,7 @@ const OBS_KIND = {company_press_release:'당사 배포 보도자료',external_co
 const obsLink = (url,label) => /^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `${esc(label)} (원문 주소 없음)`;
 function observationQuestion(d) {
   const o=d.observation, f=o.intraday || {};
-  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),context:d.context,market_context:d.market_context,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 일별 저장 종가의 장후 포함·기업행동 보정 여부도 확인해 주세요.`;
+  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:d.market_context,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 일별 저장 종가의 장후 포함·기업행동 보정 여부도 확인해 주세요.`;
 }
 function observationChart(d, range, difference) {
   const o=d.observation, f=range==='day' ? o.intraday : o.windows[range];
@@ -2299,6 +2305,7 @@ async function showObservation(eid) {
     host.innerHTML=`<section class="panel dash-card obs-detail"><div class="dash-card-head"><h2>${esc(d.title)}</h2><a href="#/react">닫기</a></div>
     <p>${esc(stampText(d.first_public_at))} KST · ${esc(d.members[0]?.office||'')} · ${esc(d.business_tags.join(' / '))}</p>
     <p>${d.archived_source?"보관 기록 (현재 수집 목록에 없음) · ":""}${esc(OBS_KIND[d.event_kind])} · 발표 주체 ${esc(d.publisher)} · 시각 ${esc(OBS_STATUS[d.time_status]||d.time_status)} (${esc(d.time_source)}) · ${esc(o.missing_reason||OBS_STATUS[o.status])}</p>
+    <p>당사 보도자료 배포: ${esc(stampText(d.pr_distributed_at))} · 사건 연결 상태: ${esc(({confirmed:'동일 사건 확인',review_required:'과거 묶음 · 확인 필요',individual:'개별 사건'})[d.identity_status]||'확인 필요')}</p><p>동일 사건 후보 (미확정): ${esc((d.same_event_candidates||[]).map(x=>x.a+' ↔ '+x.b).join(', ')||'없음')}</p>
     <p>${obsLink(d.primary_source_url,'원문 열기')} · <button class="btn small" id="obs-link">사건 링크 복사</button> <button class="btn small" id="obs-export">관측값 CSV</button> <button class="btn small" id="obs-sources-export">원문 목록 CSV</button></p>
     <div class="seg" role="group" aria-label="관찰 기간">${[['day','당일'],['5','전후 5거래일'],['20','전후 20거래일']].map(([v,t])=>`<button data-obs-range="${v}" aria-pressed="${range===v}">${t}</button>`).join('')}</div>
     <label><input type="checkbox" id="obs-diff" ${diff?'checked':''}> KOSDAQ 차이 보기 (%p)</label>
@@ -2306,7 +2313,7 @@ async function showObservation(eid) {
     ${observationChart(d,range,diff)}<p id="obs-tip" role="status">점·시각 마커를 누르면 관측값을 확인합니다.</p>
     <div class="obs-cards">${cards.map(([label,v,pp])=>`<div><small>${label}</small><strong>${v==null?'미집계':pp?points(v):pct(v)}</strong></div>`).join('')}</div>
     <p class="note">${esc(win?.price_warning||'공개 직전 완료된 시세를 기준으로 합니다. 15시 이후 공개는 다음 관측 거래일 09:00부터 비교합니다. 당일 남은 정규장 반응과는 다릅니다.')} 주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.</p>
-    <div class="obs-columns"><section><h3>연결된 기사·공시 (${d.members.length})</h3>${d.members.map(m=>`<p>${esc(stampText(m.ts))} · ${esc(m.office)} · ${obsLink(m.url,m.title)}<br><small>수집 ${esc(m.collected_at||'미상')} · 원 시각 ${esc(m.original_ts||'미상')} · 출처 ${esc(m.time_source)}</small></p>`).join('')}</section>
+    <div class="obs-columns"><section><h3>연결된 기사·공시 (${d.members.length})</h3>${d.members.map(m=>`<p>${esc(stampText(m.ts))} · ${esc(m.office)} · ${obsLink(m.url,m.title)}<br><small>수집 ${esc(m.collected_at||'미상')} · 원 시각 ${esc(m.original_ts||'미상')} · 출처 ${esc(m.time_source)} · 분류 ${esc(({pr:'당사 보도자료',disc:'공시',external_company_announcement:'외부 기업 발표'})[m.kind]||'외부기사')}</small></p>`).join('')}</section>
     <section><h3>동시 소식·시장 맥락</h3>${d.context.map(x=>`<p><a href="#/pr/${encodeURIComponent(x.id)}">${esc(x.title)}</a> ${esc(stampText(x.ts))}${x.event_id?` <a href="#/react/event/${x.event_id}">관찰 기록</a>`:''}</p>`).join('')||'<p>수집 정보 없음(실제 없음과 다름)</p>'}<p>직전 5거래일 추세 ${pct(o.windows['5']?.pre_trend)} </p><p>${esc(d.market_context?.basis||'동시 업종 시세: 수집 정보 없음(실제 없음과 다름)')}</p>${[...(d.market_context?.industry||[]),...(d.market_context?.themes||[])].map(x=>`<p>${esc(x.name)} ${pctRaw(x.change_rate)} · ${esc(x.updated_at||'시각 미상')}</p>`).join('')||'<p>업종·테마 수집 정보 없음(실제 없음과 다름)</p>'}</section></div>
     <details><summary>분류·시각·태그 수정 / 사건 연결</summary><p>${esc(d.source_note)}</p><form id="obs-meta" class="obs-form">
     <label>종류<select name="event_kind">${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}" ${v===d.event_kind?'selected':''}>${t}</option>`).join('')}</select></label>

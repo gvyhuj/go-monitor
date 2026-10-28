@@ -81,3 +81,14 @@ Windows sandbox에서는 tempfile.tempdir을 레포 run/tmp로 지정하여 기�
 뉴스 반응 → 기사 행/선 선택 → 당일·5일·20일 → 원문/관측 CSV → AI 질문 복사 → 결과 붙여넣기 → 암호화 저장 요청 → GitHub Create → 다음 자동 수집 후 재조회. 정정은 새 버전으로 남기고, 유사 사건 필터로 이전 기록을 비교한다.
 
 실행 결과 (2026-10-29): Python 전체 **219 passed**, Node 자동 테스트 **12 passed**, 기존 대시보드 배지/대표 분석 검사 통과, JavaScript 구문 검사와 `git diff --check` 통과. 브라우저에서 기간 전환·키보드 행 선택·메모 저장/이력·필터·반응형·점선 터치·접기 도움말을 확인했고 콘솔 오류는 없었다.
+
+## PR #108 병합 전 보완 (2026-10-29)
+
+- 제목 유사도는 `article_candidates`의 미확정 후보로 저장한다. 새 자동 묶음은 만들지 않고 `article_links` / `story_with`의 명시 연결만 기사 묶음에 적용한다. 기존 사건 ID·별칭·메모·AI 분석·이력은 유지하며, 근거가 불명확한 과거 사건 묶음은 `review_required`로 표시하고 기존 분리 기능으로 검토한다.
+- 실제 등락률은 %, 시장·업종·종목 고유 추정분은 %p로 화면과 AI 복사문에 표시한다. 전체 등락 대비 비중 및 비중 기반 시장 원인 순위를 제거했다. 음수·실제 등락 초과 값을 보존하며, 0인 회귀계수를 기본값으로 치환하던 오류를 수정했다. 새 p-value 판단 기준은 추가하지 않았다. 기존 별도 통계 분석은 유지한다.
+- 사건의 최초 공개 시각과 당사 배포 시각을 구분한다. 기사에 PR 분류가 확인돼도 기사 시각을 실제 배포 시각으로 추정하지 않는다. 직접 등록한 배포 기록 또는 명시적 정정값을 사용하고, 없으면 미상이다. 연결된 원문별 종류와 근거 주소, 연결 전 사건의 보도자료 메타데이터를 보존한다. 외부기사가 먼저 공개되어도 확인된 보도자료 분류는 유지한다.
+- 재현·회귀: 유사 제목의 독립 계약, 과거 ID/AI 기록 보존, 명시 연결·분리, 외부기사 선행/PR 후행, 네 종류 분류, 연결 전 배포 근거 보존, 0 계수·음수·실제 등락 초과·0 등락 분해, 화면/AI %p 표현.
+- 검증: `.venv/bin/python -m pytest tests -q` — **231 passed**. 최종 보도자료 분류 보완은 `tests/test_observatory.py`로 추가 재검증했다.
+- Node: `node --check web/app.js`; `node --test tests/display_consistency_check.cjs tests/observatory_check.cjs tests/reaction_alignment_check.cjs tests/dashboard_badges_check.cjs tests/primary_analysis_check.cjs` — **15 passed** (13 테스트 + 2 검사 파일).
+- 전체 Node 파일 실행도 시도했으나 `public_refresh_check.cjs`는 생성된 사이트 경로 인자가 필요한 별도 브라우저 검사다. 경로를 지정해 실행했을 때 Microsoft Edge 실행 파일(`/opt/microsoft/msedge/msedge`)이 없어 브라우저 시작 단계에서 중단됐다. 따라서 이번 클라우드에서 해당 브라우저 자동 갱신 검사는 통과로 보고하지 않는다. 운영 데이터/운영 배포 검증도 수행하지 않았다.
+- 기존 자동 묶음의 실제 동일 사건 여부와 미상 배포 시각은 원문·배포 기록을 확인하는 수동 검토가 필요하다. 합성 데이터 테스트가 실제 사건의 사실관계를 확정하지 않는다.

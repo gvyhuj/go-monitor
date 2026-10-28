@@ -5,7 +5,7 @@
 ③ 수급   거래량 배수, 증권사 창구(업종 묶음 매수 / 이 종목 집중 매수), 외국인·기관 순매수
 
 판단 순서
-- 바깥 몫이 절반 이상 → 시장·업종 흐름 (그 흐름을 만든 묶음 매수·업종 소식을 근거로)
+- 시장·업종·고유 추정분은 %p로 제시하며 원인 순위 근거로 사용하지 않음
 - 고유 몫이 이례적 + 기사가 ②통과 → 그 기사
 - 고유 몫이 이례적 + 수급만 뚜렷 → 수급 ('누가'만 알고 '왜'는 모르므로 신뢰도 최대 중간)
 - 모두 아니면 → 원인 미확인
@@ -25,7 +25,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "18"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름, 18: 비교 종목을 네이버 업종(WICS)으로)
+CAUSE_VERSION = "19"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름, 18: 비교 종목을 네이버 업종(WICS)으로)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -496,9 +496,12 @@ def _decompose_window(symbol: str, day, own, kq, related, daily: bool):
         return None
     vals = [r["change"] for r in related if r.get("change") is not None]
     sec = sum(vals) / len(vals) if len(vals) >= 2 else None
-    bm = (dc or {}).get("beta_market") or 1.0
-    bs = (dc or {}).get("beta_sector") or (1.0 if sec is not None else 0.0)
-    bsm = (dc or {}).get("beta_sector_market") or 1.0
+    bm = (dc or {}).get("beta_market")
+    bm = 1.0 if bm is None else bm
+    bs = (dc or {}).get("beta_sector")
+    bs = (1.0 if sec is not None else 0.0) if bs is None else bs
+    bsm = (dc or {}).get("beta_sector_market")
+    bsm = 1.0 if bsm is None else bsm
     if kq is None or sec is None:
         return None  # Missing comparison prices are not zero market/sector influence.
     mk = bm * kq
@@ -584,18 +587,13 @@ def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, s
 
     def add(k, state, text):
         out.append({"k": k, "state": state, "text": text})
-    if split and split.get("own") and ext_share is not None:
-        txt = (f"실제 {_fmt_pct(split['own'])} = 시장 {_fmt_pct(split['market'])} + 업종 {_fmt_pct(split['sector'])} "
-               f"+ 고유 {_fmt_pct(split['specific'])}")
-        if ext_share >= 0.5:
-            txt += f" → 바깥 흐름이 {min(100, ext_share*100):.0f}%"
-            st = "yes"
-        elif abn:
-            txt += f" → 고유 몫이 평소의 {abs(abn['z']):.1f}배 (" + ("이례적" if unusual else "평소 범위") + ")"
-            st = "yes" if unusual else "part"
-        else:
-            st = "part"
-        add("① 몫 나누기", st, txt)
+    if split and split.get("own") is not None:
+        txt = (f"그린광학 실제 등락률: {_fmt_pct(split['own'])} · "
+               f"시장 추정 기여분: {split['market']*100:+.2f}%p · "
+               f"업종 추정 기여분: {split['sector']*100:+.2f}%p · "
+               f"종목 고유 추정분: {split['specific']*100:+.2f}%p. "
+               "과거 관계에 따른 모형 추정이며 실제 상승·하락 원인을 확정하지 않습니다.")
+        add("① 몫 나누기", "part", txt)
     else:
         add("① 몫 나누기", "no", "시장·업종 시세가 없어 나누지 못했습니다")
     news = [c for c in ranked if c["type"] in ("article", "pr", "disclosure")]
@@ -966,13 +964,10 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         if rr and rr.get("ok"):
             abn = {"z": rr["z"], "p": rr["p"], "basis": f"평소 {mins}분 움직임 {rr['n']}개 대비"}
     causal["abnormal"] = abn
-    ext_share = None
-    if split and split.get("own"):
-        ext_share = (split["market"] + split["sector"]) / split["own"]
-        split["external_share"] = ext_share
-        if abn:
-            split["z"], split["abn_p"], split["abn_basis"] = abn["z"], abn["p"], abn["basis"]
-    external_led = ext_share is not None and ext_share >= 0.5
+    ext_share = None  # Retained argument for compatibility; no contribution ratios.
+    if split and abn:
+        split["z"], split["abn_p"], split["abn_basis"] = abn["z"], abn["p"], abn["basis"]
+    external_led = False  # A model decomposition cannot establish causal leadership.
     unusual = bool(abn and abn["p"] < 0.05 and spec is not None and spec * sign > 0)
     own_led = (not external_led) and unusual
 
@@ -1098,12 +1093,10 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     own_flows = [c for c in cands if c["type"] == "flow" and c.get("kind") != "basket"]
     if spec is None:
         chk1_own = {"ok": False, "text": "고유 몫을 계산할 시세가 없습니다"}
-    elif external_led:
-        chk1_own = {"ok": False, "text": f"움직임의 {min(100, ext_share*100):.0f}%가 시장·업종 몫이라 회사 고유 움직임은 작습니다"}
     elif abn is None:
-        chk1_own = {"ok": False, "text": f"고유 몫 {_fmt_pct(spec)} (평소와 비교할 기록 부족)"}
+        chk1_own = {"ok": False, "text": f"종목 고유 추정분 {spec*100:+.2f}%p (평소와 비교할 기록 부족)"}
     else:
-        chk1_own = {"ok": unusual, "text": f"고유 몫 {_fmt_pct(spec)}, 평소의 {abs(abn['z']):.1f}배 ({abn['basis']}) → "
+        chk1_own = {"ok": unusual, "text": f"종목 고유 추정분 {spec*100:+.2f}%p, 평소의 {abs(abn['z']):.1f}배 ({abn['basis']}) → "
                                           + ("이례적" if unusual else "평소에도 있을 만한 크기")}
     flow_bits = []
     if heavy:
@@ -1112,38 +1105,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     chk3_own = {"ok": bool(flow_bits), "text": " · ".join(flow_bits) if flow_bits else "뚜렷한 매수·매도 쏠림이나 거래 급증 없음"}
 
     ranked = []
-    # 바깥 흐름(시장·업종) 후보
-    if split and ext_share is not None and ext_share >= 0.2:
-        parts = split.get("factor_parts") or []
-        big = max(parts[1:], key=lambda x: x["contrib"] * sign, default=None) if len(parts) > 1 else None
-        bg = sorted([b for b in background if b.get("ts")], key=lambda b: b["ts"])[:3] + [b for b in background if not b.get("ts")][:1]
-        same_basket = basket if basket else None
-        checks = [
-            {"step": "①", "ok": external_led, "text": f"실제 {_fmt_pct(split['own'])} 중 시장 {_fmt_pct(split['market'])} + 업종 {_fmt_pct(split['sector'])} "
-                                                       f"= 바깥 흐름 몫 {min(100, max(0, ext_share)*100):.0f}%"},
-            {"step": "②", "ok": why_ok or bool(bg),
-             "text": (f"{'시장 전체가' if drv_seg == '시장' else drv_seg + ' 업종이'} 움직인 배경: {why_text}" if why_ok else
-                      ("업종·시장을 움직인 소식: " + bg[0]["text"]) if bg else
-                      (why_text or "업종·시장이 왜 움직였는지 알려주는 기사는 찾지 못함"))},
-            {"step": "③", "ok": bool(same_basket), "text": same_basket["title"] if same_basket else "업종을 묶어 사고판 창구는 확인 안 됨"},
-        ]
-        share_word = "대부분" if ext_share >= 0.75 else "절반가량" if ext_share >= 0.4 else "일부"
-        if external_led and same_basket:
-            title = f"{same_basket['who']}의 {same_basket['sector_word']} 묶음 {buyer['side']} → 업종 전체 {'강세' if sign > 0 else '약세'}에 함께 실림"
-        else:
-            title = f"시장·업종 전체 흐름 ({share_word})" + (f" — {big['name']} 몫이 가장 큼" if big and big["contrib"] * sign > 0 else "")
-        ranked.append({
-            "type": "market", "key": "①", "timing": "동시", "checks": checks, "title": title,
-            "summary": f"과거 관계에 기반한 모형 추정: 관측 {_fmt_pct(split['own'])}, 시장 {split['market']*100:+.2f}%p · 업종 {split['sector']*100:+.2f}%p."
-                       + ("" if ext_share >= 0.75 else f" 나머지 이 종목 고유 몫 {_fmt_pct(split['specific'])}는 다른 원인을 봐야 합니다."),
-            "evidence": ([f"왜 움직였나(추정): {why_text}"] if why_text else [])
-                        + ((same_basket or {}).get("evidence") or [])[:4] + ([f"같이 움직인 종목: {co_names}"] if co_names else [])
-                        + [b["text"] for b in bg],
-            "links": ([{"title": i["title"], "url": i["url"]} for i in (why["top"]["items"][:2] if why and why.get("top") else [])]
-                      + [{"title": b["title"], "url": b["url"]} for b in bg if b.get("url")])[:4],
-        })
-        if external_led and same_basket:
-            cands = [c for c in cands if c is not same_basket]      # 바깥 흐름 후보 안에 합침
+    # Market/sector estimates are descriptive, not causal ranking evidence.
     for c in cands:
         if c["type"] in ("article", "pr", "disclosure"):
             t = c.get("test")

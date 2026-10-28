@@ -22,6 +22,8 @@ def row(a='a',title='광학미러 공급 계약',ts='2026-10-06T09:28'):
     return {'id':a,'title':title,'ts':ts,'kind':'ext','time_quality':'ok'}
 
 def article(c,a,story=None):
+    if story and story != a:
+        c.execute('INSERT OR IGNORE INTO article_links(a,b) VALUES(?,?)',(a,story))
     c.execute('INSERT INTO articles(id,symbol,ts,title,story,url,time_from) VALUES (?,?,?,?,?,?,?)',(a,'X','2026-10-06T09:28','광학미러 공급 계약',story,'https://example.org/'+a,'page'))
 
 def event(c,a='a'):
@@ -178,3 +180,72 @@ def test_invalid_note_parent_cannot_attach_to_other_event(database):
     eid=event(database)
     with pytest.raises(ValueError,match='수정 대상'):
         ob.mutate(database,{'type':'news_event_note','event_id':eid,'kind':'ai_analysis','body':'x','revision_parent_id':'nonexistent'})
+
+def test_legacy_identity_and_ai_records_survive_candidate_change(database):
+    for a in ['a','b']: article(database,a)
+    eid=event(database,'a')
+    ob.ensure_event(database,'b','old auto group','story:a',['a'])
+    ob.mutate(database,{'type':'news_event_note','event_id':eid,'kind':'ai_analysis','body':'preserve'})
+    ds,_=ob.build(database,'X',[row('a'),row('b')])
+    assert ds[eid]['identity_status']=='review_required'
+    assert ds[eid]['notes'][0]['body']=='preserve'
+    assert len(ds[eid]['members'])==2
+
+def test_earlier_external_article_does_not_reclassify_press_release(database):
+    article(database,'a');article(database,'b','a')
+    database.execute("UPDATE articles SET ts='2026-10-06T10:00',kind_override='pr' WHERE id='b'")
+    rows=[row('a')]
+    ds,_=ob.build(database,'X',rows);d=next(iter(ds.values()))
+    assert rows[0]['kind']=='pr'
+    assert d['event_kind']=='company_press_release'
+    assert d['first_public_at']=='2026-10-06T09:28'
+    assert d['pr_distributed_at'] is None
+    ob.mutate(database,{'type':'news_event_meta','event_id':d['event_id'],'pr_distributed_at':'2026-10-06T09:50','time_source':'당사 배포 기록'})
+    ds,_=ob.build(database,'X',[row('a')])
+    assert ds[d['event_id']]['pr_distributed_at']=='2026-10-06T09:50:00'
+
+@pytest.mark.parametrize('own,kq,sec,bm,bs',[(.04,.01,.015,1,1),(.01,.03,.02,2,1),(0,.02,.01,0,0),(-.01,.02,-.02,1,1)])
+def test_unbounded_contributions_and_zero_coefficients(database,monkeypatch,own,kq,sec,bm,bs):
+    from core import causes,articles
+    monkeypatch.setattr(articles,'decompose',lambda *a:{'beta_market':bm,'beta_sector':bs,'beta_sector_market':0})
+    d=causes._decompose_window('X',datetime(2026,10,6).date(),own,kq,[{'code':x,'name':x,'change':sec} for x in ['A','B']],False)
+    assert d['market']==pytest.approx(bm*kq)
+    assert d['sector']==pytest.approx(bs*sec)
+    assert sum(d[k] for k in ['market','sector','specific'])==pytest.approx(own)
+    text=causes._desk(d,None,None,False,[],{"ok":False,"text":"없음"},None,None,None,None,1)[0]['text']
+    assert text.count('%p')==3 and '추정' in text and '원인을 확정하지' in text
+
+def test_similar_same_day_contracts_are_candidates_not_confirmed(database):
+    from core import articles
+    for a in ['a','b']: article(database,a)
+    database.commit()
+    articles.group_stories('X')
+    assert database.execute('SELECT COUNT(*) FROM article_candidates').fetchone()[0]==1
+    ds,_=ob.build(database,'X',[row('a'),row('b')])
+    assert len(ds)==2
+    assert all(x['identity_status']=='individual' and x['same_event_candidates'] for x in ds.values())
+    assert database.execute('SELECT COUNT(DISTINCT story) FROM articles').fetchone()[0]==2
+
+@pytest.mark.parametrize('kind',ob.KINDS)
+def test_confirmed_source_classification_is_retained(database,kind):
+    article(database,'a')
+    eid=event(database,'a')
+    ob.mutate(database,{'type':'news_event_meta','event_id':eid,'event_kind':kind,
+                        'publisher':'확인 발행 주체','primary_source_url':'https://example.org/source'})
+    ds,_=ob.build(database,'X',[row('a')])
+    assert ds[eid]['event_kind']==kind
+    assert ds[eid]['primary_source_url']=='https://example.org/source'
+    assert ds[eid]['history'][0]['action']=='news_event_meta'
+
+def test_link_preserves_press_metadata_and_distribution(database):
+    article(database,'a');article(database,'b')
+    a=event(database,'a');b=event(database,'b')
+    ob.mutate(database,{'type':'news_event_meta','event_id':a,'event_kind':'external_article'})
+    ob.mutate(database,{'type':'news_event_meta','event_id':b,'event_kind':'company_press_release',
+        'pr_distributed_at':'2026-10-06T11:00','primary_source_url':'https://example.org/company'})
+    ob.mutate(database,{'type':'news_event_link','event_id':a,'other_id':b,'reason':'원문 확인'})
+    ds,_=ob.build(database,'X',[row('a'),row('b')])
+    assert ds[a]['event_kind']=='company_press_release'
+    assert ds[a]['pr_distributed_at']=='2026-10-06T11:00:00'
+    assert ds[a]['identity_status']=='confirmed'
+    assert any(x.get('primary_source_url')=='https://example.org/company' for x in ds[a]['classification_sources'])
