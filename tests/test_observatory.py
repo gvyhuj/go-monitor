@@ -1,0 +1,180 @@
+"""Acceptance fixtures are synthetic and must never be deployed as production prices."""
+from datetime import datetime,timedelta
+import json,base64
+import pytest
+from core import db,observatory as ob,yahoo,sitebuild,ghinbox
+
+@pytest.fixture
+def database(tmp_path,monkeypatch):
+    monkeypatch.setattr(db,'DATA_DIR',tmp_path);monkeypatch.setattr(db,'DB_PATH',tmp_path/'t.db');db.init_db()
+    with db.connect() as conn:
+        yield conn
+
+def minute(c,s,t,p):
+    c.execute('INSERT OR REPLACE INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES (?,?, ?,?,?,?,1,?)',(s,t,p,p,p,p,'fixture'))
+
+def prices(c):
+    for s,p in [('X',100),('KOSDAQ',1000)]:
+        for time,m in [('09:27',1),('09:28',1.02),('09:58',1.03),('10:28',1.06)]:
+            minute(c,s,'2026-10-06T'+time,p*m)
+
+def row(a='a',title='광학미러 공급 계약',ts='2026-10-06T09:28'):
+    return {'id':a,'title':title,'ts':ts,'kind':'ext','time_quality':'ok'}
+
+def article(c,a,story=None):
+    c.execute('INSERT INTO articles(id,symbol,ts,title,story,url,time_from) VALUES (?,?,?,?,?,?,?)',(a,'X','2026-10-06T09:28','광학미러 공급 계약',story,'https://example.org/'+a,'page'))
+
+def event(c,a='a'):
+    return ob.ensure_event(c,a,'fixture','manual')
+
+def test_T01_pre_publication_base(database):
+    prices(database);o=ob.observe(database,'X','2026-10-06T09:28')['intraday']
+    assert o['base_own']==100 and o['base_own_time']=='2026-10-06T09:27'
+    assert o['base_lag_minutes']==1 and o['steps']['30']['own']==pytest.approx(.03)
+
+def test_T02_stale_base_rejected(database):
+    prices(database);database.execute("DELETE FROM minute_bars WHERE ts LIKE '%09:27'")
+    minute(database,'X','2026-10-06T09:20',100)
+    o=ob.observe(database,'X','2026-10-06T09:28')['intraday']
+    assert o['base_own'] is None and o['steps']['30']['own'] is None
+
+@pytest.mark.parametrize('iv',[5,60])
+def test_T03_completed_coarse(iv):
+    p=yahoo.completed_points([('2026-10-06T09:00',100)],iv)
+    assert p[0][0]==(datetime(2026,10,6,9)+timedelta(minutes=iv)).isoformat(timespec='minutes')
+
+def test_T04_missing_endpoint(database):
+    prices(database);database.execute("DELETE FROM minute_bars WHERE ts LIKE '%09:58'")
+    o=ob.observe(database,'X','2026-10-06T09:28')['intraday']['steps']
+    assert o['30']['own'] is None and o['60']['own']==pytest.approx(.06)
+
+def test_T05_missing_index_endpoint(database):
+    prices(database);database.execute("DELETE FROM minute_bars WHERE symbol='KOSDAQ' AND ts LIKE '%09:58'")
+    s=ob.observe(database,'X','2026-10-06T09:28')['intraday']['steps']['30']
+    assert s['own']==pytest.approx(.03) and s['kq'] is None and s['diff'] is None
+
+@pytest.mark.parametrize('ts,day,mode',[('2026-10-06T08:00','2026-10-06','open'),('2026-10-06T15:01','2026-10-07','late'),('2026-10-10T12:00','2026-10-12','open')])
+def test_T06_exchange_calendar(database,ts,day,mode):
+    for d in ['2026-10-05','2026-10-06','2026-10-07','2026-10-12']:
+        for s,p in [('X',100),('KOSDAQ',1000)]: database.execute('INSERT INTO daily_bars(symbol,date,close) VALUES(?,?,?)',(s,d,p))
+    o=ob.observe(database,'X',ts);assert o['day']==day and o['mode']==mode and o['start'].endswith('09:00:00')
+
+def test_T07_mismatched_base_times(database):
+    prices(database);database.execute("DELETE FROM minute_bars WHERE symbol='KOSDAQ'")
+    database.executemany('INSERT INTO coarse_bars(symbol,interval,ts,close) VALUES (?,?,?,?)',[('KOSDAQ',5,'2026-10-06T09:20',1000),('KOSDAQ',5,'2026-10-06T09:53',1010)])
+    f=ob.observe(database,'X','2026-10-06T09:28')['intraday']
+    assert f['base_kq_time']=='2026-10-06T09:25' and not f['comparable']
+    assert f['steps']['30']['kq']==pytest.approx(.01) and f['steps']['30']['diff'] is None
+
+def test_T08_explicit_story_and_disclosure_merge(database):
+    for a in ['a','b','c']:article(database,a,'a')
+    ds,_=ob.build(database,'X',[row('a'),row('b'),row('c')]);assert len(ds)==1
+    eid=next(iter(ds));did=event(database,'d123')
+    ob.mutate(database,{'type':'news_event_link','event_id':eid,'other_id':did,'reason':'같은 계약 공시 확인'})
+    assert ob.resolve(database,did)==eid
+    assert database.execute('SELECT COUNT(*) FROM news_event_members WHERE event_id=?',(eid,)).fetchone()[0]==4
+
+def test_T09_same_day_separate_contracts(database):
+    ds,_=ob.build(database,'X',[row('a','계약 A'),row('b','계약 B')]);assert len(ds)==2
+
+def test_T10_representative_change_notes_and_alias(database):
+    article(database,'a','a');article(database,'b','a')
+    ds,_=ob.build(database,'X',[row('a')]);eid=next(iter(ds))
+    ob.mutate(database,{'type':'news_event_note','event_id':eid,'body':'당시 기록','kind':'ai_analysis'})
+    ds,_=ob.build(database,'X',[row('b','변경된 제목')]);assert next(iter(ds))==eid and ds[eid]['notes'][0]['body']=='당시 기록'
+
+def test_T11_unknown_time(database):
+    prices(database);r=row();r['untimed']=True
+    ds,_=ob.build(database,'X',[r]);d=next(iter(ds.values()));assert d['first_public_at'] is None and d['observation']['intraday'] is None
+
+def daily(c,count=60):
+    start=datetime(2026,8,3);days=[]
+    while len(days)<count:
+        if start.weekday()<5:days.append(start.date().isoformat())
+        start+=timedelta(days=1)
+    for i,d in enumerate(days):
+        for s,p in [('X',100+i),('KOSDAQ',1000+i)]:c.execute('INSERT INTO daily_bars(symbol,date,close) VALUES(?,?,?)',(s,d,p))
+    return days
+
+def test_T12_five_twenty_actual_ranges(database):
+    days=daily(database);a=ob.daily_window(database,'X',days[25],5);b=ob.daily_window(database,'X',days[25],20)
+    assert len(a['points'])==11 and len(b['points'])==41 and a['base_day']==days[24]
+    assert a['post']['own']==pytest.approx(130/124-1) and b['post']['own']==pytest.approx(145/124-1)
+
+def test_T13_future_pending(database):
+    days=daily(database,8);w=ob.daily_window(database,'X',days[-1],20)
+    assert w['status']=='pending' and w['post']['own'] is None and max(p['offset'] for p in w['points'])==0
+
+def test_T14_summary_chart_same_observation(database):
+    prices(database);rows=[row()];ds,_=ob.build(database,'X',rows);d=next(iter(ds.values()))
+    step=rows[0]['steps']['30']['own'];point=next(p[1] for p in rows[0]['path']['own'] if p[0]==30)
+    assert step==point==d['observation']['intraday']['steps']['30']['own']
+
+def test_T17_append_only_note_revision_and_idempotency(database):
+    eid=event(database)
+    a={'type':'news_event_note','event_id':eid,'body':'당시 AI 기록','kind':'ai_analysis','request_id':'req-1','analysis_at':'2026-10-06T11:00','snapshot':{'version':'v1'}}
+    ob.mutate(database,a);ob.mutate(database,a)
+    ob.mutate(database,{**a,'request_id':'req-2','body':'사후 확인','kind':'retrospective_review','revision_parent_id':'req-1'})
+    records=database.execute('SELECT payload FROM news_event_notes ORDER BY id').fetchall()
+    assert len(records)==2 and json.loads(records[0][0])['body']=='당시 AI 기록'
+    assert json.loads(records[1][0])['revision_parent_id']=='req-1'
+
+def test_T19_migration_keeps_existing_rows(database):
+    prices(database);article(database,'a');n=database.execute('SELECT count(*) FROM minute_bars').fetchone()[0]
+    ob.migrate(database);ob.migrate(database)
+    assert database.execute('SELECT count(*) FROM minute_bars').fetchone()[0]==n
+    assert database.execute('SELECT count(*) FROM articles').fetchone()[0]==1
+
+def test_T20_encrypted_static_and_inbox(database,tmp_path):
+    eid=event(database);item={'type':'news_event_note','event_id':eid,'body':'PRIVATE NOTE SENTINEL','kind':'ai_analysis'}
+    key=sitebuild.derive_key('synthetic-test-password',b'test-salt-only')
+    sealed=base64.b64encode(sitebuild.encrypt(key,json.dumps(item).encode())).decode()
+    issue={'title':'[요청] test','body':'```enc\n'+sealed+'\n```'}
+    parsed=ghinbox.parse(issue,lambda text:json.loads(sitebuild.decrypt(key,base64.b64decode(text))))
+    ob.mutate(database,parsed)
+    output=tmp_path/'site';sitebuild.build(output,'synthetic-test-password',b'test-salt-only', [('observation:'+eid,json.dumps(item),False)])
+    for f in output.rglob('*'):
+        if f.is_file():assert b'PRIVATE NOTE SENTINEL' not in f.read_bytes()
+    assert json.loads(sitebuild.decrypt(key,(output/'d'/sitebuild.file_name('observation:'+eid)).read_bytes()))==item
+
+def test_T22_missing_market_not_zero(database,monkeypatch):
+    from core import causes,articles
+    monkeypatch.setattr(articles,'decompose',lambda *a:None)
+    assert causes._decompose_window('X',datetime(2026,10,6).date(),.05,None,[{'code':'Y','name':'Y','change':.01}],False) is None
+    assert causes._decompose_window('X',datetime(2026,10,6).date(),.05,.01,[],False) is None
+
+def test_T24_independent_decimal_price_reproduction(database):
+    from decimal import Decimal
+    prices(database);s=ob.observe(database,'X','2026-10-06T09:28')['intraday']['steps']['60']
+    expected=float(Decimal('106')/Decimal('100')-1)
+    assert s['own']==pytest.approx(expected,abs=1e-12)
+
+def test_split_preserves_original_notes_and_members(database):
+    article(database,'a','a');article(database,'b','a');ds,_=ob.build(database,'X',[row('a')]);eid=next(iter(ds))
+    ob.mutate(database,{'type':'news_event_split','event_id':eid,'member_id':'b','reason':'서로 다른 계약'})
+    assert database.execute('SELECT COUNT(DISTINCT event_id) FROM news_event_members').fetchone()[0]==2
+
+def test_revision_snapshots_only_change_when_observations_change(database):
+    prices(database);ob.build(database,'X',[row()]);ob.build(database,'X',[row()])
+    assert database.execute('SELECT COUNT(*) FROM news_event_observations').fetchone()[0]==1
+    minute(database,'X','2026-10-06T09:58',105);ob.build(database,'X',[row()])
+    assert database.execute('SELECT COUNT(*) FROM news_event_observations').fetchone()[0]==2
+
+def test_T23_documentation_matches_disabled_event_study():
+    from pathlib import Path
+    from core import articles
+    assert articles.EVENT_STUDY is False
+    readme=Path('README.md').read_text('utf8')
+    assert 'EVENT_STUDY = False' in readme and '단순 KOSDAQ 대비 차이(%p)' in readme
+    assert '기사별 사건연구/유의성 판정은 비활성' in readme
+
+def test_source_boundaries_are_retained_in_summary(database):
+    prices(database)
+    database.execute("UPDATE minute_bars SET source='different_feed' WHERE ts LIKE '%09:58'")
+    rows=[row()];ob.build(database,'X',rows)
+    assert next(p for p in rows[0]['path']['own'] if p[0]==30)[3]=='different_feed'
+
+def test_invalid_note_parent_cannot_attach_to_other_event(database):
+    eid=event(database)
+    with pytest.raises(ValueError,match='수정 대상'):
+        ob.mutate(database,{'type':'news_event_note','event_id':eid,'kind':'ai_analysis','body':'x','revision_parent_id':'nonexistent'})

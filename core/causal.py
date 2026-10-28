@@ -459,7 +459,9 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
         mk = sum(out["beta_market"] * mkt[d] for d in ds)
         parts = []
         for i, (n, r, k) in enumerate(facs):
-            fr = sum(r.get(d, 0.0) - slopes[i] * mkt[d] for d in ds)
+            if any(d not in r for d in ds):
+                return None  # Missing sector data cannot be interpreted as zero.
+            fr = sum(r[d] - slopes[i] * mkt[d] for d in ds)
             parts.append({"name": n, "kind": k, "factor": float(np.prod([1 + r.get(d, 0.0) for d in ds]) - 1),
                           "factor_resid": float(fr), "beta": betas[i], "contrib": float(betas[i] * fr)})
         sec = sum(p["contrib"] for p in parts)

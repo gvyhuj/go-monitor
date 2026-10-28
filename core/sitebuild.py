@@ -278,10 +278,26 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         return out
     keep("disclosure_details", disc_details, True)
     want.add("reactions")             # 뉴스 반응: 위에서 계산한 상세에서 바로 (다시 계산하지 않음)
-    keep("reactions", lambda: ws.reactions_from(lst.get("items") or [], art_det, dl.get("items") or [], disc_det), True)
     if not {"articles", "article_details", "disclosures", "disclosure_details"}.issubset(fresh):
         raise RuntimeError("기사·공시 재계산 실패: 이전 계산값으로 새 사이트를 배포하지 않습니다.")
-
+    from .observatory import build, migrate, VERSION
+    reactions = ws.reactions_from(lst.get("items") or [], art_det, dl.get("items") or [], disc_det)
+    with connect() as conn:
+        migrate(conn)
+        old = cached.get('reactions')
+        if old:
+            conn.execute('INSERT OR IGNORE INTO news_calculation_migrations VALUES(?,?,?)',
+                         (VERSION, stamp, old['value']))
+        observations, aliases = build(conn, ws.load_settings()['symbol'], reactions['items'])
+    keep('reactions', lambda: reactions, True)
+    want.add('observatory')
+    keep('observatory', lambda: {'items':[ws.observation_summary(d) for d in observations.values()], 'aliases':aliases}, True)
+    for eid, detail in observations.items():
+        key = 'observation:' + eid
+        want.add(key)
+        keep(key, lambda d=detail:d, True)
+    if not {'reactions','observatory', *('observation:'+eid for eid in observations)}.issubset(fresh):
+        raise RuntimeError('사건 관찰 자료 생성 실패: 이전 계산과 혼합 배포하지 않습니다.')
     with connect() as conn:
         for k in fresh:
             c = cached[k]

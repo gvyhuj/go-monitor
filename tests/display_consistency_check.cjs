@@ -70,7 +70,7 @@ test('reaction page explains distinct counts and the earlier calculation timesta
     path:{own:[[-1,0],[10,.01],[30,.02]],kq:[[-1,0],[30,.005]]},steps:{'30':{own:.02,kq:.005}}};
   Object.assign(ctx, { main:{}, api:async()=>({items:[base,{...base,id:'b',steps:{}},
       {...base,id:'c',path:null,steps:{},untimed:true}]}), artViewSeg:()=>'', isoDate:()=>'',
-    chanceTxt:()=>'', BAR_TIP:'봉 간격', dashResize:null,window:{addEventListener(){}},
+    location:{hash:"#/react"}, toTime:t=>Date.parse(t+"Z")/1000, chanceTxt:()=>'', BAR_TIP:'봉 간격', dashResize:null,window:{addEventListener(){}},
     setTimeout,clearTimeout});
   const start = source.indexOf('  const reactState =');
   const end = source.indexOf('  // 기사 대시보드:',start);

@@ -499,8 +499,10 @@ def _decompose_window(symbol: str, day, own, kq, related, daily: bool):
     bm = (dc or {}).get("beta_market") or 1.0
     bs = (dc or {}).get("beta_sector") or (1.0 if sec is not None else 0.0)
     bsm = (dc or {}).get("beta_sector_market") or 1.0
-    mk = bm * kq if kq is not None else 0.0
-    sc = bs * (sec - bsm * (kq or 0.0)) if sec is not None else 0.0
+    if kq is None or sec is None:
+        return None  # Missing comparison prices are not zero market/sector influence.
+    mk = bm * kq
+    sc = bs * (sec - bsm * kq)
     return {"own": own, "market": mk, "sector": sc, "specific": own - mk - sc, "z": None, "kosdaq": kq,
             "sector_avg": sec, "method": (dc or {}).get("method") or "단순", "beta_market": bm, "beta_sector": bs,
             "sigma": (dc or {}).get("sigma"), "basis": "구간"}
@@ -1132,7 +1134,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
             title = f"시장·업종 전체 흐름 ({share_word})" + (f" — {big['name']} 몫이 가장 큼" if big and big["contrib"] * sign > 0 else "")
         ranked.append({
             "type": "market", "key": "①", "timing": "동시", "checks": checks, "title": title,
-            "summary": f"실제 {_fmt_pct(split['own'])} 중 {share_word}({min(100, max(0, ext_share)*100):.0f}%)가 시장·업종 흐름으로 설명됩니다."
+            "summary": f"과거 관계에 기반한 모형 추정: 관측 {_fmt_pct(split['own'])}, 시장 {split['market']*100:+.2f}%p · 업종 {split['sector']*100:+.2f}%p."
                        + ("" if ext_share >= 0.75 else f" 나머지 이 종목 고유 몫 {_fmt_pct(split['specific'])}는 다른 원인을 봐야 합니다."),
             "evidence": ([f"왜 움직였나(추정): {why_text}"] if why_text else [])
                         + ((same_basket or {}).get("evidence") or [])[:4] + ([f"같이 움직인 종목: {co_names}"] if co_names else [])

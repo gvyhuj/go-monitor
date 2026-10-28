@@ -660,11 +660,11 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rari
     """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 분야 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
     from . import causal, yahoo
     day = t1.date()
-    ret = lambda code: causal.window_return(code, day, t1.time(), t0)
+    ret = lambda code: causal.window_return(code, day, t1.time(), t0 - timedelta(minutes=1) if t0 else None)
     with connect() as conn:
         frame = yahoo.reaction_frame(conn, symbol, day.isoformat(), t0 or datetime.combine(day, time(9)),
                                      "session" if t0 else "open", min_minutes=1)
-    if frame["interval"] != 1 or frame["kq_interval"] != 1:
+    if frame["interval"] != 1 or frame["kq_interval"] != 1 or not frame['comparable']:
         return None
     p, k = yahoo.point_at(frame["own"], t1), yahoo.point_at(frame["kq"], t1)
     own = p / frame["base_own"] - 1 if p and frame["base_own"] else None
@@ -913,11 +913,11 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
 
 
 def group_events(items: list[dict]) -> list[dict]:
-    """같은 반응일의 기사들은 주가 반응을 나눌 수 없으므로 한 사건으로 묶음 (통계도 사건 수 기준).
+    """명시된 같은 story만 묶음. 같은 날 독립 사건은 분리.
     items: api가 만든 기사 목록 (effect 포함). 대표는 우리 보도자료 → 가장 먼저 나온 기사 순."""
     by_day: dict[str, list[dict]] = {}
     for a in items:
-        day = (a.get("effect") or {}).get("reaction_day") or f"x{a['id']}"
+        day = str(a.get("event_id") or a.get("story") or a["id"]) + "|" + str((a.get("effect") or {}).get("reaction_day") or "")
         by_day.setdefault(day, []).append(a)
     out = []
     for day, g in by_day.items():
@@ -927,7 +927,7 @@ def group_events(items: list[dict]) -> list[dict]:
                     next((a for a in main if a["kind"] == "company"), main[0]))
         kind = "pr" if any(a["kind"] == "pr" for a in main) else \
                "company" if any(a["kind"] == "company" for a in main) else "ext"
-        out.append({"day": None if day.startswith("x") else day, "lead": lead["id"],
+        out.append({"day": (lead.get("effect") or {}).get("reaction_day"), "group_key": day, "lead": lead["id"],
                     "kind": kind, "ids": [a["id"] for a in g],
                     "outlets": sum(a.get("outlets_total") or 1 for a in main),
                     "n_pr": sum(1 for a in main if a["kind"] == "pr"),
@@ -960,7 +960,7 @@ def group_events(items: list[dict]) -> list[dict]:
             seen_stories.setdefault(s, ev)
         if ev["day"] and not ev["noise"]:
             preceding.append(ev)
-    out.sort(key=lambda e: max(a["ts"] for a in by_day[e["day"] or f"x{e['lead']}"]), reverse=True)
+    out.sort(key=lambda e: max(a["ts"] for a in by_day[e["group_key"]]), reverse=True)
     return out
 
 

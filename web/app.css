@@ -1565,3 +1565,28 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .stat-more summary { cursor: pointer; color: var(--muted); }
 .rx-table th.h-on, .rx-table td.h-on { background: rgba(37, 99, 235, 0.07); font-weight: 700; }
 .rx-kq { fill: none; stroke: var(--ink-2); stroke-width: 1.6; stroke-dasharray: 5 4; pointer-events: none; }
+/* Event observation extends the existing panel style. */
+.obs-detail { margin-top: 20px; overflow-wrap: anywhere; }
+.obs-detail h2 { font-size: 22px; }
+.obs-columns { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.obs-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; }
+.obs-cards>div,.obs-note { background:var(--canvas); border:1px solid var(--line); padding:14px; border-radius:8px; }
+.obs-cards strong { display:block; font-size:20px; margin-top:8px; }
+.obs-form { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; align-items:end; }
+.obs-form label { display:flex; flex-direction:column; gap:5px; flex:1 1 220px; }
+.obs-form input,.obs-form select,.obs-form textarea { min-height:40px; width:100%; max-width:100%; }
+.obs-form input[type=checkbox] { width:20px; }
+.obs-detail button,.obs-detail summary { min-height:40px; }
+.obs-detail pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.obs-chart-scroll { overflow-x:auto; }
+.obs-chart-scroll svg { width:100%; min-width:500px; font-size:12px; }
+.obs-own { stroke:var(--brand-blue); fill:none; stroke-width:2; }
+.obs-kq { stroke:var(--up); fill:none; stroke-width:1.6; stroke-dasharray:8 4; }
+.obs-point { fill:white; cursor:pointer; }
+.obs-marker { stroke:var(--muted); stroke-dasharray:2 5; stroke-width:2; cursor:pointer; }
+.rx-gap { fill:none; stroke:#9aa5b6; stroke-width:2; stroke-dasharray:1 5; cursor:help; pointer-events:stroke; }
+.rx-gap.on { stroke:var(--up); }.rx-gap.average { stroke:var(--brand-blue); }
+.rx-avg { pointer-events:stroke; }.rx-leg { flex-wrap:wrap; }
+#obs-question-text { width:100%; min-height:200px; }
+@media(max-width:720px){.obs-columns{grid-template-columns:1fr}.obs-detail h2{font-size:18px}.obs-detail .seg{flex-wrap:wrap}.obs-form label{flex-basis:100%}}
+.rx-gap-hit { fill:none; stroke:transparent; stroke-width:16; pointer-events:stroke; cursor:help; }

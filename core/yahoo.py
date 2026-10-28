@@ -122,16 +122,33 @@ def reaction_frame(conn, code, day, start, kind, min_minutes=MIN_DAY_MINUTES):
     iv, own = series(conn, code, day, min_minutes)
     kv, idx = series(conn, INDEX, day, min_minutes)
     own, idx = completed_points(own, iv), completed_points(idx, kv)
+    own_time = idx_time = None
     if kind in ("open", "late"):
         prev = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                             (code, day)).fetchone()
         b_own = prev[1] if prev else None
         pk = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (INDEX, prev[0])).fetchone() if prev else None
         b_idx = pk[0] if pk else None
+        own_time = prev[0] if prev and b_own else None
+        idx_time = prev[0] if prev and b_idx else None
     else:
-        b_own, b_idx = point_at(own, start), point_at(idx, start)
+        def before(points, interval):
+            candidates = [(ts, p) for ts, p in points if datetime.fromisoformat(ts) < start]
+            if not candidates or not interval:
+                return None, None
+            ts, p = candidates[-1]
+            # At most one native interval old; no stale quote carry-forward.
+            if (start - datetime.fromisoformat(ts)).total_seconds() > interval * 60:
+                return None, None
+            return ts, p
+        own_time, b_own = before(own, iv)
+        idx_time, b_idx = before(idx, kv)
     return {"interval": iv, "kq_interval": kv, "kind": kind,
             "start": start.isoformat(timespec="minutes"), "day": day,
+            "base_own_time": own_time, "base_kq_time": idx_time,
+            "comparable": bool(own_time and own_time == idx_time),
+            "base_lag_minutes": (start-datetime.fromisoformat(own_time)).total_seconds()/60 if own_time and kind == "session" else None,
+            "base_basis": "previous_stored_close" if kind in ("open", "late") else "last_completed_before_publication",
             "base_own": b_own, "base_kq": b_idx, "own": own, "kq": idx}
 
 
@@ -170,7 +187,7 @@ def reaction(code: str, base_ts: str, day: str, prev_close: float | None, prev_i
         kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
         if own is not None or kq is not None:
             rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": own, "kosdaq": kq,
-                         "diff": own - kq if own is not None and kq is not None else None})
+                         "diff": own - kq if own is not None and kq is not None and frame['comparable'] else None})
     return {k: v for k, v in frame.items() if k not in ("own", "kq")} | {"rows": rows}
 
 

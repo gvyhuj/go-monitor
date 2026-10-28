@@ -19,7 +19,7 @@ def database(tmp_path, monkeypatch):
 
 
 def detail(value=0.01):
-    return {"article": {"title": "비공개 과거 기사 제목", "ts": "2026-10-20T10:00"},
+    return {"article": {"id":"one", "title": "비공개 과거 기사 제목", "ts": "2026-10-20T10:00"},
             "effect": {"measure": {"value": value}, "verdict": "기록된 판정"},
             "bars": [{"secret_chart": 123}], "confounders": []}
 

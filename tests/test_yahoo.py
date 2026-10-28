@@ -51,8 +51,8 @@ def test_sync_and_coarse_api_only_for_days_without_minute_bars(database, monkeyp
 def test_past_article_reaction_from_coarse_bars(database):
     # 5분봉: 10:00~10:05 봉 종가 100 → 10:30 끝 봉 103 / 코스닥 1000 → 1010
     with db.connect() as conn:
-        for sym, rows in (("X", [("2026-08-14T09:55", 100), ("2026-08-14T10:25", 103), ("2026-08-14T10:55", 104)]),
-                          ("KOSDAQ", [("2026-08-14T09:55", 1000), ("2026-08-14T10:25", 1010), ("2026-08-14T10:55", 1005)])):
+        for sym, rows in (("X", [("2026-08-14T09:50", 100), ("2026-08-14T10:25", 103), ("2026-08-14T10:55", 104)]),
+                          ("KOSDAQ", [("2026-08-14T09:50", 1000), ("2026-08-14T10:25", 1010), ("2026-08-14T10:55", 1005)])):
             for ts, c in rows:
                 conn.execute("INSERT INTO coarse_bars(symbol,interval,ts,open,high,low,close,volume) VALUES (?,5,?,?,?,?,?,1)",
                              (sym, ts, c, c, c, c))
@@ -65,7 +65,7 @@ def test_past_article_reaction_from_coarse_bars(database):
         conn.executemany("INSERT INTO daily_bars(symbol,date,close) VALUES (?,?,?)", [("X","2026-08-13",95),("KOSDAQ","2026-08-13",990)])
     before_open = yahoo.reaction("X", "2026-08-14T07:30", "2026-08-14", 95, 990)
     assert before_open["kind"] == "open"                                              # 전날 종가부터
-    assert before_open["rows"][0]["minutes"] == 60 and before_open["rows"][0]["own"] == pytest.approx(100 / 95 - 1)   # 09:30에 끝난 봉 없음 → +60분부터
+    assert before_open["rows"][0]["minutes"] == 120 and before_open["rows"][0]["own"] == pytest.approx(104 / 95 - 1)   # 09:30에 끝난 봉 없음 → +60분부터
     assert yahoo.reaction("X", "2026-08-14T15:10", "2026-08-14", 95, 990) is None      # 15시 넘어 공개
     assert yahoo.reaction("X", "2026-08-15T10:00", "2026-08-15", 95, 990) is None      # 봉 없는 날
 
@@ -80,14 +80,14 @@ def test_reaction_chart_bars_and_base(database):
                              [(sym, f"2026-08-21T10:{m:02d}", c0 + m, c0 + m, c0 + m, c0 + m) for m in range(0, 60)])
     e = {"reaction_day": "2026-08-21"}
     rc = webserver._reaction_chart("X", e, {"start": "2026-08-21T10:20", "kind": "session"}, None)
-    assert rc["interval"] == 1 and rc["base_own"] == 1020 and rc["base_kq"] == 820     # 10:19 봉이 10:20에 끝남
+    assert rc["interval"] == 1 and rc["base_own"] == 1019 and rc["base_kq"] == 819     # 10:19 봉이 10:20에 끝남
     assert rc["own"][0]["t"] == "2026-08-21T10:00" and len(rc["kq"]) == 60
     rc = webserver._reaction_chart("X", e, {"start": "2026-08-21T09:00", "kind": "open"}, None)
     assert rc["base_own"] == 1000 and rc["base_kq"] == 800                               # 장 전 공개: 전날 종가
     with db.connect() as conn:
         conn.executemany("INSERT INTO coarse_bars(symbol, interval, ts, close) VALUES (?, 5, ?, ?)",
                          [("Y", "2026-08-21T10:00", 50), ("Y", "2026-08-21T10:05", 51), ("KOSDAQ", "2026-08-21T10:00", 9)])
-    rc = webserver._reaction_chart("Y", e, None, {"start": "2026-08-21T10:05", "kind": "session", "interval": 5})
+    rc = webserver._reaction_chart("Y", e, None, {"start": "2026-08-21T10:06", "kind": "session", "interval": 5})
     assert rc["interval"] == 5 and rc["base_own"] == 50 and [b["c"] for b in rc["own"]] == [50, 51]
 
 
@@ -103,7 +103,7 @@ def test_reaction_chart_hourly_bars_cover_rest_of_day(database):
     rc = webserver._reaction_chart("Z", {"reaction_day": "2026-04-22"}, None,
                                    {"start": "2026-04-22T14:14", "kind": "session", "interval": 60})
     assert [b["t"][11:] for b in rc["own"]] == ["12:00", "13:00", "14:00", "15:00"]
-    assert rc["base_own"] is None  # No observation at 14:14; do not invent a base.
+    assert rc["base_own"] == 963  # Last completed hourly bar before 14:14.
     assert rc["own"][-1]["c"] == 964 and rc["kq"][-1]["c"] == 819
 
 
@@ -138,7 +138,7 @@ def test_backfilled_minutes_used_with_coarse_kosdaq(database):
     r = yahoo.reaction("W", "2026-04-22T10:15", "2026-04-22", 100, 800)
     assert (r["interval"], r["kq_interval"], r["kind"]) == (1, 60, "session")
     assert [x["minutes"] for x in r["rows"]] == [30, 60, 120]
-    assert r["rows"][0]["own"] == pytest.approx(101.05 / 100.75 - 1)   # 10:14 봉(10:15에 끝남) 100.74 → 10:44 봉 101.04
+    assert r["rows"][0]["own"] == pytest.approx(101.05 / 100.74 - 1)   # 10:14 봉(10:15에 끝남) 100.74 → 10:44 봉 101.04
     assert all(row["kosdaq"] is None for row in r["rows"])
     rc = webserver._reaction_chart("W", {"reaction_day": "2026-04-22"}, None, r)
-    assert (rc["interval"], rc["kq_interval"]) == (1, 60) and len(rc["own"]) == 151 and rc["base_kq"] is None
+    assert (rc["interval"], rc["kq_interval"]) == (1, 60) and len(rc["own"]) == 151 and rc["base_kq"] == 809
