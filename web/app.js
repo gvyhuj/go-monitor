@@ -502,21 +502,21 @@
     const s2 = chart.addSeries(LW.LineSeries, { color: css("--muted"), lineWidth: 2, lineStyle: LW.LineStyle.Dashed, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true, title: "KOSDAQ" });
     const d1 = own.map((b) => ({ time: toTime(b.t), value: (b.c / base - 1) * 100 }));
     const d2 = kqBase ? kq.map((b) => ({ time: toTime(b.t), value: (b.c / kqBase - 1) * 100 })) : [];
-    s1.setData(d1);
+    const st = toTime(startT);
+    s1.setData(d1.some(p => p.time === st) ? d1 : [...d1, { time: st }].sort((a,b) => a.time-b.time));
     if (d2.length) s2.setData(d2);
     s1.createPriceLine({ price: 0, color: css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false });
-    const st = toTime(startT);
-    const near = d1.find((p) => p.time >= st);
-    if (near) {
+    const near = d1.find((p) => p.time === st);
+    if (d1.length) {
       // 공개 시각: 화살표 대신 선 위 작은 점 + 세로 점선 + 위쪽 이름표 (차트를 움직이거나 크기가 바뀌면 따라감)
-      LW.createSeriesMarkers(s1, [{ time: near.time, position: "inBar", shape: "circle", color: css("--mk-pub"), size: 0.7 }]);
+      if (near) LW.createSeriesMarkers(s1, [{ time: st, position: "inBar", shape: "circle", color: css("--mk-pub"), size: 0.7 }]);
       el.style.position = "relative";
       const pin = document.createElement("div");
       pin.className = "rx-pub";
       pin.innerHTML = `<span class="rx-pub-tag">${esc(label)}${label === "공개" ? ` ${utcHHMM(st)}` : ""}</span>`;
       el.appendChild(pin);
       const place = () => {
-        const x = chart.timeScale().timeToCoordinate(near.time);
+        const x = chart.timeScale().timeToCoordinate(st);
         pin.hidden = x == null;
         if (x != null) { pin.style.left = `${x}px`; pin.style.bottom = `${chart.timeScale().height()}px`; }
       };
@@ -530,10 +530,11 @@
     }
     chart.timeScale().fitContent();
     const show = (t) => {
-      const a = d1.find((p) => p.time === t) || d1[d1.length - 1];
-      const b = d2.find((p) => p.time === (a && a.time));
-      if (!a) return;
-      legendEl.innerHTML = `<span>${daily ? dfmt(a.time) : utcHHMM(a.time)}</span><span><i class="rx-sw" style="border-color:${ownColor}"></i>${esc(ownName)} <b class="${sgnCls(a.value)}">${pctRaw(a.value)}</b></span>` +
+      const stamp = t == null ? (d1[d1.length - 1] || {}).time : t;
+      const a = d1.find((p) => p.time === stamp);
+      const b = d2.find((p) => p.time === stamp);
+      if (stamp == null) return;
+      legendEl.innerHTML = `<span>${daily ? dfmt(stamp) : utcHHMM(stamp)}</span><span><i class="rx-sw" style="border-color:${ownColor}"></i>${esc(ownName)} <b class="${sgnCls(a && a.value)}">${a ? pctRaw(a.value) : "-"}</b></span>` +
         `<span><i class="rx-sw dash" style="border-color:${css("--muted")}"></i>KOSDAQ <b>${b ? pctRaw(b.value) : (d2.length ? "-" : "데이터 없음")}</b></span>`;
     };
     show(null);
@@ -2222,27 +2223,21 @@
   // ---------------------------------------------------------------- 뉴스 반응
   // 기사·공시마다 공개 시각을 0분으로 맞춘 주가 경로(기준값 대비)를 한 그래프에 겹쳐 보고, 아래 표로 +30·60·120분·당일·다음날을 비교.
   // 통계 판정 없이 숫자 그대로 (같은 촘촘함의 봉끼리만 겹치도록 기본은 1분봉)
-  // 오른·내린 건수가 '아무 효과가 없어도(반반)' 이만큼 한쪽으로 쏠릴 확률 (동전 던지기, 양쪽)
-  function coinChance(up, dn) {
-    const n = up + dn, k = Math.max(up, dn);
-    if (!n || up === dn) return 1;
-    let lc = 0, sum = 0;                              // lc = log C(n, i)
-    for (let i = 1; i <= k - 1; i++) lc += Math.log(n - i + 1) - Math.log(i);
-    for (let i = k; i <= n; i++) {
-      if (i > 0) lc += Math.log(n - i + 1) - Math.log(i);
-      sum += Math.exp(lc - n * Math.LN2);
-    }
-    return Math.min(1, 2 * sum);
+  function reactionAt(path, minute) {
+    const point = (path || []).find(([t]) => t === minute);
+    return point ? point[1] : null;
   }
-  function chanceTxt(up, dn) {
-    const tip = "우연 확률: 기사가 주가와 무관하다면(오를 확률 50%) 오른·내린 건수가 지금만큼 한쪽으로 몰릴 확률. 5% 미만이면 우연으로 보기 어렵다고 봅니다.";
-    if (up + dn < 10) return `<span class="muted" title="${tip}">판단 보류 — 건수가 적습니다 (오르거나 내린 건 10건 이상 필요).</span>`;
-    const p = coinChance(up, dn), side = up > dn ? "상승" : "하락";
-    if (p >= 0.5) return `<span title="${tip}">방향성 없음 — 오른 건과 내린 건이 ${up === dn ? "같습니다" : "비슷합니다"}.</span>`;
-    const pTxt = p < 0.01 ? "1% 미만" : `${Math.round(p * 100)}%`;
-    const verdict = p < 0.05 ? `<b>${side} 쪽 쏠림이 뚜렷합니다</b> (우연으로 보기 어려움)`
-      : p < 0.2 ? `${side} 쪽으로 기울었지만 <b>아직 우연과 구분되지 않습니다</b>` : `<b>우연으로도 흔히 나오는 수준</b>입니다`;
-    return `<span title="${tip}">우연 확률 <b>${pTxt}</b> — ${verdict}.</span>`;
+  function reactionSamples(rows, valueOf) {
+    const groups = new Map();
+    for (const row of rows) {
+      const value = valueOf(row);
+      if (value == null || !Number.isFinite(value)) continue;
+      const key = `${row.event_key || row.id}|${row.start || ""}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(value);
+    }
+    // Conflicting duplicate measurements must not depend on row order.
+    return [...groups.values()].filter(vs => Math.max(...vs) - Math.min(...vs) < 1e-8).map(vs => vs[0]);
   }
   const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "365", from: "", to: "" };   // 기간 기본: 최근 1년
   const REACT_KINDS = [["all", "전체"], ["pr", "보도자료"], ["ext", "외부기사"], ["disc", "주요 공시"]];
@@ -2289,8 +2284,8 @@
         <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값으로 봅니다 (예: 그린광학 +2.0%, KOSDAQ +0.5% → +1.5%p). 시장 전체가 같이 움직인 만큼을 빼고 그린광학만 따로 움직인 만큼을 볼 때."><input type="checkbox" id="rx-vskq"${reactState.vsKq ? " checked" : ""}> KOSDAQ 움직임 빼고 보기 <span class="tip-i" aria-hidden="true">ⓘ</span></label>
         ${reactState.range === "custom" ? `<span class="rx-period"><input type="date" id="rx-from" aria-label="시작 날짜" value="${esc(reactState.from)}"> ~ <input type="date" id="rx-to" aria-label="끝 날짜" value="${esc(reactState.to)}"></span>` : ""}`;
     };
-    // 경로: [분, 값] → 그 분의 값 (앞선 가장 가까운 점, 봉 사이는 그대로 이어짐)
-    const at = (path, m) => { let v = null; for (const [t, y] of path || []) { if (t <= m) v = y; else break; } return v; };
+    // Read only the observation at this minute, including for averages and index subtraction.
+    const at = reactionAt;
     const series = (x) => {
       const own = (x.path && x.path.own) || [];
       if (!reactState.vsKq) return own;
@@ -2303,31 +2298,31 @@
       const el = $("#rx-plot"), W = el.clientWidth || 800, H = Math.max(240, Math.min(380, W * 0.42)), L = 44, R = 12, T = 12, B = 26;
       // 공개 뒤 +H분까지 (앞쪽은 H의 1/4만큼 공개 전도 보여 줌)
       const X1 = +reactState.h, X0 = -Math.max(10, Math.round(X1 / 4));
-      const lines = list.map((x) => ({ x, s: series(x).filter(([m]) => m >= X0 - 60 && m <= X1) })).filter((o) => o.s.filter(([m]) => m >= X0).length >= 1 && o.s.length >= 2);
+      const lines = list.map((x) => ({ x, s: series(x).filter(([m]) => m >= X0 && m <= X1) })).filter((o) => o.s.length >= 1);
       if (!lines.length) { el.innerHTML = `<div class="empty"><strong>그릴 경로가 없습니다.</strong>조건을 넓혀 보세요.</div>`; return 0; }
       const vals = lines.flatMap((o) => o.s.filter(([m]) => m >= X0).map((p) => p[1]));
       let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
       const pad = Math.max(0.005, (hi - lo) * 0.08); lo -= pad; hi += pad;
       const xs = (m) => L + ((m - X0) / (X1 - X0)) * (W - L - R), ys = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
       const avg = [];
-      for (let m = X0; m <= X1; m += 1) { const vs = lines.map((o) => at(o.s, m)).filter((v) => v != null); if (vs.length >= Math.max(2, lines.length * 0.5)) avg.push([m, vs.reduce((a, b) => a + b, 0) / vs.length]); }
+      for (let m = X0; m <= X1; m += 1) { const vs = reactionSamples(list, x => at(series(x), m)); if (vs.length >= 2) avg.push([m, vs.reduce((a, b) => a + b, 0) / vs.length]); }
       const clip = (s) => { const v0 = at(s, X0); const inR = s.filter(([m]) => m > X0); return v0 == null ? inR : [[X0, v0], ...inR]; };
-      const d = (s) => clip(s).map(([m, v], i) => `${i ? "L" : "M"}${xs(m).toFixed(1)},${ys(v).toFixed(1)}`).join("");
+      const d = (s, gap = 1) => { const points = clip(s); return points.map(([m, v], i) => `${i && m - points[i - 1][0] <= gap ? "L" : "M"}${xs(m).toFixed(1)},${ys(v).toFixed(1)}`).join(""); };
       // 눈금: 0을 지나는 깔끔한 간격 (0.1·0.2·0.5·1·2·5%…)
       const stepY = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2].find((g) => (hi - lo) / g <= 6) || 0.5;
-      const tick = (v) => `${v > 1e-9 ? "+" : v < -1e-9 ? "−" : ""}${Math.abs(v * 100).toFixed(stepY < 0.01 ? 1 : 0)}%`;
+      const tick = (v) => `${v > 1e-9 ? "+" : v < -1e-9 ? "−" : ""}${Math.abs(v * 100).toFixed(stepY < 0.01 ? 1 : 0)}${reactState.vsKq ? "%p" : "%"}`;
       const yt = []; for (let k = Math.ceil(lo / stepY); k * stepY <= hi + 1e-12; k++) yt.push(k * stepY);
       el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="공개 뒤 주가 경로 ${lines.length}건">
         ${yt.map((v) => `<line class="rx-grid" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text class="rx-ax" x="${L - 6}" y="${ys(v) + 4}" text-anchor="end">${tick(v)}</text>`).join("")}
         <line class="rx-zero" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>
         <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
         ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "비교 시작" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
-        ${lines.map((o) => { const dd = d(o.s); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" d="${dd}"/><path class="rx-hit" d="${dd}"/></g>`; }).join("")}
-        ${avg.length > 1 ? `<path class="rx-avg" d="${d(avg)}"/>` : ""}
+        ${lines.map((o) => { const dd = d(o.s, reactState.vsKq ? Math.max(o.x.interval || 1, o.x.kq_interval || 1) : o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" d="${dd}"/><path class="rx-hit" d="${dd}"/>${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1.5" fill="currentColor"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
+        ${avg.length ? `<path class="rx-avg" d="${d(avg)}"/>${avg.map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" class="rx-avg"/>`).join("")}` : ""}
         ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
           const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
-          const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1))}"/>` : "";
-          return `${kq}<path class="rx-one on top" d="${d(o.s)}"/>`; })() : ""}
+          const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1), o.x.kq_interval || 1)}"/>` : "";
+          return `${kq}<path class="rx-one on top" d="${d(o.s, reactState.vsKq ? Math.max(o.x.interval || 1, o.x.kq_interval || 1) : o.x.interval || 1)}"/>`; })() : ""}
       </svg>`;
       return lines.length;
     }
@@ -2338,7 +2333,7 @@
     function table(list) {
       const k = reactState.sort, dir = reactState.dir;
       const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
-      const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : pct(v)}</td>`;
+      const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : reactState.vsKq ? points(v) : pct(v)}</td>`;
       const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
       const baseTip = "분석 기준 직전 가격 대비. 장 전·장 외는 전 거래일 종가, 15시 이후는 해당일 종가 대비 다음 거래일 장 시작부터 비교합니다.";
       const tips = { interval: BAR_TIP, 30: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, 60: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, kq30: "같은 시간 KOSDAQ", kq60: "같은 시간 KOSDAQ" };
@@ -2355,12 +2350,12 @@
       const plotted = plot(list);
       const measured = list.filter((x) => stepV(x, reactState.h) != null).length;
       $("#rx-n").textContent = `대상 ${list.length}건 · 경로 ${plotted}건 · +${reactState.h}분 집계 ${measured}건${reactState.vsKq ? " · KOSDAQ 대비 차이" : ""}`;
-      const s = (m) => { const vs = list.map((x) => stepV(x, m)).filter((v) => v != null); if (!vs.length) return null;
+      const s = (m) => { const vs = reactionSamples(list, x => stepV(x, m)); if (!vs.length) return null;
         const up = vs.filter((v) => v > 0).length, dn = vs.filter((v) => v < 0).length;
-        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${pct(median(vs))}</b> (오른 ${up} · 내린 ${dn} · 보합 ${vs.length - up - dn}, ${vs.length}건)`
-          + `<br>${chanceTxt(up, dn)}`; };
+        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${reactState.vsKq ? points(median(vs)) : pct(median(vs))}</b> (${reactState.vsKq ? "시장 웃돈" : "오른"} ${up} · ${reactState.vsKq ? "시장 밑돈" : "내린"} ${dn} · ${reactState.vsKq ? "시장과 같음" : "보합"} ${vs.length - up - dn}, 중복 제외 ${vs.length}사건)`; };
       $("#rx-sum").innerHTML = (s(reactState.h) || `+${reactState.h}분 집계 가능한 자료가 없습니다.`)
-        + `<br><span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상, 해당 시점 가격 부족 또는 비교 지수 부족. 경로는 일부 구간만 있어도 그릴 수 있어 집계 건수와 다를 수 있습니다.</span>`
+        + `<br><span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상 또는 기준·종료 시각의 관측값 부족. KOSDAQ 대비 차이는 양쪽의 같은 시각 가격이 있을 때만 계산합니다.</span>`
+        + `<br><span class="muted">표는 기사별로 유지하며 평균·중앙값·방향 집계는 연결된 같은 사건을 한 번만 셉니다. 중복 값이 충돌하면 집계에서 제외합니다. 평균은 각 시각의 관측값이 있는 2사건 이상으로 계산하므로 시각마다 대상이 달라질 수 있습니다. 없는 가격을 채우지 않으며 선은 관측점을 연결합니다.</span>`
         + `<br><span class="muted">같은 시간의 다른 소식·시장 움직임이 섞여 있습니다.${reactState.vsKq ? "" : " 시장 몫을 빼려면 'KOSDAQ 움직임 빼고 보기'."}</span>`;
       table(list);
     }
@@ -2394,8 +2389,8 @@
     $("#rx-plot").onclick = (ev) => { const g = ev.target.closest("g[data-id]"); if (g) { reactState.pick = reactState.pick === g.dataset.id ? null : g.dataset.id; draw(); } };
     $("#rx-plot").onmouseover = (ev) => { const g = ev.target.closest("g[data-id]"); $("#rx-hover").textContent = g ? g.dataset.t : ""; };
     $("#rx-plot").onmouseleave = () => { $("#rx-hover").textContent = ""; };
-    $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map((c) => c[1]).concat(["주제", "언론사", "분석 기준 시각", "비교 시작 시각", "기준 설명"]),
-      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "kq30", "60", "kq60"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || "", x.analysis_ts || "", x.start || "", reactionBasisText(x)]));
+    $("#rx-csv").onclick = () => csvDownloadRows("기사_반응", cols.map(([k,t]) => reactState.vsKq && ["30","60"].includes(k) ? `그린광학−KOSDAQ +${k}분 (%p)` : t).concat(["주제", "언론사", "분석 기준 시각", "비교 시작 시각", "기준 설명", "동일 사건 키"]),
+      items.filter(pass).map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "kq30", "60", "kq60"].map((k) => { const v = valOf(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || "", x.analysis_ts || "", x.start || "", reactionBasisText(x), x.event_key || x.id]));
     if (dashResize) window.removeEventListener("resize", dashResize);
     let rz = null;
     dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rx-plot")) draw(); }, 200); };
@@ -2941,10 +2936,10 @@
 
 
   // 어떤 봉으로 쟀는지: 1분봉(네이버·한국투자증권) / 5분·60분봉(야후 파이낸스, 1분봉이 없는 날) — 출처는 툴팁으로
-  const BAR_TIP = "1분봉: 네이버(9/23부터 직접 모음)·한국투자증권(그 전, 한 번 채움). 5분·60분봉: 1분봉이 없는 날의 야후 파이낸스 봉 — 봉이 끝난 시각 기준이라 공개 시각과 최대 그 간격만큼 어긋날 수 있음.";
+  const BAR_TIP = "1분봉은 기록된 관측 시각, 야후 5분·60분봉은 봉 종료 시각 기준입니다. 기준·종료 시각의 가격이 없으면 계산하지 않습니다. 60분봉만으로 30분 사이의 등락을 추정하지 않습니다.";
   const barLabel = (iv, kv) => `<span title="${BAR_TIP}">${iv || "-"}분봉 기준${kv && kv !== iv ? ` (KOSDAQ ${kv}분봉)` : ""}</span>`;
   // 단순 숫자: +N분 이 종목 · KOSDAQ · 차이 (통계 없이 그대로)
-  const simpleSteps = (rows, main) => `<table class="simple-steps"><thead><tr><th></th>${rows.map((r) => `<th${r.minutes === main ? ' class="main"' : ""}>+${r.minutes}분</th>`).join("")}</tr></thead><tbody>
+  const simpleSteps = (rows, main) => !rows.length ? `<p class="note">기준·종료 시각의 가격이 부족해 계산할 수 없습니다.</p>` : `<table class="simple-steps"><thead><tr><th></th>${rows.map((r) => `<th${r.minutes === main ? ' class="main"' : ""}>+${r.minutes}분</th>`).join("")}</tr></thead><tbody>
       <tr><th>이 종목</th>${rows.map((r) => `<td class="${sgnCls(r.own)}${r.minutes === main ? " main" : ""}">${pct(r.own)}</td>`).join("")}</tr>
       <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
       <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? r.own - r.kq : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
@@ -3035,7 +3030,7 @@
       html += `<section class="verdict-box intraday-box"><div class="vb-head">발표 직후 반응 <small class="muted">${span} · ${barLabel(ic.interval, ic.kq_interval)}</small></div>
         ${d.reaction_chart ? `<div class="rx-legend day-legend"></div><div class="rx-chart"></div>` : ""}
         ${simpleSteps(ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
-        <div class="vb-note">업종 분봉이 없어 KOSDAQ와만 비교했습니다 (평소 관계를 뺀 '고유 움직임' 계산은 하지 않음).</div></section>`;
+        <div class="vb-note">기준·종료 시각에 기록된 가격만 사용합니다. '-'는 해당 시각 가격이 없어 미계산이며 보합이 아닙니다. KOSDAQ도 같은 두 시각의 가격이 있을 때만 비교합니다. 장 전·장 외의 기준가는 저장된 전 거래일 일봉 종가(종목은 시간외 포함 가능)입니다. 평소 관계를 뺀 '고유 움직임' 계산은 하지 않음.</div></section>`;
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;

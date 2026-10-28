@@ -70,15 +70,26 @@ def sync(code: str, fetch_fn=None) -> dict:
     return added
 
 
-def _price_at(rows: list[tuple], iv: int, t: datetime) -> float | None:
-    """t 시점에 끝난 마지막 봉의 종가 (봉 시작 + 간격 <= t)."""
-    best = None
+def completed_points(rows, iv):
+    """Native quotes use observation times; Yahoo bars use start times."""
+    out = []
     for ts, close in rows:
-        if datetime.fromisoformat(ts) + timedelta(minutes=iv) <= t:
-            best = close
-        else:
-            break
-    return best
+        t = datetime.fromisoformat(ts)
+        if iv != 1:
+            t += timedelta(minutes=iv)
+        if close and t.strftime("%H:%M") <= "15:30":
+            out.append((t.isoformat(timespec="minutes"), close))
+    return out
+
+
+def point_at(points, t):
+    """Missing observations are not filled or treated as zero returns."""
+    stamp = t.replace(second=0, microsecond=0).isoformat(timespec="minutes")
+    return next((c for ts, c in points if ts == stamp), None)
+
+
+def _price_at(rows, iv, t):
+    return point_at(completed_points(rows, iv), t)
 
 
 MIN_DAY_MINUTES = 100        # 그날 1분봉이 이만큼 있으면 1분봉으로 (한국투자증권으로 채운 지난 날 포함)
@@ -106,55 +117,61 @@ def _day_rows(conn, code: str, day: str):
     return None, [], None, []
 
 
+def reaction_frame(conn, code, day, start, kind, min_minutes=MIN_DAY_MINUTES):
+    """Shared observed prices and bases for tables and charts, without interpolation."""
+    iv, own = series(conn, code, day, min_minutes)
+    kv, idx = series(conn, INDEX, day, min_minutes)
+    own, idx = completed_points(own, iv), completed_points(idx, kv)
+    if kind in ("open", "late"):
+        prev = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
+                            (code, day)).fetchone()
+        b_own = prev[1] if prev else None
+        pk = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (INDEX, prev[0])).fetchone() if prev else None
+        b_idx = pk[0] if pk else None
+    else:
+        b_own, b_idx = point_at(own, start), point_at(idx, start)
+    return {"interval": iv, "kq_interval": kv, "kind": kind,
+            "start": start.isoformat(timespec="minutes"), "day": day,
+            "base_own": b_own, "base_kq": b_idx, "own": own, "kq": idx}
+
+
 def reaction(code: str, base_ts: str, day: str, prev_close: float | None, prev_index: float | None,
              steps=(30, 60, 120)) -> dict | None:
-    """발표 직후 반응의 단순 숫자 (통계 계산이 안 되는 기사): 이 종목·코스닥·차이.
-    봉은 그날 가장 촘촘한 것 — 1분봉(네이버·한국투자증권) → 야후 5분봉 → 60분봉, 이 종목과 코스닥이 따로 (지난 날 코스닥은 1분봉이 없음).
-    장 시작 전 공개면 전날 종가부터 장 시작 뒤 각 시점까지.
-    15시 넘어 공개면 그날 종가(마지막 봉)부터 다음 거래일 장 시작 뒤 각 시점까지."""
-    t0 = datetime.fromisoformat(base_ts)
+    """Exact-minute returns; missing stock/index prices remain independently missing.
+    Previous-close arguments stay for compatibility; dated closes come from the shared frame.
+    """
+    t0 = datetime.fromisoformat(base_ts).replace(second=0, microsecond=0)
     open_t = datetime.fromisoformat(day + "T09:00")
     with connect() as conn:
-        iv, own, kv, idx = _day_rows(conn, code, day)
-        late = t0.date().isoformat() == day and t0.time() > datetime.strptime("15:00", "%H:%M").time()
-        if late:
-            nxt = conn.execute("SELECT MIN(d) FROM (SELECT substr(ts,1,10) d FROM coarse_bars WHERE symbol=? AND substr(ts,1,10)>? "
-                               "UNION SELECT substr(ts,1,10) FROM minute_bars WHERE symbol=? AND substr(ts,1,10)>?)",
-                               (code, day, code, day)).fetchone()[0]
-            if not own or not nxt:
+        if t0.date().isoformat() == day and t0.strftime("%H:%M") > "15:00":
+            nxt = conn.execute("SELECT MIN(d) FROM (SELECT date d FROM daily_bars WHERE symbol IN (?, ?) AND date>? "
+                               "UNION SELECT substr(ts,1,10) FROM minute_bars WHERE symbol IN (?, ?) AND substr(ts,1,10)>?)",
+                               (code, INDEX, day, code, INDEX, day)).fetchone()[0]
+            if not nxt:
                 return None
-            b_own, b_idx = own[-1][1], idx[-1][1]          # 그날 마지막 봉 종가
-            day = nxt
-            iv, own, kv, idx = _day_rows(conn, code, day)
-    if not own:
-        return None
-    if late:
-        start, kind = datetime.fromisoformat(day + "T09:00"), "late"
-    elif t0 < open_t:
-        start, b_own, b_idx, kind = open_t, prev_close, prev_index, "open"
-    elif t0.date().isoformat() == day:
-        start, kind = t0, "session"
-        b_own, b_idx = _price_at(own, iv, t0), _price_at(idx, kv, t0)
-        if b_own is None:           # 장 시작 직후 공개: 첫 봉 시가 대신 전날 종가
-            b_own, b_idx = prev_close, prev_index
-    else:
-        return None
-    if not b_own or not b_idx:
+            day, kind = nxt, "late"
+            start = datetime.fromisoformat(day + "T09:00")
+        elif t0 < open_t:
+            start, kind = open_t, "open"
+        elif t0.date().isoformat() == day:
+            start, kind = t0, "session"
+        else:
+            return None
+        frame = reaction_frame(conn, code, day, start, kind)
+    if not frame["own"]:
         return None
     rows = []
     for m in steps:
-        if m < iv:
-            continue
         end = start + timedelta(minutes=m)
-        if end.time() > datetime.strptime("15:30", "%H:%M").time():
+        if end.strftime("%H:%M") > "15:30":
             break
-        p_own, p_idx = _price_at(own, iv, end), _price_at(idx, kv, end)
-        if p_own is None or p_idx is None:
-            continue
-        o, k = p_own / b_own - 1, p_idx / b_idx - 1
-        rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": o, "kosdaq": k, "diff": o - k})
-    return {"interval": iv, "kq_interval": kv, "kind": kind, "day": day, "start": start.isoformat(timespec="minutes"),
-            "rows": rows} if rows else None
+        p, k = point_at(frame["own"], end), point_at(frame["kq"], end)
+        own = p / frame["base_own"] - 1 if p and frame["base_own"] else None
+        kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
+        if own is not None or kq is not None:
+            rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": own, "kosdaq": kq,
+                         "diff": own - kq if own is not None and kq is not None else None})
+    return {k: v for k, v in frame.items() if k not in ("own", "kq")} | {"rows": rows}
 
 
 def day_bars(code: str, day: str) -> tuple[int | None, list[dict]]:

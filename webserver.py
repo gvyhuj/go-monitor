@@ -217,47 +217,21 @@ def _coarse_reaction(sym: str, e: dict, time_ok: bool):
 
 
 def _reaction_chart(sym: str, e: dict, iw: dict | None, ic: dict | None):
-    """발표 직후 그래프용: 공개 시각(장 전 공개는 장 시작) 30분 전부터 2시간 뒤까지 이 종목·KOSDAQ 종가와 기준값.
-    봉은 그날 가장 촘촘한 것(1분봉 → 야후 5분·60분봉)을 이 종목·KOSDAQ 따로 고름.
-    기준값: 장 전 공개는 전날 종가, 장중 공개는 공개 시각 직전 봉 종가."""
+    """Use the same observed timestamps and bases as the tables."""
     from core import yahoo
     w = iw or ic
     if not w or not w.get("start"):
         return None
-    start, kind, d0 = datetime.fromisoformat(w["start"]), w.get("kind"), w.get("day") or e.get("reaction_day") or w["start"][:10]
-    lo, hi = (start - timedelta(minutes=30)).isoformat(timespec="minutes"), (start + timedelta(minutes=120)).isoformat(timespec="minutes")
+    start = datetime.fromisoformat(w["start"])
+    day = w.get("day") or e.get("reaction_day") or w["start"][:10]
     with connect() as conn:
-        def pick(code):
-            iv, rows = yahoo.series(conn, code, d0, 1 if iw else yahoo.MIN_DAY_MINUTES)   # 통계 반응(1분봉)이면 있는 1분봉 그대로
-            if not rows:
-                return iv, []
-            if iv == 1:
-                return iv, [r for r in rows if lo <= r[0] <= hi]
-            # 굵은 봉은 2시간 창에 한두 개뿐이라 선이 안 그려짐(60분봉은 14:00 봉에서 끝남) → 공개 앞 봉 두세 개부터 그날 장 마감까지
-            # + 야후 봉은 마지막 30분·종가 동시호가가 빠짐 → 15:30에 거래소 종가 한 점 (api_coarse와 같게)
-            lo2 = min(lo, (start - timedelta(minutes=3 * iv)).isoformat(timespec="minutes"))
-            out = [r for r in rows if lo2 <= r[0] <= f"{d0}T15:30"]
-            c = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (code, d0)).fetchone()
-            if c and c[0] and out and out[-1][0][11:16] < "15:30":
-                out.append((f"{d0}T15:30", c[0]))
-            return iv, out
-        iv, own = pick(sym)
-        kv, kq = pick(KOSDAQ)
-        prev = lambda code: (conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
-                                          (code, d0)).fetchone() or [None])[0]
-        p_own, p_kq = prev(sym), prev(KOSDAQ)
-    if not own:
+        frame = yahoo.reaction_frame(conn, sym, day, start, w.get("kind"), 1 if iw else yahoo.MIN_DAY_MINUTES)
+    if not frame["own"]:
         return None
-
-    def at(rows, step, fallback):     # 공개 시각에 끝난 마지막 봉의 종가 (봉 시작 + 간격 <= 공개 시각)
-        best = None
-        for t, c in rows:
-            if t[11:16] < "15:30" and datetime.fromisoformat(t) + timedelta(minutes=step or 1) <= start:
-                best = c
-        return best if best is not None else fallback
-    b_own, b_kq = (p_own, p_kq) if kind in ("open", "late") else (at(own, iv, p_own), at(kq, kv, p_kq))
-    return {"interval": iv, "kq_interval": kv, "kind": kind, "start": w["start"], "base_own": b_own, "base_kq": b_kq,
-            "own": [{"t": t, "c": c} for t, c in own], "kq": [{"t": t, "c": c} for t, c in kq]}
+    lo = (start - timedelta(minutes=max(30, 3 * (frame["interval"] or 1)))).isoformat(timespec="minutes")
+    hi = min((start + timedelta(minutes=120)).isoformat(timespec="minutes"), day + "T15:30")
+    return {**frame, "own": [{"t": t, "c": c} for t, c in frame["own"] if lo <= t <= hi],
+            "kq": [{"t": t, "c": c} for t, c in frame["kq"] if lo <= t <= hi]}
 
 
 def api_coarse(_q):
@@ -819,6 +793,13 @@ def reaction_row(d: dict, item: dict | None = None) -> dict:
            "mode": w.get("kind") if w else None, "start": w.get("start") if w else None, "steps": {}, "path": None}
     row["analysis_ts"] = analysis_ts
     row["basis_reason"] = "disclosure" if disclosure.get("ts") else "story" if analysis_ts != publication else "publication"
+    # Link only explicitly associated disclosures/stories, never all news on the same day.
+    if disclosure.get("ts"):
+        row["event_key"] = f"disclosure:{disclosure['ts']}|{disclosure.get('title', '')}"
+    elif row["kind"] == "disc":
+        row["event_key"] = f"disclosure:{a['ts']}|{a['title']}"
+    else:
+        row["event_key"] = f"story:{a.get('story') or a['id']}"
     for r in (w or {}).get("rows") or []:
         row["steps"][str(r["minutes"])] = {"own": r.get("own"), "kq": r.get("kosdaq")}
     if rc and rc.get("base_own") and rc.get("start"):
@@ -829,7 +810,7 @@ def reaction_row(d: dict, item: dict | None = None) -> dict:
             for x in rows:
                 m = round((datetime.fromisoformat(x["t"]) - t0).total_seconds() / 60)
                 if base and -30 <= m <= 150:
-                    out.append([m, round(x["c"] / base - 1, 5)])
+                    out.append([m, x["c"] / base - 1])
             return out
         row["path"] = {"own": path(rc["own"], rc["base_own"]), "kq": path(rc.get("kq") or [], rc.get("base_kq"))}
     row["kq_interval"] = (ic or {}).get("kq_interval") if not iw else 1
