@@ -808,12 +808,17 @@ def reaction_row(d: dict, item: dict | None = None) -> dict:
     item = item or {}
     iw, ic, rc = d.get("intraday"), d.get("intraday_coarse"), d.get("reaction_chart")
     w = iw or ic
+    publication = a.get("own_ts") or a["ts"]
+    disclosure = e.get("disclosure") or {}
+    analysis_ts = e.get("base_ts") or disclosure.get("ts") or a["ts"]
     row = {"id": a["id"], "ts": a.get("own_ts") or a["ts"], "title": a["title"], "office": a.get("office") or "",
            "kind": a.get("kind") or item.get("kind"), "category": a.get("category") or item.get("category"),
            "topic": item.get("topic") or a.get("topic"), "pblntf": a.get("pblntf"),
            "time_quality": a.get("time_quality") or item.get("time_quality"), "untimed": bool(a.get("untimed")),
            "reaction_day": e.get("reaction_day"), "interval": (1 if iw else ic.get("interval")) if w else None,
            "mode": w.get("kind") if w else None, "start": w.get("start") if w else None, "steps": {}, "path": None}
+    row["analysis_ts"] = analysis_ts
+    row["basis_reason"] = "disclosure" if disclosure.get("ts") else "story" if analysis_ts != publication else "publication"
     for r in (w or {}).get("rows") or []:
         row["steps"][str(r["minutes"])] = {"own": r.get("own"), "kq": r.get("kosdaq")}
     if rc and rc.get("base_own") and rc.get("start"):

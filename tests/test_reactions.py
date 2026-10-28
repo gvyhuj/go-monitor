@@ -31,3 +31,24 @@ def test_reactions_skip_hidden_and_tag_disclosures():
     out = webserver.reactions_from([{"id": "a", "hidden": True}], {"a": detail()},
                                    [{"id": "d1"}], {"d1": {**detail(), "article": {**detail()["article"], "id": "d1", "kind": "disc"}}})
     assert [(x["id"], x["kind"]) for x in out["items"]] == [("d1", "disc")]
+
+
+def test_reaction_keeps_publication_and_earlier_disclosure_separate():
+    d = detail()
+    d["article"]["ts"] = "2026-04-22T19:20"
+    d["effect"]["disclosure"] = {"ts": "2026-04-22T14:10", "title": "공급계약"}
+    d["reaction_chart"]["start"] = d["intraday"]["start"] = "2026-04-22T14:10"
+    r = webserver.reaction_row(d)
+    assert r["ts"] == "2026-04-22T19:20"
+    assert r["analysis_ts"] == "2026-04-22T14:10"
+    assert r["basis_reason"] == "disclosure"
+    assert r["mode"] == "session"  # This describes the calculation, not 19:20 publication.
+
+
+def test_reaction_explains_representative_selected_after_first_publication():
+    d = detail()
+    d["article"]["own_ts"] = "2026-04-22T19:20"
+    r = webserver.reaction_row(d)
+    assert r["ts"] == "2026-04-22T19:20"
+    assert r["analysis_ts"] == "2026-04-22T14:14"
+    assert r["basis_reason"] == "story"
