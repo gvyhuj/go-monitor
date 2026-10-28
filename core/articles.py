@@ -658,10 +658,17 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
 
 def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rarity: bool = True) -> dict | None:
     """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 분야 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
-    from . import causal
+    from . import causal, yahoo
     day = t1.date()
     ret = lambda code: causal.window_return(code, day, t1.time(), t0)
-    own, kq = ret(symbol), ret(KOSDAQ)
+    with connect() as conn:
+        frame = yahoo.reaction_frame(conn, symbol, day.isoformat(), t0 or datetime.combine(day, time(9)),
+                                     "session" if t0 else "open", min_minutes=1)
+    if frame["interval"] != 1 or frame["kq_interval"] != 1:
+        return None
+    p, k = yahoo.point_at(frame["own"], t1), yahoo.point_at(frame["kq"], t1)
+    own = p / frame["base_own"] - 1 if p and frame["base_own"] else None
+    kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
     if own is None or kq is None:
         return None
     with connect() as conn:
@@ -701,7 +708,7 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
     d0 = eff.get("reaction_day")
     if not time_ok or not d0 or not eff.get("base_ts"):
         return None
-    ts = datetime.fromisoformat(eff["base_ts"])
+    ts = datetime.fromisoformat(eff["base_ts"]).replace(second=0, microsecond=0)
     open_t = datetime.combine(date.fromisoformat(d0), time(9, 0))
     if ts < open_t:
         t0, t1, kind = None, open_t + timedelta(minutes=INTRADAY_MINUTES), "open"
@@ -728,6 +735,9 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
     if not w or w.get("rarity") is None:
         return None
     start = t0 or open_t
+    from . import yahoo
+    with connect() as conn:
+        frame = yahoo.reaction_frame(conn, symbol, d0, start, kind, min_minutes=1)
     rows = []
     for m in INTRADAY_STEPS:
         end = start + timedelta(minutes=m)
@@ -737,6 +747,13 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         if x:
             rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"),
                          **{k: x[k] for k in ("own", "market", "sector", "abnormal", "kosdaq")}})
+        else:
+            p, k = yahoo.point_at(frame["own"], end), yahoo.point_at(frame["kq"], end)
+            own = p / frame["base_own"] - 1 if p and frame["base_own"] else None
+            kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
+            if own is not None or kq is not None:
+                rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": own,
+                             "kosdaq": kq, "market": None, "sector": None, "abnormal": None})
     # start: 그래프의 기준 시각 (장 전·15시 넘어 공개는 반응일 장 시작). 비어 있으면 그래프를 못 그려 '09:30 뒤 나옴'만 보였음
     return {**w, "start": start.isoformat(timespec="minutes"), "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
                                                                              if p.get("kind") == "seg"])}

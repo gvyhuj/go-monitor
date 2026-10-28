@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import webserver
+import pytest
 
 
 def detail(kind="session", interval=None):
@@ -21,8 +22,10 @@ def detail(kind="session", interval=None):
 def test_reaction_row_aligns_path_at_publication_and_keeps_resolution():
     r = webserver.reaction_row(detail(interval=60), {"topic": "수주"})
     assert (r["interval"], r["mode"], r["topic"]) == (60, "session", "수주")
-    assert r["path"]["own"] == [[-14, 0.0], [76, 0.04]]          # 공개 30분 전보다 앞선 봉(13:00, 09:00)은 뺌
-    assert r["path"]["kq"] == [[-14, 0.0], [76, 0.01]]
+    assert r["path"]["own"][0] == [-14, 0.0]
+    assert r["path"]["own"][1] == pytest.approx([76, 0.04])          # 공개 30분 전보다 앞선 봉(13:00, 09:00)은 뺌
+    assert r["path"]["kq"][0] == [-14, 0.0]
+    assert r["path"]["kq"][1] == pytest.approx([76, 0.01])
     assert r["steps"] == {"60": {"own": 0.03, "kq": 0.01}}
     assert webserver.reaction_row(detail())["interval"] == 1
 
@@ -31,6 +34,20 @@ def test_reactions_skip_hidden_and_tag_disclosures():
     out = webserver.reactions_from([{"id": "a", "hidden": True}], {"a": detail()},
                                    [{"id": "d1"}], {"d1": {**detail(), "article": {**detail()["article"], "id": "d1", "kind": "disc"}}})
     assert [(x["id"], x["kind"]) for x in out["items"]] == [("d1", "disc")]
+
+
+def test_linked_articles_and_disclosure_share_aggregation_key_only():
+    article = detail()
+    article['effect']['disclosure'] = {'ts': '2026-04-22T14:10', 'title': 'contract'}
+    disc = detail()
+    disc['article'].update(id='d1', kind='disc', ts='2026-04-22T14:10', title='contract')
+    other = detail()
+    other['article'].update(id='other', ts='2026-04-22T14:10', title='different news')
+    rows = webserver.reactions_from([{'id':'a'}, {'id':'other'}], {'a':article,'other':other},
+                                   [{'id':'d1'}], {'d1':disc})['items']
+    keys = {r['id']:r['event_key'] for r in rows}
+    assert len(rows) == 3
+    assert keys['a'] == keys['d1'] != keys['other']
 
 
 def test_reaction_keeps_publication_and_earlier_disclosure_separate():

@@ -74,7 +74,7 @@ test('reaction page explains distinct counts and the earlier calculation timesta
     setTimeout,clearTimeout});
   const start = source.indexOf('  const reactState =');
   const end = source.indexOf('  // 기사 대시보드:',start);
-  vm.runInContext(source.slice(start,end) + '\nreactState.range="all";',ctx);
+  vm.runInContext(fn('reactionAt') + fn('reactionSamples') + source.slice(start,end) + '\nreactState.range="all";',ctx);
   await ctx.pageReact();
   assert.match($('#rx-n').textContent,/대상 3건 · 경로 2건 · \+30분 집계 1건/);
   assert.match($('#rx-sum').innerHTML,/집계 제외 2건/);
@@ -86,4 +86,11 @@ test('reaction page explains distinct counts and the earlier calculation timesta
   $('#rx-csv').onclick();
   assert.ok(exported[1].includes('분석 기준 시각'));
   assert.ok(exported[2][0].includes('2026-04-22T14:10'));
+  assert.doesNotMatch($('#rx-sum').innerHTML, /우연|p값|판단 보류/);
+  ctx.points = v => v == null ? '-' : `${ctx.pct(v)}p`;
+  $('#rx-ctl').onchange({target:{id:'rx-vskq',checked:true}});
+  assert.match($('#rx-sum').innerHTML, /시장 웃돈 1/);
+  assert.match($('#rx-table').innerHTML, /\+1\.50%p/);
+  $('#rx-csv').onclick();
+  assert.ok(exported[1].some(v => v.includes('(%p)')));
 });

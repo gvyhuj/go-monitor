@@ -61,6 +61,8 @@ def test_past_article_reaction_from_coarse_bars(database):
     thirty = r["rows"][0]
     assert thirty["minutes"] == 30 and thirty["own"] == pytest.approx(0.03) and thirty["kosdaq"] == pytest.approx(0.01)
     assert thirty["diff"] == pytest.approx(0.02)
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol,date,close) VALUES (?,?,?)", [("X","2026-08-13",95),("KOSDAQ","2026-08-13",990)])
     before_open = yahoo.reaction("X", "2026-08-14T07:30", "2026-08-14", 95, 990)
     assert before_open["kind"] == "open"                                              # 전날 종가부터
     assert before_open["rows"][0]["minutes"] == 60 and before_open["rows"][0]["own"] == pytest.approx(100 / 95 - 1)   # 09:30에 끝난 봉 없음 → +60분부터
@@ -78,7 +80,7 @@ def test_reaction_chart_bars_and_base(database):
                              [(sym, f"2026-08-21T10:{m:02d}", c0 + m, c0 + m, c0 + m, c0 + m) for m in range(0, 60)])
     e = {"reaction_day": "2026-08-21"}
     rc = webserver._reaction_chart("X", e, {"start": "2026-08-21T10:20", "kind": "session"}, None)
-    assert rc["interval"] == 1 and rc["base_own"] == 1019 and rc["base_kq"] == 819     # 10:19 봉이 10:20에 끝남
+    assert rc["interval"] == 1 and rc["base_own"] == 1020 and rc["base_kq"] == 820     # 10:19 봉이 10:20에 끝남
     assert rc["own"][0]["t"] == "2026-08-21T10:00" and len(rc["kq"]) == 60
     rc = webserver._reaction_chart("X", e, {"start": "2026-08-21T09:00", "kind": "open"}, None)
     assert rc["base_own"] == 1000 and rc["base_kq"] == 800                               # 장 전 공개: 전날 종가
@@ -100,8 +102,10 @@ def test_reaction_chart_hourly_bars_cover_rest_of_day(database):
                              [(sym, f"2026-04-22T{h:02d}:00", c0 + h) for h in range(9, 15)])
     rc = webserver._reaction_chart("Z", {"reaction_day": "2026-04-22"}, None,
                                    {"start": "2026-04-22T14:14", "kind": "session", "interval": 60})
-    assert [b["t"][11:] for b in rc["own"]] == ["12:00", "13:00", "14:00", "15:30"]
-    assert rc["base_own"] == 963 and rc["own"][-1]["c"] == 990 and rc["kq"][-1]["c"] == 810   # 13:00 봉이 14:00에 끝남
+    assert [b["t"][11:] for b in rc["own"]] == ["12:00", "13:00", "14:00", "15:00"]
+    assert rc["base_own"] is None  # No observation at 14:14; do not invent a base.
+    assert rc["own"][-1]["c"] == 964 and rc["kq"][-1]["c"] == 819
+
 
 
 def test_late_article_measured_from_close_to_next_open(database):
@@ -112,6 +116,8 @@ def test_late_article_measured_from_close_to_next_open(database):
             for ts, c in rows:
                 conn.execute("INSERT INTO coarse_bars(symbol,interval,ts,open,high,low,close,volume) VALUES (?,5,?,?,?,?,?,1)",
                              (sym, ts, c, c, c, c))
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol,date,close) VALUES (?,?,?)", [("X","2026-08-12",100),("KOSDAQ","2026-08-12",1000),("X","2026-08-13",106)])
     r = yahoo.reaction("X", "2026-08-12T15:13", "2026-08-12", 95, 990)
     assert r["kind"] == "late" and r["day"] == "2026-08-13" and r["start"] == "2026-08-13T09:00"
     assert r["rows"][0]["minutes"] == 30 and r["rows"][0]["own"] == pytest.approx(0.06) and r["rows"][0]["kosdaq"] == pytest.approx(0.01)
@@ -132,6 +138,7 @@ def test_backfilled_minutes_used_with_coarse_kosdaq(database):
     r = yahoo.reaction("W", "2026-04-22T10:15", "2026-04-22", 100, 800)
     assert (r["interval"], r["kq_interval"], r["kind"]) == (1, 60, "session")
     assert [x["minutes"] for x in r["rows"]] == [30, 60, 120]
-    assert r["rows"][0]["own"] == pytest.approx(101.04 / 100.74 - 1)   # 10:14 봉(10:15에 끝남) 100.74 → 10:44 봉 101.04
+    assert r["rows"][0]["own"] == pytest.approx(101.05 / 100.75 - 1)   # 10:14 봉(10:15에 끝남) 100.74 → 10:44 봉 101.04
+    assert all(row["kosdaq"] is None for row in r["rows"])
     rc = webserver._reaction_chart("W", {"reaction_day": "2026-04-22"}, None, r)
-    assert (rc["interval"], rc["kq_interval"]) == (1, 60) and len(rc["own"]) == 151 and rc["kq"][-1]["c"] == 808
+    assert (rc["interval"], rc["kq_interval"]) == (1, 60) and len(rc["own"]) == 151 and rc["base_kq"] is None
