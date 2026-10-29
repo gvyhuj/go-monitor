@@ -57,13 +57,17 @@ async function main() {
       // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 그린광학 보도자료.
       assert.deepEqual(await page.locator(".view-seg a").allInnerTexts(), ["목록", "대시보드"]);
       assert.deepEqual((await list.evaluateAll((xs) => xs.map((x) => x.dataset.id))).sort(), ["2001", "2002", "2003"]);
+      // 목록 숫자는 기본 +60분, 겹쳐 보기의 +30분을 누르면 목록도 +30분으로
+      assert.match(await page.locator('#art-list button[data-id="2001"] .al-rx').innerText(), /^−2\.\d\d%\s*\+60분$/);
+      await page.locator('#pr-detail .rx-ov-tools button[data-h="30"]').click();
       assert.match(await page.locator('#art-list button[data-id="2001"] .al-rx').innerText(), /^−1\.\d\d%\s*\+30분$/);
+      await page.locator('#pr-detail .rx-ov-tools button[data-h="60"]').click();
 
       // Nothing selected: the right side is the overview of exactly the listed articles (median line).
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.match(await page.locator("#rx-n").innerText(), /대상 3건/);
       assert.ok(await page.locator("#rx-plot .rx-avg").count() > 0, "중앙값 선");
-      assert.match(await page.locator("#rx-cards").innerText(), /\+30분 중앙값/);
+      assert.match(await page.locator("#rx-cards").innerText(), /\+60분 중앙값/);
 
       // Sorting by reaction and the conditions apply to the list and the overview together.
       assert.deepEqual(await page.locator("#art-sort option").allInnerTexts(), ["최신순", "많이 오른 순", "많이 내린 순"]);
@@ -96,12 +100,12 @@ async function main() {
       assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
       await page.locator('#pr-detail [data-rxr="5"]').click();
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
-      for (const label of ["관련 소식·시장 상황", "검토 기록", "유사 사건"]) {
+      for (const label of ["유사 사건"]) {
         await page.locator("#pr-detail .obs-fold > summary", { hasText: label }).first().waitFor();
       }
-      // 접는 항목은 세 개뿐: 실은 매체는 '수정' 메뉴로, 분류·연결 수정·분석 기준은 없앰
+      // 접는 항목은 유사 사건 하나: 실은 매체는 '수정' 메뉴로, 관련 소식·검토 기록·분류·연결 수정·분석 기준은 없앰
       assert.deepEqual((await page.locator("#pr-detail .obs-folds > .obs-fold > summary, #obs-extras > .obs-fold > summary").allInnerTexts()).map((t) => t.split("\n")[0]),
-        ["관련 소식·시장 상황", "검토 기록", "유사 사건"]);
+        ["유사 사건"]);
       // '수정' 메뉴 → 실은 매체 · 같은 내용 합치기 팝업
       if (width > 700) {
         await page.locator(".art-more > summary").click();
@@ -112,7 +116,7 @@ async function main() {
         await page.keyboard.press("Escape");
         assert.equal(await page.locator("#outlets-pop").isVisible(), false);
         // 수정·엑셀로는 조건·정렬과 같은 높이, 오른쪽 끝
-        const hs = await page.evaluate(() => ["#art-cond", "#art-sort", "#art-csv", ".art-more > summary"].map((q) => Math.round((q === "#art-sort" ? document.querySelector(q).closest("label") : document.querySelector(q)).getBoundingClientRect().height)));
+        const hs = await page.evaluate(() => ["#art-cond", "#art-sort", ".art-more > summary"].map((q) => Math.round((q === "#art-sort" ? document.querySelector(q).closest("label") : document.querySelector(q)).getBoundingClientRect().height)));
         assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `높이 ${hs}`);
         const right = await page.evaluate(() => { const c = document.querySelector("#art-cat").closest(".controls").getBoundingClientRect().right; return c - document.querySelector(".art-more").getBoundingClientRect().right; });
         assert.ok(right < 2, `수정 메뉴가 오른쪽 끝 (${right}px)`);
@@ -130,6 +134,15 @@ async function main() {
       assert.match(eid, /^ne-[0-9a-f]+$/);
       await page.locator("#pr-close").click();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
+      await page.locator("#pr-detail .rx-ov").waitFor();
+      // 전체로 간 뒤: 설명은 접혀 있고, '← 방금 본 기사'로 돌아감
+      assert.equal(await page.locator("#rx-sum details.rx-sum-more").evaluate((x) => x.open), false);
+      assert.match(await page.locator("#rx-sum details.rx-sum-more > summary").innerText(), /계산 기준 자세히 보기/);
+      assert.match(await page.locator(".pr-back-title").innerText(), /광학미러 공급 계약 체결/);
+      await page.locator("#pr-back").click();
+      await page.locator("#pr-detail .pr-title").filter({ hasText: "광학미러 공급 계약 체결" }).waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
+      await page.locator("#pr-close").click();
       await page.locator("#pr-detail .rx-ov").waitFor();
       await page.goto(`${base}/#/react/event/${eid}`);
       await page.locator("#pr-detail .pr-title").filter({ hasText: "광학미러 공급 계약 체결" }).waitFor();
