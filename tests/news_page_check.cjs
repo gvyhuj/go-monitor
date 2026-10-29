@@ -69,7 +69,7 @@ async function main() {
       assert.match(await page.locator("#rx-n").innerText(), /대상 3건/);
       assert.ok(await page.locator("#rx-plot .rx-avg").count() > 0, "중앙값 선");
       assert.match(await page.locator("#rx-cards").innerText(), /\+60분 중앙값/);
-      assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린/);
+      assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린|평균/);
       assert.equal(await page.locator("#rx-vskq").count(), 0, "KOSDAQ 빼고 보기 없음");
 
       // Sorting by reaction and the conditions apply to the list and the overview together.

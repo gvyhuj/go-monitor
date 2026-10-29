@@ -2216,7 +2216,7 @@
           <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 모으지 않습니다.</li>
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
-          <li>목록 한 줄은 같은 내용 묶음(여러 매체가 같은 내용을 낸 것) 하나입니다. 같은 날이라도 내용이 다르면 따로 나옵니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
+          <li>목록 한 줄은 같은 내용 묶음(여러 매체가 같은 내용을 낸 것) 하나입니다. 같은 날이라도 내용이 다르면 따로 나옵니다. 한 달 한 달 평균은 전체 건수 ÷ 첫 기록부터 오늘까지의 달 수입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
         </ul>
         <h3>대시보드</h3>
         <ul>
@@ -2242,7 +2242,7 @@
         </ul>
         <h3>뉴스 반응 (뉴스 목록 오른쪽)</h3>
         <ul>
-          <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, 평균은 아래 숫자로 함께 적습니다.</li>
+          <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, </li>
           <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있습니다. [← 전체 기사 보기]로 겹쳐 보기에 간 뒤에는 목록의 기사를 누르거나 [← 방금 본 기사]로 돌아갑니다.</li>
           <li>기사를 고르면 같은 자리에 그 기사 그래프가 나오고, 지금 목록의 다른 기사(연한 회색)와 중앙값(파랑)이 +30분(또는 +60분)까지 겹칩니다. [전후 5거래일] 탭은 공개 전에 이미 움직였는지, 뒤에 이어졌는지 보는 참고용입니다.</li>
           <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다.</li>
@@ -2517,7 +2517,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <br>중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.
       <br>시장과의 비교는 아래 ‘KOSDAQ 대비 중앙값’과 기사 화면의 ‘코스닥과 비교’에서 봅니다.
       <br>주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.
-      <br>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다. 평균은 아래 숫자로 함께 적습니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
+      <br>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다.  사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
       + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
     const buckets=new Map(); for(const x of list){const v=stepV(x,reactState.h);if(v==null)continue;const k=(x.event_key||x.id)+'|'+(x.start||'');if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(v);}
     const conflicts=[...buckets.entries()].filter(([,v])=>Math.max(...v)-Math.min(...v)>=1e-8);
@@ -2525,7 +2525,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const fmt = (v) => (reactState.vsKq ? points(v) : pct(v)), vs = reactionSamples(list, (x) => stepV(x, reactState.h));
     const dv = reactionSamples(list, (x) => { const s0 = (x.steps || {})[reactState.h]; return s0 && s0.own != null && s0.kq != null ? (Object.hasOwn(s0, "diff") ? s0.diff : s0.own - s0.kq) : null; });
     const card = (label, v, text) => `<div><small>${label}</small><strong class="${sgnCls(v)}">${text ?? (v == null ? "-" : fmt(v))}</strong></div>`;
-    $("#rx-cards").innerHTML = card(`+${reactState.h}분 중앙값`, median(vs)) + card("평균", vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null)
+    $("#rx-cards").innerHTML = card(`+${reactState.h}분 중앙값`, median(vs))      // 평균은 크게 움직인 몇 건에 끌려 헷갈려서 뺌
       + (reactState.vsKq ? "" : `<div><small>KOSDAQ 대비 중앙값</small><strong class="${sgnCls(median(dv))}">${dv.length ? points(median(dv)) : "-"}</strong></div>`);
   }
   // 기사 그래프에 겹칠 다른 기사·중앙값 (위 겹쳐 보기와 같은 조건·같은 계산). 분 = 비교 시작 기준
