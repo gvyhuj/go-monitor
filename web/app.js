@@ -2954,7 +2954,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         <span><small>한 달 평균 (${esc(name)})</small>${num(perMonth, "month", perMonth != null ? perMonth.toFixed(1) + "건" : "-", "d1", "건")}</span>
         ${isDisc ? `<span><small>시각을 아는 공시</small>${num(list.filter((x) => !x.untimed).length, "timed", `${list.filter((x) => !x.untimed).length}건`, "", "건")}</span>`
           : `<span><small>한 건당 실린 매체 (${esc(name)} 평균)</small>${num(avgOut, "outlets", avgOut != null ? avgOut.toFixed(1) + "곳" : "-", "d1", "곳")}</span>`}
-        <span><small>${esc(name)}${from ? ` (${esc(from)}부터)` : ""}</small>${num(list.length, "n", `${list.length}건`, "", "건")}${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
+        <span><small>${esc(name)}${from && r !== "custom" ? ` (${esc(from)}부터)` : ""}</small>${num(list.length, "n", `${list.length}건`, "", "건")}${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
           : ` <small>보도 ${media}건</small>`}</span></div>`;
     }
     function baselineBlock() { return baselineHtml(d.baseline); }

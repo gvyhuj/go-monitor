@@ -85,6 +85,15 @@ async function main() {
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       assert.match(await page.locator("#pr-score").innerText(), /1년 \(\d{4}-\d\d-\d\d부터\)\s*0건/);
+      // 기간을 3달·직접 고르기로 바꾸면 이름과 숫자가 따라감
+      await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
+      await page.locator('#art-pop button[data-ck="range"][data-cv="92"]').click();
+      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(3달\)[\s\S]*\(3달 평균\)[\s\S]*3달 \(\d{4}-\d\d-\d\d부터\)\s*3건/);
+      await page.locator('#art-pop button[data-ck="range"][data-cv="custom"]').click();
+      await page.locator("#art-from").fill("2026-10-16"); await page.locator("#art-from").dispatchEvent("change");
+      await page.locator("#art-to").fill("2026-10-22"); await page.locator("#art-to").dispatchEvent("change");
+      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(26-10-16~26-10-22\)[\s\S]*26-10-16~26-10-22\s*2건/);
+      await page.locator('#art-pop button[data-ck="range"][data-cv="365"]').click();
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       assert.equal(await list.count(), 3);
       await page.keyboard.press("Escape");
