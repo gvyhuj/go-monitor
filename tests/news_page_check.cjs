@@ -44,7 +44,7 @@ async function main() {
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   try {
     for (const [width, height] of [[1280, 900], [390, 844]]) {
-      const page = await browser.newPage({ viewport: { width, height } });
+      const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });   // 움직임 없이 값 검사 (움직임은 아래 따로)
       await page.addInitScript(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });   // GitHub 창 대신 주소만 기록
       await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));   // '최근 1년' 조건 기준
       const errors = [];
@@ -277,6 +277,29 @@ async function main() {
       assert.equal(await jump.inputValue(), before, "숫자 입력 막힘");
 
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
+    // 움직임: 기사 열기(떠오르기·제목 옮겨 가기), 겹쳐 보기 선 그리기, 기간 숫자 올라가기 — 끝나면 값은 그대로
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`${base}/#/pr`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#pr-detail .rx-ov").waitFor();
+      assert.equal(await page.locator("#rx-plot.mv-draw").count(), 1, "겹쳐 보기 선 그리기");
+      await page.locator('#art-list button[data-id="2001"]').click();
+      await page.locator("#pr-detail .pr-title").waitFor();
+      assert.equal(await page.locator("#pr-detail.mv-in").count(), 1, "기사 상세 떠오르기");
+      assert.ok(await page.locator("#pr-detail .pr-title").evaluate((el) => el.getAnimations().length > 0), "제목이 목록에서 옮겨 오는 움직임");
+      await page.locator("#pr-detail .rx-chart.mv-reveal").waitFor();
+      assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "sticky", "오른쪽 상세는 화면에 고정");
+      await page.goto(`${base}/#/days`);
+      await page.locator(".ps-cards").waitFor();
+      await page.waitForFunction(() => /^\+3\.91%$/.test(document.querySelector(".ps-big").textContent));   // 숫자 올라가기가 끝나면 원래 값
       assert.deepEqual(errors, []);
       await page.close();
     }

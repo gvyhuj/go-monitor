@@ -27,6 +27,57 @@
   const points = (value) => value == null ? "-" : `${pct(value)}p`;
   const pctRaw = (v, d = 2) => (v == null ? "-" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}%`);
   const sgnCls = (v) => (v == null ? "" : v > 0 ? "up-t" : v < 0 ? "down-t" : "");
+
+  // ---- 움직임 (모두 '무엇이 바뀌었는지' 알려 주는 용도. OS의 '동작 줄이기'를 켜면 모두 꺼짐)
+  const MOTION = () => !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const EASE = "cubic-bezier(.2,.8,.2,1)";
+  // 들어오는 칸: 살짝 아래에서 떠오르며 나타남 (같은 칸에 다시 넣을 때마다)
+  function enter(el, cls = "mv-in") { if (!el || !el.classList || !MOTION()) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  // 숫자 올라가기: [data-count]의 이전 값 → 새 값 (끝나면 원래 글자 그대로). data-key로 이전 값을 기억
+  const COUNT_PREV = new Map();
+  function countUp(root) {
+    if (!root) return;
+    root.querySelectorAll("[data-count]").forEach((el) => {
+      const to = +el.dataset.count, key = el.dataset.key || "", from = COUNT_PREV.has(key) ? COUNT_PREV.get(key) : 0, final = el.innerHTML;
+      COUNT_PREV.set(key, to);
+      if (!MOTION() || !isFinite(to) || from === to) return;
+      const f = el.dataset.fmt, fmt = (v) => f === "pct" ? pct(v) : f === "pts" ? points(v) : `${Math.round(v).toLocaleString("ko-KR")}${el.dataset.suf || ""}`;
+      const t0 = performance.now(), D = 360;
+      const step = (t) => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3);
+        if (!el.isConnected) return; if (k < 1) { el.textContent = fmt(from + (to - from) * e); requestAnimationFrame(step); } else el.innerHTML = final; };
+      requestAnimationFrame(step);
+    });
+  }
+  // 같은 요소가 옮겨 가는 느낌 (목록 제목 → 오른쪽 상세 제목): 시작 위치·크기에서 제자리로
+  function flipFrom(el, r0) {
+    if (!el || !r0 || !MOTION() || !el.animate) return;
+    const r1 = el.getBoundingClientRect(); if (!r1.width) return;
+    const dx = r0.left - r1.left, dy = r0.top - r1.top, sc = Math.max(.5, Math.min(1.2, r0.height / r1.height));
+    el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: "0 0", opacity: .5 }, { transform: "none", transformOrigin: "0 0", opacity: 1 }],
+      { duration: 340, easing: EASE });
+  }
+  // 10% 이상 오른 날: 하루에 딱 한 번 축하 종이 조각 (이 기기 기준, 동작 줄이기면 안 함)
+  function confettiOnce(day, chg) {
+    if (!(chg >= 0.10) || !day || !MOTION()) return false;
+    const key = `go-confetti:${day}`;
+    try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, "1"); } catch (_) { return false; }
+    const cv = document.createElement("canvas"), dpr = window.devicePixelRatio || 1;
+    cv.className = "mv-confetti"; cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; document.body.appendChild(cv);
+    const g = cv.getContext("2d"); if (!g) { cv.remove(); return false; }
+    g.scale(dpr, dpr);
+    const colors = ["#D42A3C", "#F59E0B", "#4ADE80", "#1973B9", "#A78BFA", "#F472B6"];
+    const bits = Array.from({ length: 140 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .35, vx: (Math.random() - .5) * 14,
+      vy: -Math.random() * 13 - 4, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .3, w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, c: colors[Math.random() * colors.length | 0] }));
+    const t0 = performance.now();
+    const tick = (t) => {
+      g.clearRect(0, 0, innerWidth, innerHeight);
+      bits.forEach((b) => { b.vy += .32; b.vx *= .99; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+        g.save(); g.translate(b.x, b.y); g.rotate(b.r); g.fillStyle = b.c; g.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); g.restore(); });
+      if (t - t0 < 2600) requestAnimationFrame(tick); else cv.remove();
+    };
+    requestAnimationFrame(tick);
+    return true;
+  }
   const parseT = (t) => { const [d, hm] = t.split("T"); const [y, m, dd] = d.split("-").map(Number); const [h, mi] = (hm || "00:00").split(":").map(Number); return { y, m, d: dd, h, mi }; };
   const toTime = (t) => { const p = parseT(t); return Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi) / 1000; };
   const hhmm = (t) => (t ? t.slice(11, 16) : "");
@@ -751,6 +802,8 @@
     // 실린 매체 수는 아래 작은 글씨로 (위 숫자 줄은 한 줄로)
     $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 뉴스 탭에서 열림` : "제목을 누르면 뉴스 탭에서 열림") : "";
     const card = $("#q-news-card");
+    // 소식 건수가 바뀌면 숫자가 살짝 커졌다 돌아옴
+    const sig = $("#q-news").textContent; if (card && card.dataset.sig && card.dataset.sig !== sig) $("#q-news").querySelectorAll("b").forEach((b) => enter(b, "mv-pop")); if (card) card.dataset.sig = sig;
     if (card) card.onclick = (ev) => {
       const open = ev.target.closest("[data-open]");
       if (open) { artState.day = latest; location.hash = `#/pr/${open.dataset.open}`; return; }
@@ -845,7 +898,7 @@
       return `<p class="ps-range">${esc(first.date)} ~ ${esc(last.date)} · ${span.length}거래일</p>
         <div class="ps-cards">
           <div class="ps-card"><small>기간 등락 · 시장 대비</small>
-            <div class="ps-row"><span class="ps-big ${sgnCls(own)}">${own == null ? "-" : pct(own)}</span><span>KOSDAQ <b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b></span></div>
+            <div class="ps-row"><span class="ps-big ${sgnCls(own)}" ${own == null ? "" : `data-count="${own}" data-fmt="pct" data-key="ps-own"`}>${own == null ? "-" : pct(own)}</span><span>KOSDAQ <b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="ps-kq"`}>${kq == null ? "-" : pct(kq)}</b></span></div>
             <div class="ps-sub">시장보다 <b class="${sgnCls(own != null && kq != null ? own - kq : null)}">${own != null && kq != null ? points(own - kq) : "-"}</b></div>
             <div class="ps-hint">${base ? `${won(base)}원 → ${won(last.close)}원` : ""}</div></div>
           <div class="ps-card"><small>기간 최고 · 최저</small>
@@ -853,7 +906,7 @@
             <button type="button" class="ps-row ps-go" data-goto="${esc(lo.date)}"><b>${won(lo.low)}</b><span>${md(lo.date)}</span></button>
             <div class="ps-hint">누르면 그날 줄로</div></div>
           <div class="ps-card"><small>오른 날 · 내린 날</small>
-            <div class="ps-row"><button type="button" class="ps-go ps-n up" data-quick="up">${up}일</button><button type="button" class="ps-go ps-n down" data-quick="down">${dn}일</button></div>
+            <div class="ps-row"><button type="button" class="ps-go ps-n up" data-quick="up" data-count="${up}" data-suf="일" data-key="ps-up">${up}일</button><button type="button" class="ps-go ps-n down" data-quick="down" data-count="${dn}" data-suf="일" data-key="ps-dn">${dn}일</button></div>
             <div class="ps-sub">±5% 이상 <b>${big}일</b>${evN ? ` <span class="ps-tag">급등락 ${evN}</span>` : ""}</div>
             <div class="ps-hint">누르면 그 날들만 표에</div></div>
           <button type="button" class="ps-card ps-news" data-news>
@@ -875,6 +928,7 @@
       }
       rows = span.filter((x) => hit(x.change)).reverse();
       $("#days-sum").innerHTML = periodCards(span);
+      countUp($("#days-sum"));      // 기간을 바꾸면 숫자가 이전 값에서 새 값으로
       $("#days-body").innerHTML = rows.length ? rows.map((x) => `<tr><td><a href="#/calendar" data-day="${esc(x.date)}">${esc(x.date)}</a></td>
           <td class="num">${won(x.open)}</td><td class="num">${won(x.high)}</td><td class="num">${won(x.low)}</td><td class="num">${won(x.close)}</td>
           <td class="num ${sgnCls(x.change)}">${x.change == null ? "-" : pct(x.change)}</td><td class="num">${won(x.volume)}</td>
@@ -1127,6 +1181,8 @@
       const h = $("#rec-head"), s = $("#rec-side");
       if (h) h.innerHTML = headHtml();
       if (s) s.innerHTML = sideHtml();
+      // 가장 최근 거래일이 +10% 이상: 하루에 한 번 축하 종이 조각
+      if (calState.sel === latest && price[latest]) { const lv = liveFor(latest); confettiOnce(latest, lv ? lv.chg : price[latest].change); }
     }
     // 머리 칸을 누르면: 하루 급등·급락 기록이 있으면 그 기록, 없으면 장 마감 뒤 자동 하루 분석 (없으면 ChatGPT 묻기)
     async function openHead() {
@@ -2470,13 +2526,14 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <line class="rx-zero" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>
       <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
       ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "비교 시작" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
-      ${lines.map((o) => { const dd = d(o.s, o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" d="${dd}"/><path class="rx-hit" d="${dd}"/>${gaps(o.s,o.x.interval||1,reactState.pick===o.x.id?"on":"",o.x.start,`그린광학 ${o.x.interval}분 / KOSDAQ ${o.x.kq_interval||"-"}분`)}${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1" fill="#9aa5b6"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
-      ${avg.length ? `<path class="rx-avg" d="${d(avg)}"/>${gaps(avg,1,"average",null,`그린광학 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 중앙값" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
+      ${lines.map((o) => { const dd = d(o.s, o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" pathLength="1" d="${dd}"/><path class="rx-hit" d="${dd}"/>${gaps(o.s,o.x.interval||1,reactState.pick===o.x.id?"on":"",o.x.start,`그린광학 ${o.x.interval}분 / KOSDAQ ${o.x.kq_interval||"-"}분`)}${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1" fill="#9aa5b6"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
+      ${avg.length ? `<path class="rx-avg" pathLength="1" d="${d(avg)}"/>${gaps(avg,1,"average",null,`그린광학 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 중앙값" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
       ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
         const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
         const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1), o.x.kq_interval || 1)}"/>` : "";
         return `${kq}<path class="rx-one on top" d="${d(o.s, o.x.interval || 1)}"/>`; })() : ""}
     </svg>`;
+    if (el.classList && MOTION()) { enter(el, "mv-draw"); clearTimeout(el._mvDraw); el._mvDraw = setTimeout(() => el.classList.remove("mv-draw"), 900); }   // 선이 그려지듯 (끝나면 풀어서 강조 때 다시 안 그림)
     el.querySelectorAll?.('[data-gap]').forEach(node=>{const show=()=>{$("#rx-hover").textContent=node.dataset.gap;$("#rx-gap-note").textContent=node.dataset.gap;};node.onfocus=show;node.onmouseenter=show;node.onclick=ev=>{ev.stopPropagation();show();};});
     return lines.length;
   }
@@ -3018,6 +3075,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       if (!shown(artState.cat).length) { box.innerHTML = `<div class="empty"><strong>${artState.q ? "검색에 맞는 항목이 없습니다." : artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong>위 조건을 넓혀 보세요.</div>`; return; }
       // +30/+60분을 바꾸면 목록 줄의 숫자·정렬도 같은 기준으로
       reactionOverview(box, rows, { title: `공개 뒤 주가 · ${LABEL[artState.cat]}`, onPick: (id) => openInPlace(id), onH: () => renderList() });
+      enter(box);
       const back = lastSeen && (byId.get(lastSeen) || discById.get(lastSeen));
       if (back) {
         box.insertAdjacentHTML("afterbegin", `<div class="pr-close-row pr-back-row"><button type="button" class="btn small" id="pr-back" title="닫았던 기사를 다시 엽니다">← 방금 본 기사</button><span class="muted pr-back-title">${esc(back.title)}</span></div>`);
@@ -3117,6 +3175,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const openInPlace = (id) => {
       if (id === current) return;
       current = id;
+      const srcT = [...$("#art-list").querySelectorAll("button[data-id]")].find((x) => x.dataset.id === id);
+      flipSrc = srcT && srcT.querySelector(".t") ? srcT.querySelector(".t").getBoundingClientRect() : null;
       history.pushState(null, "", `#/pr/${id}`);
       $("#art-list").querySelectorAll("button[data-id]").forEach((x) => x.setAttribute("aria-current", String(x.dataset.id === id)));
       loadPR(id);
@@ -3236,6 +3296,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (rs) rs.onclick = () => send(null);
   }
 
+  let flipSrc = null;      // 목록에서 누른 기사 제목의 위치 (상세 제목이 여기서 출발)
   async function loadPR(id) {
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
@@ -3341,6 +3402,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
     box.innerHTML = html;
+    enter(box);
+    flipFrom($(".pr-title", box), flipSrc); flipSrc = null;      // 목록에서 누른 제목이 오른쪽 제목 자리로 옮겨 가는 느낌
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
     if (!isDisc) bindTimeForm(box, a);
@@ -3382,7 +3445,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           $("#rx-tab-note", box).textContent = `${win5 && win5.base_day ? `${win5.base_day} 저장 종가 = 0%. ` : ""}공개 전에 이미 움직였는지, 공개 뒤 움직임이 이어졌는지 보는 참고용입니다. ${(win5 && win5.price_warning) || ""}`;
         }
       };
-      box.querySelectorAll("[data-rxr]").forEach((b) => (b.onclick = () => drawTab(b.dataset.rxr)));
+      box.querySelectorAll("[data-rxr]").forEach((b) => (b.onclick = () => { drawTab(b.dataset.rxr); enter(rxEl, "mv-reveal"); }));
+      enter(rxEl, "mv-reveal");      // 선이 왼쪽에서 오른쪽으로 그려지듯 나타남
       drawTab("day");
     }
     if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id, { openEvent: (eid) => prHooks && prHooks.openEvent(eid), topicOf: prHooks && prHooks.topicOf })
@@ -3837,6 +3901,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     $("#search-out").innerHTML = html || `<div class="empty"><strong>찾은 것이 없습니다.</strong>다른 말로 찾아보세요. 날짜는 9/8, 2026-09-08, 4월처럼 쓸 수 있습니다.</div>`;
   }
 
+  let lastRoutePage = null;
   async function route() {
     cleanupPage();
     closeDrawer();
@@ -3848,6 +3913,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     else if (parts[0] === "period" && ymd.test(parts[1] || "") && ymd.test(parts[2] || "")) { calState.range = "custom"; [calState.from, calState.to] = [parts[1], parts[2]].sort(); calState.sel = calState.to; }
     if (["day", "period"].includes(parts[0])) { history.replaceState(null, "", "#/"); return route(); }
     const page = parts[0] || "dash";
+    if (page !== lastRoutePage) { lastRoutePage = page; enter(main, "mv-page"); }      // 화면이 바뀔 때만 부드럽게 (같은 화면 갱신은 그대로)
     if (page !== "pr") artState.day = null;
     document.querySelectorAll(".tabs a").forEach((a) => {
       const on = a.dataset.route === (["dash", "calendar", "events", "days"].includes(page) ? "dash" : ["pivot", "react"].includes(page) ? "pr" : page);
