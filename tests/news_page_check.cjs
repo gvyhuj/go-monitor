@@ -34,8 +34,9 @@ async function main() {
       const filename = path.resolve(root, `.${pathname}${pathname.endsWith("/") ? "index.html" : ""}`);
       if (!filename.startsWith(root + path.sep)) throw new Error("잘못된 경로");
       const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css" };
+      const body = await fs.readFile(filename);     // 먼저 읽음: 폴더 등 실패면 404 (머리글을 두 번 쓰지 않게)
       response.writeHead(200, { "Content-Type": mime[path.extname(filename)] || "application/octet-stream" });
-      response.end(await fs.readFile(filename));
+      response.end(body);
     } catch (_) { response.writeHead(404); response.end(); }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -130,6 +131,8 @@ async function main() {
       const cardGap = await page.evaluate(() => { const g = document.querySelector("#pr-cards"), c = [...g.children];
         return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
       assert.ok(cardGap < 2, `카드 오른쪽 빈 공간 ${cardGap}px`);
+      const cardH = await page.evaluate(() => document.querySelector("#pr-cards > div").getBoundingClientRect().height);
+      assert.ok(cardH < 45, `카드는 한 줄 높이 (${cardH}px)`);
       // 선행 공시: 이름이 보이고, 누르면 팝업으로 공시 내용
       assert.match(await page.locator("#pr-detail .lead-disc").innerText(), /선행 공시\s*단일판매ㆍ공급계약체결[\s\S]*13:02 접수 · 기사보다 8분 먼저/);
       await page.locator("#lead-disc-open").click();
@@ -139,6 +142,15 @@ async function main() {
       await page.keyboard.press("Escape");
       assert.equal(await pop.isVisible(), false, "Esc로 팝업 닫힘");
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2003", "팝업은 기사 화면을 떠나지 않음");
+
+      // 주가 기록 1일 차트: 날짜는 달력에서만 (키보드로 숫자를 넣어도 바뀌지 않음)
+      await page.goto(`${base}/#/`);
+      const jump = page.locator("[data-jump]");
+      await jump.waitFor();
+      const before = await jump.inputValue();
+      await jump.focus();
+      await page.keyboard.type("20261001");
+      assert.equal(await jump.inputValue(), before, "숫자 입력 막힘");
 
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       assert.deepEqual(errors, []);

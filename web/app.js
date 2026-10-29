@@ -1216,7 +1216,7 @@
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
         <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
-        <label class="rc-jump" title="달력에서 고르거나 날짜를 넣으면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
+        <label class="rc-jump" title="눌러서 달력에서 고르면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
         ${calState.jumpNote ? `<span class="muted rc-jump-note">${esc(calState.jumpNote)}</span>` : ""}
         ${coarseIv ? coarseTip(coarseIv) : ""}</div>`;
       calState.jumpNote = "";
@@ -1273,6 +1273,8 @@
     }
     render();
     box.onclick = async (ev) => {
+      const jp = ev.target.closest("[data-jump]");
+      if (jp) { try { jp.showPicker(); } catch (_) {} return; }      // 날짜는 달력에서만 고름
       if (ev.target.closest("[data-head].is-click")) { openHead(); return; }
       const ib = ev.target.closest("[data-ind]");
       if (ib) { openIndustry(ib.dataset.ind); return; }
@@ -1296,6 +1298,12 @@
       if (e && e.closest(".day-card") && !e.closest(".range-panel")) { openEvent(+e.dataset.id); return; }
       const del = ev.target.closest("[data-ev-del]");
       if (del) { deleteRecord(del); return; }
+    };
+    box.onkeydown = (ev) => {     // 숫자 입력 막기: Enter·스페이스·↓는 달력 열기, Tab·Esc는 그대로
+      const j = ev.target.closest("[data-jump]");
+      if (!j || ev.key === "Tab" || ev.key === "Escape") return;
+      ev.preventDefault();
+      if (ev.key === "Enter" || ev.key === " " || ev.key === "ArrowDown") { try { j.showPicker(); } catch (_) {} }
     };
     box.onchange = (ev) => {
       const j = ev.target.closest("[data-jump]");
