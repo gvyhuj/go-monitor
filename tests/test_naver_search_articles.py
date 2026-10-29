@@ -81,17 +81,17 @@ def test_manual_merge_joins_story(tmpdb):
     articles.group_stories(SYM)
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
-    assert st["a2"] != st["a1"] and st["b1"] == "b1"
+    assert st["a2"] == st["a1"] and st["b1"] == "b1"
     with db.connect() as conn:
         conn.execute("UPDATE articles SET story_with='a2' WHERE id='b1'")
     articles.group_stories(SYM)
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
-    assert st["b1"] == st["a2"] != st["a1"]
+    assert st["b1"] == st["a1"]
 
 
 def test_manual_merge_moves_whole_story(tmpdb):
-    """명시한 연결만 합치며 제목 유사도 후보는 따라 합치지 않음."""
+    """묶음의 기사 하나를 다른 묶음에 넣으면, 그 기사와 자동으로 같이 묶여 있던 기사도 함께 옮겨짐."""
     with db.connect() as conn:
         for aid, title, ts in (("a1", "충북인자위, 직업계고 학부모와 중소기업 탐방", "2026-10-26T15:02"),
                                ("a2", "직업계고 학부모 우수 중소기업 탐방", "2026-10-26T15:30"),
@@ -102,8 +102,7 @@ def test_manual_merge_moves_whole_story(tmpdb):
     articles.group_stories(SYM)
     with db.connect() as conn:
         st = dict(conn.execute("SELECT id, story FROM articles").fetchall())
-    assert st["a1"] == st["b2"]
-    assert len(set(st.values())) == 3
+    assert st["a1"] == st["a2"] == st["b1"] == st["b2"]
 
 
 def test_merge_request_end_to_end(tmpdb, monkeypatch):
@@ -119,8 +118,6 @@ def test_merge_request_end_to_end(tmpdb, monkeypatch):
                                        ("b2", "중부매일", "충북 고교생 취업 선호 3년 새 반토막", "2026-10-26T15:32")):
             conn.execute("INSERT INTO articles(id, symbol, ts, office, title, url, category) VALUES (?, ?, ?, ?, ?, 'u', '언론 분석')",
                          (aid, SYM, ts, office, title))
-    with db.connect() as conn:
-        conn.executemany("INSERT INTO article_links(a,b) VALUES(?,?)", [("a1","a2"),("b1","b2")])
     articles.group_stories(SYM)
     leads = lambda: {a["id"]: sorted(r["id"] for r in a["related_titles"]) for a in articles.article_rows(SYM)}
     assert leads() == {"a1": ["a2"], "b1": ["b2"]}
@@ -132,7 +129,7 @@ def test_merge_request_end_to_end(tmpdb, monkeypatch):
     with db.connect() as conn:
         assert conn.execute("SELECT story_with FROM articles WHERE id='a1'").fetchone()[0] == "b1"
     cloud_job.apply_inbox({"type": "article_merge", "id": "a1", "into": None}, logging.getLogger())
-    assert leads() == {"a1": [], "a2": [], "b1": ["b2"]}
+    assert leads() == {"a1": ["a2"], "b1": ["b2"]}
 
 
 def test_merge_several_at_once(tmpdb, monkeypatch):
