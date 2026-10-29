@@ -1051,7 +1051,7 @@
       const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
-          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 ${hi ? `${won(hi)}원 ` : ""}<span class="${sgnCls(hi && base ? hi - base : 0)}">(${r(hi)})</span> / 최저 ${lo ? `${won(lo)}원 ` : ""}<span class="${sgnCls(lo && base ? lo - base : 0)}">(${r(lo)})</span></span></span>
+          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b></span>

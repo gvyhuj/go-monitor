@@ -260,6 +260,8 @@ async function main() {
       // 머리 박스: 장중 최고·최저는 가격과 %, '종목이 시장보다' 문구 없음
       assert.match(await page.locator("#rec-head .rh-box").innerText(), /장중 최고 [\d,]+원 \([+−-]?\d+\.\d\d%\) \/ 최저 [\d,]+원 \(/);
       assert.doesNotMatch(await page.locator("#rec-head .rh-box").innerText(), /종목이 시장보다/);
+      // 최고·최저 가격과 %는 같은 색 (오르면 빨강·내리면 파랑, 같으면 기본색)
+      assert.deepEqual(await page.locator("#rec-head .rh-s span").evaluateAll((xs) => xs.map((x) => /원 \(/.test(x.textContent))), [true, true]);
       // 주가 기록 맨 위 박스: 시간외 문구처럼 긴 글도 박스 안에서 줄바꿈 (모바일 넘침 방지)
       const head = await page.evaluate(() => {
         const s = document.querySelector(".rh-s"), k = document.querySelector(".rh-kq small:last-child"), box = document.querySelector(".rh-box");
