@@ -1788,6 +1788,8 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .mv-draw .rx-avg, .mv-draw .rx-one { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-slow) var(--ease) forwards; }
 .mv-draw .rx-avg { animation-duration: 700ms; animation-delay: 120ms; }
 .mv-reveal { animation: mv-reveal 600ms var(--ease); }
+.mv-draw-line .rc-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw 700ms var(--ease) forwards; }
+.mv-draw-line .rc-area { animation: mv-fade 700ms var(--ease); }
 /* 7 살짝 커졌다 돌아옴 (소식 건수 변화), 목록에 마우스 */
 .mv-pop { display: inline-block; animation: mv-pop 360ms var(--ease); }
 .art-list button { transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
@@ -1797,20 +1799,14 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .engine[data-state="ok"] .dot { animation: mv-pulse 2.4s var(--ease) infinite; }
 /* 9 뉴스 오른쪽 그래프·상세를 화면에 고정 (목록과 따로 스크롤) */
 @media (min-width: 901px) {
-  .art-detail { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; }
-}
-/* 10 폰: 일별 표 기간 카드·뉴스 탭은 옆으로 넘기기 */
-@media (max-width: 720px) {
-  .ps-cards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
-  .ps-cards > .ps-card { flex: 0 0 78%; scroll-snap-align: start; }
-  #art-cat { display: flex; overflow-x: auto; flex-wrap: nowrap; scroll-snap-type: x proximity; max-width: 100%; }
-  #art-cat > * { flex: 0 0 auto; scroll-snap-align: start; }
+  .art-detail { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }   /* 끝까지 내리면 화면 스크롤로 이어짐 */
 }
 /* 축하 종이 조각 (10% 이상 오른 날 하루 한 번) */
 .mv-confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
 @media (prefers-reduced-motion: reduce) {
   .mv-in, .mv-page, .mv-pop, .mv-reveal, dialog[open].disc-pop, dialog[open].disc-pop::backdrop, .art-pop, .art-more-menu, .engine .dot { animation: none !important; }
-  .mv-draw .rx-avg, .mv-draw .rx-one { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-line .rc-line { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .mv-draw-line .rc-area { animation: none !important; }
   .art-list button:hover { transform: none; }
   .mv-confetti { display: none; }
 }

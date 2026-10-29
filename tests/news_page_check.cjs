@@ -294,11 +294,24 @@ async function main() {
       await page.locator('#art-list button[data-id="2001"]').click();
       await page.locator("#pr-detail .pr-title").waitFor();
       assert.equal(await page.locator("#pr-detail.mv-in").count(), 1, "기사 상세 떠오르기");
-      assert.ok(await page.locator("#pr-detail .pr-title").evaluate((el) => el.getAnimations().length > 0), "제목이 목록에서 옮겨 오는 움직임");
+      assert.equal(await page.locator("#pr-detail .pr-title").evaluate((el) => el.getAnimations().length), 0, "제목 옮겨 가기 효과는 뺌");
       await page.locator("#pr-detail .rx-chart.mv-reveal").waitFor();
       assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "sticky", "오른쪽 상세는 화면에 고정");
+      // 오른쪽 상세 위에서 휠을 돌려도 화면이 내려감 (안에서 끝까지 내리면 화면으로 이어짐)
+      assert.notEqual(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain");
+      // 주가 기록: 기간 차트 종가 선 그리기, 1일 차트 나타나기, 날짜를 바꾸면 머리 박스 숫자 올라가기
+      await page.goto(`${base}/#/`);
+      await page.locator("#rec-head .rh-box").waitFor();
+      await page.locator('[data-range="1m"], [data-range="30"], .rec-tabs button:nth-child(3)').first().click();
+      await page.locator("#rec-chart.mv-draw-line .rc-line").waitFor();
+      await page.locator('.rec-tabs button[data-range="1d"]').click();
+      await page.locator("#rec-chart .day-chart.mv-reveal, #rec-chart .mv-reveal").first().waitFor().catch(() => {});
+      await page.locator('[data-step="-1"]').first().click();
+      await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));
+      assert.ok(await page.locator("#rec-head [data-key='rh-price']").evaluate((el) => el.closest(".rh-box") !== null));
       await page.goto(`${base}/#/days`);
       await page.locator(".ps-cards").waitFor();
+      assert.equal(await page.locator(".ps-cards").evaluate((el) => getComputedStyle(el).display), "grid", "기간 카드 옆으로 넘기기는 되돌림");
       await page.waitForFunction(() => /^\+3\.91%$/.test(document.querySelector(".ps-big").textContent));   // 숫자 올라가기가 끝나면 원래 값
       assert.deepEqual(errors, []);
       await page.close();
