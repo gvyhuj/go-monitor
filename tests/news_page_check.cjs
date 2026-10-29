@@ -120,6 +120,26 @@ async function main() {
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
 
+      // 시각 출처 글자는 없고 '시각 고치기'만(회색), 카드 3개가 줄을 꽉 채움
+      await page.goto(`${base}/#/pr/2003`);
+      await page.locator("#pr-detail .pr-title").filter({ hasText: "반도체 장비용 렌즈 수주" }).waitFor();
+      assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /시각 출처/);
+      assert.match(await page.locator("#pr-detail .intraday-box .vb-head").innerText(), /13:10 공개부터/, "머리 글과 그래프 기준 시각이 같음");
+      assert.equal(await page.locator("#pr-detail .pr-meta [data-time-open]").innerText(), "시각 고치기");
+      await page.locator("#pr-cards > div").first().waitFor();
+      const cardGap = await page.evaluate(() => { const g = document.querySelector("#pr-cards"), c = [...g.children];
+        return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
+      assert.ok(cardGap < 2, `카드 오른쪽 빈 공간 ${cardGap}px`);
+      // 선행 공시: 이름이 보이고, 누르면 팝업으로 공시 내용
+      assert.match(await page.locator("#pr-detail .lead-disc").innerText(), /선행 공시\s*단일판매ㆍ공급계약체결[\s\S]*13:02 접수 · 기사보다 8분 먼저/);
+      await page.locator("#lead-disc-open").click();
+      const pop = page.locator("#disc-pop");
+      await pop.waitFor();
+      assert.match(await pop.innerText(), /단일판매ㆍ공급계약체결[\s\S]*접수[\s\S]*13:02[\s\S]*DART에서 원문 보기/);
+      await page.keyboard.press("Escape");
+      assert.equal(await pop.isVisible(), false, "Esc로 팝업 닫힘");
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2003", "팝업은 기사 화면을 떠나지 않음");
+
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       assert.deepEqual(errors, []);
       await page.close();
