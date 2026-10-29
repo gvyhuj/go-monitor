@@ -190,7 +190,7 @@ button.tcard:hover::after, .bento > .b-inv:hover::after { border-color: var(--br
 .rh-l { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rh-d { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rh-d .day-now { margin-left: 0; }
-.rh-s { font-size: 12.5px; color: var(--muted); }
+.rh-s { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
 .rh-r { text-align: right; }
 .rh-nm { display: block; font-size: 12.5px; color: var(--muted); }
 .rh-nm b { color: var(--ink-2); font-size: 13.5px; margin-right: 6px; }
@@ -289,9 +289,9 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
   .bento > #q-price-card, .bento > .rec-card, .bento > .t-news, .bento > .b-seg { grid-column: 1 / -1; }
   .rec-main { grid-template-columns: 1fr; }
   .rec-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; }
-  .rh-box, .rh-box:has(.rh-kq) { grid-template-columns: 1fr; }
+  .rh-box, .rh-box:has(.rh-kq) { grid-template-columns: minmax(0, 1fr); }   /* 긴 글이 칸을 넓히지 않게: 박스 안에서 줄바꿈 */
   .rh-r { text-align: left; order: -1; }
-  .rh-kq { flex-direction: row; align-items: baseline; gap: 8px; padding-left: 0; border-left: 0; }
+  .rh-kq { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding-left: 0; border-left: 0; white-space: normal; }
   .rh-kq b { font-size: 15px; }
   .rh-p { font-size: 24px; }
   .bento > #q-events-card { border-radius: var(--r-md) 0 0 var(--r-md); }
