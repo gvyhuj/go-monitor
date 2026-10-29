@@ -2824,13 +2824,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const first = list.map(dayOf).filter(Boolean).sort()[0];
       const label = isDisc ? "선택한 종류 공시" : cat === "pr" ? "그린광학 보도자료" : "외부 기사";
       const outs = (x) => x.outlets || 1;
-      const avgOut = recent.length ? recent.reduce((sum, x) => sum + outs(x), 0) / recent.length : null;
       const media = list.reduce((sum, x) => sum + outs(x), 0);
+      const avgOut = list.length ? media / list.length : null;      // 한 건당 실린 매체: 전체 기준
       return `<div class="score-line">
-        <span><small>최근 6개월 ${label}</small><b>${recent.length}건</b></span>
-        <span><small>한 달 평균</small><b>${(recent.length / 6).toFixed(1)}건</b></span>
+        <span><small>한 달 평균 (최근 6개월)</small><b>${(recent.length / 6).toFixed(1)}건</b></span>
         ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
-          : `<span><small>한 건당 실린 매체 (6개월 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
+          : `<span><small>한 건당 실린 매체 (전체 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
         <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b>${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
           : ` <small>보도 ${media}건</small>`}</span></div>`;
     }

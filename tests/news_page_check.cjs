@@ -222,6 +222,15 @@ async function main() {
       await page.goto(`${base}/#/`);
       const jump = page.locator("[data-jump]");
       await jump.waitFor();
+      // 주가 기록 맨 위 박스: 시간외 문구처럼 긴 글도 박스 안에서 줄바꿈 (모바일 넘침 방지)
+      const head = await page.evaluate(() => {
+        const s = document.querySelector(".rh-s"), k = document.querySelector(".rh-kq small:last-child"), box = document.querySelector(".rh-box");
+        s.textContent = "기준가 10,740원 → 시간외 포함 최종가 10,150원 · 장중 최고 −0.09% / 최저 −6.98% · 매우 긴 설명 문구 시험";
+        if (k) k.textContent = "종목이 시장보다 −5.49%p · 시간외 포함 최종가 기준 비교";
+        const r = box.getBoundingClientRect();
+        return [...box.querySelectorAll("*")].map((x) => x.getBoundingClientRect().right - r.right).reduce((m, v) => Math.max(m, v), -1e9);
+      });
+      assert.ok(head <= 1, `박스 밖으로 ${head}px 넘침`);
       const before = await jump.inputValue();
       await jump.focus();
       await page.keyboard.type("20261001");
