@@ -237,6 +237,21 @@ def test_confirmed_source_classification_is_retained(database,kind):
     assert ds[eid]['primary_source_url']=='https://example.org/source'
     assert ds[eid]['history'][0]['action']=='news_event_meta'
 
+def test_automatic_company_article_keeps_press_release_classification(database):
+    article(database,'a');article(database,'b')
+    rows=[{**row('a'),'kind':'company'},row('b')]
+    ds,_=ob.build(database,'X',rows)
+    assert [r['kind'] for r in rows]==['company','ext']
+    assert {d['event_kind'] for d in ds.values()}=={'company_press_release','external_article'}
+
+def test_explicit_event_kind_still_overrides_row_kind(database):
+    article(database,'a')
+    eid=event(database,'a')
+    ob.mutate(database,{'type':'news_event_meta','event_id':eid,'event_kind':'external_article'})
+    rows=[{**row('a'),'kind':'company'}]
+    ds,_=ob.build(database,'X',rows)
+    assert rows[0]['kind']=='ext' and ds[eid]['event_kind']=='external_article'
+
 def test_three_kinds_only():
     assert ob.KINDS==('company_press_release','external_article','disclosure')
 

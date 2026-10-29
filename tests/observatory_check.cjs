@@ -35,5 +35,12 @@ test('three article kinds; legacy company announcement is shown and filtered as 
  assert.doesNotMatch(ctl+c.$('#rx-table').innerHTML,/외부 기업 발표/);
  const click=v=>c.$('#rx-ctl').onclick({target:{closest:()=>({dataset:{k:'kind',v}})}});
  click('ext');let rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="a"/);assert.doesNotMatch(rows,/data-id="b"/);assert.match(rows,/>외부기사</);
- click('pr');rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="b"/);assert.doesNotMatch(rows,/data-id="a"/);assert.match(rows,/>당사 보도자료</);
+ click('pr');rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="b"/);assert.doesNotMatch(rows,/data-id="a"/);assert.match(rows,/>보도자료</);
+});
+test('automatic company announcements stay in the press release group as before the observatory',async()=>{
+ const c=ctx(),a=fixture();
+ c.api=async()=>({items:[{...a,kind:'company',event_kind:'company_press_release'},{...a,id:'b',event_key:'b',kind:'ext',event_kind:'external_article'}]});await c.pageReact();
+ const click=v=>c.$('#rx-ctl').onclick({target:{closest:()=>({dataset:{k:'kind',v}})}});
+ click('pr');let rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="a"/);assert.doesNotMatch(rows,/data-id="b"/);assert.match(rows,/>보도자료</);
+ click('ext');rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="b"/);assert.doesNotMatch(rows,/data-id="a"/);
 });

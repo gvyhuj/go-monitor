@@ -326,7 +326,8 @@ def build(conn,symbol,rows):
         first=min(valid,key=lambda m:m['ts']) if valid else members[0]
         public=meta.get('first_public_at',first.get('ts') if valid else None)
         press=[m for m in members if m.get('kind')=='pr']
-        kind=normalize_kind(meta.get('event_kind')) or ('company_press_release' if press else 'disclosure' if any(m.get('kind')=='disc' for m in members) else 'external_article')
+        # Same rule as the news list: an automatic '회사 발표' (company) article counts as a press release.
+        kind=normalize_kind(meta.get('event_kind')) or ('company_press_release' if press or any(m.get('kind')=='company' for m in members) else 'disclosure' if any(m.get('kind')=='disc' for m in members) else 'external_article')
         # Article publication is not the issuer's distribution time.
         release_times=[]
         for m in press:
@@ -356,7 +357,7 @@ def build(conn,symbol,rows):
           'pr_distributed_at':meta.get('pr_distributed_at') or (min(release_times) if release_times else None),'primary_source_url':meta.get('primary_source_url') or first.get('url'),
           'analysis_at':meta.get('analysis_at') or public,'members':members,'observation':obs,'context':context,
           'notes':notes,'history':history,'identity_status':'confirmed' if any(h['action']=='news_event_link' for h in history) or (len(members)>1 and all(x=='confirmed_link' for x in member_evidence)) else 'review_required' if len(members)>1 else 'individual', 'same_event_candidates':[dict(x) for x in conn.execute('SELECT * FROM article_candidates WHERE a IN (SELECT member_id FROM news_event_members WHERE event_id=?) OR b IN (SELECT member_id FROM news_event_members WHERE event_id=?)',(eid,eid))],'recomputed_at':saved_at,'snapshot_version':digest,
-          'followup_candidate':meta.get('followup_candidate',False), 'classification_sources':[{'member_id':m['id'],'kind':m.get('kind'),'url':m.get('url')} for m in members]+linked_metadata, 'legacy_event_kind':legacy_kind, 'source_note':'기사 공개 시각은 보도자료 배포 시각과 다릅니다. 기존 company 분류는 당사 PR 확정 근거가 아닙니다. 발표 주체를 확인하여 수정하세요.'}
+          'followup_candidate':meta.get('followup_candidate',False), 'classification_sources':[{'member_id':m['id'],'kind':m.get('kind'),'url':m.get('url')} for m in members]+linked_metadata, 'legacy_event_kind':legacy_kind, 'source_note':'기사 공개 시각은 보도자료 배포 시각과 다릅니다. 자동 회사 발표 분류 기사는 기존과 같이 보도자료로 집계합니다. 발표 주체를 확인하여 필요하면 수정하세요.'}
         result[eid]['market_context'] = {
             'industry':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM industry_daily WHERE date=?',(obs.get('day'),))],
             'themes':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM theme_daily WHERE date=? AND mine=1',(obs.get('day'),))],
@@ -369,7 +370,12 @@ def build(conn,symbol,rows):
         for r in rows:
             if r.get('event_id')!=eid: continue
             f=obs.get('intraday') or {}
-            r.update(kind={'company_press_release':'pr','disclosure':'disc'}.get(kind,'ext'),event_kind=kind,untimed=not bool(public),analysis_ts=result[eid]['analysis_at'],start=obs.get('start'),mode=obs.get('mode'),reaction_day=obs.get('day'),
+            # Rows keep their own article kind; only an explicit classification from the event record replaces it.
+            if meta.get('event_kind'):
+                r['kind']={'company_press_release':'pr','disclosure':'disc'}.get(normalize_kind(meta['event_kind']),'ext')
+            elif (press or linked_press) and r.get('kind') not in ('pr','company'):
+                r['kind']='pr'
+            r.update(event_kind=kind,untimed=not bool(public),analysis_ts=result[eid]['analysis_at'],start=obs.get('start'),mode=obs.get('mode'),reaction_day=obs.get('day'),
                      interval=f.get('interval'),kq_interval=f.get('kq_interval'),steps=f.get('steps',{}),
                      calculation_version=VERSION,base_price_time=f.get('base_own_time'),price_source=f.get('source'),
                      path={'own':[[p['offset'],p['own'],None,p['own_source']] for p in f.get('points',[]) if p['own'] is not None],

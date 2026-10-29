@@ -7,7 +7,7 @@
 
 | 요구 묶음 | 상태 | 주요 파일 | 증거/한계 |
 |---|---|---|---|
-| 기사/사건/보도자료 분류 | ✅ | `core/observatory.py`, `core/articles.py`, `web/app.js` | 영구 ID, 멱등 추가 테이블, 원문/사건 분리, 네 종류·복수 태그·연결/분리 이력. 자동 company는 PR 확정 제외 |
+| 기사/사건/보도자료 분류 | ✅ | `core/observatory.py`, `core/articles.py`, `web/app.js` | 영구 ID, 멱등 추가 테이블, 원문/사건 분리, 네 종류·복수 태그·연결/분리 이력. 자동 company(회사 발표)는 기존과 같이 보도자료로 집계 |
 | 최초 공개 시각·기준가 정합 | ✅ | `core/yahoo.py`, `core/observatory.py` | 공개 직전 완료 가격/최대 한 봉 허용, 실제 시각·차이·소스·계산 버전, 이전 reactions 캐시 보존 |
 | KOSDAQ·주가 시계열 비교 | ✅ | `core/observatory.py`, `webserver.py` | 같은 시작/종료 관측만 차이. 독립 관측 수익률과 차이 구분. 표/차트/CSV 공유 payload |
 | 당일/전후 5일/전후 20일 탭 | ✅ | `core/observatory.py`, `web/app.js` | 실제 범위·기준일·관측점 변경; 미래 pending. 저장 일봉의 장후 포함·보정 경고 |
