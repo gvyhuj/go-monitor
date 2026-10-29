@@ -65,7 +65,10 @@ async function main() {
       assert.match(await page.locator("#rx-cards").innerText(), /\+30분 중앙값/);
 
       // Sorting by reaction and the conditions apply to the list and the overview together.
-      await page.locator("#art-sort").selectOption("abs");
+      assert.deepEqual(await page.locator("#art-sort option").allInnerTexts(), ["최신순", "많이 오른 순", "많이 내린 순"]);
+      await page.locator("#art-sort").selectOption("down");
+      assert.equal(await list.first().getAttribute("data-id"), "2001");
+      await page.locator("#art-sort").selectOption("up");
       assert.equal(await list.first().getAttribute("data-id"), "2002");
       await page.locator("#art-cond").click();
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
@@ -85,6 +88,11 @@ async function main() {
       assert.match(await page.locator("#rx-cmp").innerText(), /다른 그린광학 보도자료 2건/);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
       assert.match(await page.locator("#pr-cards").innerText(), /다른 기사 중앙값/);
+      assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /KOSDAQ/, "코스닥 값은 '코스닥과 비교' 표에만");
+      assert.match(await page.locator("#pr-detail .obs-fold > summary", { hasText: "코스닥과 비교" }).first().innerText(), /코스닥과 비교/);
+      // '수정' 메뉴: 여러 개 고르기·기사 등록·고른 기사의 목록에서 삭제
+      assert.equal(await page.locator(".art-more > summary").innerText(), "수정 ▾");
+      assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
       await page.locator('#pr-detail [data-rxr="5"]').click();
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
       for (const label of ["이 기사를 실은 매체", "관련 소식·시장 상황", "검토 기록", "유사 사건", "분류·연결 수정", "분석 기준·출처"]) {

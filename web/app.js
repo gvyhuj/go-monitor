@@ -2174,7 +2174,7 @@
         <h3>뉴스 반응 (뉴스 목록 오른쪽)</h3>
         <ul>
           <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, 평균은 아래 숫자로 함께 적습니다.</li>
-          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 반응 큰 순으로 볼 수 있고, [엑셀로]는 지금 목록의 +30분·+60분 값을 내려받습니다.</li>
+          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있고, [엑셀로]는 지금 목록의 +30분·+60분 값을 내려받습니다.</li>
           <li>기사를 고르면 같은 자리에 그 기사 그래프가 나오고, 지금 목록의 다른 기사(연한 회색)와 중앙값(파랑)이 +30분(또는 +60분)까지 겹칩니다. [전후 5거래일] 탭은 공개 전에 이미 움직였는지, 뒤에 이어졌는지 보는 참고용입니다.</li>
           <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다.</li>
           <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 중앙값 선이 0에서 꾸준히 벗어나는지를 보세요.</li>
@@ -2750,12 +2750,12 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span>
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
-        <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="abs">반응 큰 순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
+        <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
         <button class="btn small" type="button" id="art-csv" title="지금 목록의 공개 뒤 주가 (+30·+60분)">엑셀로</button>
-        <details class="art-more editable"><summary aria-label="기사 도구">⋯</summary><div class="art-more-menu">
+        <details class="art-more editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
           <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
-          <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button></div></details>
-        <span class="editable art-act" id="art-act"></span></div>
+          <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
+          <span class="art-act" id="art-act"></span></div></details></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
         <div class="pr-form-grid">
@@ -2868,7 +2868,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
     const rxVal = (x) => { const r = rxOf(x); return r ? stepV(r, reactState.h) : null; };
     function sortList(cat, list) {
       if (artState.sort === "time") return list;
-      const key = artState.sort === "abs" ? (v) => -Math.abs(v) : artState.sort === "up" ? (v) => -v : (v) => v;
+      const key = artState.sort === "up" ? (v) => -v : (v) => v;
       return [...list].sort((p, q) => { const a = rxVal(p), b = rxVal(q); if (a == null) return b == null ? 0 : 1; if (b == null) return -1; return key(a) - key(b); });
     }
     const rxCell = (x) => { const v = rxVal(x); return `<span class="al-rx ${sgnCls(v)}" title="공개 뒤 +${reactState.h}분${reactState.vsKq ? " (KOSDAQ 대비)" : ""}">${v == null ? "-" : reactState.vsKq ? points(v) : pct(v)}<small>+${reactState.h}분</small></span>`; };
@@ -3217,7 +3217,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
         <div class="rx-tabs"><div class="seg" role="group" aria-label="관찰 기간"><button type="button" data-rxr="day" aria-pressed="true">공개 직후</button><button type="button" data-rxr="5" aria-pressed="false">전후 5거래일</button></div><span class="rx-cmp" id="rx-cmp"></span></div>
         <div class="rx-legend day-legend"></div><div class="rx-chart"></div><div class="obs-empty" id="rx-empty" hidden></div>
         <div class="obs-cards" id="pr-cards"></div><p class="note" id="rx-tab-note"></p>
-        ${numsHtml ? `<details class="obs-fold"><summary><span>수치 자세히 · 계산 기준</span><small>+30·60·120분</small></summary><div class="obs-fold-body">${numsHtml}</div></details>` : ""}</section>`;
+        ${numsHtml ? `<details class="obs-fold"><summary><span>코스닥과 비교</span><small>+30·60·120분</small></summary><div class="obs-fold-body">${numsHtml}</div></details>` : ""}</section>`;
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
@@ -3280,7 +3280,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
         if (tab === "day") {
           if (rc && rc.base_own) tabChart = indexedChart(rxEl, legend, rc.own, rc.kq, rc.base_own, rc.base_kq, rc.start, rc.kind === "open" || rc.kind === "late" ? "장 시작" : basisReason === "publication" ? "공개" : "분석 기준", false, ov && ov.n ? ov : null);
           else empty(d.observation?.missing_reason ? `${d.observation.missing_reason}.` : "공개 시각 앞뒤의 분봉 시세가 없습니다." + (win5 ? " 일별 흐름은 [전후 5거래일]에서 볼 수 있습니다." : ""));
-          $("#pr-cards", box).innerHTML = card("+30분", stepsD["30"]?.own) + card("+60분", stepsD["60"]?.own) + card("KOSDAQ +30분", stepsD["30"]?.kq)
+          $("#pr-cards", box).innerHTML = card("+30분", stepsD["30"]?.own) + card("+60분", stepsD["60"]?.own)
             + (ov && ov.n ? card(`다른 기사 중앙값 +${ov.until}분`, ov.othersMedian) : card("시장 대비 +30분", stepsD["30"]?.diff, points));
           $("#rx-tab-note", box).textContent = "공개 직전 완료 시세 = 0%. 다른 기사·중앙값은 지금 목록 조건과 같은 기사이며 같은 사건은 1건만 셉니다. 기사의 직접 효과를 뜻하지 않습니다.";
         } else {
