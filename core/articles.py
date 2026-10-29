@@ -367,13 +367,12 @@ def sync_articles(code: str, pages: int = 1) -> int:
 
 
 def group_stories(code: str):
-    """제목 유사도는 후보로 저장하고 명시적 연결만 묶습니다."""
+    """같은 내용을 여러 매체가 낸 기사를 하나로 묶음 (가장 먼저 나온 기사 기준)."""
     name = company_name()
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT id, ts, title FROM articles WHERE symbol=? ORDER BY ts DESC LIMIT 2000", (code,))]
     rows.sort(key=lambda r: r["ts"])
-    candidates = []
     stories = []   # (story_id, ts, tokens)
     assign = {}
     for r in rows:
@@ -388,8 +387,7 @@ def group_stories(code: str):
             if (j >= 0.3 or (shared >= 2 and j >= 0.2)) and (best is None or j > best[1]):
                 best = (sid, j)
         if best:
-            assign[r["id"]] = r["id"]
-            candidates.append((r["id"], best[0], best[1]))
+            assign[r["id"]] = best[0]
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
@@ -415,10 +413,8 @@ def group_stories(code: str):
                 keep, drop = (a, b) if (first[a], a) <= (first[b], b) else (b, a)
                 parent[drop] = keep
     if parent:
-        assign = {k: root(v) for k, v in assign.items()}     # 명시적으로 연결된 기사만 함께
+        assign = {k: root(v) for k, v in assign.items()}     # 그 기사와 자동으로 같이 묶여 있던 기사도 함께
     with connect() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS article_candidates (a TEXT, b TEXT, score REAL, PRIMARY KEY(a,b))")
-        conn.executemany("INSERT OR REPLACE INTO article_candidates VALUES(?,?,?)", candidates)
         conn.executemany("UPDATE articles SET story=? WHERE id=?", [(s, i) for i, s in assign.items()])
 
 
@@ -918,11 +914,11 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
 
 
 def group_events(items: list[dict]) -> list[dict]:
-    """명시된 같은 story만 묶음. 같은 날 독립 사건은 분리.
+    """같은 반응일의 기사들은 주가 반응을 나눌 수 없으므로 한 사건으로 묶음 (통계도 사건 수 기준).
     items: api가 만든 기사 목록 (effect 포함). 대표는 우리 보도자료 → 가장 먼저 나온 기사 순."""
     by_day: dict[str, list[dict]] = {}
     for a in items:
-        day = str(a.get("event_id") or a.get("story") or a["id"]) + "|" + str((a.get("effect") or {}).get("reaction_day") or "")
+        day = (a.get("effect") or {}).get("reaction_day") or f"x{a['id']}"
         by_day.setdefault(day, []).append(a)
     out = []
     for day, g in by_day.items():
@@ -932,7 +928,7 @@ def group_events(items: list[dict]) -> list[dict]:
                     next((a for a in main if a["kind"] == "company"), main[0]))
         kind = "pr" if any(a["kind"] == "pr" for a in main) else \
                "company" if any(a["kind"] == "company" for a in main) else "ext"
-        out.append({"day": (lead.get("effect") or {}).get("reaction_day"), "group_key": day, "lead": lead["id"],
+        out.append({"day": None if day.startswith("x") else day, "lead": lead["id"],
                     "kind": kind, "ids": [a["id"] for a in g],
                     "outlets": sum(a.get("outlets_total") or 1 for a in main),
                     "n_pr": sum(1 for a in main if a["kind"] == "pr"),
@@ -965,7 +961,7 @@ def group_events(items: list[dict]) -> list[dict]:
             seen_stories.setdefault(s, ev)
         if ev["day"] and not ev["noise"]:
             preceding.append(ev)
-    out.sort(key=lambda e: max(a["ts"] for a in by_day[e["group_key"]]), reverse=True)
+    out.sort(key=lambda e: max(a["ts"] for a in by_day[e["day"] or f"x{e['lead']}"]), reverse=True)
     return out
 
 

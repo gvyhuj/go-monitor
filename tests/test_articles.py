@@ -60,16 +60,15 @@ def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
     assert {a["id"]: a for a in articles.article_rows("X")}["c"]["kind"] == "pr"
 
 
-def test_group_events_keep_independent_same_day_events():
+def test_group_events_by_reaction_day():
     def it(aid, ts, kind, day, cat="회사 발표", out=1):
         return {"id": aid, "ts": ts, "kind": kind, "category": cat, "outlets_total": out, "effect": {"reaction_day": day}}
     ev = articles.group_events([it("a", "2026-05-26T13:37", "ext", "2026-05-26"),
                                 it("b", "2026-05-26T13:47", "pr", "2026-05-26", out=3),
                                 it("c", "2026-05-26T14:00", "ext", "2026-05-26", cat="단순 언급"),
                                 it("d", "2026-06-01T09:00", "ext", "2026-06-01", cat="시황·특징주")])
-    first = next(e for e in ev if e["lead"] == "b")
-    assert first["kind"] == "pr" and first["outlets"] == 3 and len(first["ids"]) == 1
-    assert len([e for e in ev if e["day"] == "2026-05-26"]) == 3
+    first = next(e for e in ev if e["day"] == "2026-05-26")
+    assert first["kind"] == "pr" and first["lead"] == "b" and first["outlets"] == 4 and len(first["ids"]) == 3
     assert next(e for e in ev if e["day"] == "2026-06-01")["noise"]
 
 

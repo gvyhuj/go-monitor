@@ -215,16 +215,13 @@ def test_unbounded_contributions_and_zero_coefficients(database,monkeypatch,own,
     text=causes._desk(d,None,None,False,[],{"ok":False,"text":"없음"},None,None,None,None,1)[0]['text']
     assert text.count('%p')==3 and '추정' in text and '원인을 확정하지' in text
 
-def test_similar_same_day_contracts_are_candidates_not_confirmed(database):
+def test_similar_titles_are_grouped_as_before(database):
+    # 사용자가 쓰던 묶음 방식 유지: 제목이 비슷한 같은 소식은 한 묶음(story)
     from core import articles
     for a in ['a','b']: article(database,a)
     database.commit()
     articles.group_stories('X')
-    assert database.execute('SELECT COUNT(*) FROM article_candidates').fetchone()[0]==1
-    ds,_=ob.build(database,'X',[row('a'),row('b')])
-    assert len(ds)==2
-    assert all(x['identity_status']=='individual' and x['same_event_candidates'] for x in ds.values())
-    assert database.execute('SELECT COUNT(DISTINCT story) FROM articles').fetchone()[0]==2
+    assert database.execute('SELECT COUNT(DISTINCT story) FROM articles').fetchone()[0]==1
 
 @pytest.mark.parametrize('kind',ob.KINDS)
 def test_confirmed_source_classification_is_retained(database,kind):
