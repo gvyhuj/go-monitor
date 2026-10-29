@@ -4,7 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8");
-const formatters = source.slice(source.indexOf("  function measureList("), source.indexOf("  // 계산 방법:"));
+const formatters = source.slice(source.indexOf("  function measureList("), source.indexOf("  const artViewSeg ="));
 const counts = source.slice(source.indexOf("    const since = isoDate("), source.indexOf("    function baselineBlock("));
 const summary = source.slice(source.indexOf("    function baselineBlock("), source.indexOf("    if (![\"pr\", \"ext\", \"disc\"]"));
 const context = {

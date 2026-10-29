@@ -1772,7 +1772,7 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 
 /* ---------------------------------------------------------------- 움직임
    목적: 무엇이 바뀌었는지 알려 주기. 속도·곡선은 아래 값 하나로 통일. '동작 줄이기'면 모두 끔 */
-:root { --ease: cubic-bezier(.2, .8, .2, 1); --dur-fast: 150ms; --dur: 220ms; --dur-slow: 420ms; }
+:root { --ease: cubic-bezier(.2, .8, .2, 1); --ease-draw: cubic-bezier(.45, 0, .25, 1); --dur-fast: 150ms; --dur: 220ms; --dur-slow: 420ms; --dur-draw: 900ms; }   /* 선 그리기는 고르게 (처음에 확 나타나지 않게) */
 @keyframes mv-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes mv-page { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mv-pop { 0% { transform: scale(1); } 40% { transform: scale(1.28); } 100% { transform: scale(1); } }
@@ -1789,11 +1789,11 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 /* 5 화면 바뀜 */
 .mv-page { animation: mv-page var(--dur) var(--ease); }
 /* 3 선 그리기: 겹쳐 보기(파란 중앙값·회색 기사 선), 기사 그래프(왼쪽→오른쪽) */
-.mv-draw .rx-avg, .mv-draw .rx-one { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-slow) var(--ease) forwards; }
-.mv-draw .rx-avg { animation-duration: 700ms; animation-delay: 120ms; }
-.mv-reveal { animation: mv-reveal 600ms var(--ease); }
-.mv-draw-line .rc-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw 700ms var(--ease) forwards; }
-.mv-draw-line .rc-area { animation: mv-fade 700ms var(--ease); }
+.mv-draw .rx-avg, .mv-draw .rx-one { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
+.mv-draw .rx-avg { animation-delay: 120ms; }
+.mv-reveal { animation: mv-reveal var(--dur-draw) var(--ease-draw); }
+.mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
+.mv-draw-dash .dl-line.s-ext { animation-delay: 120ms; }
 /* 7 살짝 커졌다 돌아옴 (소식 건수 변화), 목록에 마우스 */
 .mv-pop { display: inline-block; animation: mv-pop 360ms var(--ease); }
 .art-list button { transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
@@ -1809,8 +1809,7 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .mv-confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
 @media (prefers-reduced-motion: reduce) {
   .mv-in, .mv-page, .mv-pop, .mv-reveal, dialog[open].disc-pop, dialog[open].disc-pop::backdrop, .art-pop, .art-more-menu, .engine .dot { animation: none !important; }
-  .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-line .rc-line { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
-  .mv-draw-line .rc-area { animation: none !important; }
+  .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
   .art-list button:hover { transform: none; }
   .mv-confetti { display: none; }
 }

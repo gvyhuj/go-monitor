@@ -33,22 +33,32 @@
   const EASE = "cubic-bezier(.2,.8,.2,1)";
   // 들어오는 칸: 살짝 아래에서 떠오르며 나타남 (같은 칸에 다시 넣을 때마다)
   function enter(el, cls = "mv-in") { if (!el || !el.classList || !MOTION()) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  // 선 그리기 한 번: 끝나면 풀어서 같은 칸을 다시 그려도(창 크기 변화 등) 또 그리지 않음
+  function drawOnce(el, cls, ms = 1200) { if (!el || !el.classList || !MOTION()) return; enter(el, cls); clearTimeout(el._mvOnce); el._mvOnce = setTimeout(() => el.classList.remove(cls), ms); }
   // 숫자 올라가기: [data-count]의 이전 값 → 새 값 (끝나면 원래 글자 그대로). data-key로 이전 값을 기억
   const COUNT_PREV = new Map();
+  // 같은 칸을 움직이는 중에 다시 그리면(조건 하나 바꿀 때 목록·요약이 두 번 그려지는 등) 새 칸에서 같은 움직임을 이어 감
+  const COUNT_RUN = new Map(), COUNT_D = 450;
   function countUp(root) {
     if (!root) return;
     root.querySelectorAll("[data-count]").forEach((el) => {
       const to = +el.dataset.count, key = el.dataset.key || "", had = COUNT_PREV.has(key), from = had ? COUNT_PREV.get(key) : 0, final = el.innerHTML;
       COUNT_PREV.set(key, to);
       if (!had && !el.hasAttribute("data-from0")) return;      // 처음 보일 때는 그대로 (가격이 0원부터 올라가면 이상함). 기간 카드만 0부터
-      if (!MOTION() || !isFinite(to) || from === to) return;
+      if (!MOTION() || !isFinite(to)) return;
+      const now = performance.now(), run = COUNT_RUN.get(key);
+      const live = run && run.to === to && now - run.t0 < COUNT_D;
+      if (from === to && !live) return;
+      const r = live ? run : { from, to, t0: now };
+      COUNT_RUN.set(key, r);
       const f = el.dataset.fmt, fmt = (v) => f === "pct" ? pct(v) : f === "pts" ? points(v) : f === "d1" ? `${v.toFixed(1)}${el.dataset.suf || ""}` : `${Math.round(v).toLocaleString("ko-KR")}${el.dataset.suf || ""}`;
-      const t0 = performance.now(), D = 360;
-      const step = (t) => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3);
-        if (!el.isConnected) return; if (k < 1) { el.textContent = fmt(from + (to - from) * e); requestAnimationFrame(step); } else el.innerHTML = final; };
+      const step = (t) => { const k = Math.min(1, Math.max(0, (t - r.t0) / COUNT_D)), e = 1 - Math.pow(1 - k, 3);
+        if (!el.isConnected) return; if (k < 1) { el.textContent = fmt(r.from + (r.to - r.from) * e); requestAnimationFrame(step); } else el.innerHTML = final; };
+      el.textContent = fmt(r.from + (r.to - r.from) * (live ? 1 - Math.pow(1 - Math.min(1, (now - r.t0) / COUNT_D), 3) : 0));
       requestAnimationFrame(step);
     });
   }
+
 
   // 10% 이상 오른 날: 하루에 딱 한 번 축하 종이 조각 (이 기기 기준, 동작 줄이기면 안 함)
   function confettiOnce(day, chg) {
@@ -756,7 +766,7 @@
 
   function renderFoot() {
     if (!STATUS) return;
-    $("#foot").innerHTML = `<span>데이터 출처 네이버 증권·다음 금융</span>${CLOUD ? '<span><a href="#" data-logout>로그아웃</a></span>' : ""}`;
+    $("#foot").innerHTML = "";      // 맨 아래 출처 문구·로그아웃 버튼은 뺌 (헷갈림)
   }
 
   // ---------------------------------------------------------------- 오늘 한눈에 (위 카드 줄)
@@ -1305,7 +1315,8 @@
         if (hot) { hot.classList.remove("hot"); hot = null; }
       });
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
-      if (drawNow) enter(el, "mv-draw-line");      // 종가 선이 왼쪽에서 오른쪽으로 그려짐
+      // 종가 선이 왼쪽에서 오른쪽으로 그려짐 (1일 차트와 같은 방식: 칸 자체를 펼침 → 바로 뒤 크기 맞춤으로 다시 그려도 끊기지 않음)
+      if (drawNow) drawOnce(el, "mv-reveal", 1000);
     }
 
     // 1일 탭: 그날 급등·급락 줄이 없거나 적어 왼쪽 칸이 오른쪽 '주요 숫자'보다 짧으면, 남는 만큼 1분 차트를 키워 빈칸을 없앰
@@ -2243,130 +2254,6 @@
       <table class="ladder"><thead><tr><th>날 종류</th><th>날 수</th><th>크게 움직인 날 비율 <small class="muted">(예상과 ±${(b.cut * 100).toFixed(1)}%p 넘게 차이)</small></th><th>평소 예상과 차이 크기 (중앙값)</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   }
 
-  // 계산 방법: 화면 곳곳에 있던 설명을 한곳에 (화면에는 숫자와 그 항목에만 해당하는 사실만 남김)
-  function pageMethod() {
-    // 대제목마다 접고 펴기 (처음엔 모두 접힘)
-    const sec = (id, title, body) => `<details class="method-sec" id="m-${id}"><summary><h2>${title}</h2></summary><div class="method-body">${body}</div></details>`;
-    const toc = [["words", "용어 설명"], ["prices", "주가 기록"], ["articles", "뉴스"], ["events", "급등·급락 (주가 분석)"], ["limits", "한계"]];
-    main.innerHTML = `<div class="wrap method">
-      <div class="page-head"><div><h1 class="page-title">README</h1>
-        <p class="page-sub">사이트의 숫자를 어떻게 계산하는지, 어떻게 읽으면 되는지 모아 둔 곳입니다.</p></div></div>
-      <nav class="method-toc" aria-label="목차">${toc.map(([id, t]) => `<a href="#/method" data-to="m-${id}">${t}</a>`).join("")}</nav>
-      ${sec("words", "용어 설명", `
-        <dl>
-          <dt>반응일</dt><dd>기사·공시가 주가에 처음 반영될 수 있는 거래일입니다. 장 마감(15:30) 뒤나 휴장일에 나왔으면 다음 거래일입니다. 같은 내용의 공시가 36시간 안에 먼저 나왔으면 공시 시각부터 잽니다.</dd>
-          <dt>이 종목 · KOSDAQ · 차이</dt><dd>기사 화면과 뉴스 목록 반응의 기본 숫자입니다. 공개 직전 가격(장 시작 전 공개는 전날 종가)부터 +30분·+60분 뒤까지 그린광학과 코스닥이 각각 몇 % 움직였는지, 그리고 둘의 차이(%p)입니다. 차이는 시장 전체와 상관없이 그린광학만 따로 움직인 만큼입니다.</dd>
-          <dt>고유 움직임</dt><dd>기사 화면 '통계로 보기 (참고)'에 있습니다. 실제 등락에서 시장 몫과 업종 몫(평소 관계로 추정)을 뺀 나머지입니다. 회사 소식, 수급, 그 밖의 이유가 모두 섞여 있습니다.</dd>
-          <dt>평소 같은 구간 중 이보다 크게 움직인 비율</dt><dd>역시 '통계로 보기'에 있습니다. 최근 같은 길이 구간들의 고유 움직임 중 이번 이상으로 컸던 비율입니다. 3%면 평소 그런 구간 100개 중 3개꼴이라는 뜻입니다.</dd>
-          <dt>평소 예상 · 예상 대비 차이</dt><dd>아래 '소식 없는 날과 비교' 표에만 씁니다. 그날 코스닥·비교 종목이 움직인 만큼 이 종목이 평소 관계대로라면 움직였을 값이 평소 예상이고, 실제 등락 − 평소 예상이 차이입니다.</dd>
-        </dl>`)}
-      ${sec("prices", "주가 기록", `
-        <ul>
-          <li><b>가격 기준</b>: 최근 거래일의 메인과 하루 상세는 같은 최신 시세를 사용합니다. 시간외 시세가 있으면 시각과 '시간외 포함 최종가'를 표시하고, KOSDAQ 정규장 값과 구분합니다. 1분 차트는 수집된 분봉 시각까지입니다. 기존 원인 글과 분석 근거는 저장 당시 자료로 남으며, 최신 수치와 다르면 상세에 표시합니다.</li>
-          <li><b>차트</b>: 처음에는 1일(최근 거래일 1분 차트)이 보입니다. 기간 탭(1일·1주·1달·3달·1년·전체·기간 지정)으로 종가 선을 봅니다. 기간 지정은 시작·끝 날짜를 직접 고르며, 일별 표에도 같은 칸이 있습니다. 선 위의 점은 그날 소식(보도자료·주요 공시·외부 기사)이고, 마우스를 올리면 그날 종가·등락·KOSDAQ·소식 수가 나옵니다. 점이나 선을 누르면 그날을 고릅니다. 1일 탭은 고른 날의 1분 차트이고, 차트를 끌거나 눌러 구간을 고르면 그 구간의 원인을 물어볼 수 있습니다. 1분봉이 없는 날은 야후 파이낸스 5분봉(없으면 60분봉)으로 그리고, 마지막 점은 거래소 종가입니다.</li>
-          <li><b>날마다 등락</b>: 차트 아래 한 칸이 하루입니다(빨강 오름 · 파랑 내림, 진할수록 크게). '등락 고르기'로 몇 % 이상 오르거나 내린 날만 표시하고, 전체 기간에서 맞는 날짜를 모아 보여 줍니다.</li>
-          <li><b>일별 표</b>: 모든 거래일을 한 줄씩 보여 줍니다. 시가·고가·저가·종가, 등락, 거래량, KOSDAQ 등락, 외국인·기관·개인 순매수(주), 그날 그린광학 보도자료·외부 기사·주요 공시 수입니다. '엑셀로 내려받기'로 전체를 받을 수 있습니다.</li>
-          <li><b>급등·급락</b>: 감지 기준(급등·급락 ±10%, 대형 ±15%, 관찰 ±5~10%)에 걸린 하루·장중 기록입니다. 달력에서 날짜를 누르면 그날 기록이 나오고, 일별 표의 '급등·급락 기록 내려받기'로 전체를 받을 수 있습니다.</li>
-          <li><b>검색</b>: 맨 위 검색창에 날짜(9/8, 9월 8일, 2026-09-08)를 넣으면 그날 1일 차트로 바로 갑니다. 장이 열리지 않은 날이면 앞뒤 거래일 차트로 가는 버튼이 나옵니다. 달(4월, 2026-04)을 넣으면 그 달의 날짜·기사·공시와 '그 달 주가 차트 보기'가 나옵니다. 하루 등락률(+6.5%나 6.5%는 6.5% 이상 오른 날, -5%는 5% 이상 내린 날)로 찾으면 그날 기사·공시도 함께 나오고, 제목·매체·기자·상대 회사로도 찾습니다.</li>
-        </ul>`)}
-      ${sec("articles", "뉴스", `
-        <h3>탭과 건수</h3>
-        <ul>
-          <li><b>건수</b>: '기사'는 같은 내용을 하나로 센 수, '보도'는 그 기사를 실은 매체마다 하나로 센 수입니다. 예: 6월 22일 LIG 공급계약 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 기사 1건, 보도 3건입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
-          <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
-          <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 모으지 않습니다.</li>
-          <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
-          <li>목록 한 줄은 같은 내용 묶음(여러 매체가 같은 내용을 낸 것) 하나입니다. 같은 날이라도 내용이 다르면 따로 나옵니다. 한 달 한 달 평균은 전체 건수 ÷ 첫 기록부터 오늘까지의 달 수입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
-        </ul>
-        <h3>대시보드</h3>
-        <ul>
-          <li>숫자 카드(기사 수·언론사), 월별 기사 추이(보도자료·외부 기사 두 선), 상위 언론사·자주 쓴 기자 순위, 주제, 기사 피드로 되어 있습니다.</li>
-          <li>추이의 한 달, 순위의 한 줄, 주제 타일을 누르면 그 조건으로 나머지가 함께 걸러지고, 다시 누르면 풀립니다. 예: 언론사에서 한 곳을 누르면 기자 순위에 그 언론사 기자만 남습니다. 순위의 %는 지금 조건의 기사 중 비중입니다.</li>
-          <li>기자는 같은 이름이라도 언론사가 다르면 따로 셉니다. 기자명을 찾지 못한 기사는 기자 순위에서 빠집니다.</li>
-          <li><b>내려받기</b>: '지금 조건 엑셀로 내려받기'는 걸러진 기사, '원본 전체 내려받기'는 조건과 관계없이 모든 기사(매체별)입니다. 엑셀에서 직접 피벗할 수 있습니다.</li>
-          <li><b>세는 단위</b>: 대시보드는 '보도' 수로 셉니다. 예: 같은 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 3건이고, 상위 언론사에서 세 곳이 각각 1건씩 올라갑니다.</li>
-          <li><b>주제</b>: 제목(없으면 요약 앞부분)에 들어 있는 단어로 자동 분류합니다. 제목이나 본문에 MOU(양해각서)가 있으면 대표 주제는 MOU이고, MOU 체결만으로는 수주·계약에 넣지 않습니다. 그 밖에는 순서대로 먼저 걸린 것이 대표 주제입니다: 실적 → 수주·계약 → 자금·주식 → 정부·기관 지원 → 방산 → 우주·위성 → 반도체 → 기술·제품 → 전시·IR·행사 → 주가·시황 → 기타. 여러 주제에 걸리면 내려받은 파일의 '걸린 주제 전부'에 모두 적습니다.</li>
-          <li><b>모으지 않는 기사</b>: 단순 언급·시황·특징주로 분류된 기사는 모으지 않고, 이미 모은 것도 지웠습니다. 핀포인트뉴스와 Investing.com 한국어(다른 매체 기사를 다시 싣는 곳) 기사는 모으지 않습니다. 제목과 첫머리(요약)에 회사 이름이 없고 원문 전체에도 이름이 2번 이하로만 나오는 기사(시황 기사의 종목 나열 등)는 원문을 열어 확인한 뒤 지우고 다시 모으지 않습니다. 원문을 못 열면 그대로 둡니다.</li>
-          <li><b>기자</b>: 기사 원문을 한 번 열어 본문의 기자 표기(예: [매체 홍길동 기자], 홍길동 기자 이메일, ○○ 홍길동입니다)에서 읽습니다. 자동 수집 때마다 15건씩 새 기사부터 채우고, 지난 기사도 차례로 채웁니다. 구글 뉴스로 모은 기사는 연결 주소를 원래 기사 주소로 바꾼 뒤 그 원문에서 읽습니다(바꾼 주소가 '기사 열기' 링크가 됩니다). 표기를 찾지 못한 기사는 '(미확인)'입니다.</li>
-          <li><b>공개 시각</b>: 구글 뉴스는 날짜만 맞고 시각을 16:00·17:00으로 주는 일이 있습니다. 원래 주소를 찾은 기사는 원문 페이지의 게시 시각(입력 시각)으로 고칩니다. 원문 시각을 읽지 못하면 '공개 시각 확인 필요'가 붙습니다.</li>
-        </ul>
-        <h3>소식 없는 날과 비교</h3>
-        <div id="method-baseline"><p class="loading">불러오는 중…</p></div>
-        <ul>
-          <li>최근 2년(기사를 모으기 시작한 날 이후)의 거래일을 그날 있었던 소식으로 나눕니다: 그린광학 보도자료 날 → 주요 공시 날 → 외부 기사만 있는 날 → 소식 없는 날 (한 날이 여러 종류면 앞의 것). 주요 공시는 정기(실적)·주요사항·발행·거래소 공시와 거래소 조치입니다.</li>
-          <li>각 소식은 반응일과 그다음 거래일을 함께 셉니다. 반응이 다음 날까지 이어질 수 있어서입니다.</li>
-          <li>평소 관계(코스닥·비교 종목과 함께 움직이는 정도)는 <b>소식 없는 날만으로</b> 한 번 추정하고, 모든 날의 예상 대비 차이를 구합니다.</li>
-          <li><b>크게 움직인 날</b>의 기준은 소식 없는 날의 차이 크기를 작은 것부터 줄 세웠을 때 상위 10%가 시작되는 값입니다. 그래서 소식 없는 날 줄은 늘 10% 안팎이고, 다른 줄을 이 10%와 견주어 봅니다. 기준값은 이 종목의 평소 출렁임에서 나오므로 자료가 쌓이면 조금씩 바뀝니다.
-            <div class="method-now" id="m-cut">지금 기준값을 불러오는 중…</div></li>
-          <li>기사 자체의 효과가 아니라 '소식이 있던 날'과 '없던 날'의 차이입니다. 사건(예: 계약) 자체의 영향, 같은 날의 다른 소식, 수집하지 못한 소식이 섞여 있습니다.</li>
-        </ul>
-        <h3>뉴스 반응 (뉴스 목록 오른쪽)</h3>
-        <ul>
-          <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, </li>
-          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있습니다. [← 전체 기사 보기]로 겹쳐 보기에 간 뒤에는 목록의 기사를 누르거나 [← 방금 본 기사]로 돌아갑니다.</li>
-          <li>기사를 고르면 같은 자리에 그 기사 그래프가 나오고, 지금 목록의 다른 기사(연한 회색)와 중앙값(파랑)이 +30분(또는 +60분)까지 겹칩니다. [전후 5거래일] 탭은 공개 전에 이미 움직였는지, 뒤에 이어졌는지 보는 참고용입니다.</li>
-          <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다.</li>
-          <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 중앙값 선이 0에서 꾸준히 벗어나는지를 보세요.</li>
-          <li>그 아래 '우연 확률'은 기사가 주가에 아무 영향이 없다고(오를 확률 반, 내릴 확률 반) 쳤을 때, 오른 건과 내린 건이 지금만큼 한쪽으로 기울 확률입니다(동전 던지기와 같은 계산). 이 확률이 작을수록 우연으로 보기 어렵고, 보통 5% 밑이면 '우연만으로는 설명하기 어렵다'고 봅니다. 오르내린 방향만 세므로 움직인 크기와 같은 날 다른 소식은 따지지 않습니다.</li>
-        </ul>
-        <h3>기사 상세: 발표 직후 반응</h3>
-        <ul>
-          <li>공개 직전 가격부터 +10·30·60·120분(15:30까지)의 이 종목·KOSDAQ 등락과 차이를 표로 보여 줍니다. 그 아래 그래프는 같은 시간의 이 종목·KOSDAQ 경로입니다.</li>
-          <li><b>공개 시점</b>: 장 시작 전(전날 장 마감 뒤~당일 9시)은 전날 종가부터 장 시작 뒤, 장중(9시~15시)은 공개 직전 가격부터, 15시 이후(~15:30)는 남은 거래가 짧아 그날 종가부터 다음 거래일 장 시작 뒤로 잽니다.</li>
-          <li><b>봉</b>: 1분봉이 있으면 1분봉(9/23부터 네이버, 그 전은 한국투자증권으로 한 번 채움), 없으면 야후 파이낸스 5분·60분봉입니다. 지난 날짜의 코스닥은 1분봉이 없어 야후 봉으로 비교합니다('1분봉 기준 (KOSDAQ 60분봉)'처럼 표시).</li>
-          <li>나오지 않는 경우: 공개 시각을 모르는 공시, 공개 무렵 봉 기록이 없는 경우.</li>
-        </ul>
-        <h3>기사 표시</h3>
-        <ul>
-          <li><b>시각 출처</b>: 기사 화면의 '시각 고치기'에 마우스를 올리면 어디서 읽은 시각인지(원문 페이지·네이버 뉴스·구글 뉴스·직접 고침) 보입니다. 구글 뉴스 시각이 16:00·17:00으로 반복되면 '시각 확인 필요'가 붙으니, 원문 시각을 확인하기 전에는 숫자를 잠정치로 보세요. '시각 고치기'로 원문의 입력 시각을 넣으면 그 시각으로 다시 계산됩니다.</li>
-          <li><b>대표 기사</b>: 같은 내용을 여러 매체가 냈으면 목록에는 한 줄(대표)만 보입니다. 기사 화면 '이 기사를 실은 매체'에서 '대표로'를 누르면 목록에 보일 제목·언론사를 바꿀 수 있습니다. 반응 계산의 기준 시각은 묶음에서 가장 먼저 나온 때 그대로입니다.</li>
-
-          <li><b>거래량 급증</b>: 반응일 거래량이 직전 60거래일 중 상위 5% 안입니다.</li>
-        </ul>`)}
-      ${sec("events", "급등·급락 (주가 분석)", `
-        <h3>감지 기준</h3>
-        <ul>
-          <li>전일 종가 대비 ±5%는 관찰(사이트 기록만, 알림 없음), ±10%는 급등·급락(알림), ±15%는 대형으로 기록합니다. 장중 30분 안의 빠른 움직임도 같은 기준으로 따로 잡습니다.</li>
-          <li>기준을 이렇게 정한 이유: 그린광학은 상장 뒤 하루 등락 중간값이 약 4%로, ±3%는 거래일 60% 이상, ±5%도 40% 가까이에서 일어납니다. ±10%가 상위 약 10%(한 달 2~3번)라 알림 기준으로 삼았습니다. 시장 때문이든 아니든 ±5% 넘은 날은 모두 관찰로 남습니다.</li>
-          <li>같은 날 같은 방향은 한 번만 알리고, 관찰 기준(±5%) 안으로 회복했다가 다시 넘으면 한 번 더 알립니다.</li>
-        </ul>
-        <h3>비교 종목</h3>
-        <ul>
-          <li>급등·급락 창의 '이 종목 사업 분야별 비교 종목'은 네이버 업종(WICS) 네 곳의 시가총액 상위 종목입니다. '평소 연동성'은 과거 약 110~120거래일 동안 코스닥 영향을 뺀 뒤 이 종목과 그 분야가 함께 움직인 정도(상관계수)입니다.</li>
-          <li>ChatGPT에게 묻기를 누르면 이 비교 종목·수급·공시·기사와 함께 시장·업종 몫 계산 결과도 자료로 넘깁니다(화면에는 싣지 않음).</li>
-        </ul>
-        <h3>수급 숫자 읽는 법</h3>
-        <ul>
-          <li><b>증권사 창구</b>: 매수·매도 각각 상위 5개 증권사만 공개됩니다. '미집계'는 0주가 아니라 5위 밖이라 보이지 않는다는 뜻이고, '5위 밖·멈춤'은 순위에서 밀려난 뒤의 거래가 반영되지 않은 값입니다. 그래서 순매수 앞에 '최소'를 붙입니다. 네이버와 다음 금융 값을 대조해 검증합니다.</li>
-          <li><b>투자자별 순매수</b>(외국인·기관·개인): 거래소가 장 마감 후 확정하는 공식 수치입니다. 창구 숫자와 다를 수 있습니다(외국계 창구를 국내 투자자가 쓰기도 함).</li>
-        </ul>`)}
-      ${sec("limits", "한계", `
-        <ul>
-          <li>모든 숫자는 시간상·업종 대비 연관성을 보여 줄 뿐, 그 기사·공시 때문에 움직였다고 증명하지 않습니다.</li>
-          <li>수집하지 못한 소식(다른 매체, 커뮤니티, 큰손 매매)은 반영되지 않습니다.</li>
-          <li>시세는 네이버 증권 화면 자료로 모읍니다. 형식이 바뀌면 일부 수집이 멈출 수 있지만, 이미 모은 기록은 그대로 남습니다.</li>
-        </ul>`)}
-    </div>`;
-    // 지금 쓰고 있는 '크게 움직인 날' 기준값과 그 계산 과정 (자료가 쌓이면 바뀌므로 그때그때 보여 줌)
-    api("/api/articles").then((d) => {
-      const b = d && d.baseline, box = $("#m-cut"), table = $("#method-baseline");
-      if (table) table.innerHTML = b ? baselineHtml(b) : `<p class="muted">아직 계산할 자료가 부족합니다.</p>`;
-      if (!box) return;
-      if (!b) { box.textContent = "아직 계산할 자료가 부족해 기준값이 없습니다."; return; }
-      const q = b.groups.none || {};
-      box.innerHTML = `지금 기준값: <b>±${(b.cut * 100).toFixed(1)}%p</b>
-        (${esc(b.from)}~${esc(b.to)}의 소식 없는 날 ${q.n || 0}일에 대해 '실제 등락 − 평소 예상'의 크기(오름·내림 구분 없이)를 작은 것부터 줄 세웠을 때,
-        위에서 ${Math.round((1 - b.top) * 100)}%가 시작되는 값. 이 기간 소식 없는 날 중 이 기준을 넘은 날은 ${q.big_up + q.big_down}일)`;
-    }).catch(() => { const box = $("#m-cut"); if (box) box.textContent = "지금 기준값을 불러오지 못했습니다."; });
-    main.querySelector(".method-toc").onclick = (ev) => {
-      const a = ev.target.closest("a[data-to]"); if (!a) return;
-      ev.preventDefault();
-      const target = document.getElementById(a.dataset.to);
-      target.open = true;                     // 목차로 가면 그 칸을 펼침
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-  }
-
   const artViewSeg = (view) => { const v = view === true ? "pivot" : view || "list";      // 예전 호출: true = 대시보드
     return `<div class="seg view-seg" role="tablist" aria-label="보기"><a href="#/pr" aria-pressed="${v === "list"}">목록</a><a href="#/pivot" aria-pressed="${v === "pivot"}">대시보드</a></div>`; };
 
@@ -2532,7 +2419,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1), o.x.kq_interval || 1)}"/>` : "";
         return `${kq}<path class="rx-one on top" d="${d(o.s, o.x.interval || 1)}"/>`; })() : ""}
     </svg>`;
-    if (el.classList && MOTION()) { enter(el, "mv-draw"); clearTimeout(el._mvDraw); el._mvDraw = setTimeout(() => el.classList.remove("mv-draw"), 900); }   // 선이 그려지듯 (끝나면 풀어서 강조 때 다시 안 그림)
+    if (el.classList && MOTION()) { enter(el, "mv-draw"); clearTimeout(el._mvDraw); el._mvDraw = setTimeout(() => el.classList.remove("mv-draw"), 1200); }   // 선이 그려지듯 (끝나면 풀어서 강조 때 다시 안 그림)
     el.querySelectorAll?.('[data-gap]').forEach(node=>{const show=()=>{$("#rx-hover").textContent=node.dataset.gap;$("#rx-gap-note").textContent=node.dataset.gap;};node.onfocus=show;node.onmouseenter=show;node.onclick=ev=>{ev.stopPropagation();show();};});
     return lines.length;
   }
@@ -2684,7 +2571,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ${ticks.map((t) => `<line class="dl-grid" x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}"/><text class="dl-ax" x="${L - 6}" y="${Y(t) + 4}" text-anchor="end">${t}</text>`).join("")}
       ${rows.map((x, i) => (i % every === 0 || i === rows.length - 1) ? `<text class="dl-ax" x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(x.key.slice(2).replace("-", "."))}</text>` : "").join("")}
       ${sel ? rows.map((x, i) => x.key === sel ? `<rect class="dl-sel" x="${X(i) - Math.max(8, step / 2)}" y="${T}" width="${Math.max(16, step)}" height="${H - T - B}"/>` : "").join("") : ""}
-      ${DASH_KINDS.map((k) => `<path class="dl-line ${DASH_CLS[k]}" d="${path(k)}"/>`).join("")}
+      ${DASH_KINDS.map((k) => `<path class="dl-line ${DASH_CLS[k]}" pathLength="1" d="${path(k)}"/>`).join("")}
       ${DASH_KINDS.map((k) => rows.map((x, i) => `<circle class="dl-dot ${DASH_CLS[k]}" cx="${X(i)}" cy="${Y(x.by[k] || 0)}" r="4"/>`).join("")).join("")}
       <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
       ${rows.map((x, i) => `<rect class="dl-hit" data-i="${i}" x="${X(i) - Math.max(8, step / 2)}" y="0" width="${Math.max(16, step)}" height="${H}"/>`).join("")}
@@ -2773,11 +2660,13 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           title="보도자료 ${x.by["그린광학 보도자료"] || 0} · 외부 ${x.by["외부 기사"] || 0}">${esc(x.key)}<b>${x.n}</b></button>`).join("")
         : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
+    let lastDrawKey = "";
+    const cnt = (n, key) => `<span data-count="${n}" data-key="dk-${key}" data-from0>${n}</span>`;
     function spark(rows) {
       if (rows.length < 2) return "";
       const last = rows.slice(-12), mx = Math.max(1, ...last.map((x) => x.n));
       const pts = last.map((x, i) => `${(i / (last.length - 1)) * 100},${28 - (x.n / mx) * 24}`).join(" ");
-      return `<svg class="kpi-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+      return `<svg class="kpi-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline pathLength="1" points="${pts}"/></svg>`;
     }
     function draw() {
       const since = pivotState.range === "all" ? "" : isoDate(new Date(Date.now() - +pivotState.range * 864e5));
@@ -2789,13 +2678,18 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const prN = shown.filter((r) => r.kind === "그린광학 보도자료").length, extN = shown.length - prN;
       const share = (n) => (shown.length ? `${Math.round((n / shown.length) * 100)}%` : "-");
       $("#dash-kpi").innerHTML = `
-        <div class="kpi"><small>보도</small><b>${shown.length}<em>건</em></b>${spark(monthsAll)}</div>
-        <div class="kpi k-pr"><small><i class="mk pr"></i>그린광학 보도자료</small><b>${prN}<em>건</em></b><span class="muted">전체의 ${share(prN)}</span></div>
-        <div class="kpi k-ext"><small><i class="mk ext"></i>외부 기사</small><b>${extN}<em>건</em></b><span class="muted">전체의 ${share(extN)}</span></div>
-        <div class="kpi"><small>언론사</small><b>${offices}<em>곳</em></b><span class="muted">기자 확인 ${new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size}명</span></div>`;
+        <div class="kpi"><small>보도</small><b>${cnt(shown.length, "all")}<em>건</em></b>${spark(monthsAll)}</div>
+        <div class="kpi k-pr"><small><i class="mk pr"></i>그린광학 보도자료</small><b>${cnt(prN, "pr")}<em>건</em></b><span class="muted">전체의 ${share(prN)}</span></div>
+        <div class="kpi k-ext"><small><i class="mk ext"></i>외부 기사</small><b>${cnt(extN, "ext")}<em>건</em></b><span class="muted">전체의 ${share(extN)}</span></div>
+        <div class="kpi"><small>언론사</small><b>${cnt(offices, "office")}<em>곳</em></b><span class="muted">기자 확인 ${cnt(new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size, "rep")}명</span></div>`;
+      countUp($("#dash-kpi"));      // 기간·구분·고르기를 바꾸면 숫자가 이전 값에서 새 값으로
+      // 선 그리기(작은 추이선·월별 추이)는 조건이 바뀔 때만 (창 크기만 바뀌어 다시 그릴 때는 안 함)
+      const drawKey = JSON.stringify([pivotState.range, pivotState.unit, pivotState.kind, F]); const drawNow = drawKey !== lastDrawKey; lastDrawKey = drawKey;
+      if (drawNow) drawOnce($("#dash-kpi"), "mv-draw-spark");
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
       dashLine($("#dash-month"), dashAgg(base.filter((r) => pass(r, "month")), "month"), F.month);
+      if (drawNow) drawOnce($("#dash-month"), "mv-draw-dash");
       board($("#dash-office"), "office");
       board($("#dash-reporter"), "reporter");
       tiles($("#dash-topic"));
@@ -3933,7 +3827,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null); }
     else if (page === "pivot") { document.title = "기사 대시보드 | 주가 모니터"; await pagePivot(); }
     else if (page === "react") { history.replaceState(null, "", parts[1] === "event" && parts[2] ? `#/pr/${parts[2]}` : "#/pr"); return route(); }   // 예전 뉴스 반응 주소 → 뉴스 목록
-    else if (page === "method") { document.title = "README | 주가 모니터"; pageMethod(); }
+    else if (page === "method") { history.replaceState(null, "", "#/"); return route(); }      // README 탭은 없앰: 예전 주소는 주가 기록으로
     else if (page === "status") { document.title = "수집 현황 | 주가 모니터"; await pageStatus(); }
     else if (page === "search") { document.title = "검색 | 주가 모니터"; await pageSearch(decodeURIComponent(parts.slice(1).join("/"))); }
     else { document.title = "주가 모니터"; await pageDashboard(); }
