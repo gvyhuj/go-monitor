@@ -2293,7 +2293,7 @@ const obsSrc = (s) => OBS_SRC[s] || s || '미상';
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
 // 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문·결과 저장, 관련 소식, 검토 기록, 유사 사건, 분류·연결 수정.
 // 그래프와 숫자는 기사 상세가 그림. host: 접는 항목을 넣을 곳. 버튼(#obs-question, #obs-note-open)은 기사 상세에 이미 있음
-async function observationExtras(host, eid, { openEvent = null } = {}) {
+async function observationExtras(host, eid, { openEvent = null, topicOf = null } = {}) {
   if(!host)return;
   let d,index;
   try { index=await api('/api/observatory'); eid=index.aliases?.[eid]||eid;d=await api('/api/observatory/'+encodeURIComponent(eid)); }
@@ -2337,48 +2337,29 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       <label>시작일<input id="obs-from" type="date"></label><label>종료일<input id="obs-to" type="date"></label><label>시간대<select id="obs-session"><option value="">전체</option><option>장전</option><option>장중</option><option>15시 이후</option><option>미상</option></select></label>
       <label>주가 +30분 부호<select id="obs-sign"><option value="">전체</option><option value="up">상승</option><option value="down">하락</option><option value="missing">미집계</option></select></label><label>자료 품질<select id="obs-quality"><option value="">전체</option><option value="complete">관측 가능</option><option value="partial">일부 미집계</option><option value="unavailable">관측값 없음</option><option value="pending">진행 중</option></select></label>
       <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div></details>`)}
-    ${fold('edit','분류·연결 수정','',`<p class="obs-muted">${esc(d.source_note)}</p><form id="obs-meta" class="obs-form">
-      <label>종류<select name="event_kind">${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}" ${v===obsKind(d.event_kind)?'selected':''}>${t}</option>`).join('')}</select></label>
-      ${[['business_tags','복수 태그 (쉼표)',d.business_tags.join(', ')],['publisher','발표 주체',d.publisher],['partner','고객/파트너',d.partner],['first_public_at','최초 공개 KST (미상이면 비움)',d.first_public_at],['analysis_at','분석 기준 KST',d.analysis_at],['pr_distributed_at','당사 PR 실제 배포 KST',d.pr_distributed_at],['primary_source_url','원천 주소',d.primary_source_url],['time_source','시각 출처',d.time_source]].map(([n,t,v])=>`<label>${t}<input name="${n}" value="${esc(v||'')}"></label>`).join('')}
-      <label>시각 상태<select name="time_status">${['confirmed','estimated','unknown'].map(x=>`<option value="${x}" ${x===d.time_status?'selected':''}>${OBS_STATUS[x]}</option>`).join('')}</select></label>
-      <label class="obs-check"><input name="followup_candidate" type="checkbox" ${d.followup_candidate?'checked':''}> 후속 보도 검토 후보</label><div class="obs-form-actions"><button class="btn">암호화 정정 요청</button></div></form>
-      <form id="obs-merge" class="obs-form"><label>같은 사건으로 확인한 다른 사건 ID<input name="other_id" required placeholder="ne-…"></label><label>연결 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">같은 사건 연결 요청</button></div></form>
-      <form id="obs-split" class="obs-form"><label>분리할 원문 ID<select name="member_id">${d.members.map(m=>`<option value="${esc(m.id)}">${esc(m.id)} · ${esc(m.title)}</option>`).join("")}</select></label><label>분리 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">별도 사건으로 분리 요청</button></div></form>
-      <details><summary>변경 이력 원본</summary><pre>${esc(JSON.stringify({history:d.history,source:f.source,snapshot:d.snapshot_version},null,2))}</pre></details>`)}
-    ${fold('basis','분석 기준·출처','',`<ul class="obs-basis-list">
-        <li>사건 ID <code class="obs-eid">${esc(d.event_id)}</code> (다른 기사와 같은 사건으로 연결할 때 이 ID를 씁니다)</li>
-        <li>최초 공개 ${esc(obsStamp(d.first_public_at))} · 시각 출처 ${esc(obsSrc(d.time_source))} (${esc(OBS_STATUS[d.time_status]||d.time_status)})</li>
-        <li>분석 기준 ${esc(obsStamp(d.analysis_at))} · 비교 시작 ${esc(obsStamp(o.start))}</li>
-        <li>당사 보도자료 실제 배포 ${esc(d.pr_distributed_at?obsStamp(d.pr_distributed_at):'미상')}</li>
-        <li>사건 연결 ${esc(({confirmed:'동일 사건 확인',review_required:'과거 묶음 · 확인 필요',individual:'개별 사건'})[d.identity_status]||'확인 필요')} · 동일 사건 후보(미확정) ${esc((d.same_event_candidates||[]).map(x=>x.a+' ↔ '+x.b).join(', ')||'없음')}</li>
-        ${o.missing_reason?`<li>미집계 사유: ${esc(o.missing_reason)}</li>`:''}
-        <li>계산 ${esc(o.calculation_version)} · 재계산 ${esc(obsStamp(d.recomputed_at))} · 전후 20거래일 값은 AI 질문·CSV 자료에 포함</li></ul>
-      <p><button type="button" class="btn small" id="obs-link">사건 링크 복사</button> <button type="button" class="btn small" id="obs-export">관측값 CSV</button> <button type="button" class="btn small" id="obs-sources-export">원문 목록 CSV</button></p>`)}
 `;
     host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    $('#obs-link').onclick=()=>navigator.clipboard.writeText(location.href).then(()=>toast('사건 링크 복사됨')).catch(()=>toast('주소창의 링크를 복사해 주세요.','err'));
     $('#obs-question').onclick=async()=>{const q=observationQuestion(d);$('#obs-question-text').value=q;$('#obs-question-text').hidden=false;try{await navigator.clipboard.writeText(q);toast('실제 자료를 포함한 질문을 복사했습니다. AI 답을 받은 뒤 [결과 붙여넣기]로 저장하세요.');}catch(e){toast('아래 질문을 선택해서 복사해 주세요.','err');}};
     const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');form.hidden=false;if(kind)form.elements.kind.value=kind;if(!form.elements.analysis_at.value)form.elements.analysis_at.value=new Date(Date.now()+9*36e5).toISOString().slice(0,16);form.elements.body.focus();};
     $('#obs-note-open').onclick=()=>{revision=null;openNote(noteTab);};
     $('#obs-note-cancel').onclick=()=>{noteOpen=false;revision=null;$('#obs-note').hidden=true;};
-    $('#obs-sources-export').onclick=()=>csvDownloadRows('사건_원문목록',['사건 ID','원문 ID','제목','매체','URL','공개 KST','수집 KST','원래 시각','시각 출처','PR 실제 배포 KST','분석 기준 KST'],d.members.map(m=>[d.event_id,m.id,m.title,m.office,m.url,m.ts,m.collected_at,m.original_ts,m.time_source,d.pr_distributed_at,d.analysis_at]));
-    $('#obs-export').onclick=()=>{const rows=[];for(const [rk,p] of [['day',f],['5',o.windows['5']],['20',o.windows['20']]])for(const x of (p?.points||[]))rows.push([d.event_id,rk,x.time,x.offset,x.stock_price??'',x.kosdaq_price??'',...['own','kq','diff'].map(k=>x[k]==null?'':x[k]*100),d.first_public_at,p.base_own_time||p.base_day,p.base_kq_time||p.base_day,p.base_own,p.base_kq,p.interval||'daily',p.kq_interval||'daily',JSON.stringify(p.source),o.calculation_version,x.own==null||x.kq==null?'partial':'observed']);
-      csvDownloadRows('사건_관측', ['event_id','범위','KST 관측 시각','상대 시점','원시 주가','원시 KOSDAQ','주가 수익률 %','KOSDAQ 수익률 %','차이 %p','공개 시각','기준 주가 시각','기준 지수 시각','주가 기준가격','KOSDAQ 기준가격','주가 봉','지수 봉','출처','계산 버전','상태'],rows);};
-    $('#obs-meta').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));v.business_tags=v.business_tags.split(',').map(x=>x.trim()).filter(Boolean);v.followup_candidate=!!v.followup_candidate;for(const k of ['first_public_at','analysis_at','pr_distributed_at'])v[k]=v[k]||null;try{await sendInbox({type:'news_event_meta',event_id:eid,...v});}catch(_) {}};
-    $('#obs-split').onsubmit=async e=>{e.preventDefault();try{await sendInbox({type:'news_event_split',event_id:eid,...Object.fromEntries(new FormData(e.target))});}catch(_) {}};
-    $('#obs-merge').onsubmit=async e=>{e.preventDefault();try{await sendInbox({type:'news_event_link',event_id:eid,...Object.fromEntries(new FormData(e.target))});}catch(_) {}};
     if(noteDraft)for(const [key,value] of Object.entries(noteDraft)){const input=$('#obs-note').elements[key];if(input)input.value=value;}
     $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,...v,sources:v.sources.split('\n').map(x=>x.trim()).filter(Boolean),question:observationQuestion(d),snapshot:{version:d.snapshot_version,observation:d.observation},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
     host.querySelectorAll('[data-note-edit]').forEach(b=>b.onclick=()=>{const n=d.notes.find(x=>x.id===b.dataset.noteEdit);revision=n.id;openNote();const form=$('#obs-note');for(const k of ['body','kind','author_type','confidence_label','review_status'])form.elements[k].value=n[k]||'';form.elements.sources.value=(n.sources||[]).join('\n');$('#obs-save-status').textContent='과거 기록은 유지하고 새 버전을 저장합니다.';form.scrollIntoView({block:'center'});});
     const search=()=>{
       const v=id=>$('#obs-'+id).value,query=v('query').toLowerCase();
-      const list=index.items.filter(x=>{const m=x.steps['30']?.own,t=x.first_public_at?.slice(11,16),session=!t?'미상':t<'09:00'?'장전':t>'15:00'?'15시 이후':'장중';return (!query||[x.title,x.partner,...x.business_tags].join(' ').toLowerCase().includes(query))&&(!v('tag')||x.business_tags.includes(v('tag')))&&(!v('kind')||obsKind(x.event_kind)===v('kind'))&&(!v('publisher')||x.publisher.includes(v('publisher')))&&(!v('source')||x.time_source.includes(v('source')))&&(!v('from')||(x.first_public_at||'')>=v('from'))&&(!v('to')||(x.first_public_at||'').slice(0,10)<=v('to'))&&(!v('session')||session===v('session'))&&(!v('quality')||x.status===v('quality'))&&(!$('#obs-has-note').checked||x.notes_count>0)&&(!v('sign')||(v('sign')==='missing'?m==null:v('sign')==='up'?m>0:m<0));})
+      let list=index.items.filter(x=>{const m=x.steps['30']?.own,t=x.first_public_at?.slice(11,16),session=!t?'미상':t<'09:00'?'장전':t>'15:00'?'15시 이후':'장중';return (!query||[x.title,x.partner,...x.business_tags].join(' ').toLowerCase().includes(query))&&(!v('tag')||x.business_tags.includes(v('tag')))&&(!v('kind')||obsKind(x.event_kind)===v('kind'))&&(!v('publisher')||x.publisher.includes(v('publisher')))&&(!v('source')||x.time_source.includes(v('source')))&&(!v('from')||(x.first_public_at||'')>=v('from'))&&(!v('to')||(x.first_public_at||'').slice(0,10)<=v('to'))&&(!v('session')||session===v('session'))&&(!v('quality')||x.status===v('quality'))&&(!$('#obs-has-note').checked||x.notes_count>0)&&(!v('sign')||(v('sign')==='missing'?m==null:v('sign')==='up'?m>0:m<0));})
         .sort((a,b)=>(b.first_public_at||'').localeCompare(a.first_public_at||''));
+      // 같은 주제(뉴스 목록에서 한 줄로 묶인 기사)는 한 줄로: 가장 최근 것 하나만 쓰고 건수만 표시
+      const byTopic=new Map();
+      for(const x of list){const keys=(topicOf&&topicOf(x))||[x.event_id];const g=keys.map(k=>byTopic.get(k)).find(Boolean);
+        if(g){g.n++;if(x.event_id===d.event_id)g.on=true;keys.forEach(k=>byTopic.set(k,g));}else{const ng={x,n:1,on:x.event_id===d.event_id};keys.forEach(k=>byTopic.set(k,ng));}}
+      const topics=[...new Set(byTopic.values())];list=topics.map(g=>g.x);
       const values=list.map(x=>x.steps['30']?.own).filter(x=>x!=null).sort((a,b)=>a-b),n=values.length;
       $('#obs-similar-sub').textContent=`${v('tag')?`태그 「${v('tag')}」 `:''}${list.length}건`;
-      $('#obs-results').innerHTML=`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${list.slice(0,50).map(x=>`<tr${x.event_id===d.event_id?' class="on"':''}><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">${esc(OBS_KIND[obsKind(x.event_kind)])}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap">${x.event_id===d.event_id?'<span class="obs-muted">지금 기사</span>':`<button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button>`}</td></tr>`).join('')||'<tr><td colspan="5">조건에 맞는 사건이 없습니다.</td></tr>'}</tbody></table>
-      <p class="obs-muted">유효 n=${n} (사건 ID별 1건)${list.length>50?' · 최근 50건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)} · 평균 ${pct(values.reduce((a,b)=>a+b,0)/n)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`;
+      $('#obs-results').innerHTML=`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${topics.slice(0,50).map(({x,n:cnt,on})=>`<tr${on?' class="on"':''}><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">${esc(OBS_KIND[obsKind(x.event_kind)])}${cnt>1?` · 같은 주제 ${cnt}건`:''}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap">${on?'<span class="obs-muted">지금 기사</span>':`<button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button>`}</td></tr>`).join('')||'<tr><td colspan="5">조건에 맞는 사건이 없습니다.</td></tr>'}</tbody></table>
+      <p class="obs-muted">유효 n=${n} (같은 주제는 1건)${list.length>50?' · 최근 50건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)} · 평균 ${pct(values.reduce((a,b)=>a+b,0)/n)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`;
       $('#obs-results').querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
     };
     $('#obs-filters').oninput=search;$('#obs-filters').onchange=search;
@@ -2759,7 +2740,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span>
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
         <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
-        <button class="btn small" type="button" id="art-csv" title="지금 목록의 공개 뒤 주가 (+30·+60분)">엑셀로</button>
+        <button class="art-dd art-right" type="button" id="art-csv" title="지금 목록의 공개 뒤 주가 (+30·+60분)">엑셀로</button>
         <details class="art-more editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
           <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
@@ -3075,7 +3056,13 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       const b = was && [...$("#art-list").querySelectorAll("button[data-id]")].find((x) => x.dataset.id === was);
       if (b) b.focus({ preventScroll: true });
     };
+    // 유사 사건을 주제별 한 줄로: 기사 id → 뉴스 목록에서 묶인 대표 기사 id
+    const topicLead = new Map();
+    items.forEach((a) => { topicLead.set(a.id, a.id); (a.related || []).forEach((r) => r.id && topicLead.set(r.id, a.id)); (a.related_titles || []).forEach((r) => r.id && topicLead.set(r.id, a.id)); });
+    const normTitle = (t) => String(t || "").replace(/[\s\[\]【】()（）"'“”‘’…·,.!?\-–—]/g, "").toLowerCase();
     prHooks = {
+      // 같은 묶음(대표 기사) 또는 같은 제목이면 같은 주제
+      topicOf: (x) => [...new Set((x.member_ids || []).map((id) => topicLead.get(id)).filter(Boolean).map((l) => "a:" + l)), "t:" + normTitle(x.title)],
       overlay: (id) => { const r = rxById.get(id); return r ? { ...reactionOverlay(currentRows(), id), label: LABEL[artState.cat] } : null; },
       openEvent: (eid) => { const r = [...rxById.values()].find((x) => x.event_id === eid); if (!r) return;
         const inList = shown(artState.cat).some((x) => (x.ids || [x.id]).includes(r.id));
@@ -3270,22 +3257,28 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
         : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
     const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
-    if (!isDisc) html += `<details class="obs-fold" data-fold="outlets"><summary><span>이 기사를 실은 매체 · 같은 내용 합치기</span><small>${a.outlets_total || outlets.length}곳</small></summary><div class="obs-fold-body"><section class="outlet-list"><p class="muted">기사 링크 ${outlets.filter((r) => r.url).length}개</p>
+    if (!isDisc) html += `<dialog class="disc-pop outlets-pop" id="outlets-pop" aria-label="이 기사를 실은 매체 · 같은 내용 합치기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>이 기사를 실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></strong><button type="button" class="btn-link" data-pop-close aria-label="닫기">✕</button></div><section class="outlet-list"><p class="muted">기사 링크 ${outlets.filter((r) => r.url).length}개</p>
       <p class="note">같은 매체의 자사 사이트·포털 링크가 함께 있을 수 있습니다. 매체 수는 중복을 제외합니다.</p>
       <ul>${outlets.map(link).join("")}</ul>
       <span class="form-msg" id="dup-msg"></span>
       ${a.manual ? "" : `<div class="merge-box editable"><button type="button" class="btn-link" id="merge-open">같은 내용인데 따로 보이는 기사 합치기</button><div id="merge-list" hidden></div></div>`}
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
-</section></div></details>`;
+</section></div></dialog>`;
     if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
-    html += `<div id="obs-extras"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건 · 분류·연결 수정 · 분석 기준)
+    html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
     box.innerHTML = html;
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
     if (!isDisc) bindTimeForm(box, a);
     const act = $("#art-act");
-    if (act) act.innerHTML = isDisc ? "" : a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
-      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`;
+    if (act) act.innerHTML = isDisc ? "" : `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
+      + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
+      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`);
+    const outPop = $("#outlets-pop", box), outOpen = $("#art-outlets");
+    if (outPop && outOpen) {
+      outOpen.onclick = () => { const m = outOpen.closest("details"); if (m) m.open = false; outPop.showModal(); };
+      outPop.addEventListener("click", (ev) => { if (ev.target === outPop || ev.target.closest("[data-pop-close]")) outPop.close(); });
+    }
     // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
     const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
     if (rxEl) {
@@ -3318,7 +3311,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       box.querySelectorAll("[data-rxr]").forEach((b) => (b.onclick = () => drawTab(b.dataset.rxr)));
       drawTab("day");
     }
-    if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id, { openEvent: (eid) => prHooks && prHooks.openEvent(eid) })
+    if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id, { openEvent: (eid) => prHooks && prHooks.openEvent(eid), topicOf: prHooks && prHooks.topicOf })
       .then(() => { box.querySelectorAll("#obs-question, #obs-note-open").forEach((b) => { b.disabled = false; }); });
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));

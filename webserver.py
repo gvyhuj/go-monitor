@@ -881,7 +881,8 @@ def observation_summary(d):
             'time_source','time_status','followup_candidate')} | {
         'steps':(d['observation'].get('intraday') or {}).get('steps',{}),
         'post5':d['observation'].get('windows',{}).get('5',{}).get('post',{}),
-        'status':d['observation']['status'],'notes_count':len(d['notes']), 'exposures':len(d['members'])}
+        'status':d['observation']['status'],'notes_count':len(d['notes']), 'exposures':len(d['members']),
+        'member_ids':[str(m.get('id')) for m in d['members']]}   # 유사 사건을 뉴스 목록의 주제 묶음으로 합칠 때 씀
 
 
 def api_article_hide(aid, hidden: bool):

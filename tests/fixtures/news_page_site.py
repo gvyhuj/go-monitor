@@ -74,6 +74,17 @@ def main(out: Path) -> None:
         # 2003 기사보다 8분 먼저 접수된 같은 내용의 공시 → 기사 화면에 '선행 공시'
         conn.execute("INSERT INTO disclosures(no,symbol,date,ts,title,kind,pblntf,filer) VALUES (?,?,?,?,?,?,?,?)",
                      ("20261015000901", SYMBOL, "2026-10-15", "2026-10-15T13:02", "단일판매ㆍ공급계약체결", "공급계약", "I", "검증 종목"))
+        # 같은 주제 기사(충북TP)가 예전 기록에 따로 남은 경우 → 유사 사건에는 한 줄만
+        for aid, ts in (("2005", "2026-10-16T10:00"), ("2006", "2026-10-19T10:30")):
+            conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (aid, SYMBOL, ts, "검증지역", "충북TP 우주항공 기업 지원사업 선정", f"https://example.org/{aid}", "언론 분석", "제목", aid, ts))
+        conn.execute("CREATE TABLE IF NOT EXISTS news_event_records (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+        conn.execute("INSERT INTO news_event_records VALUES (?,?)", ("ne-0000000000a1", json.dumps({
+            "event_id": "ne-0000000000a1", "title": "충북TP 우주항공 기업 지원사업 선정", "event_kind": "external_article",
+            "business_tags": ["우주항공"], "publisher": "미확인", "partner": "", "first_public_at": "2026-10-09T10:00",
+            "time_source": "naver", "time_status": "estimated", "followup_candidate": False,
+            "observation": {"status": "unavailable", "intraday": None, "windows": {}}, "notes": [],
+            "members": [{"id": "2099", "title": "충북TP 우주항공 기업 지원사업 선정", "kind": "ext"}]}, ensure_ascii=False)))
     items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))
     sitebuild.build(out, PASSWORD, SALT, items)
 
