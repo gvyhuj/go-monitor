@@ -1090,12 +1090,18 @@
       const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
       // 수익률: 네이버와 같은 방식 (고른 날 종가 ÷ N개월 전 날짜 이후 첫 거래일 종가, 기록이 짧으면 첫 거래일)
-      const back = (m) => {
+      const backRow = (m) => {
         const t = new Date(ds); t.setMonth(t.getMonth() - m);
         const k = t.toISOString().slice(0, 10), b = daily.find((x) => x.date >= k) || daily[0];
-        return b && b.date < ds ? close / b.close - 1 : null;
+        return b && b.date < ds ? b : null;
       };
-      const ret = (m, label) => { const v = back(m); return `<div><small>${label}</small><b class="${sgnCls(v)}">${v == null ? "-" : pct(v)}</b></div>`; };
+      const back = (m) => { const b = backRow(m); return b ? close / b.close - 1 : null; };
+      // 네이버처럼 'N개월 수익률' + ▲/▼ 크기. 마우스를 올리면 비교한 두 종가
+      const ret = (m, label) => {
+        const b = backRow(m), v = b ? close / b.close - 1 : null;
+        const arrow = v > 0 ? '<i class="rs-arw">▲</i>' : v < 0 ? '<i class="rs-arw">▼</i>' : "";
+        return `<div title="${b ? `${esc(b.date)} 종가 ${won(b.close)}원 → ${esc(ds)} ${won(close)}원` : "비교할 이전 기록 없음"}"><small>${label} 수익률</small><b class="${sgnCls(v)}">${v == null ? "-" : arrow + (Math.abs(v) * 100).toFixed(2) + "%"}</b></div>`;
+      };
       const inv = px.individual != null || px.foreign != null || px.organ != null;
       // 장중: 거래소 개인·외국인·기관은 장 마감 뒤에만 나오므로, 외국인 자리에 증권사 외국계 창구 추정(매수 − 매도)
       const fe = !inv && px.foreign_est && px.foreign_est.date === ds && px.foreign_est.buy != null ? px.foreign_est : null;

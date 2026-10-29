@@ -246,6 +246,13 @@ async function main() {
       await page.locator("#art-cond-txt").waitFor();
       assert.match(await page.locator("#art-cond-txt").innerText(), /2026-09-21|9\/21|09-21/);
 
+      // 주요 숫자의 기간 수익률: 네이버처럼 'N개월 수익률' + ▲/▼
+      await page.goto(`${base}/#/`);
+      await page.locator(".rs-ret").waitFor();
+      assert.deepEqual(await page.locator(".rs-ret small").allInnerTexts(), ["1개월 수익률", "3개월 수익률", "1년 수익률"]);
+      assert.match(await page.locator(".rs-ret b").first().innerText(), /^[▲▼]\s?\d+\.\d\d%$|^0\.00%$|^-$/);
+      assert.match(await page.locator(".rs-ret > div").first().getAttribute("title"), /종가 [\d,]+원 → .* [\d,]+원/);
+
       // 주가 기록 1일 차트: 날짜는 달력에서만 (키보드로 숫자를 넣어도 바뀌지 않음)
       await page.goto(`${base}/#/`);
       const jump = page.locator("[data-jump]");
