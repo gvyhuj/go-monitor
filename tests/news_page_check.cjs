@@ -218,6 +218,30 @@ async function main() {
       assert.equal(sim.filter((t) => t.includes("충북TP")).length, 1, sim.join(" / "));
       assert.match(sim.find((t) => t.includes("충북TP")), /같은 주제 3건/);
 
+      // 일별 표: 위 다섯 칸 줄 대신 고른 기간 요약 카드 4개 + 순매수·거래량 한 줄
+      await page.goto(`${base}/#/days`);
+      await page.locator(".ps-cards").waitFor();
+      assert.equal(await page.locator("#hero").isHidden(), true);
+      assert.deepEqual((await page.locator(".ps-card > small").allInnerTexts()), ["기간 등락 · 시장 대비", "기간 최고 · 최저", "오른 날 · 내린 날", "기간 소식"]);
+      assert.match(await page.locator(".ps-range").innerText(), /2026-09-21 ~ 2026-10-28 · 28거래일/);
+      assert.match(await page.locator(".ps-card").first().innerText(), /\+3\.91%[\s\S]*KOSDAQ[\s\S]*시장보다/);
+      assert.match(await page.locator(".ps-news").innerText(), /보도자료 3[\s\S]*외부 3[\s\S]*주요 공시 1/);
+      assert.match(await page.locator(".ps-line").innerText(), /순매수 합계[\s\S]*평균 거래량/);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+      // 오른 날 → 그 날들만 표에
+      const upN = +(await page.locator('[data-quick="up"]').innerText()).replace("일", "");
+      await page.locator('[data-quick="up"]').click();
+      assert.equal(await page.locator("#days-body tr").count(), upN);
+      assert.ok((await page.locator("#days-body tr td:nth-child(6)").allInnerTexts()).every((t) => t.startsWith("+") && t !== "+0.00%"));
+      // 최고 날 → 등락 고르기를 풀고 그날 줄로
+      await page.locator(".ps-go[data-goto]").first().click();
+      await page.locator("#days-body tr.is-flash").waitFor();
+      // 기간 소식 → 같은 기간 뉴스 목록
+      await page.locator("[data-news]").click();
+      await page.waitForFunction(() => location.hash === "#/pr");
+      await page.locator("#art-cond-txt").waitFor();
+      assert.match(await page.locator("#art-cond-txt").innerText(), /2026-09-21|9\/21|09-21/);
+
       // 주가 기록 1일 차트: 날짜는 달력에서만 (키보드로 숫자를 넣어도 바뀌지 않음)
       await page.goto(`${base}/#/`);
       const jump = page.locator("[data-jump]");
