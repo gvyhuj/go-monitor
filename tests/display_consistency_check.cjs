@@ -38,9 +38,8 @@ test('closed daily drawer uses the same after-hours quote as the main screen', (
   const {ctx,$} = harness(); ctx.renderEventDrawer({event:{...event}, cause:null});
   const html = $('#drawer-body').innerHTML;
   assert.match(html.match(/<h2[\s\S]*?<\/h2>/)[0], /\+3\.01%/);
-  assert.match(html, /20:00/);
-  assert.match(html, /분석 당시/);
-  assert.match(html, /\+4\.27%/);
+  // 하루 기록: 기준가 줄·등락/KOSDAQ/거래대금 칸·저장 당시 안내는 위 머리 박스와 겹쳐 뺌
+  assert.doesNotMatch(html, /기준가\(전날 거래소 종가\)|분석 당시 저장된|거래대금|<dl class="facts/);
   assert.match(html, /기존 원인 본문/);
 });
 test('AI request identifies current quote separately from saved evidence', () => {
