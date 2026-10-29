@@ -1534,7 +1534,7 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .rx-ax { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .rx-one { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .35; pointer-events: none; }
 .rx-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; pointer-events: stroke; }
-.rx-g:hover .rx-one:not(.on) { opacity: .95; stroke-width: 2; stroke: var(--ink-2); }
+.rx-g.is-hot .rx-one:not(.on), .rx-g:hover .rx-one:not(.on) { opacity: .95; stroke-width: 2; stroke: var(--ink-2); }
 .rx-hover { margin-left: 10px; font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
 .rx-chk .tip-i { color: var(--muted); font-size: 12px; }
 .rx-one.on { stroke: var(--up); opacity: 1; stroke-width: 2.2; }
@@ -1585,7 +1585,6 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .art-right { margin-left: auto; }
 .pr-close-row.pr-back-row { justify-content: flex-start; gap: 10px; margin-bottom: 8px; }
 .pr-back-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.rx-line-tip { display: block; min-height: 18px; margin: 2px 0 0; font-size: 12px; }
 .outlets-pop, .note-pop { width: min(720px, calc(100vw - 32px)); }
 .outlets-pop .outlet-list { max-height: 65vh; overflow: auto; margin-top: 8px; }
 .art-more > summary::-webkit-details-marker { display: none; }

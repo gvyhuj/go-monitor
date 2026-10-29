@@ -493,6 +493,8 @@
 
   /** 이 종목 vs KOSDAQ 변화율(%) 한 축 비교 */
   // extra: { others: [[분, 값], …][], median: [[분, 값, n], …], label } — 비교 시작(startT) 기준 분으로 그린 다른 기사·중앙값 (뒤에 연하게)
+  // 목록 줄에 마우스를 올렸을 때 오른쪽 그래프에서 그 기사를 강조하는 함수 (그래프를 그릴 때마다 바뀜)
+  let rxHot = null;
   function indexedChart(el, legendEl, own, kq, base, kqBase, startT, label, daily = false, extra = null) {
     const dfmt = (t) => { const d = new Date(t * 1000); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };
     // 휠·끌기로 확대·이동되지 않게 고정 (기사 화면을 스크롤하다 차트가 줌되던 문제). 마우스를 올리면 숫자는 그대로 보임
@@ -501,11 +503,12 @@
     const ownColor = matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2");
     const ownName = (STATUS && STATUS.name) || "이 종목";      // 회사 이름 (비공개 설정의 display_name)
     const fmt = { type: "custom", minMove: 0.01, formatter: (v) => pctRaw(v) };
-    let otherLines = [];       // 연한 회색 다른 기사 선: 마우스를 가까이 대면 그 기사 제목을 보여 줌
+    let otherLines = [];       // 연한 회색 다른 기사 선 (목록에서 마우스를 올린 기사는 진하게)
+    rxHot = null;
     const st0 = toTime(startT), atMin = (sr) => sr.map(([m, v]) => ({ time: st0 + Math.round(m * 60), value: v * 100 }));
     if (extra) {
       const quiet = { priceFormat: fmt, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
-      otherLines = extra.others.map((sr, i) => { const s = chart.addSeries(LW.LineSeries, { ...quiet, color: css("--line-2"), lineWidth: 1 }); s.setData(atMin(sr)); return { s, title: (extra.titles || [])[i] || "" }; });
+      otherLines = extra.others.map((sr, i) => { const s = chart.addSeries(LW.LineSeries, { ...quiet, color: css("--line-2"), lineWidth: 1 }); s.setData(atMin(sr)); return { s, id: (extra.ids || [])[i] }; });
       if (extra.median.length) chart.addSeries(LW.LineSeries, { ...quiet, color: css("--brand-blue"), lineWidth: 2 }).setData(atMin(extra.median));
     }
     const s1 = chart.addSeries(LW.LineSeries, { color: ownColor, lineWidth: extra ? 3 : 2, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true, title: ownName });
@@ -550,24 +553,14 @@
         + (extra ? `${extra.median.length ? `<span><i class="rx-sw" style="border-color:${css("--brand-blue")}"></i>중앙값</span>` : ""}<span><i class="rx-sw" style="border-color:${css("--line-2")}"></i>다른 ${esc(extra.label || "기사")} ${extra.n}건 (+${extra.until}분까지)</span>` : "");
     };
     show(null);
-    let tip = el.previousElementSibling && el.previousElementSibling.classList.contains("rx-line-tip") ? el.previousElementSibling : null, hot = null;
-    if (tip) tip.textContent = "";      // 탭을 바꿔 다시 그릴 때 같은 줄을 다시 씀
-    const hoverOther = (p) => {
-      if (!otherLines.length) return;
-      let best = null;
-      if (p && p.point && p.time != null) for (const o of otherLines) {
-        const d = p.seriesData && p.seriesData.get(o.s);
-        if (!d || d.value == null) continue;
-        const y = o.s.priceToCoordinate(d.value), gap = y == null ? Infinity : Math.abs(y - p.point.y);
-        if (gap <= 8 && (!best || gap < best.gap)) best = { o, gap, y };
-      }
-      if (hot && hot !== (best && best.o)) { hot.s.applyOptions({ color: css("--line-2"), lineWidth: 1 }); hot = null; }
-      if (!tip) { tip = document.createElement("div"); tip.className = "rx-hover rx-line-tip"; el.before(tip); }   // 겹쳐 보기처럼 그래프 위 한 줄
-      if (!best) { tip.textContent = ""; return; }
-      if (hot !== best.o) { hot = best.o; hot.s.applyOptions({ color: css("--muted"), lineWidth: 2 }); }
-      tip.textContent = best.o.title;
+    // 왼쪽 목록에서 기사에 마우스를 올리면 그 기사의 회색 선을 진하게
+    let hot = null;
+    if (otherLines.length) rxHot = (id) => {
+      if (hot) { hot.s.applyOptions({ color: css("--line-2"), lineWidth: 1 }); hot = null; }
+      const o = id && otherLines.find((x) => x.id === id);
+      if (o) { hot = o; o.s.applyOptions({ color: css("--ink-2"), lineWidth: 2 }); }
     };
-    chart.subscribeCrosshairMove((p) => { show(p && p.time ? p.time : null); hoverOther(p); });
+    chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : null));
     return chart;
   }
 
@@ -2438,6 +2431,13 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <span class="rx-hover" id="rx-hover"></span><div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-gap-note" role="status"></p>
       <div class="obs-cards" id="rx-cards"></div><p class="note" id="rx-sum"></p></section>`;
     const draw = () => reactionSummary(list);
+    rxHot = (id) => {        // 왼쪽 목록에서 마우스를 올린 기사: 겹쳐 보기에서 그 선을 진하게 + 제목
+      const plot = $("#rx-plot"); if (!plot || !plot.isConnected) return;
+      plot.querySelectorAll("g.rx-g.is-hot").forEach((g) => g.classList.remove("is-hot"));
+      const g = id && [...plot.querySelectorAll("g.rx-g")].find((x) => x.dataset.id === id);
+      if (g) { g.classList.add("is-hot"); g.parentNode.appendChild(g); }
+      $("#rx-hover").textContent = g ? g.dataset.t : "";
+    };
     host.querySelector(".rx-ov-tools").onclick = (ev) => { const b = ev.target.closest("button[data-h]"); if (!b) return; reactState.h = b.dataset.h; host.querySelectorAll("button[data-h]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.h === reactState.h))); draw(); if (onH) onH(); };
     host.querySelector(".rx-ov-tools").onchange = (ev) => { if (ev.target.id === "rx-vskq") { reactState.vsKq = ev.target.checked; draw(); } };
     const plotEl = $("#rx-plot");
@@ -2451,11 +2451,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const plotted = rxPlot($("#rx-plot"), list);
     const measured = list.filter((x) => stepV(x, reactState.h) != null).length;
     $("#rx-n").textContent = `대상 ${list.length}건 · 경로 ${plotted}건 · +${reactState.h}분 집계 ${measured}건${reactState.vsKq ? " · KOSDAQ 대비 차이" : ""}`;
-    const s = (m) => { const vs = reactionSamples(list, x => stepV(x, m)); if (!vs.length) return null;
-      const up = vs.filter((v) => v > 0).length, dn = vs.filter((v) => v < 0).length;
-      const mean = vs.reduce((a, b) => a + b, 0) / vs.length, fmt = (v) => reactState.vsKq ? points(v) : pct(v);
-      return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${fmt(median(vs))}</b> · 평균 ${fmt(mean)} (${reactState.vsKq ? "시장 웃돈" : "오른"} ${up} · ${reactState.vsKq ? "시장 밑돈" : "내린"} ${dn} · ${reactState.vsKq ? "시장과 같음" : "보합"} ${vs.length - up - dn}, 중복 제외 ${vs.length}사건)`; };
-    $("#rx-sum").innerHTML = (s(reactState.h) || `+${reactState.h}분 집계 가능한 자료가 없습니다.`)
+    // 중앙값·평균은 위 카드에 있음: 문장으로 다시 적지 않음 (자료가 없을 때만 한 줄)
+    const nOk = reactionSamples(list, (x) => stepV(x, reactState.h)).length;
+    $("#rx-sum").innerHTML = (nOk ? "" : `+${reactState.h}분 집계 가능한 자료가 없습니다.`)
       // 설명은 접어 둠: 펼치면 집계 제외 건수·기본 안내·자세한 계산 기준
       + `<details class="rx-sum-more"><summary>계산 기준 자세히 보기 <small class="muted">집계 제외 ${list.length - measured}건</small></summary>
       <span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상 또는 기준·종료 시각의 관측값 부족. KOSDAQ 대비 차이는 양쪽의 같은 시각 가격이 있을 때만 계산합니다.</span>
@@ -2486,7 +2484,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const at30 = reactionSamples(others, (x) => stepV(x, reactState.h));
       const lines = others.map((x) => ({ x, sr: series(x).filter(([m]) => m >= -30 && m <= X1) })).filter((o) => o.sr.length);
       return { until: X1, n: others.length, median: centerPath(list, -30, X1), othersMedian: median(at30),
-        others: lines.map((o) => o.sr), titles: lines.map((o) => `${o.x.ts ? `${dayLabel(o.x.ts)} · ` : ""}${o.x.title || ""}`) };
+        others: lines.map((o) => o.sr), ids: lines.map((o) => o.x.id) };
     } finally { reactState.vsKq = keep; }
   }
   // 엑셀: 지금 목록의 반응 (+30·+60분 모두)
@@ -2947,6 +2945,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       showOverview();
     }
     // 아무것도 고르지 않았을 때 오른쪽: 지금 목록의 기사 겹쳐 보기 (뉴스 반응 그래프)
+    const listEl = $("#art-list");
+    listEl.onmouseover = listEl.onfocusin = (ev) => { const b = ev.target.closest("button[data-id]"); if (b && rxHot) rxHot(b.dataset.id); };
+    listEl.onmouseleave = () => { if (rxHot) rxHot(null); };
     let lastSeen = null;      // [← 전체 기사 보기]로 닫은 기사: 겹쳐 보기 위에 '← 방금 본 기사'로 돌아가기
     function showOverview() {
       const box = $("#pr-detail"), act = $("#art-act");
