@@ -2182,7 +2182,7 @@
         <h3>뉴스 반응 (뉴스 목록 오른쪽)</h3>
         <ul>
           <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, 평균은 아래 숫자로 함께 적습니다.</li>
-          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있고, [엑셀로]는 지금 목록의 +30분·+60분 값을 내려받습니다.</li>
+          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있습니다. [✕ 전체로]로 겹쳐 보기에 간 뒤에는 목록의 기사를 누르거나 [← 방금 본 기사]로 돌아갑니다.</li>
           <li>기사를 고르면 같은 자리에 그 기사 그래프가 나오고, 지금 목록의 다른 기사(연한 회색)와 중앙값(파랑)이 +30분(또는 +60분)까지 겹칩니다. [전후 5거래일] 탭은 공개 전에 이미 움직였는지, 뒤에 이어졌는지 보는 참고용입니다.</li>
           <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다.</li>
           <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 중앙값 선이 0에서 꾸준히 벗어나는지를 보세요.</li>
@@ -2268,7 +2268,7 @@
     // Conflicting duplicate measurements must not depend on row order.
     return [...groups.values()].filter(vs => Math.max(...vs) - Math.min(...vs) < 1e-8).map(vs => vs[0]);
   }
-  const reactState = { kind: "all", mode: "all", h: "30", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "365", from: "", to: "" };   // 기간 기본: 최근 1년
+  const reactState = { kind: "all", mode: "all", h: "60", topic: "", vsKq: false, sort: "ts", dir: -1, pick: null, range: "365", from: "", to: "" };   // 기간 기본: 최근 1년
   // 공개 시점: 장 시작 전(전날 장 마감 뒤~당일 9시, 전날 종가부터) / 장중(9시~15시, 공개 직전 가격부터) / 15시 이후(그날 종가부터 다음 거래일)
   const REACT_MODES = [["all", "전체", ""], ["open", "장 시작 전", "전날 장 마감 뒤~당일 9시 공개: 전날 종가부터 그날 9시 이후"],
     ["session", "장중", "9시~15시 공개: 공개 직전 가격부터"], ["late", "15시 이후", "15시~15시 30분 공개: 남은 거래가 짧아 그날 종가부터 다음 거래일 9시 이후"]];
@@ -2321,15 +2321,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <label class="wide">분석 결과 / 검토 메모<textarea name="body" required rows="6"></textarea></label><label class="wide">확인 출처 (줄마다 URL)<textarea name="sources" rows="2"></textarea></label>
       <label>주관적 신뢰도<input name="confidence_label" placeholder="높음 / 보통 / 낮음 / 미평가"></label><label>재검토 상태<select name="review_status"><option>검토 대기</option><option>재검토 완료</option><option>추가 자료 필요</option></select></label>
       <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form>
-    ${fold('context','관련 소식·시장 상황',`${d.members.length+d.context.length}건`,`
-      ${d.members.map(m=>`<div class="obs-item"><span class="obs-dot">${kindLabel(m.kind)}</span><time>${esc(obsStamp(m.ts))}</time><br><strong>${obsLink(m.url,m.title)}</strong><p>${esc(m.office||'')} · 시각 출처 ${esc(obsSrc(m.time_source))}${m.original_ts&&m.original_ts.slice(0,16)!==(m.ts||'').slice(0,16)?` · 원래 시각 ${esc(obsStamp(m.original_ts))}`:''}</p></div>`).join('')}
-      ${d.context.map(x=>`<div class="obs-item"><span class="obs-dot muted">${x.kind==='disc'?'공시':'동시'}</span><time>${esc(obsStamp(x.ts))}</time><br><strong><a href="#/pr/${encodeURIComponent(x.id)}">${esc(x.title)}</a></strong>${x.event_id?` <button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">이 기사 보기</button>`:''}</div>`).join('')}
-      ${d.context.length?'':'<p class="obs-muted">앞뒤 하루의 다른 소식: 수집 정보 없음(실제 없음과 다름)</p>'}
-      <div class="obs-item"><span class="obs-dot">시장</span><strong>같은 시각 KOSDAQ</strong><p>+30분 ${pct(f.steps?.['30']?.kq)} · +60분 ${pct(f.steps?.['60']?.kq)}</p></div>
-      <div class="obs-item"><span class="obs-dot">업종</span><strong>그날 업종·테마</strong>${[...(d.market_context?.industry||[]),...(d.market_context?.themes||[])].map(x=>`<p>${esc(x.name)} <b class="${sgnCls(x.change_rate)}">${pctRaw(x.change_rate)}</b> <small>${esc(obsSrc(x.updated_at))}</small></p>`).join('')||'<p>수집 정보 없음(실제 없음과 다름)</p>'}<p class="obs-muted">${esc(d.market_context?.basis||'')} 같은 시간에 겹친 것은 인과관계가 아닙니다.</p></div>`)}
-    ${fold('notes','검토 기록',nNotes,`
-      <div class="obs-tabs" role="tablist" aria-label="검토 기록 종류">${NOTE_TABS.map(([k,t])=>`<button type="button" role="tab" data-note-tab="${k}" aria-selected="${noteTab===k}">${t} <small>${notesOf(k).length}</small></button>`).join('')}</div>
-      <div class="obs-tab-body">${noteTab==='manual_observation'?`<p class="obs-muted">${esc(factLine)}</p>`:''}${notesOf(noteTab).map(noteHtml).join('')||'<p class="obs-muted">저장된 기록 없음</p>'}</div>`)}
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
       <details class="obs-more"><summary>조건 바꿔 찾기</summary><div class="obs-form" id="obs-filters">
       <label>키워드 / 고객·파트너<input id="obs-query" type="search"></label><label>태그<select id="obs-tag"><option value="">전체</option>${[...new Set(index.items.flatMap(x=>x.business_tags))].sort().map(x=>`<option>${esc(x)}</option>`).join('')}</select></label>
@@ -2423,7 +2414,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     return lines.length;
   }
   // list: 지금 목록에 보이는 기사·공시의 반응 행. onPick(id): 그래프의 선을 누르면 그 기사 열기
-  function reactionOverview(host, list, { title = "공개 뒤 주가", onPick = null } = {}) {
+  function reactionOverview(host, list, { title = "공개 뒤 주가", onPick = null, onH = null } = {}) {
     list = list.filter(reactionComparable);
     host.innerHTML = `<section class="rx-ov" aria-label="여러 기사 겹쳐 보기">
       <p class="obs-eyebrow">지금 목록의 기사 겹쳐 보기</p><h3>${esc(title)} <small class="muted" id="rx-n"></small></h3>
@@ -2434,7 +2425,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <span class="rx-hover" id="rx-hover"></span><div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-gap-note" role="status"></p>
       <div class="obs-cards" id="rx-cards"></div><p class="note" id="rx-sum"></p></section>`;
     const draw = () => reactionSummary(list);
-    host.querySelector(".rx-ov-tools").onclick = (ev) => { const b = ev.target.closest("button[data-h]"); if (!b) return; reactState.h = b.dataset.h; host.querySelectorAll("button[data-h]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.h === reactState.h))); draw(); };
+    host.querySelector(".rx-ov-tools").onclick = (ev) => { const b = ev.target.closest("button[data-h]"); if (!b) return; reactState.h = b.dataset.h; host.querySelectorAll("button[data-h]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.h === reactState.h))); draw(); if (onH) onH(); };
     host.querySelector(".rx-ov-tools").onchange = (ev) => { if (ev.target.id === "rx-vskq") { reactState.vsKq = ev.target.checked; draw(); } };
     const plotEl = $("#rx-plot");
     plotEl.onclick = (ev) => { const gap = ev.target.closest("[data-gap]"); if (gap) { $("#rx-hover").textContent = gap.dataset.gap; $("#rx-gap-note").textContent = gap.dataset.gap; return; } const g = ev.target.closest("g[data-id]"); if (g && onPick) onPick(g.dataset.id); };
@@ -2452,13 +2443,15 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const mean = vs.reduce((a, b) => a + b, 0) / vs.length, fmt = (v) => reactState.vsKq ? points(v) : pct(v);
       return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${fmt(median(vs))}</b> · 평균 ${fmt(mean)} (${reactState.vsKq ? "시장 웃돈" : "오른"} ${up} · ${reactState.vsKq ? "시장 밑돈" : "내린"} ${dn} · ${reactState.vsKq ? "시장과 같음" : "보합"} ${vs.length - up - dn}, 중복 제외 ${vs.length}사건)`; };
     $("#rx-sum").innerHTML = (s(reactState.h) || `+${reactState.h}분 집계 가능한 자료가 없습니다.`)
-      + `<br><span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상 또는 기준·종료 시각의 관측값 부족. KOSDAQ 대비 차이는 양쪽의 같은 시각 가격이 있을 때만 계산합니다.</span>`
-      + `<br>동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.
+      // 설명은 접어 둠: 펼치면 집계 제외 건수·기본 안내·자세한 계산 기준
+      + `<details class="rx-sum-more"><summary>계산 기준 자세히 보기 <small class="muted">집계 제외 ${list.length - measured}건</small></summary>
+      <span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상 또는 기준·종료 시각의 관측값 부족. KOSDAQ 대비 차이는 양쪽의 같은 시각 가격이 있을 때만 계산합니다.</span>
+      <br>동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.
       <br>주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.
       <br>중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.
       <br>‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.
       <br>주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.
-      <details><summary>계산 기준 자세히 보기</summary>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다. 평균은 아래 숫자로 함께 적습니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
+      <br>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다. 평균은 아래 숫자로 함께 적습니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
       + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
     const buckets=new Map(); for(const x of list){const v=stepV(x,reactState.h);if(v==null)continue;const k=(x.event_key||x.id)+'|'+(x.start||'');if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(v);}
     const conflicts=[...buckets.entries()].filter(([,v])=>Math.max(...v)-Math.min(...v)>=1e-8);
@@ -2740,8 +2733,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span>
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
         <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
-        <button class="art-dd art-right" type="button" id="art-csv" title="지금 목록의 공개 뒤 주가 (+30·+60분)">엑셀로</button>
-        <details class="art-more editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
+        <details class="art-more art-right editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
           <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
           <span class="art-act" id="art-act"></span></div></details></div>
@@ -2892,7 +2884,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const sortSel = $("#art-sort");
     sortSel.value = artState.sort;
     sortSel.onchange = () => { artState.sort = sortSel.value; renderList(); };
-    $("#art-csv").onclick = () => reactionCsv(currentRows());
     const dayBox = $("#art-day");
     const renderDay = () => { dayBox.innerHTML = artState.day ? `<button type="button" class="chip-f" title="날짜 거르기 풀기">${+artState.day.slice(5, 7)}/${+artState.day.slice(8, 10)} 소식만 ✕</button>` : ""; };
     dayBox.onclick = () => { artState.day = null; renderDay(); renderList(); followTab(); };
@@ -2943,12 +2934,19 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       showOverview();
     }
     // 아무것도 고르지 않았을 때 오른쪽: 지금 목록의 기사 겹쳐 보기 (뉴스 반응 그래프)
+    let lastSeen = null;      // [✕ 전체로]로 닫은 기사: 겹쳐 보기 위에 '← 방금 본 기사'로 돌아가기
     function showOverview() {
       const box = $("#pr-detail"), act = $("#art-act");
       if (act) act.innerHTML = "";
       const rows = currentRows();
       if (!shown(artState.cat).length) { box.innerHTML = `<div class="empty"><strong>${artState.q ? "검색에 맞는 항목이 없습니다." : artState.cat === "disc" ? "보여줄 공시가 없습니다." : "보여줄 기사가 없습니다."}</strong>위 조건을 넓혀 보세요.</div>`; return; }
-      reactionOverview(box, rows, { title: `공개 뒤 주가 · ${LABEL[artState.cat]}`, onPick: (id) => openInPlace(id) });
+      // +30/+60분을 바꾸면 목록 줄의 숫자·정렬도 같은 기준으로
+      reactionOverview(box, rows, { title: `공개 뒤 주가 · ${LABEL[artState.cat]}`, onPick: (id) => openInPlace(id), onH: () => renderList() });
+      const back = lastSeen && (byId.get(lastSeen) || discById.get(lastSeen));
+      if (back) {
+        box.insertAdjacentHTML("afterbegin", `<div class="pr-close-row pr-back-row"><button type="button" class="btn small" id="pr-back" title="닫았던 기사를 다시 엽니다">← 방금 본 기사</button><span class="muted pr-back-title">${esc(back.title)}</span></div>`);
+        $("#pr-back", box).onclick = () => openInPlace(back.id);
+      }
     }
 
     function renderList() {
@@ -3049,7 +3047,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) $("#pr-detail").scrollIntoView({ block: "start", behavior: "smooth" });
     };
     const closeDetail = () => {
-      const was = current; current = null;
+      const was = current; current = null; lastSeen = was;
       history.pushState(null, "", "#/pr");
       $("#art-list").querySelectorAll("button[data-id]").forEach((x) => x.setAttribute("aria-current", "false"));
       showOverview();

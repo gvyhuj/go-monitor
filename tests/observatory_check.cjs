@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
 const src=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
 const fn=n=>{const a=src.indexOf('  function '+n+'(');return src.slice(a,src.indexOf('\n  }',a)+4);};
-function ctx(){const nodes=new Map();const $=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',textContent:'',dataset:{},querySelectorAll:()=>[]});return nodes.get(s);};const c={$ ,csvDownloadRows:()=>{},main:{},location:{hash:'#/react'},window:{addEventListener(){},removeEventListener(){}},setTimeout,clearTimeout,dashResize:null,artViewSeg:()=>'',esc:v=>String(v??''),sgnCls:()=>'',pct:v=>v==null?'-':(v*100).toFixed(2)+'%',points:v=>v==null?'-':(v*100).toFixed(2)+'%p',hhmm:t=>(t||'').slice(11,16),dayLabel:t=>t,isoDate:()=>'',MAIN_DISC:new Set(),BAR_TIP:'',toTime:t=>Date.parse(t+'Z')/1000};vm.createContext(c);vm.runInContext(fn('reactionAt')+fn('reactionSamples')+src.slice(src.indexOf('  const reactState ='),src.indexOf('  // 기사 대시보드:'))+'\nreactState.range="all";',c);return c;}
+function ctx(){const nodes=new Map();const $=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',textContent:'',dataset:{},querySelectorAll:()=>[]});return nodes.get(s);};const c={$ ,csvDownloadRows:()=>{},main:{},location:{hash:'#/react'},window:{addEventListener(){},removeEventListener(){}},setTimeout,clearTimeout,dashResize:null,artViewSeg:()=>'',esc:v=>String(v??''),sgnCls:()=>'',pct:v=>v==null?'-':(v*100).toFixed(2)+'%',points:v=>v==null?'-':(v*100).toFixed(2)+'%p',hhmm:t=>(t||'').slice(11,16),dayLabel:t=>t,isoDate:()=>'',MAIN_DISC:new Set(),BAR_TIP:'',toTime:t=>Date.parse(t+'Z')/1000};vm.createContext(c);vm.runInContext(fn('reactionAt')+fn('reactionSamples')+src.slice(src.indexOf('  const reactState ='),src.indexOf('  // 기사 대시보드:'))+'\nreactState.range="all";reactState.h="30";',c);return c;}
 const fixture=()=>({id:'a',event_key:'a',ts:'2026-10-06T09:06',title:'synthetic',kind:'ext',interval:1,kq_interval:5,start:'2026-10-06T09:06',steps:{30:{own:.03,kq:null,diff:null}},path:{own:[[0,0],[1,.01],[4,.04],[9,.09]],kq:[[4,.01],[9,.02]]}});
 const run=(c,code)=>vm.runInContext(code,c);   // const 값(reactState 등)은 vm 안에서만 보임
 // '여러 기사 겹쳐 보기'(뉴스 목록 오른쪽): host 안에 그래프·요약을 그림
@@ -18,7 +18,7 @@ test('T15 T25 T26: observed-only medians, gap labels and unchanged numeric expor
 test('T27: four default sentences and expandable detailed explanation',()=>{
  const c=ctx();ov(c,[fixture()]);const s=c.$('#rx-sum').innerHTML;
  for(const text of ['동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.','주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.','중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.','‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.'])assert.ok(s.includes(text));
- assert.match(s,/<details><summary>계산 기준 자세히 보기/);assert.match(s,/기사의 직접적인 효과를 뜻하지 않습니다/);
+ assert.match(s,/<details class="rx-sum-more"><summary>계산 기준 자세히 보기/);assert.match(s,/기사의 직접적인 효과를 뜻하지 않습니다/);
 });
 test('T16: question uses actual payload, missing data and subjective confidence language',()=>{
  const c=ctx();const q=c.observationQuestion({event_id:'ne-test',title:'fixture',observation:{intraday:null,missing_reason:'공개 시각 미상'},members:[{title:'source',url:'https://example.org'}],context:[],snapshot_version:'v-test'});
@@ -52,4 +52,8 @@ test('blue line is the median: one large mover does not pull it; mean is shown o
  assert.match(c.$('#rx-sum').innerHTML,/\+30분 중앙값 <b[^>]*>2\.00%<\/b> · 평균 11\.00%/);
  assert.match(c.$('#rx-cards').innerHTML,/\+30분 중앙값/);
  assert.match(svg,/실제 공통 시각의 중앙값/);
+});
+test('news list defaults to +60분 (the +30/+60 toggle still switches)',()=>{
+ const src0=require('node:fs').readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
+ assert.match(src0,/const reactState = \{[^}]*h: "60"/);
 });

@@ -74,7 +74,7 @@ test('news list overview explains distinct counts and the earlier calculation ti
     setTimeout,clearTimeout});
   const start = source.indexOf('  const reactState =');
   const end = source.indexOf('  // 기사 대시보드:',start);
-  vm.runInContext(fn('reactionAt') + fn('reactionSamples') + source.slice(start,end) + '\nreactState.range="all";',ctx);
+  vm.runInContext(fn('reactionAt') + fn('reactionSamples') + source.slice(start,end) + '\nreactState.range="all";reactState.h="30";',ctx);
   const items = [base,{...base,id:'b',steps:{}},{...base,id:'c',path:null,steps:{},untimed:true}];
   const parts = new Map(), host = {innerHTML:'',querySelector:s=>{if(!parts.has(s))parts.set(s,{});return parts.get(s);},querySelectorAll:()=>[]};
   ctx.reactionOverview(host, items);
