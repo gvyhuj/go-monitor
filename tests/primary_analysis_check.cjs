@@ -10,7 +10,9 @@ const summary = source.slice(source.indexOf("    function baselineBlock("), sour
 const context = {
   esc: (value) => String(value), sgnCls: () => "", pct: (value) => `${(value * 100).toFixed(2)}%`,
   points: (value) => `${(value * 100).toFixed(2)}%p`,
-  isoDate: () => "2026-04-23", byId: new Map(),
+  isoDate: () => "2026-10-29", byId: new Map(),
+  artState: { range: "all", from: "", to: "", mode: "all", topic: "", q: "" }, MODES: [["all", "전체"]], RANGES: [["all", "전체"], ["92", "3달"], ["183", "6달"], ["365", "1년"], ["custom", "직접 고르기"]],
+  shown: (cat) => context.groups[cat].filter((x) => context.artState.range === "all" || (x.day || x.ts || "").slice(0, 10) >= "2026-04-30"),
   groups: { pr: [{ day: "2026-10-15", outlets: 3 }, { day: "2026-09-01", outlets: 1 }, { day: "2025-12-01", outlets: 9 }], ext: [],
     disc: [{ ts: "2026-10-01T09:00", untimed: false }, { ts: "2026-08-01T15:30", untimed: true }] },
   d: { baseline: { from: "2024-10-23", to: "2026-10-22", cut: 0.052, top: 0.9, method: "시장 회귀", groups: {
@@ -28,10 +30,18 @@ assert.doesNotMatch(context.measureList(measure), /예상 대비|%p/);          
 assert.equal(context.measureList({ value: 0.9 }), "");
 const prCount = context.countLine("pr");
 assert.doesNotMatch(prCount, /최근 6개월 그린광학 보도자료/);
-assert.match(prCount, /한 달 평균 \(전체\)<\/small><b>\d+\.\d건/);
-assert.match(prCount, /한 건당 실린 매체 \(전체 평균\)<\/small><b>4\.3곳/);   // (3+1+9)/3, 6개월 밖 기사 포함
-assert.match(prCount, /전체 \(2025-12-01부터\)<\/small><b>3건/);
-assert.match(context.countLine("disc"), /시각을 아는 공시 \(6개월\)<\/small><b>1건/);
+assert.match(prCount, /기준<\/small><b>전체 기간<\/b>[\s\S]*한 달 평균<\/small><b[^>]*>\d+\.\d건/);
+assert.match(prCount, /한 건당 실린 매체<\/small><b[^>]*>4\.3곳/);   // (3+1+9)/3
+assert.match(prCount, /2025-12-01 ~ 2026-10-29[\s\S]*전체<\/small><b[^>]*>3건/);
+assert.match(context.countLine("disc"), /시각을 아는 공시<\/small><b[^>]*>1건/);
+// 기간 조건을 바꾸면 이름과 숫자가 따라감 (6달: 2026-04-30 이후 2건)
+context.artState.range = "183";
+const half = context.countLine("pr");
+assert.match(half, /최근 6달/);
+assert.match(half, /한 건당 실린 매체<\/small><b[^>]*>2\.0곳/);
+assert.match(half, /전체<\/small><b[^>]*>2건/);
+assert.match(half, /data-count="2"/);
+context.artState.range = "all";
 const box = context.baselineBlock();
 assert.match(box, /소식 없는 날과 비교/);
 assert.match(box, /<b>30%<\/b>.*40일 중 12일/s);

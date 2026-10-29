@@ -42,7 +42,7 @@
       COUNT_PREV.set(key, to);
       if (!had && !el.hasAttribute("data-from0")) return;      // 처음 보일 때는 그대로 (가격이 0원부터 올라가면 이상함). 기간 카드만 0부터
       if (!MOTION() || !isFinite(to) || from === to) return;
-      const f = el.dataset.fmt, fmt = (v) => f === "pct" ? pct(v) : f === "pts" ? points(v) : `${Math.round(v).toLocaleString("ko-KR")}${el.dataset.suf || ""}`;
+      const f = el.dataset.fmt, fmt = (v) => f === "pct" ? pct(v) : f === "pts" ? points(v) : f === "d1" ? `${v.toFixed(1)}${el.dataset.suf || ""}` : `${Math.round(v).toLocaleString("ko-KR")}${el.dataset.suf || ""}`;
       const t0 = performance.now(), D = 360;
       const step = (t) => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3);
         if (!el.isConnected) return; if (k < 1) { el.textContent = fmt(from + (to - from) * e); requestAnimationFrame(step); } else el.innerHTML = final; };
@@ -2930,28 +2930,37 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const discShown = () => discs.filter((x) => !artState.discTypes || artState.discTypes.has(x.pblntf || "?"));
     groups.disc = discShown();
 
-    const renderScore = () => { $("#pr-score").innerHTML = countLine(artState.cat); };     // 소식 없는 날 비교는 README로
+    const renderScore = () => { $("#pr-score").innerHTML = countLine(artState.cat); countUp($("#pr-score")); };     // 소식 없는 날 비교는 README로
     // 지금 탭에 몇 건이 실렸는지 (같은 반응일 기사는 한 건으로 셈). 공시 탭은 켜 둔 종류만
     const since = isoDate(new Date(Date.now() - 183 * 864e5));
+    // 위 요약 칸: 지금 목록 조건(탭·기간·공개 시점·주제·검색)에 맞는 기사로 계산. 기간 이름도 조건을 따라감. 숫자는 이전 값에서 새 값으로
     function countLine(cat) {
       const isDisc = cat === "disc";
-      const list = isDisc ? groups.disc : groups[cat];
+      const list = shown(cat);
       const dayOf = (x) => (isDisc ? x.ts : x.day || (byId.get(x.lead) || {}).ts || "").slice(0, 10);
-      const recent = list.filter((x) => dayOf(x) >= since);
       const first = list.map(dayOf).filter(Boolean).sort()[0];
-      const label = isDisc ? "선택한 종류 공시" : cat === "pr" ? "그린광학 보도자료" : "외부 기사";
+      const today = isoDate(new Date()), r = artState.range;
+      // 기간: 시작일 ~ 끝일 (전체는 첫 기사부터 오늘까지)
+      const from = r === "all" ? first : r === "custom" ? artState.from || first : isoDate(new Date(Date.now() - +r * 864e5));
+      const to = r === "custom" && artState.to ? artState.to : today;
+      const name = r === "all" ? "전체" : r === "custom" ? `${(from || "…").slice(2)}~${(to || "…").slice(2)}` : (RANGES.find((x) => x[0] === r) || [, ""])[1];
       const outs = (x) => x.outlets || 1;
       const media = list.reduce((sum, x) => sum + outs(x), 0);
-      const avgOut = list.length ? media / list.length : null;      // 한 건당 실린 매체: 전체 기준
-      // 한 달 평균: 전체 기간(첫 기록 ~ 오늘)의 달 수로 나눔
-      const months = first ? Math.max(1, (Date.now() - Date.parse(first + "T00:00:00+09:00")) / (30.44 * 864e5)) : null;
+      const avgOut = list.length ? media / list.length : null;
+      const months = from ? Math.max(1, (Date.parse(to + "T00:00:00+09:00") - Date.parse(from + "T00:00:00+09:00") + 864e5) / (30.44 * 864e5)) : null;
       const perMonth = months ? list.length / months : null;
+      const num = (v, key, txt, fmt = "", suf = "") => v == null ? "-" : `<b data-count="${v}" data-key="sc-${cat}-${key}" data-from0${fmt ? ` data-fmt="${fmt}"` : ""}${suf ? ` data-suf="${suf}"` : ""}>${txt}</b>`;
+      // 맨 왼쪽: 지금 고른 기준 (탭 · 기간 · 공개 시점 · 주제 · 검색어), 그 옆 숫자 칸은 이 기준으로 계산
+      const LABELS = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
+      const extra = [artState.mode !== "all" ? (MODES.find((m) => m[0] === artState.mode) || [, ""])[1] : "", artState.topic, artState.q ? `검색 “${artState.q}”` : ""].filter(Boolean);
       return `<div class="score-line">
-        <span><small>한 달 평균 (전체)</small><b>${perMonth != null ? perMonth.toFixed(1) + "건" : "-"}</b></span>
-        ${isDisc ? `<span><small>시각을 아는 공시 (6개월)</small><b>${recent.filter((x) => !x.untimed).length}건</b></span>`
-          : `<span><small>한 건당 실린 매체 (전체 평균)</small><b>${avgOut != null ? avgOut.toFixed(1) + "곳" : "-"}</b></span>`}
-        <span><small>전체${first ? ` (${esc(first)}부터)` : ""}</small><b>${list.length}건</b>${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
-          : ` <small>보도 ${media}건</small>`}</span></div>`;
+        <span class="sc-basis"><small>기준</small><b>${esc(r === "all" ? "전체 기간" : r === "custom" ? "직접 고른 기간" : `최근 ${name}`)}</b>
+          <em>${esc(LABELS[cat] || "")}${from ? ` · ${esc(from)} ~ ${esc(to)}` : ""}${extra.length ? ` · ${esc(extra.join(" · "))}` : ""}</em></span>
+        <span><small>한 달 평균</small>${num(perMonth, "month", perMonth != null ? perMonth.toFixed(1) + "건" : "-", "d1", "건")}</span>
+        ${isDisc ? `<span><small>시각을 아는 공시</small>${num(list.filter((x) => !x.untimed).length, "timed", `${list.filter((x) => !x.untimed).length}건`, "", "건")}</span>`
+          : `<span><small>한 건당 실린 매체</small>${num(avgOut, "outlets", avgOut != null ? avgOut.toFixed(1) + "곳" : "-", "d1", "곳")}</span>`}
+        <span><small>전체</small>${num(list.length, "n", `${list.length}건`, "", "건")}${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
+          : ` <small title="묶인 줄마다 실린 매체 수를 모두 더한 값">매체 기사 합계 ${media}개</small>`}</span></div>`;
     }
     function baselineBlock() { return baselineHtml(d.baseline); }
 
