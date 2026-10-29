@@ -38,8 +38,9 @@
   function countUp(root) {
     if (!root) return;
     root.querySelectorAll("[data-count]").forEach((el) => {
-      const to = +el.dataset.count, key = el.dataset.key || "", from = COUNT_PREV.has(key) ? COUNT_PREV.get(key) : 0, final = el.innerHTML;
+      const to = +el.dataset.count, key = el.dataset.key || "", had = COUNT_PREV.has(key), from = had ? COUNT_PREV.get(key) : 0, final = el.innerHTML;
       COUNT_PREV.set(key, to);
+      if (!had && !el.hasAttribute("data-from0")) return;      // 처음 보일 때는 그대로 (가격이 0원부터 올라가면 이상함). 기간 카드만 0부터
       if (!MOTION() || !isFinite(to) || from === to) return;
       const f = el.dataset.fmt, fmt = (v) => f === "pct" ? pct(v) : f === "pts" ? points(v) : `${Math.round(v).toLocaleString("ko-KR")}${el.dataset.suf || ""}`;
       const t0 = performance.now(), D = 360;
@@ -48,14 +49,7 @@
       requestAnimationFrame(step);
     });
   }
-  // 같은 요소가 옮겨 가는 느낌 (목록 제목 → 오른쪽 상세 제목): 시작 위치·크기에서 제자리로
-  function flipFrom(el, r0) {
-    if (!el || !r0 || !MOTION() || !el.animate) return;
-    const r1 = el.getBoundingClientRect(); if (!r1.width) return;
-    const dx = r0.left - r1.left, dy = r0.top - r1.top, sc = Math.max(.5, Math.min(1.2, r0.height / r1.height));
-    el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: "0 0", opacity: .5 }, { transform: "none", transformOrigin: "0 0", opacity: 1 }],
-      { duration: 340, easing: EASE });
-  }
+
   // 10% 이상 오른 날: 하루에 딱 한 번 축하 종이 조각 (이 기기 기준, 동작 줄이기면 안 함)
   function confettiOnce(day, chg) {
     if (!(chg >= 0.10) || !day || !MOTION()) return false;
@@ -898,7 +892,7 @@
       return `<p class="ps-range">${esc(first.date)} ~ ${esc(last.date)} · ${span.length}거래일</p>
         <div class="ps-cards">
           <div class="ps-card"><small>기간 등락 · 시장 대비</small>
-            <div class="ps-row"><span class="ps-big ${sgnCls(own)}" ${own == null ? "" : `data-count="${own}" data-fmt="pct" data-key="ps-own"`}>${own == null ? "-" : pct(own)}</span><span>KOSDAQ <b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="ps-kq"`}>${kq == null ? "-" : pct(kq)}</b></span></div>
+            <div class="ps-row"><span class="ps-big ${sgnCls(own)}" ${own == null ? "" : `data-count="${own}" data-fmt="pct" data-key="ps-own" data-from0`}>${own == null ? "-" : pct(own)}</span><span>KOSDAQ <b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="ps-kq" data-from0`}>${kq == null ? "-" : pct(kq)}</b></span></div>
             <div class="ps-sub">시장보다 <b class="${sgnCls(own != null && kq != null ? own - kq : null)}">${own != null && kq != null ? points(own - kq) : "-"}</b></div>
             <div class="ps-hint">${base ? `${won(base)}원 → ${won(last.close)}원` : ""}</div></div>
           <div class="ps-card"><small>기간 최고 · 최저</small>
@@ -906,7 +900,7 @@
             <button type="button" class="ps-row ps-go" data-goto="${esc(lo.date)}"><b>${won(lo.low)}</b><span>${md(lo.date)}</span></button>
             <div class="ps-hint">누르면 그날 줄로</div></div>
           <div class="ps-card"><small>오른 날 · 내린 날</small>
-            <div class="ps-row"><button type="button" class="ps-go ps-n up" data-quick="up" data-count="${up}" data-suf="일" data-key="ps-up">${up}일</button><button type="button" class="ps-go ps-n down" data-quick="down" data-count="${dn}" data-suf="일" data-key="ps-dn">${dn}일</button></div>
+            <div class="ps-row"><button type="button" class="ps-go ps-n up" data-quick="up" data-count="${up}" data-suf="일" data-key="ps-up" data-from0>${up}일</button><button type="button" class="ps-go ps-n down" data-quick="down" data-count="${dn}" data-suf="일" data-key="ps-dn" data-from0>${dn}일</button></div>
             <div class="ps-sub">±5% 이상 <b>${big}일</b>${evN ? ` <span class="ps-tag">급등락 ${evN}</span>` : ""}</div>
             <div class="ps-hint">누르면 그 날들만 표에</div></div>
           <button type="button" class="ps-card ps-news" data-news>
@@ -1107,8 +1101,8 @@
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
-        <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b></span>
+          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span></span>
+        <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
     // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
@@ -1179,7 +1173,7 @@
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
-      if (h) h.innerHTML = headHtml();
+      if (h) { h.innerHTML = headHtml(); countUp(h); }      // 날짜를 바꾸면 가격·등락·KOSDAQ 숫자가 이전 값에서 새 값으로
       if (s) s.innerHTML = sideHtml();
       // 가장 최근 거래일이 +10% 이상: 하루에 한 번 축하 종이 조각
       if (calState.sel === latest && price[latest]) { const lv = liveFor(latest); confettiOnce(latest, lv ? lv.chg : price[latest].change); }
@@ -1223,10 +1217,13 @@
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
+    let drawnKey = "";      // 선 그리기는 기간이 바뀔 때만 (창 크기 변화로 다시 그릴 때는 안 함)
     function lineChart(H = 280) {
       const el = $("#rec-chart");
       if (calState.range === "1d") return;          // 1일 탭은 위 칸에 그날 1분 차트 (dayChart)
       const rows = inRange();
+      const key = rows.length ? `${rows[0].date}~${rows[rows.length - 1].date}` : "";
+      const drawNow = key !== drawnKey; drawnKey = key;
       if (!rows.length) { el.innerHTML = `<p class="muted day-nochart">고른 기간에 거래일이 없습니다.</p>`; return; }
       const W = Math.max(320, Math.round(el.clientWidth || 760)), L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
@@ -1255,7 +1252,7 @@
           ${rows.map((x, i) => (i % every === 0) ? `<text class="dl-ax" x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(x.date.slice(5).replace("-", "."))}</text>` : "").join("")}
           ${si >= 0 ? `<line class="rc-sel" x1="${X(si)}" x2="${X(si)}" y1="${T}" y2="${H - B}"/>` : ""}
           <path class="rc-area" d="${area}" fill="url(#rc-fill-${up ? "up" : "down"})"/>
-          <path class="rc-line ${up ? "up" : "down"}" d="${path}"/>
+          <path class="rc-line ${up ? "up" : "down"}" pathLength="1" d="${path}"/>
           ${marks}
           <line class="dl-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
           <line class="rc-hline" x1="${L}" x2="${W - R}" y1="0" y2="0" visibility="hidden"/>
@@ -1308,6 +1305,7 @@
         if (hot) { hot.classList.remove("hot"); hot = null; }
       });
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
+      if (drawNow) enter(el, "mv-draw-line");      // 종가 선이 왼쪽에서 오른쪽으로 그려짐
     }
 
     // 1일 탭: 그날 급등·급락 줄이 없거나 적어 왼쪽 칸이 오른쪽 '주요 숫자'보다 짧으면, 남는 만큼 1분 차트를 키워 빈칸을 없앰
@@ -1351,6 +1349,7 @@
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
+      enter($(".day-chart", art), "mv-reveal");      // 그날 1분 차트도 왼쪽→오른쪽으로 나타남
       chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
         news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
@@ -3175,8 +3174,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const openInPlace = (id) => {
       if (id === current) return;
       current = id;
-      const srcT = [...$("#art-list").querySelectorAll("button[data-id]")].find((x) => x.dataset.id === id);
-      flipSrc = srcT && srcT.querySelector(".t") ? srcT.querySelector(".t").getBoundingClientRect() : null;
       history.pushState(null, "", `#/pr/${id}`);
       $("#art-list").querySelectorAll("button[data-id]").forEach((x) => x.setAttribute("aria-current", String(x.dataset.id === id)));
       loadPR(id);
@@ -3296,7 +3293,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (rs) rs.onclick = () => send(null);
   }
 
-  let flipSrc = null;      // 목록에서 누른 기사 제목의 위치 (상세 제목이 여기서 출발)
   async function loadPR(id) {
     const box = $("#pr-detail");
     box.innerHTML = `<p class="loading">계산하는 중…</p>`;
@@ -3403,7 +3399,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
     box.innerHTML = html;
     enter(box);
-    flipFrom($(".pr-title", box), flipSrc); flipSrc = null;      // 목록에서 누른 제목이 오른쪽 제목 자리로 옮겨 가는 느낌
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
     if (!isDisc) bindTimeForm(box, a);
