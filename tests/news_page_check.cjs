@@ -119,6 +119,8 @@ async function main() {
       assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
       await page.locator('#pr-detail [data-rxr="5"]').click();
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
+      assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pr-cards small, #pr-cards strong")]
+        .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > e.parentElement.getBoundingClientRect().right + 1).map((e) => e.textContent)), [], "카드 글자가 잘리지 않음");
       for (const label of ["유사 사건"]) {
         await page.locator("#pr-detail .obs-fold > summary", { hasText: label }).first().waitFor();
       }
