@@ -27,3 +27,13 @@ test('T12 T14: chart changes actual window and renders ratios without filling nu
  const html=c.observationChart(d,'5',false);assert.match(html,/4.00%/);assert.match(html,/-5거래일/);assert.match(html,/관측점 2 \/ KOSDAQ 3/);
  assert.doesNotMatch(html,/<path class="obs-own"/); // No bridge across missing day.
 });
+test('three article kinds; legacy company announcement is shown and filtered as an external article',async()=>{
+ const c=ctx(),a=fixture();
+ c.api=async()=>({items:[{...a,event_kind:'external_company_announcement'},{...a,id:'b',event_key:'b',kind:'pr',event_kind:'company_press_release'}]});await c.pageReact();
+ const ctl=c.$('#rx-ctl').innerHTML;
+ assert.deepEqual([...ctl.matchAll(/data-k="kind" data-v="(\w+)"[^>]*>([^<]+)</g)].map(m=>[m[1],m[2]]),[['all','전체'],['pr','당사 보도자료'],['ext','외부기사'],['disc','주요 공시']]);
+ assert.doesNotMatch(ctl+c.$('#rx-table').innerHTML,/외부 기업 발표/);
+ const click=v=>c.$('#rx-ctl').onclick({target:{closest:()=>({dataset:{k:'kind',v}})}});
+ click('ext');let rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="a"/);assert.doesNotMatch(rows,/data-id="b"/);assert.match(rows,/>외부기사</);
+ click('pr');rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="b"/);assert.doesNotMatch(rows,/data-id="a"/);assert.match(rows,/>당사 보도자료</);
+});

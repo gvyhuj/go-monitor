@@ -237,6 +237,48 @@ def test_confirmed_source_classification_is_retained(database,kind):
     assert ds[eid]['primary_source_url']=='https://example.org/source'
     assert ds[eid]['history'][0]['action']=='news_event_meta'
 
+def test_three_kinds_only():
+    assert ob.KINDS==('company_press_release','external_article','disclosure')
+
+def test_legacy_company_announcement_reads_as_external_article_and_is_preserved(database):
+    article(database,'a')
+    eid=event(database,'a')
+    # A record saved by the earlier four-kind build, written directly so the stored value is untouched.
+    database.execute('UPDATE news_events SET metadata=? WHERE id=?',(json.dumps({'event_kind':'external_company_announcement','publisher':'고객사'}),eid))
+    database.execute("INSERT INTO news_event_history(event_id,changed_at,action,payload) VALUES(?,?,?,?)",
+                     (eid,'2026-10-20T10:00:00+09:00','news_event_meta',json.dumps({'before':{},'after':{'event_kind':'external_company_announcement'}})))
+    database.execute("UPDATE articles SET kind_override='external_company_announcement' WHERE id='a'")
+    rows=[row('a')]
+    ds,_=ob.build(database,'X',rows)
+    assert ds[eid]['event_kind']=='external_article' and rows[0]['kind']=='ext'
+    assert ds[eid]['legacy_event_kind']=='external_company_announcement'
+    assert ds[eid]['publisher']=='고객사'
+    assert {m['kind'] for m in ds[eid]['members']}=={'ext'}
+    stored=database.execute('SELECT metadata FROM news_events WHERE id=?',(eid,)).fetchone()[0]
+    assert json.loads(stored)['event_kind']=='external_company_announcement'
+    assert database.execute("SELECT kind_override FROM articles WHERE id='a'").fetchone()[0]=='external_company_announcement'
+    assert any('external_company_announcement' in h['payload'] for h in ds[eid]['history'])
+
+def test_legacy_kind_request_is_saved_as_external_article(database):
+    article(database,'a')
+    eid=event(database,'a')
+    ob.mutate(database,{'type':'news_event_meta','event_id':eid,'event_kind':'external_company_announcement'})
+    meta=json.loads(database.execute('SELECT metadata FROM news_events WHERE id=?',(eid,)).fetchone()[0])
+    assert meta['event_kind']=='external_article'
+    change=json.loads(database.execute("SELECT payload FROM news_event_history WHERE event_id=? AND action='news_event_meta'",(eid,)).fetchone()[0])
+    assert change['requested_event_kind']=='external_company_announcement'
+    with pytest.raises(ValueError):
+        ob.mutate(database,{'type':'news_event_meta','event_id':eid,'event_kind':'unknown_kind'})
+
+def test_archived_legacy_record_reads_as_external_article(database):
+    article(database,'a')
+    eid=event(database,'a')
+    database.execute('INSERT OR REPLACE INTO news_event_records VALUES(?,?)',(eid,json.dumps(
+        {'event_id':eid,'event_kind':'external_company_announcement','members':[{'id':'a','kind':'external_company_announcement'}],'notes':[]})))
+    ds,_=ob.build(database,'X',[])
+    assert ds[eid]['archived_source'] and ds[eid]['event_kind']=='external_article'
+    assert ds[eid]['legacy_event_kind']=='external_company_announcement' and ds[eid]['members'][0]['kind']=='ext'
+
 def test_link_preserves_press_metadata_and_distribution(database):
     article(database,'a');article(database,'b')
     a=event(database,'a');b=event(database,'b')

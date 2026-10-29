@@ -18,7 +18,7 @@
 | main DB 구조 이행 | 통과 | main `3800540`의 DB 코드로 만든 합성 DB에 현재 init/migrate 두 번 적용. 기존 27개 테이블의 모든 행 동일, integrity_check=ok |
 | 사이트 데이터 | 통과 | 실제 refresh_items/build로 12개 산출물 생성. 전체 복호화 후 원래 JSON 일치. 합성 기사 제목 평문 및 DB 파일이 정적 산출물에 없는지 확인 |
 | DB 백업·복원 | 통과 | 합성 DB 암호화 백업·복원, 전체 테이블 행 동일, integrity_check=ok, 원본 해시 불변, 오답 비밀번호 거부 |
-| 기존 public_refresh_check | 실패/미완료 | Edge 대신 시스템 Chromium으로 브라우저 실행까지 성공. `#pr-detail .verdict-box` 표시 대기에서 30초 시간 초과. 스크립트가 숫자/pr숫자 API 형식과 다른 demo ID 및 기본 비활성 통계 상세를 전제로 함. 숫자 1001 기사 상세는 두 크기에서 별도 확인. 자동 갱신·입력 중 보류·선택 유지 시나리오 전체는 통과하지 못함 |
+| public_refresh_check | 통과 (후속 보완) | 아래 ‘후속 보완’ 참조. 합성 정적 사이트·Playwright Chromium으로 자동 갱신·입력 중 보류·선택 유지 확인 |
 | 실시간 운영 수집·운영 DB | 미검증 | 실제 운영 데이터/비밀키/API를 사용하지 않음. 파싱·저장·자동화 회귀 통과가 운영 API 가용성이나 실제 데이터 정확성을 보장하지 않음 |
 | 실제 Pages 배포 | 미실행 | 로컬 산출물·암호화·워크플로 조건만 검증. GitHub 권한·운영 secret·실제 배포 성공 여부는 미확인 |
 
@@ -30,4 +30,29 @@
 
 ## 남은 확인
 
-자동 테스트와 합성 환경의 로컬/정적 UI 검증은 통과했으나, 기존 public_refresh_check 시나리오는 미완료다. 운영 원시 시세, 과거 묶음의 사실관계, 배포 시각 근거 및 운영 비밀키로의 복원은 확인하지 않았다. 따라서 이를 포함한 ‘운영 전체 검증 완료’로 해석하면 안 된다. main 병합 및 운영 배포는 수행하지 않았다.
+자동 테스트와 합성 환경의 로컬/정적 UI 검증은 통과했다(public_refresh_check는 아래 후속 보완에서 통과). 운영 원시 시세, 과거 묶음의 사실관계, 배포 시각 근거 및 운영 비밀키로의 복원은 확인하지 않았다. 따라서 이를 포함한 ‘운영 전체 검증 완료’로 해석하면 안 된다. main 병합 및 운영 배포는 수행하지 않았다.
+
+## 후속 보완 (2026-10-29)
+
+### 기사 분류 3종 통일
+
+- 사건 관찰 분류를 기존 뉴스 화면과 같은 세 가지(당사 보도자료 `company_press_release` / 외부기사 `external_article` / 공시 `disclosure`)로 통일했다. 뉴스 반응 필터의 ‘외부 기업 발표’ 버튼과 상세 수정 선택지를 제거했다.
+- 기존 데이터 보존: `news_events.metadata`, `news_event_history`, `news_event_records`, `articles.kind_override`에 저장된 `external_company_announcement`는 바꾸지 않는다. 읽을 때만 외부기사로 해석하고 사건 상세에 `legacy_event_kind`로 원래 값을 남긴다. 이전 화면에서 보낸 요청이 늦게 들어와도 외부기사로 저장하고 이력에 `requested_event_kind`를 기록한다. 그 밖의 값은 계속 거부한다.
+- 뉴스 반응 그래프의 평균선(`rx-avg`)과 CSS는 변경하지 않았다.
+- 검증: `tests/test_observatory.py`에 3종 상수, 저장값·이력·`kind_override` 보존, 보관 기록 정규화, 이전 값 요청 처리 회귀 추가. `tests/observatory_check.cjs`에 필터 버튼 4개(전체 포함)·표 표시·필터 동작 회귀 추가(이전 app.js에서 실패 확인). 이전 분류가 저장된 합성 사이트를 실제 Chromium 1280×900 / 390×844로 열어 필터·표·상세 선택지가 3종으로 보이고 ‘외부 기업 발표’ 문구 없음, pageerror 없음, 가로 넘침 0px 확인.
+
+### public_refresh_check 현행화
+
+- 이전 스크립트는 `demo` ID와 기본 비활성 통계 상세(`.verdict-box`, 예상 대비 차이)를 전제해 현행 사이트에서 끝나지 않았다. 이제 `tests/fixtures/public_refresh_site.py`가 합성 DB로 실제 `refresh_items`/`build`를 실행해 숫자 ID 기사 3건의 암호화 사이트를 만들고, 검사 서버는 `live.published_at`과 상세 매체명만 배포 차수별로 바꾼다.
+- 시나리오: 새 배포 자동 반영(같은 기사·주소·목록 선택 유지) → 목록에서 다른 기사 선택 → 검색 입력 중 갱신 보류(입력값·포커스 유지) → 입력을 벗어난 뒤 보류된 배포 반영(두 번째 기사 선택 유지) → 새 배포가 없으면 다시 그리지 않음. 매 단계 실제 `live.bin` 재요청을 확인한 뒤 판정하며 pageerror가 없어야 한다.
+- 실행: `node tests/public_refresh_check.cjs` (사이트 경로 인자 생략 시 자동 생성; 기존처럼 경로 지정 가능). 기본은 설치된 Playwright Chromium, `PW_CHANNEL=msedge`로 Edge 사용.
+- 검사 자체 검증: app.js에서 입력 중 보류 조건 제거 / 선택 유지 제거 / 자동 반영 중단 / 변경 없을 때도 다시 그리기를 각각 임시로 주입했을 때 모두 실패함을 확인하고 원복했다.
+- CI(`observatory-tests.yml`)에는 Playwright 설치가 필요해 이번에는 추가하지 않았다.
+
+### 실행 결과
+
+- `.venv/bin/python -m pytest tests -q` — **235 passed**
+- `node --check web/app.js`; `node --test tests/display_consistency_check.cjs tests/observatory_check.cjs tests/reaction_alignment_check.cjs tests/dashboard_badges_check.cjs tests/primary_analysis_check.cjs` — **16 passed**; `node tests/dashboard_badges_check.cjs`, `node tests/primary_analysis_check.cjs` 통과
+- `node tests/public_refresh_check.cjs` — 통과
+- `git diff --check` 통과
+- 운영 DB·운영 배포·main 병합은 수행하지 않았다.

@@ -12,7 +12,19 @@ from datetime import datetime, timedelta
 from . import yahoo
 
 VERSION = 'observatory-2-before-publication'
-KINDS = ('company_press_release', 'external_company_announcement', 'external_article', 'disclosure')
+KINDS = ('company_press_release', 'external_article', 'disclosure')
+# Earlier builds offered a fourth kind. Stored values and history stay as written; they are read as external articles.
+LEGACY_KINDS = {'external_company_announcement': 'external_article'}
+
+
+def normalize_kind(kind):
+    return LEGACY_KINDS.get(kind, kind)
+
+
+def normalize_member_kind(kind):
+    return 'ext' if kind in LEGACY_KINDS else kind
+
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS article_candidates (a TEXT, b TEXT, score REAL, PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS news_calculation_migrations (version TEXT PRIMARY KEY, changed_at TEXT NOT NULL, payload TEXT NOT NULL);
@@ -100,6 +112,9 @@ def mutate(conn, item):
     elif action == 'news_event_meta':
         meta = json.loads(row['metadata'])
         before = dict(meta)
+        requested = item.get('event_kind')
+        if 'event_kind' in item:
+            item = {**item, 'event_kind': normalize_kind(requested)}
         for key in ('event_kind','business_tags','publisher','partner','primary_source_url','first_public_at',
                     'time_source','time_status','pr_distributed_at','analysis_at','followup_candidate'):
             if key in item:
@@ -119,8 +134,11 @@ def mutate(conn, item):
                 raise ValueError('태그는 목록')
             meta['business_tags'] = list(dict.fromkeys(str(t)[:80] for t in meta['business_tags']))[:30]
         conn.execute('UPDATE news_events SET metadata=? WHERE id=?', (dumps(meta),eid))
+        change = {'before':before,'after':meta}
+        if requested in LEGACY_KINDS:
+            change['requested_event_kind'] = requested
         conn.execute('INSERT INTO news_event_history(event_id,changed_at,action,payload) VALUES(?,?,?,?)',
-                     (eid,stamp(),action,dumps({'before':before,'after':meta})))
+                     (eid,stamp(),action,dumps(change)))
     elif action == 'news_event_split':
         member = str(item.get('member_id',''))
         if not conn.execute('SELECT 1 FROM news_event_members WHERE member_id=? AND event_id=?',(member,eid)).fetchone():
@@ -278,7 +296,7 @@ def build(conn,symbol,rows):
                 'time_source':a.get('time_from') or a.get('source') or ('manual' if aid.startswith('pr') else 'unknown'),
                 'original_ts':a.get('ts_auto') or a.get('ts') or r.get('ts')}
         if a.get('kind_override'):
-            member['kind']=a['kind_override']
+            member['kind']=normalize_member_kind(a['kind_override'])
         if r.get('kind')=='disc':
             raw=conn.execute('SELECT * FROM disclosures WHERE no=?',(aid.removeprefix('d'),)).fetchone()
             if raw:
@@ -298,7 +316,7 @@ def build(conn,symbol,rows):
             groups[eid].append({'id':sid,'title':raw['title'],'ts':raw['ts'],'office':raw['office'],
                 'url':raw['url'],'collected_at':raw['first_seen'],'original_ts':raw.get('ts_auto') or raw['ts'],
                 'time_source':raw.get('time_from') or raw.get('source') or 'unknown',
-                'kind':'pr' if raw.get('kind_override')=='pr' else 'external_company_announcement' if raw.get('kind_override')=='external_company_announcement' else 'ext'})
+                'kind':'pr' if raw.get('kind_override')=='pr' else 'ext'})
     result={}
     for eid,members in groups.items():
         saved=conn.execute('SELECT * FROM news_events WHERE id=?',(eid,)).fetchone()
@@ -308,7 +326,7 @@ def build(conn,symbol,rows):
         first=min(valid,key=lambda m:m['ts']) if valid else members[0]
         public=meta.get('first_public_at',first.get('ts') if valid else None)
         press=[m for m in members if m.get('kind')=='pr']
-        kind=meta.get('event_kind') or ('company_press_release' if press else 'disclosure' if any(m.get('kind')=='disc' for m in members) else 'external_company_announcement' if any(m.get('kind')=='external_company_announcement' for m in members) else 'external_article')
+        kind=normalize_kind(meta.get('event_kind')) or ('company_press_release' if press else 'disclosure' if any(m.get('kind')=='disc' for m in members) else 'external_article')
         # Article publication is not the issuer's distribution time.
         release_times=[]
         for m in press:
@@ -320,6 +338,7 @@ def build(conn,symbol,rows):
         linked_press=[x for x in linked_metadata if x.get('event_kind')=='company_press_release']
         if press or linked_press:
             kind='company_press_release'
+        legacy_kind=meta.get('event_kind') if meta.get('event_kind') in LEGACY_KINDS else None
         release_times += [x['pr_distributed_at'] for x in linked_press if x.get('pr_distributed_at')]
         member_evidence=[x[0] for x in conn.execute('SELECT evidence FROM news_event_members WHERE event_id=?',(eid,))]
 
@@ -337,7 +356,7 @@ def build(conn,symbol,rows):
           'pr_distributed_at':meta.get('pr_distributed_at') or (min(release_times) if release_times else None),'primary_source_url':meta.get('primary_source_url') or first.get('url'),
           'analysis_at':meta.get('analysis_at') or public,'members':members,'observation':obs,'context':context,
           'notes':notes,'history':history,'identity_status':'confirmed' if any(h['action']=='news_event_link' for h in history) or (len(members)>1 and all(x=='confirmed_link' for x in member_evidence)) else 'review_required' if len(members)>1 else 'individual', 'same_event_candidates':[dict(x) for x in conn.execute('SELECT * FROM article_candidates WHERE a IN (SELECT member_id FROM news_event_members WHERE event_id=?) OR b IN (SELECT member_id FROM news_event_members WHERE event_id=?)',(eid,eid))],'recomputed_at':saved_at,'snapshot_version':digest,
-          'followup_candidate':meta.get('followup_candidate',False), 'classification_sources':[{'member_id':m['id'],'kind':m.get('kind'),'url':m.get('url')} for m in members]+linked_metadata, 'source_note':'기사 공개 시각은 보도자료 배포 시각과 다릅니다. 기존 company 분류는 당사 PR 확정 근거가 아닙니다. 발표 주체를 확인하여 수정하세요.'}
+          'followup_candidate':meta.get('followup_candidate',False), 'classification_sources':[{'member_id':m['id'],'kind':m.get('kind'),'url':m.get('url')} for m in members]+linked_metadata, 'legacy_event_kind':legacy_kind, 'source_note':'기사 공개 시각은 보도자료 배포 시각과 다릅니다. 기존 company 분류는 당사 PR 확정 근거가 아닙니다. 발표 주체를 확인하여 수정하세요.'}
         result[eid]['market_context'] = {
             'industry':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM industry_daily WHERE date=?',(obs.get('day'),))],
             'themes':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM theme_daily WHERE date=? AND mine=1',(obs.get('day'),))],
@@ -361,6 +380,11 @@ def build(conn,symbol,rows):
         if eid not in result and resolve(conn,eid)==eid:
             result[eid]=json.loads(payload)
             result[eid]['archived_source']=True
+            if result[eid].get('event_kind') in LEGACY_KINDS:
+                result[eid]['legacy_event_kind']=result[eid]['event_kind']
+                result[eid]['event_kind']=normalize_kind(result[eid]['event_kind'])
+            for m in result[eid].get('members',[]):
+                m['kind']=normalize_member_kind(m.get('kind'))
             result[eid]['notes']=[{'id':r['id'],'created_at':r['created_at'],**json.loads(r['payload'])} for r in conn.execute('SELECT * FROM news_event_notes WHERE event_id=? ORDER BY created_at,id',(eid,))]
     aliases={r[0]:resolve(conn,r[1]) for r in conn.execute('SELECT * FROM news_event_aliases')}
     return result,aliases
