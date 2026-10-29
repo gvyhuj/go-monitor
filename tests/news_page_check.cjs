@@ -80,8 +80,11 @@ async function main() {
       assert.equal(await list.first().getAttribute("data-id"), "2002");
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
+      // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
+      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(1년\)[\s\S]*한 건당 실린 매체 \(1년 평균\)[\s\S]*1년 \(\d{4}-\d\d-\d\d부터\)\s*3건/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
+      assert.match(await page.locator("#pr-score").innerText(), /1년 \(\d{4}-\d\d-\d\d부터\)\s*0건/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       assert.equal(await list.count(), 3);
       await page.keyboard.press("Escape");
