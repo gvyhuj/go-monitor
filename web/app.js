@@ -705,8 +705,7 @@
     }
     if (k && k.price != null) {
       $("#q-kosdaq").innerHTML = `${k.price.toFixed(2)}<small class="${sgnCls(k.change_pct)}">${pctRaw(k.change_pct)}</small>`;
-      const gap = QUOTE_CP != null && k.change_pct != null ? QUOTE_CP - k.change_pct : null;
-      $("#q-kosdaq-sub").textContent = gap == null ? "" : `종목이 시장보다 ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%p`;
+      $("#q-kosdaq-sub").textContent = "";
     }
   }
 
@@ -733,8 +732,7 @@
       $("#q-change").innerHTML = `${chg == null ? "" : `<span class="chg ${chg > 0 ? "up" : chg < 0 ? "down" : ""}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""} ${won(Math.abs(chg))} (${pct(px.change)})</span>`}<span class="asof">${when} 종가</span>`;
       $("#q-kosdaq").innerHTML = px.kosdaq_close == null && px.kosdaq == null ? "-"       // 지수와 등락률을 함께 (지금 시세 칸과 같은 모양)
         : `${px.kosdaq_close == null ? "" : px.kosdaq_close.toFixed(2)}<small class="${sgnCls(px.kosdaq)}">${px.kosdaq == null ? "" : pct(px.kosdaq)}</small>`;
-      const gap = px.change != null && px.kosdaq != null ? (px.change - px.kosdaq) * 100 : null;
-      $("#q-kosdaq-sub").textContent = gap == null ? "" : `종목이 시장보다 ${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}%p`;
+      $("#q-kosdaq-sub").textContent = "";
       $("#q-volume").innerHTML = `${int(px.volume)}<small>주</small>`;
     } else renderQuote();
     const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
@@ -1053,10 +1051,10 @@
       const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
-          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${r(hi)}</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${r(lo)}</span></span></span>
+          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p">${won(close)}<small>원</small><b class="${sgnCls(chg)}">${chg == null ? "-" : pct(chg)}</b></span></span>
-        <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b>${kq != null && chg != null ? `<small>종목이 시장보다 ${pct(chg - kq).replace("%", "%p")}${ext ? " (종목은 시간외 포함)" : ""}</small>` : ""}</span>
+        <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}">${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
     // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
@@ -2003,6 +2001,7 @@
     $("#drawer-body").innerHTML = `
       <span class="chip ${e.direction}">${kindOf(e)}</span>${scopeTag(e)}${tierTag(e)}
       <h2 class="d-title" id="drawer-title">${dayLabel(e.start_ts)}${daily ? "" : ` ${hhmm(e.start_ts)}~${hhmm(e.peak_ts)}`} <span class="${sgnCls(mv)}">${pct(mv)}</span></h2>
+      ${daily ? "" : `
       <p class="d-sub">${running
         ? `전일 종가 대비 ${live ? live.at + " 현재" : "지금까지"} 움직임입니다. 장 마감 뒤 종가로 확정됩니다.`
         : daily ? `기준가(전날 거래소 종가) → ${esc(snapshot.label)}${snapshot.price != null ? ` ${won(snapshot.price)}원` : ""}` : `${basis === "전일 대비" ? "전일 종가" : `${hhmm(e.start_ts)} 가격`} → ${hhmm(e.peak_ts)} 가격${held}`}</p>
@@ -2012,7 +2011,7 @@
         <div><dt>KOSDAQ ${daily ? live && live.ext ? "정규장" : "같은 날" : "같은 구간"}</dt><dd class="num">${kq == null ? '<small style="margin:0">데이터 없음</small>' : pct(kq)}</dd></div>
         <div><dt>거래대금${daily ? " (저장 당시)" : ""}</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
-      ${daily ? `<p class="note">${esc(dailyEvidenceNote(e))}</p>` : ""}
+      `}
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
