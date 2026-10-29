@@ -1585,7 +1585,7 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .art-right { margin-left: auto; }
 .pr-close-row.pr-back-row { justify-content: flex-start; gap: 10px; margin-bottom: 8px; }
 .pr-back-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.rx-line-tip { position: absolute; z-index: 5; max-width: 260px; padding: 4px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 4px 14px rgba(16, 32, 64, .14); font-size: 12px; color: var(--ink); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rx-line-tip { display: block; min-height: 18px; margin: 2px 0 0; font-size: 12px; }
 .outlets-pop, .note-pop { width: min(720px, calc(100vw - 32px)); }
 .outlets-pop .outlet-list { max-height: 65vh; overflow: auto; margin-top: 8px; }
 .art-more > summary::-webkit-details-marker { display: none; }
