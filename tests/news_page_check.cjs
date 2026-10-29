@@ -70,6 +70,7 @@ async function main() {
       assert.ok(await page.locator("#rx-plot .rx-avg").count() > 0, "중앙값 선");
       assert.match(await page.locator("#rx-cards").innerText(), /\+60분 중앙값/);
       assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린/);
+      assert.equal(await page.locator("#rx-vskq").count(), 0, "KOSDAQ 빼고 보기 없음");
 
       // Sorting by reaction and the conditions apply to the list and the overview together.
       assert.deepEqual(await page.locator("#art-sort option").allInnerTexts(), ["최신순", "많이 오른 순", "많이 내린 순"]);

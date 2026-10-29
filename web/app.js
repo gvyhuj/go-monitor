@@ -2427,7 +2427,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <p class="obs-muted">목록 조건과 같은 기사만 비교합니다. 기사를 고르면 그 기사 그래프에 다른 기사와 중앙값이 겹쳐 나옵니다.</p>
       <div class="rx-ov-tools"><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>중앙값</span><span>┈ 관측 누락 (계산 제외)</span></span><span class="spacer"></span>
         <span class="seg" role="group" aria-label="비교 시작 뒤 얼마까지">${REACT_H.map(([v, t]) => `<button type="button" data-h="${v}" aria-pressed="${reactState.h === v}">${t}</button>`).join("")}</span>
-        <label class="rx-chk" title="그린광학 등락에서 같은 시간 KOSDAQ 등락을 뺀 값 (단순 차이, 인과 효과를 뺀 값이 아님)"><input type="checkbox" id="rx-vskq" ${reactState.vsKq ? "checked" : ""}> KOSDAQ 빼고 보기</label></div>
+</div>
       <span class="rx-hover" id="rx-hover"></span><div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-gap-note" role="status"></p>
       <div class="obs-cards" id="rx-cards"></div><p class="note" id="rx-sum"></p></section>`;
     const draw = () => reactionSummary(list);
@@ -2439,7 +2439,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       $("#rx-hover").textContent = g ? g.dataset.t : "";
     };
     host.querySelector(".rx-ov-tools").onclick = (ev) => { const b = ev.target.closest("button[data-h]"); if (!b) return; reactState.h = b.dataset.h; host.querySelectorAll("button[data-h]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.h === reactState.h))); draw(); if (onH) onH(); };
-    host.querySelector(".rx-ov-tools").onchange = (ev) => { if (ev.target.id === "rx-vskq") { reactState.vsKq = ev.target.checked; draw(); } };
     const plotEl = $("#rx-plot");
     plotEl.onclick = (ev) => { const gap = ev.target.closest("[data-gap]"); if (gap) { $("#rx-hover").textContent = gap.dataset.gap; $("#rx-gap-note").textContent = gap.dataset.gap; return; } const g = ev.target.closest("g[data-id]"); if (g && onPick) onPick(g.dataset.id); };
     plotEl.onmouseover = (ev) => { const gap = ev.target.closest("[data-gap]"); const g = ev.target.closest("g[data-id]"); $("#rx-hover").textContent = gap ? gap.dataset.gap : g ? g.dataset.t : ""; };
@@ -2460,7 +2459,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <br>동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.
       <br>주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.
       <br>중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.
-      <br>‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.
+      <br>시장과의 비교는 아래 ‘KOSDAQ 대비 중앙값’과 기사 화면의 ‘코스닥과 비교’에서 봅니다.
       <br>주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.
       <br>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다. 평균은 아래 숫자로 함께 적습니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
       + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
