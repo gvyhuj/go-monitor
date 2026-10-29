@@ -100,6 +100,13 @@ def mutate(conn, item):
         if payload['kind'] not in ('manual_observation','ai_analysis','retrospective_review'):
             raise ValueError('기록 종류 오류')
         payload['body'] = str(payload['body'])
+        # The site sends only the snapshot version; attach the stored observation so the note keeps what was seen.
+        snap = payload.get('snapshot') if isinstance(payload.get('snapshot'), dict) else {}
+        if 'observation' not in snap:
+            rec = conn.execute('SELECT payload FROM news_event_records WHERE event_id=?', (eid,)).fetchone()
+            if rec:
+                snap = {**snap, 'observation': json.loads(rec[0]).get('observation')}
+        payload['snapshot'] = snap or None
         if payload.get('sources') is not None and not isinstance(payload['sources'], list):
             raise ValueError('확인 출처는 URL 목록')
         payload['sources'] = [str(x)[:2000] for x in (payload.get('sources') or [])][:100]

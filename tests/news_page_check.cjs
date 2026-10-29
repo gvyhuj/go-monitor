@@ -45,6 +45,7 @@ async function main() {
   try {
     for (const [width, height] of [[1280, 900], [390, 844]]) {
       const page = await browser.newPage({ viewport: { width, height } });
+      await page.addInitScript(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });   // GitHub 창 대신 주소만 기록
       await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));   // '최근 1년' 조건 기준
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -76,6 +77,7 @@ async function main() {
       await page.locator("#art-sort").selectOption("up");
       assert.equal(await list.first().getAttribute("data-id"), "2002");
       await page.locator("#art-cond").click();
+      assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
@@ -92,6 +94,21 @@ async function main() {
       assert.deepEqual(await page.locator("#pr-detail [data-rxr]").allInnerTexts(), ["공개 직후", "전후 5거래일"]);
       assert.match(await page.locator("#rx-cmp").innerText(), /다른 그린광학 보도자료 2건/);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
+      assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
+      assert.equal(await page.locator("#obs-question").innerText(), "✦ AI 질문");
+      assert.equal(await page.locator("#rx-tab-note").innerText(), "", "공개 직후 탭 아래 안내 문장 없음");
+      // 연한 회색 다른 기사 선에 마우스를 대면 그 기사 제목
+      if (width > 700) {
+        const cb = await page.locator("#pr-detail .rx-chart").boundingBox();
+        let tipText = "";
+        for (let x = cb.x + cb.width * 0.3; x < cb.x + cb.width * 0.6 && !tipText; x += 12)
+          for (let y = cb.y + 10; y < cb.y + cb.height - 30 && !tipText; y += 5) {
+            await page.mouse.move(x, y);
+            if (await page.locator(".rx-line-tip").isVisible().catch(() => false)) tipText = await page.locator(".rx-line-tip").innerText();
+          }
+        assert.match(tipText, /3분기 실적 설명회 개최|반도체 장비용 렌즈 수주/);
+        await page.mouse.move(0, 0);
+      }
       assert.match(await page.locator("#pr-cards").innerText(), /다른 기사 중앙값/);
       assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /KOSDAQ/, "코스닥 값은 '코스닥과 비교' 표에만");
       assert.match(await page.locator("#pr-detail .obs-fold > summary", { hasText: "코스닥과 비교" }).first().innerText(), /코스닥과 비교/);
@@ -124,10 +141,18 @@ async function main() {
 
       // Result paste form opens and accepts typing.
       await page.locator("#obs-note-open:not([disabled])").click();
+      assert.equal(await page.locator("#obs-note-pop").evaluate((x) => x.open), true, "결과 붙여넣기는 팝업으로 열림");
       const body = page.locator('#obs-note textarea[name="body"]');
       await body.pressSequentially("메모 공백 입력");
       assert.equal(await body.inputValue(), "메모 공백 입력");
+      // 저장 요청: 짧은 요청이라 GitHub 새 이슈 창이 바로 열림 (복사·붙여넣기 단계 없음)
+      await page.locator('#obs-note button.btn.primary').click();
+      await page.waitForFunction(() => window.__opened.length > 0);
+      const opened = await page.evaluate(() => window.__opened[0]);
+      assert.match(opened, /\/issues\/new\?title=.*&body=/);
+      assert.ok(opened.length < 7000, `요청 주소 ${opened.length}자`);
       await page.locator("#obs-note-cancel").click();
+      assert.equal(await page.locator("#obs-note-pop").evaluate((x) => x.open), false);
 
       // The event ID is visible for linking, and old 뉴스 반응 links open the same article in the list.
       const eid = await page.locator("#obs-extras").getAttribute("data-eid");

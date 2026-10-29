@@ -501,10 +501,11 @@
     const ownColor = matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2");
     const ownName = (STATUS && STATUS.name) || "이 종목";      // 회사 이름 (비공개 설정의 display_name)
     const fmt = { type: "custom", minMove: 0.01, formatter: (v) => pctRaw(v) };
+    let otherLines = [];       // 연한 회색 다른 기사 선: 마우스를 가까이 대면 그 기사 제목을 보여 줌
     const st0 = toTime(startT), atMin = (sr) => sr.map(([m, v]) => ({ time: st0 + Math.round(m * 60), value: v * 100 }));
     if (extra) {
       const quiet = { priceFormat: fmt, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false };
-      extra.others.forEach((sr) => chart.addSeries(LW.LineSeries, { ...quiet, color: css("--line-2"), lineWidth: 1 }).setData(atMin(sr)));
+      otherLines = extra.others.map((sr, i) => { const s = chart.addSeries(LW.LineSeries, { ...quiet, color: css("--line-2"), lineWidth: 1 }); s.setData(atMin(sr)); return { s, title: (extra.titles || [])[i] || "" }; });
       if (extra.median.length) chart.addSeries(LW.LineSeries, { ...quiet, color: css("--brand-blue"), lineWidth: 2 }).setData(atMin(extra.median));
     }
     const s1 = chart.addSeries(LW.LineSeries, { color: ownColor, lineWidth: extra ? 3 : 2, priceFormat: fmt, priceLineVisible: false, lastValueVisible: true, title: ownName });
@@ -549,7 +550,26 @@
         + (extra ? `${extra.median.length ? `<span><i class="rx-sw" style="border-color:${css("--brand-blue")}"></i>중앙값</span>` : ""}<span><i class="rx-sw" style="border-color:${css("--line-2")}"></i>다른 ${esc(extra.label || "기사")} ${extra.n}건 (+${extra.until}분까지)</span>` : "");
     };
     show(null);
-    chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : null));
+    let tip = null, hot = null;
+    const hoverOther = (p) => {
+      if (!otherLines.length) return;
+      let best = null;
+      if (p && p.point && p.time != null) for (const o of otherLines) {
+        const d = p.seriesData && p.seriesData.get(o.s);
+        if (!d || d.value == null) continue;
+        const y = o.s.priceToCoordinate(d.value), gap = y == null ? Infinity : Math.abs(y - p.point.y);
+        if (gap <= 8 && (!best || gap < best.gap)) best = { o, gap, y };
+      }
+      if (hot && hot !== (best && best.o)) { hot.s.applyOptions({ color: css("--line-2"), lineWidth: 1 }); hot = null; }
+      if (!best) { if (tip) tip.hidden = true; return; }
+      if (hot !== best.o) { hot = best.o; hot.s.applyOptions({ color: css("--muted"), lineWidth: 2 }); }
+      if (!tip) { tip = document.createElement("div"); tip.className = "rx-line-tip"; el.appendChild(tip); }
+      tip.textContent = best.o.title;
+      tip.hidden = false;
+      tip.style.left = `${Math.min(p.point.x + 12, Math.max(0, el.clientWidth - 260))}px`;
+      tip.style.top = `${Math.max(0, best.y - 34)}px`;
+    };
+    chart.subscribeCrosshairMove((p) => { show(p && p.time ? p.time : null); hoverOther(p); });
     return chart;
   }
 
@@ -2182,7 +2202,7 @@
         <h3>뉴스 반응 (뉴스 목록 오른쪽)</h3>
         <ul>
           <li>뉴스 목록에서 기사를 고르지 않았을 때 오른쪽은 <b>지금 목록에 보이는 기사</b>를 공개 시각 0분에 맞춰 겹쳐 본 그래프입니다. 회색 선이 기사 하나, 파란 굵은 선이 <b>중앙값</b>입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 주며, 평균은 아래 숫자로 함께 적습니다.</li>
-          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있습니다. [✕ 전체로]로 겹쳐 보기에 간 뒤에는 목록의 기사를 누르거나 [← 방금 본 기사]로 돌아갑니다.</li>
+          <li>목록 위 탭(그린광학 보도자료·외부 기사·공시)과 [조건](기간·공개 시점·주제)이 목록과 그래프에 같이 걸립니다. [정렬]에서 많이 오른 순·많이 내린 순으로 볼 수 있습니다. [← 전체 기사 보기]로 겹쳐 보기에 간 뒤에는 목록의 기사를 누르거나 [← 방금 본 기사]로 돌아갑니다.</li>
           <li>기사를 고르면 같은 자리에 그 기사 그래프가 나오고, 지금 목록의 다른 기사(연한 회색)와 중앙값(파랑)이 +30분(또는 +60분)까지 겹칩니다. [전후 5거래일] 탭은 공개 전에 이미 움직였는지, 뒤에 이어졌는지 보는 참고용입니다.</li>
           <li><b>기간</b>(기본 최근 1년)은 반응을 재는 시간이 아니라 <b>언제 나온 기사를 모을지</b>입니다. 반응은 늘 +30분·+60분만 잽니다.</li>
           <li>기사 하나하나는 잡음이 큽니다. 같은 종류를 여러 건 모았을 때 중앙값 선이 0에서 꾸준히 벗어나는지를 보세요.</li>
@@ -2316,11 +2336,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const fold=(key,title,meta,body)=>`<details class="obs-fold" data-fold="${key}"${openFolds.has(key)?' open':''}><summary><span>${title}</span><small>${meta}</small></summary><div class="obs-fold-body">${body}</div></details>`;
     const nNotes=NOTE_TABS.map(([k,t])=>`${t} ${notesOf(k).length}`).join(' · ');
     host.innerHTML=`<textarea id="obs-question-text" aria-label="AI 질문과 실제 관측 자료" readonly hidden></textarea>
-    <form id="obs-note" class="obs-form" ${noteOpen?'':'hidden'}><label>기록 종류<select name="kind">${NOTE_TABS.map(([k])=>`<option value="${k}">${({manual_observation:'당시 수동 관찰',ai_analysis:'당시 AI 분석',retrospective_review:'사후 재검토'})[k]}</option>`).join('')}</select></label>
+    <dialog class="disc-pop note-pop" id="obs-note-pop" aria-label="결과 붙여넣기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>결과 붙여넣기 <small class="muted">AI 답이나 확인한 내용을 이 사건 기록으로 저장</small></strong><button type="button" class="btn-link" id="obs-note-x" aria-label="닫기">✕</button></div>
+    <form id="obs-note" class="obs-form"><label>기록 종류<select name="kind">${NOTE_TABS.map(([k])=>`<option value="${k}">${({manual_observation:'당시 수동 관찰',ai_analysis:'당시 AI 분석',retrospective_review:'사후 재검토'})[k]}</option>`).join('')}</select></label>
       <label>작성 주체<select name="author_type"><option value="AI">AI</option><option value="manual">직접 작성</option></select></label><label>분석 시각 (KST)<input name="analysis_at" type="datetime-local" required></label>
       <label class="wide">분석 결과 / 검토 메모<textarea name="body" required rows="6"></textarea></label><label class="wide">확인 출처 (줄마다 URL)<textarea name="sources" rows="2"></textarea></label>
       <label>주관적 신뢰도<input name="confidence_label" placeholder="높음 / 보통 / 낮음 / 미평가"></label><label>재검토 상태<select name="review_status"><option>검토 대기</option><option>재검토 완료</option><option>추가 자료 필요</option></select></label>
-      <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form>
+      <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div></dialog>
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
       <details class="obs-more"><summary>조건 바꿔 찾기</summary><div class="obs-form" id="obs-filters">
       <label>키워드 / 고객·파트너<input id="obs-query" type="search"></label><label>태그<select id="obs-tag"><option value="">전체</option>${[...new Set(index.items.flatMap(x=>x.business_tags))].sort().map(x=>`<option>${esc(x)}</option>`).join('')}</select></label>
@@ -2332,11 +2353,15 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
     $('#obs-question').onclick=async()=>{const q=observationQuestion(d);$('#obs-question-text').value=q;$('#obs-question-text').hidden=false;try{await navigator.clipboard.writeText(q);toast('실제 자료를 포함한 질문을 복사했습니다. AI 답을 받은 뒤 [결과 붙여넣기]로 저장하세요.');}catch(e){toast('아래 질문을 선택해서 복사해 주세요.','err');}};
-    const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');form.hidden=false;if(kind)form.elements.kind.value=kind;if(!form.elements.analysis_at.value)form.elements.analysis_at.value=new Date(Date.now()+9*36e5).toISOString().slice(0,16);form.elements.body.focus();};
+    const notePop=$('#obs-note-pop');
+    notePop.addEventListener('close',()=>{noteOpen=false;});
+    if(noteOpen&&!notePop.open)notePop.showModal();
+    const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');if(!notePop.open)notePop.showModal();if(kind)form.elements.kind.value=kind;if(!form.elements.analysis_at.value)form.elements.analysis_at.value=new Date(Date.now()+9*36e5).toISOString().slice(0,16);form.elements.body.focus();};
     $('#obs-note-open').onclick=()=>{revision=null;openNote(noteTab);};
-    $('#obs-note-cancel').onclick=()=>{noteOpen=false;revision=null;$('#obs-note').hidden=true;};
+    $('#obs-note-cancel').onclick=$('#obs-note-x').onclick=()=>{noteOpen=false;revision=null;notePop.close();};
     if(noteDraft)for(const [key,value] of Object.entries(noteDraft)){const input=$('#obs-note').elements[key];if(input)input.value=value;}
-    $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,...v,sources:v.sources.split('\n').map(x=>x.trim()).filter(Boolean),question:observationQuestion(d),snapshot:{version:d.snapshot_version,observation:d.observation},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
+    // 관측값 사본은 반영할 때 기록에서 붙임 (요청이 짧아야 GitHub 창이 바로 열림)
+    $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,...v,sources:v.sources.split('\n').map(x=>x.trim()).filter(Boolean),snapshot:{version:d.snapshot_version},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
     host.querySelectorAll('[data-note-edit]').forEach(b=>b.onclick=()=>{const n=d.notes.find(x=>x.id===b.dataset.noteEdit);revision=n.id;openNote();const form=$('#obs-note');for(const k of ['body','kind','author_type','confidence_label','review_status'])form.elements[k].value=n[k]||'';form.elements.sources.value=(n.sources||[]).join('\n');$('#obs-save-status').textContent='과거 기록은 유지하고 새 버전을 저장합니다.';form.scrollIntoView({block:'center'});});
     const search=()=>{
       const v=id=>$('#obs-'+id).value,query=v('query').toLowerCase();
@@ -2472,8 +2497,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     try {
       const others = list.filter((x) => x.id !== pickId);
       const at30 = reactionSamples(others, (x) => stepV(x, reactState.h));
+      const lines = others.map((x) => ({ x, sr: series(x).filter(([m]) => m >= -30 && m <= X1) })).filter((o) => o.sr.length);
       return { until: X1, n: others.length, median: centerPath(list, -30, X1), othersMedian: median(at30),
-        others: others.map((x) => series(x).filter(([m]) => m >= -30 && m <= X1)).filter((sr) => sr.length) };
+        others: lines.map((o) => o.sr), titles: lines.map((o) => `${o.x.ts ? `${dayLabel(o.x.ts)} · ` : ""}${o.x.title || ""}`) };
     } finally { reactState.vsKq = keep; }
   }
   // 엑셀: 지금 목록의 반응 (+30·+60분 모두)
@@ -2856,7 +2882,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const currentRows = () => { const list = shown(artState.cat); return list.map(rxOf).filter(Boolean); };
     // 조건 버튼
     const topicsAll = [...new Set([...items.map((a) => a.topic), ...[...rxById.values()].map((r) => r.topic)].filter(Boolean))].sort();
-    const RANGES = [["all", "전체"], ["92", "최근 3달"], ["183", "6달"], ["365", "1년"], ["custom", "직접 고르기"]];
+    const RANGES = [["all", "전체"], ["92", "3달"], ["183", "6달"], ["365", "1년"], ["custom", "직접 고르기"]];
     const MODES = [["all", "전체"], ["open", "장 시작 전"], ["session", "장중"], ["late", "15시 이후"]];
     const condText = () => [artState.range === "all" ? "전체 기간" : artState.range === "custom" ? `${artState.from || "…"}~${artState.to || "…"}` : artState.range === "365" ? "최근 1년" : RANGES.find((r) => r[0] === artState.range)[1].replace(/^(\d)/, "최근 $1"),
       artState.mode !== "all" ? MODES.find((m) => m[0] === artState.mode)[1] : "", artState.topic].filter(Boolean).join(" · ");
@@ -2934,7 +2960,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       showOverview();
     }
     // 아무것도 고르지 않았을 때 오른쪽: 지금 목록의 기사 겹쳐 보기 (뉴스 반응 그래프)
-    let lastSeen = null;      // [✕ 전체로]로 닫은 기사: 겹쳐 보기 위에 '← 방금 본 기사'로 돌아가기
+    let lastSeen = null;      // [← 전체 기사 보기]로 닫은 기사: 겹쳐 보기 위에 '← 방금 본 기사'로 돌아가기
     function showOverview() {
       const box = $("#pr-detail"), act = $("#art-act");
       if (act) act.innerHTML = "";
@@ -3171,7 +3197,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
     // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
-    let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" aria-label="선택 해제하고 지금 목록 겹쳐 보기로">✕ 전체로</button></div>
+    let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
       <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
         : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
@@ -3229,9 +3255,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 한 줄 동작: AI 질문 만들기 · 결과 붙여넣기(사건 관찰 기록) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    // 한 줄 동작: AI 질문 · 결과 붙여넣기(사건 관찰 기록) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>✦ AI 질문 만들기</button><button type="button" class="btn" id="obs-note-open" disabled>결과 붙여넣기</button>` : ""}
+    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>✦ AI 질문</button><button type="button" class="btn" id="obs-note-open" disabled>결과 붙여넣기</button>` : ""}
         ${toKinds.map((k) => `<button class="btn editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}<span class="form-msg" id="art-fix-msg"></span></div>`;
     html += `<div class="obs-folds">`;
 
@@ -3296,7 +3322,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           else empty(d.observation?.missing_reason ? `${d.observation.missing_reason}.` : "공개 시각 앞뒤의 분봉 시세가 없습니다." + (win5 ? " 일별 흐름은 [전후 5거래일]에서 볼 수 있습니다." : ""));
           $("#pr-cards", box).innerHTML = card("+30분", stepsD["30"]?.own) + card("+60분", stepsD["60"]?.own)
             + (ov && ov.n ? card(`다른 기사 중앙값 +${ov.until}분`, ov.othersMedian) : card("시장 대비 +30분", stepsD["30"]?.diff, points));
-          $("#rx-tab-note", box).textContent = "공개 직전 완료 시세 = 0%. 다른 기사·중앙값은 지금 목록 조건과 같은 기사이며 같은 사건은 1건만 셉니다. 기사의 직접 효과를 뜻하지 않습니다.";
+          $("#rx-tab-note", box).textContent = "";
         } else {
           const pts = (win5 && win5.points) || [], b0 = win5 && win5.base_own;
           if (pts.some((p) => p.stock_price != null) && b0) tabChart = indexedChart(rxEl, legend, pts.map((p) => ({ t: `${p.time}T09:00`, c: p.stock_price })), pts.map((p) => ({ t: `${p.time}T09:00`, c: p.kosdaq_price })), b0, win5.base_kq, `${d.observation.day}T09:00`, "반응일", true);

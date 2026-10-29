@@ -303,3 +303,13 @@ def test_link_preserves_press_metadata_and_distribution(database):
     assert ds[a]['pr_distributed_at']=='2026-10-06T11:00:00'
     assert ds[a]['identity_status']=='confirmed'
     assert any(x.get('primary_source_url')=='https://example.org/company' for x in ds[a]['classification_sources'])
+
+def test_note_from_site_gets_stored_observation(database):
+    # 사이트는 짧은 요청(스냅샷 버전만)을 보내고, 반영할 때 저장된 관측값을 기록에 붙임
+    prices(database);article(database,'a')
+    details,_=ob.build(database,'X',[row()])
+    eid=next(iter(details))
+    ob.mutate(database,{'type':'news_event_note','event_id':eid,'body':'AI 답','kind':'ai_analysis','request_id':'r-site','snapshot':{'version':'v9'}})
+    saved=json.loads(database.execute("SELECT payload FROM news_event_notes WHERE id='r-site'").fetchone()[0])
+    assert saved['snapshot']['version']=='v9'
+    assert saved['snapshot']['observation']['intraday']['steps']['30']['own']==pytest.approx(.03)
