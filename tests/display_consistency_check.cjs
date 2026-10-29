@@ -28,7 +28,7 @@ function harness() {
     causeHead: () => '', CONF_RE: /nomatch/, document: {}, MAIN_DISC: new Set(),
   };
   vm.createContext(ctx);
-  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'contributionBlock', 'renderEventDrawer', 'eventContext'].map(fn).join('\n'), ctx);
+  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'renderEventDrawer', 'eventContext'].map(fn).join('\n'), ctx);
   return {ctx, $};
 }
 const event = { event_type: 'daily', status: 'closed', direction: 'up', start_ts: '2026-10-28T09:00',
@@ -97,12 +97,11 @@ test('news list overview explains distinct counts and the earlier calculation ti
   assert.equal(exported[2][0][4], '1.50');
 });
 
-test('contribution display and AI use percentage points without clipping', () => {
-  const {ctx}=harness();
+test('drawer no longer shows the model contribution box; AI text keeps percentage points', () => {
+  const {ctx,$}=harness();
   const split={own:.04,market:.06,sector:-.01,specific:-.01};
-  const html=ctx.contributionBlock(split);
-  assert.match(html,/6.00%p/); assert.match(html,/-1.00%p/);
-  assert.match(html,/실제 상승·하락 원인을 확정하지/);
+  ctx.renderEventDrawer({event:{...event},cause:{split}});
+  assert.doesNotMatch($('#drawer-body').innerHTML,/모형 추정 기여분/);
   const text=ctx.eventContext({event:{...event},cause:{split}},'검토');
   assert.match(text,/시장 추정 기여분: 6.00%p/);
   assert.match(text,/업종 추정 기여분: -1.00%p/);

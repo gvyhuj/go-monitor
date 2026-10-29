@@ -142,6 +142,7 @@ async function main() {
       // Result paste form opens and accepts typing.
       await page.locator("#obs-note-open:not([disabled])").click();
       assert.equal(await page.locator("#obs-note-pop").evaluate((x) => x.open), true, "결과 붙여넣기는 팝업으로 열림");
+      assert.deepEqual(await page.locator("#obs-note").evaluate((f) => [...f.elements].filter((x) => x.name).map((x) => x.name)), ["body"], "입력 칸은 분석 결과 하나");
       const body = page.locator('#obs-note textarea[name="body"]');
       await body.pressSequentially("메모 공백 입력");
       assert.equal(await body.inputValue(), "메모 공백 입력");
