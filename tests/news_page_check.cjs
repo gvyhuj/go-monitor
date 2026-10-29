@@ -81,7 +81,7 @@ async function main() {
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 3개/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       assert.match(await page.locator("#pr-score").innerText(), /15시 이후[\s\S]*전체\s*0건/);

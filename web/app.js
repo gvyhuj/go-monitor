@@ -2960,7 +2960,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         ${isDisc ? `<span><small>시각을 아는 공시</small>${num(list.filter((x) => !x.untimed).length, "timed", `${list.filter((x) => !x.untimed).length}건`, "", "건")}</span>`
           : `<span><small>한 건당 실린 매체</small>${num(avgOut, "outlets", avgOut != null ? avgOut.toFixed(1) + "곳" : "-", "d1", "곳")}</span>`}
         <span><small>전체</small>${num(list.length, "n", `${list.length}건`, "", "건")}${isDisc ? (typeof discs !== "undefined" && list.length !== discs.length ? ` <small>공시 전체 ${discs.length}건 중</small>` : "")
-          : ` <small>보도 ${media}건</small>`}</span></div>`;
+          : ` <small title="묶인 줄마다 실린 매체 수를 모두 더한 값">매체 기사 합계 ${media}개</small>`}</span></div>`;
     }
     function baselineBlock() { return baselineHtml(d.baseline); }
 
