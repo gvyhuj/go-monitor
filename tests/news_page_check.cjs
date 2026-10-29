@@ -199,7 +199,9 @@ async function main() {
         return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
       assert.ok(cardGap < 2, `카드 오른쪽 빈 공간 ${cardGap}px`);
       const cardH = await page.evaluate(() => document.querySelector("#pr-cards > div").getBoundingClientRect().height);
-      assert.ok(cardH < 45, `카드는 한 줄 높이 (${cardH}px)`);
+      assert.ok(cardH < (width > 700 ? 45 : 64), `카드 높이 ${cardH}px (넓으면 한 줄, 좁으면 이름 위·값 아래)`);
+      const hs = await page.evaluate(() => [...document.querySelectorAll("#pr-cards > div")].map((x) => Math.round(x.getBoundingClientRect().height)));
+      assert.equal(new Set(hs).size, 1, `카드 높이가 모두 같음 ${hs}`);
       // 선행 공시: 이름이 보이고, 누르면 팝업으로 공시 내용
       assert.match(await page.locator("#pr-detail .lead-disc").innerText(), /선행 공시\s*단일판매ㆍ공급계약체결[\s\S]*13:02 접수 · 기사보다 8분 먼저/);
       await page.locator("#lead-disc-open").click();
