@@ -1,0 +1,79 @@
+"""Build a synthetic encrypted static site for tests/news_page_check.cjs.
+
+Only fixture rows are used (검증용 가상 시세); nothing here is production data and the output must never be deployed.
+Usage: python tests/fixtures/news_page_site.py OUT_DIR
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+os.environ["GO_PRIVATE_CONFIG"] = json.dumps({"symbol": "000001", "display_name": "검증 종목"})
+
+from core import db, sitebuild, yahoo  # noqa: E402
+
+PASSWORD = "public-site-password"
+SALT = b"0123456789abcdef"
+SYMBOL = "000001"
+# (id, KST time, office, title, category, +30분 move). '회사 발표' = 그린광학 보도자료 탭
+ARTICLES = [
+    ("2001", "2026-10-22T10:05", "검증일보", "광학미러 공급 계약 체결", "회사 발표", -0.012),
+    ("2002", "2026-10-20T09:40", "검증경제", "3분기 실적 설명회 개최", "회사 발표", 0.024),
+    ("2003", "2026-10-15T13:10", "검증신문", "반도체 장비용 렌즈 수주", "회사 발표", 0.006),
+    ("2004", "2026-10-21T11:20", "검증매체", "우주항공 부품주 동향", "언론 분석", 0.004),
+]
+
+
+def trading_days(start: date, end: date) -> list[str]:
+    out, d = [], start
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out
+
+
+def main(out: Path) -> None:
+    work = Path(tempfile.mkdtemp(prefix="go-news-"))
+    db.DATA_DIR, db.DB_PATH = work, work / "monitor.db"
+    db.init_db()
+    moves = {a[1][:10]: a for a in ARTICLES}
+    with db.connect() as conn:
+        price, index = 10000.0, 800.0
+        for i, day in enumerate(trading_days(date(2026, 9, 21), date(2026, 10, 28))):
+            article = moves.get(day)
+            if article:
+                start = datetime.fromisoformat(day + "T09:00")
+                published = datetime.fromisoformat(article[1])
+                at = int((published - start).total_seconds() // 60)
+                base = price
+                for m in range(0, 391):
+                    stamp = (start + timedelta(minutes=m)).isoformat(timespec="minutes")
+                    own = base * (1 + (article[5] * min(max(m - at, 0), 60) / 30 if m > at else 0.0005 * ((m % 7) - 3) / 3))
+                    kq = index * (1 + 0.00002 * m)
+                    for symbol, value in ((SYMBOL, own), (yahoo.INDEX, kq)):
+                        conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES(?,?,?,?,?,?,1,'naver')",
+                                     (symbol, stamp, value, value, value, value))
+                price, index = own, kq
+            else:
+                price *= 1 + 0.004 * ((i % 5) - 2) / 2
+                index *= 1 + 0.001 * ((i % 3) - 1)
+            for symbol, value in ((SYMBOL, price), (yahoo.INDEX, index)):
+                conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,1)",
+                             (symbol, day, value, value, value, value))
+        for aid, ts, office, title, category, _ in ARTICLES:
+            conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (aid, SYMBOL, ts, office, title, f"https://example.org/{aid}", category, "제목", aid, ts))
+    items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))
+    sitebuild.build(out, PASSWORD, SALT, items)
+
+
+if __name__ == "__main__":
+    main(Path(sys.argv[1]).resolve())

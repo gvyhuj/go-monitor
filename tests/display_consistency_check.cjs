@@ -63,7 +63,7 @@ test('a later-day quote never overwrites a historical daily record', () => {
   assert.doesNotMatch($('#drawer-body').innerHTML, /20:00/);
 });
 
-test('reaction page explains distinct counts and the earlier calculation timestamp', async () => {
+test('news list overview explains distinct counts and the earlier calculation timestamp', async () => {
   const {ctx,$} = harness();
   const base = {id:'a',ts:'2026-04-22T19:20',analysis_ts:'2026-04-22T14:10',basis_reason:'disclosure',
     start:'2026-04-22T14:10',mode:'session',kind:'pr',title:'공급계약',interval:1,
@@ -75,24 +75,26 @@ test('reaction page explains distinct counts and the earlier calculation timesta
   const start = source.indexOf('  const reactState =');
   const end = source.indexOf('  // 기사 대시보드:',start);
   vm.runInContext(fn('reactionAt') + fn('reactionSamples') + source.slice(start,end) + '\nreactState.range="all";',ctx);
-  await ctx.pageReact();
+  const items = [base,{...base,id:'b',steps:{}},{...base,id:'c',path:null,steps:{},untimed:true}];
+  const parts = new Map(), host = {innerHTML:'',querySelector:s=>{if(!parts.has(s))parts.set(s,{});return parts.get(s);},querySelectorAll:()=>[]};
+  ctx.reactionOverview(host, items);
   assert.match($('#rx-n').textContent,/대상 3건 · 경로 2건 · \+30분 집계 1건/);
   assert.match($('#rx-sum').innerHTML,/집계 제외 2건/);
-  assert.match($('#rx-table').innerHTML,/26\.04\.22 19:20/);
-  assert.match($('#rx-table').innerHTML,/선행 공시 2026-04-22 14:10/);
   assert.match($('#rx-plot').innerHTML,/비교 시작/);
   let exported;
   ctx.csvDownloadRows = (...args) => { exported = args; };
-  $('#rx-csv').onclick();
+  ctx.reactionCsv(items);
   assert.ok(exported[1].includes('분석 기준 시각'));
+  assert.ok(exported[2][0].includes('2026-04-22T19:20'));
   assert.ok(exported[2][0].includes('2026-04-22T14:10'));
+  assert.ok(exported[2][0].some(v => String(v).includes('선행 공시 2026-04-22 14:10')));
   assert.doesNotMatch($('#rx-sum').innerHTML, /우연|p값|판단 보류/);
   ctx.points = v => v == null ? '-' : `${ctx.pct(v)}p`;
-  $('#rx-ctl').onchange({target:{id:'rx-vskq',checked:true}});
+  host.querySelector('.rx-ov-tools').onchange({target:{id:'rx-vskq',checked:true}});
   assert.match($('#rx-sum').innerHTML, /시장 웃돈 1/);
-  assert.match($('#rx-table').innerHTML, /\+1\.50%p/);
-  $('#rx-csv').onclick();
+  ctx.reactionCsv(items);
   assert.ok(exported[1].some(v => v.includes('(%p)')));
+  assert.equal(exported[2][0][4], '1.50');
 });
 
 test('contribution display and AI use percentage points without clipping', () => {
