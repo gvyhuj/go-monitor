@@ -71,6 +71,9 @@ def main(out: Path) -> None:
             conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) "
                          "VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (aid, SYMBOL, ts, office, title, f"https://example.org/{aid}", category, "제목", aid, ts))
+        # 2003 기사보다 8분 먼저 접수된 같은 내용의 공시 → 기사 화면에 '선행 공시'
+        conn.execute("INSERT INTO disclosures(no,symbol,date,ts,title,kind,pblntf,filer) VALUES (?,?,?,?,?,?,?,?)",
+                     ("20261015000901", SYMBOL, "2026-10-15", "2026-10-15T13:02", "단일판매ㆍ공급계약체결", "공급계약", "I", "검증 종목"))
     items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))
     sitebuild.build(out, PASSWORD, SALT, items)
 

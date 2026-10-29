@@ -1216,7 +1216,7 @@
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
         <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
-        <label class="rc-jump" title="달력에서 고르거나 날짜를 넣으면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
+        <label class="rc-jump" title="눌러서 달력에서 고르면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
         ${calState.jumpNote ? `<span class="muted rc-jump-note">${esc(calState.jumpNote)}</span>` : ""}
         ${coarseIv ? coarseTip(coarseIv) : ""}</div>`;
       calState.jumpNote = "";
@@ -1273,6 +1273,8 @@
     }
     render();
     box.onclick = async (ev) => {
+      const jp = ev.target.closest("[data-jump]");
+      if (jp) { try { jp.showPicker(); } catch (_) {} return; }      // 날짜는 달력에서만 고름
       if (ev.target.closest("[data-head].is-click")) { openHead(); return; }
       const ib = ev.target.closest("[data-ind]");
       if (ib) { openIndustry(ib.dataset.ind); return; }
@@ -1296,6 +1298,12 @@
       if (e && e.closest(".day-card") && !e.closest(".range-panel")) { openEvent(+e.dataset.id); return; }
       const del = ev.target.closest("[data-ev-del]");
       if (del) { deleteRecord(del); return; }
+    };
+    box.onkeydown = (ev) => {     // 숫자 입력 막기: Enter·스페이스·↓는 달력 열기, Tab·Esc는 그대로
+      const j = ev.target.closest("[data-jump]");
+      if (!j || ev.key === "Tab" || ev.key === "Escape") return;
+      ev.preventDefault();
+      if (ev.key === "Enter" || ev.key === " " || ev.key === "ArrowDown") { try { j.showPicker(); } catch (_) {} }
     };
     box.onchange = (ev) => {
       const j = ev.target.closest("[data-jump]");
@@ -2189,7 +2197,7 @@
         </ul>
         <h3>기사 표시</h3>
         <ul>
-          <li><b>시각 출처</b>: 기사 화면의 공개 시각 옆에 어디서 읽은 시각인지(원문 페이지·네이버 뉴스·구글 뉴스·직접 고침) 적습니다. 구글 뉴스 시각이 16:00·17:00으로 반복되면 '확인 필요'가 붙으니, 원문 시각을 확인하기 전에는 숫자를 잠정치로 보세요. '시각 고치기'로 원문의 입력 시각을 넣으면 그 시각으로 다시 계산됩니다.</li>
+          <li><b>시각 출처</b>: 기사 화면의 '시각 고치기'에 마우스를 올리면 어디서 읽은 시각인지(원문 페이지·네이버 뉴스·구글 뉴스·직접 고침) 보입니다. 구글 뉴스 시각이 16:00·17:00으로 반복되면 '시각 확인 필요'가 붙으니, 원문 시각을 확인하기 전에는 숫자를 잠정치로 보세요. '시각 고치기'로 원문의 입력 시각을 넣으면 그 시각으로 다시 계산됩니다.</li>
           <li><b>대표 기사</b>: 같은 내용을 여러 매체가 냈으면 목록에는 한 줄(대표)만 보입니다. 기사 화면 '이 기사를 실은 매체'에서 '대표로'를 누르면 목록에 보일 제목·언론사를 바꿀 수 있습니다. 반응 계산의 기준 시각은 묶음에서 가장 먼저 나온 때 그대로입니다.</li>
 
           <li><b>거래량 급증</b>: 반응일 거래량이 직전 60거래일 중 상위 5% 안입니다.</li>
@@ -3128,8 +3136,21 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
       <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? (Object.hasOwn(r,"diff") ? r.diff : r.own - r.kq) : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
   // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
-  const timeSrc = (a) => ` <span class="time-src${a.time_quality === "check_time" ? " warn" : ""}" title="공개 시각을 어디서 읽었는지">시각 출처: ${esc(a.time_source || "-")}${a.time_quality === "check_time" ? " · 확인 필요" : ""}</span>`
-    + (a.manual ? "" : ` <button type="button" class="btn-link editable" data-time-open>시각 고치기</button>`);
+  const timeSrc = (a) => (a.time_quality === "check_time" ? ` <span class="time-src warn" title="구글 뉴스 시각이 16:00·17:00으로 반복됨">시각 확인 필요</span>` : "")
+    + (a.manual ? "" : ` <button type="button" class="btn-link time-fix editable" data-time-open title="공개 시각을 어디서 읽었는지: ${esc(a.time_source || "-")}">시각 고치기</button>`);
+  // 선행 공시 팝업: 기사 화면을 떠나지 않고 공시 제목·접수 시각·원문을 봄
+  function discPopup(x) {
+    let dlg = $("#disc-pop");
+    if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "disc-pop"; dlg.className = "disc-pop"; document.body.appendChild(dlg);
+      dlg.addEventListener("click", (ev) => { if (ev.target === dlg || ev.target.closest("[data-pop-close]")) dlg.close(); }); }
+    const src = x.pblntf === "K" ? "KIND" : "DART";
+    dlg.innerHTML = `<div class="disc-pop-body"><div class="disc-pop-head"><span class="lead-disc-tag">선행 공시</span><button type="button" class="btn-link" data-pop-close aria-label="닫기">✕</button></div>
+      <h3>${esc(x.title)}</h3>
+      <dl><dt>접수</dt><dd>${dayLabel(x.ts)} ${x.untimed ? "(시각 미상)" : hhmm(x.ts)}</dd>${x.filer ? `<dt>제출인</dt><dd>${esc(x.filer)}</dd>` : ""}${x.kind ? `<dt>종류</dt><dd>${esc(x.kind)}</dd>` : ""}${x.rm ? `<dt>비고</dt><dd>${esc(x.rm)}</dd>` : ""}</dl>
+      <p class="muted">기사보다 먼저 나온 같은 내용의 공시입니다. 공시 접수 뒤 주가는 [공시 화면으로]에서 볼 수 있습니다.</p>
+      <div class="disc-pop-act">${x.url ? `<a class="btn small primary" href="${esc(x.url)}" target="_blank" rel="noopener">${src}에서 원문 보기</a>` : ""}${x.id ? `<a class="btn small" href="#/pr/${esc(x.id)}" data-pop-close>공시 화면으로</a>` : ""}<button type="button" class="btn small" data-pop-close>닫기</button></div></div>`;
+    dlg.showModal();
+  }
   function timeForm(a) {
     if (a.manual) return "";
     const v = (a.own_ts || a.ts || "").slice(0, 16);
@@ -3175,16 +3196,18 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : ""}</p>`;
     if (!isDisc) html += timeForm(a);
+    const leadDisc = e.disclosure ? [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title) || e.disclosure : null;
+    if (leadDisc) {
+      const gap = Math.round((Date.parse(a.own_ts || a.ts) - Date.parse(leadDisc.ts)) / 60000);
+      html += `<p class="lead-disc"><span class="lead-disc-tag">선행 공시</span><button type="button" class="btn-link" id="lead-disc-open" title="공시 내용 보기">${esc(leadDisc.title)}</button>
+        <span class="muted">${dayLabel(leadDisc.ts)} ${hhmm(leadDisc.ts)} 접수${gap > 0 ? ` · 기사보다 ${gap >= 60 ? `${Math.floor(gap / 60)}시간 ${gap % 60 ? `${gap % 60}분 ` : ""}` : `${gap}분 `}먼저` : ""}</span></p>`;
+    }
     const analysisTs = d.observation_analysis_at || e.base_ts || (e.disclosure && e.disclosure.ts) || a.ts;
     const basisReason = e.disclosure ? "disclosure" : analysisTs !== (a.own_ts || a.ts) ? "story" : "publication";
     const windowInfo = d.observation?.intraday || d.intraday || d.intraday_coarse;
     if (windowInfo && !a.untimed) html += `<p class="note">${esc(reactionBasisText({ ts: a.own_ts || a.ts, analysis_ts: analysisTs,
-      basis_reason: d.observation ? "publication" : basisReason, start: windowInfo.start, mode: windowInfo.kind }))}</p>`;
+      basis_reason: e.disclosure && (analysisTs || "").slice(0, 16) === e.disclosure.ts.slice(0, 16) ? "disclosure" : d.observation ? "publication" : basisReason, start: windowInfo.start, mode: windowInfo.kind }))}</p>`;
     const notes = [];
-    if (e.disclosure) {
-      const dsc = [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title);
-      notes.push(`같은 내용의 공시(${dsc ? `<a href="#/pr/${esc(dsc.id)}">「${esc(e.disclosure.title)}」</a>` : `「${esc(e.disclosure.title)}」`})가 ${dayLabel(e.disclosure.ts)} ${hhmm(e.disclosure.ts)}에 먼저 나와, 선행 공시 연결 후보입니다. 사건 관찰 기록에서 같은 사건인지 확인·연결할 수 있습니다.`);
-    }
     if (isDisc && a.untimed) notes.push("접수 시각 미상 → 그날 하루(전일 종가 → 종가)로 계산");
     if (e.off_session) notes.push(`장 마감 뒤·휴장일 공개 → 반응일 ${e.reaction_day ? esc(e.reaction_day) : "다음 거래일"}`);
     if (e.late && !d.intraday && !d.intraday_coarse) notes.push(a.ts && a.ts.slice(11, 16) > "15:00"
@@ -3212,7 +3235,7 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
     // 공개 뒤 주가: 한 차트에 이 기사 + KOSDAQ + (지금 목록의) 다른 기사·중앙값. 탭으로 전후 5거래일
     const win5 = d.observation?.windows?.["5"];
     if (iw || ic || d.reaction_chart || (win5 && (win5.points || []).length)) {
-      const w = iw || ic || d.observation?.intraday;
+      const w = d.observation?.intraday || iw || ic;   // 그래프·카드와 같은 기준 시각
       html += `<section class="verdict-box intraday-box"><div class="vb-head">공개 뒤 주가 <small class="muted">${w ? span0(w) : ""}${iw ? " · 1분봉 기준" : ic ? ` · ${barLabel(ic.interval, ic.kq_interval)}` : ""}</small></div>
         <div class="rx-tabs"><div class="seg" role="group" aria-label="관찰 기간"><button type="button" data-rxr="day" aria-pressed="true">공개 직후</button><button type="button" data-rxr="5" aria-pressed="false">전후 5거래일</button></div><span class="rx-cmp" id="rx-cmp"></span></div>
         <div class="rx-legend day-legend"></div><div class="rx-chart"></div><div class="obs-empty" id="rx-empty" hidden></div>
@@ -3360,6 +3383,8 @@ async function observationExtras(host, eid, { openEvent = null } = {}) {
       try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); b.disabled = true; }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     }));
+    const leadOpen = $("#lead-disc-open");
+    if (leadOpen) leadOpen.onclick = () => discPopup([...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title) || e.disclosure);
     const del = $("#pr-del");
     if (del) del.onclick = async () => {
       if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "한 번 더 누르면 삭제됩니다"; return; }
