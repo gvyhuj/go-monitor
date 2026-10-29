@@ -28,7 +28,7 @@ assert.doesNotMatch(context.measureList(measure), /예상 대비|%p/);          
 assert.equal(context.measureList({ value: 0.9 }), "");
 const prCount = context.countLine("pr");
 assert.doesNotMatch(prCount, /최근 6개월 그린광학 보도자료/);
-assert.match(prCount, /한 달 평균 \(최근 6개월\)<\/small><b>0\.3건/);
+assert.match(prCount, /한 달 평균 \(전체\)<\/small><b>\d+\.\d건/);
 assert.match(prCount, /한 건당 실린 매체 \(전체 평균\)<\/small><b>4\.3곳/);   // (3+1+9)/3, 6개월 밖 기사 포함
 assert.match(prCount, /전체 \(2025-12-01부터\)<\/small><b>3건/);
 assert.match(context.countLine("disc"), /시각을 아는 공시 \(6개월\)<\/small><b>1건/);

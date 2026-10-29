@@ -69,7 +69,7 @@ async function main() {
       assert.match(await page.locator("#rx-n").innerText(), /대상 3건/);
       assert.ok(await page.locator("#rx-plot .rx-avg").count() > 0, "중앙값 선");
       assert.match(await page.locator("#rx-cards").innerText(), /\+60분 중앙값/);
-      assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린/);
+      assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린|평균/);
       assert.equal(await page.locator("#rx-vskq").count(), 0, "KOSDAQ 빼고 보기 없음");
 
       // Sorting by reaction and the conditions apply to the list and the overview together.
@@ -119,6 +119,8 @@ async function main() {
       assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
       await page.locator('#pr-detail [data-rxr="5"]').click();
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
+      assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pr-cards small, #pr-cards strong")]
+        .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > e.parentElement.getBoundingClientRect().right + 1).map((e) => e.textContent)), [], "카드 글자가 잘리지 않음");
       for (const label of ["유사 사건"]) {
         await page.locator("#pr-detail .obs-fold > summary", { hasText: label }).first().waitFor();
       }
@@ -197,7 +199,9 @@ async function main() {
         return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
       assert.ok(cardGap < 2, `카드 오른쪽 빈 공간 ${cardGap}px`);
       const cardH = await page.evaluate(() => document.querySelector("#pr-cards > div").getBoundingClientRect().height);
-      assert.ok(cardH < 45, `카드는 한 줄 높이 (${cardH}px)`);
+      assert.ok(cardH < (width > 700 ? 45 : 64), `카드 높이 ${cardH}px (넓으면 한 줄, 좁으면 이름 위·값 아래)`);
+      const hs = await page.evaluate(() => [...document.querySelectorAll("#pr-cards > div")].map((x) => Math.round(x.getBoundingClientRect().height)));
+      assert.equal(new Set(hs).size, 1, `카드 높이가 모두 같음 ${hs}`);
       // 선행 공시: 이름이 보이고, 누르면 팝업으로 공시 내용
       assert.match(await page.locator("#pr-detail .lead-disc").innerText(), /선행 공시\s*단일판매ㆍ공급계약체결[\s\S]*13:02 접수 · 기사보다 8분 먼저/);
       await page.locator("#lead-disc-open").click();
@@ -217,6 +221,30 @@ async function main() {
       const sim = await simRows.allInnerTexts();
       assert.equal(sim.filter((t) => t.includes("충북TP")).length, 1, sim.join(" / "));
       assert.match(sim.find((t) => t.includes("충북TP")), /같은 주제 3건/);
+
+      // 일별 표: 위 다섯 칸 줄 대신 고른 기간 요약 카드 4개 + 순매수·거래량 한 줄
+      await page.goto(`${base}/#/days`);
+      await page.locator(".ps-cards").waitFor();
+      assert.equal(await page.locator("#hero").isHidden(), true);
+      assert.deepEqual((await page.locator(".ps-card > small").allInnerTexts()), ["기간 등락 · 시장 대비", "기간 최고 · 최저", "오른 날 · 내린 날", "기간 소식"]);
+      assert.match(await page.locator(".ps-range").innerText(), /2026-09-21 ~ 2026-10-28 · 28거래일/);
+      assert.match(await page.locator(".ps-card").first().innerText(), /\+3\.91%[\s\S]*KOSDAQ[\s\S]*시장보다/);
+      assert.match(await page.locator(".ps-news").innerText(), /보도자료 3[\s\S]*외부 3[\s\S]*주요 공시 1/);
+      assert.match(await page.locator(".ps-line").innerText(), /순매수 합계[\s\S]*평균 거래량/);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+      // 오른 날 → 그 날들만 표에
+      const upN = +(await page.locator('[data-quick="up"]').innerText()).replace("일", "");
+      await page.locator('[data-quick="up"]').click();
+      assert.equal(await page.locator("#days-body tr").count(), upN);
+      assert.ok((await page.locator("#days-body tr td:nth-child(6)").allInnerTexts()).every((t) => t.startsWith("+") && t !== "+0.00%"));
+      // 최고 날 → 등락 고르기를 풀고 그날 줄로
+      await page.locator(".ps-go[data-goto]").first().click();
+      await page.locator("#days-body tr.is-flash").waitFor();
+      // 기간 소식 → 같은 기간 뉴스 목록
+      await page.locator("[data-news]").click();
+      await page.waitForFunction(() => location.hash === "#/pr");
+      await page.locator("#art-cond-txt").waitFor();
+      assert.match(await page.locator("#art-cond-txt").innerText(), /2026-09-21|9\/21|09-21/);
 
       // 주가 기록 1일 차트: 날짜는 달력에서만 (키보드로 숫자를 넣어도 바뀌지 않음)
       await page.goto(`${base}/#/`);

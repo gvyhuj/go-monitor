@@ -39,7 +39,7 @@ test('three article kinds; legacy company announcement reads as an external arti
  const c=ctx();assert.equal(run(c,'JSON.stringify(Object.values(OBS_KIND))'),JSON.stringify(['당사 보도자료','외부기사','주요 공시']));
  assert.equal(run(c,"obsKind('external_company_announcement')"),'external_article');
 });
-test('blue line is the median: one large mover does not pull it; mean is shown only as a number',()=>{
+test('blue line is the median: one large mover does not pull it; mean is not shown',()=>{
  const c=ctx(),a=fixture();
  const mk=(id,v)=>({...a,id,event_key:id,steps:{30:{own:v,kq:null,diff:null}},path:{own:[[0,0],[4,v]],kq:[]}});
  ov(c,[mk('a',.01),mk('b',.02),mk('c',.30)]);
@@ -49,7 +49,7 @@ test('blue line is the median: one large mover does not pull it; mean is shown o
  const endY=id=>{const g=svg.slice(svg.indexOf(`data-id="${id}"`));const d=g.match(/class="rx-one[^"]*" d="([^"]+)"/)[1];return +d.split(',').pop();};
  assert.ok(Math.abs(ys[1]-endY('b'))<0.1,'파란 점은 가운데 기사(2%)와 같은 높이');
  assert.ok(Math.abs(ys[1]-endY('c'))>10,'크게 튄 기사 쪽으로 끌려가지 않음');
- assert.doesNotMatch(c.$('#rx-sum').innerHTML,/중앙값 <b|오른 \d/);assert.match(c.$('#rx-cards').innerHTML,/2\.00%[\s\S]*11\.00%/);
+ assert.doesNotMatch(c.$('#rx-sum').innerHTML,/중앙값 <b|오른 \d/);assert.match(c.$('#rx-cards').innerHTML,/2\.00%/);assert.doesNotMatch(c.$('#rx-cards').innerHTML,/평균|11\.00%/);   // 평균 카드는 뺌
  assert.match(c.$('#rx-cards').innerHTML,/\+30분 중앙값/);
  assert.match(svg,/실제 공통 시각의 중앙값/);
 });
