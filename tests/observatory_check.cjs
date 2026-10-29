@@ -46,7 +46,7 @@ test('blue line is the median: one large mover does not pull it; mean is not sho
  const svg=c.$('#rx-plot').innerHTML;
  const ys=[...svg.matchAll(/<circle cx="[^"]+" cy="([^"]+)"[^>]*class="rx-avg"/g)].map(m=>+m[1]);
  assert.equal(ys.length,2);                       // minutes 0 and 4
- const endY=id=>{const g=svg.slice(svg.indexOf(`data-id="${id}"`));const d=g.match(/class="rx-one[^"]*" d="([^"]+)"/)[1];return +d.split(',').pop();};
+ const endY=id=>{const g=svg.slice(svg.indexOf(`data-id="${id}"`));const d=g.match(/class="rx-one[^"]*"(?: pathLength="1")? d="([^"]+)"/)[1];return +d.split(',').pop();};
  assert.ok(Math.abs(ys[1]-endY('b'))<0.1,'파란 점은 가운데 기사(2%)와 같은 높이');
  assert.ok(Math.abs(ys[1]-endY('c'))>10,'크게 튄 기사 쪽으로 끌려가지 않음');
  assert.doesNotMatch(c.$('#rx-sum').innerHTML,/중앙값 <b|오른 \d/);assert.match(c.$('#rx-cards').innerHTML,/2\.00%/);assert.doesNotMatch(c.$('#rx-cards').innerHTML,/평균|11\.00%/);   // 평균 카드는 뺌

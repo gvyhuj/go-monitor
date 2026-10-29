@@ -19,6 +19,6 @@ jobs:
       - run: python -m pip install -r requirements.txt pytest
       - run: python -m pytest tests -q
       - run: node --check web/app.js
-      - run: node --test tests/display_consistency_check.cjs tests/reaction_alignment_check.cjs tests/observatory_check.cjs
+      - run: node --test tests/display_consistency_check.cjs tests/reaction_alignment_check.cjs tests/observatory_check.cjs tests/motion_check.cjs
       - run: node tests/dashboard_badges_check.cjs
       - run: node tests/primary_analysis_check.cjs
