@@ -1936,11 +1936,6 @@
     </ul></section>`;
   }
 
-  function contributionBlock(sp) {
-    if (!sp || sp.own == null) return '';
-    return `<section class="d-block"><h3>모형 추정 기여분 (저장 당시)</h3><dl class="facts">${[['그린광학 실제 등락률',pct(sp.own)],['시장 추정 기여분',points(sp.market)],['업종 추정 기여분',points(sp.sector)],['종목 고유 추정분',points(sp.specific)]].map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl><p class="note">과거 관계에 따른 모형 추정이며 실제 상승·하락 원인을 확정하지 않습니다. 종목 고유 추정분에는 누락 요인과 모형 오차도 포함됩니다.</p></section>`;
-  }
-
   function renderEventDrawer(d) {
     const e = d.event, c = d.cause;
     const daily = isDaily(e);
@@ -1965,7 +1960,6 @@
         <div><dt>거래대금${daily ? " (저장 당시)" : ""}</dt><dd class="num">${e.trade_value ? eok(e.trade_value) : "-"}</dd></div>
       </dl>
       ${daily ? `<p class="note">${esc(dailyEvidenceNote(e))}</p>` : ""}
-      ${contributionBlock(c && c.split)}
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
@@ -2337,10 +2331,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const nNotes=NOTE_TABS.map(([k,t])=>`${t} ${notesOf(k).length}`).join(' · ');
     host.innerHTML=`<textarea id="obs-question-text" aria-label="AI 질문과 실제 관측 자료" readonly hidden></textarea>
     <dialog class="disc-pop note-pop" id="obs-note-pop" aria-label="결과 붙여넣기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>결과 붙여넣기 <small class="muted">AI 답이나 확인한 내용을 이 사건 기록으로 저장</small></strong><button type="button" class="btn-link" id="obs-note-x" aria-label="닫기">✕</button></div>
-    <form id="obs-note" class="obs-form"><label>기록 종류<select name="kind">${NOTE_TABS.map(([k])=>`<option value="${k}">${({manual_observation:'당시 수동 관찰',ai_analysis:'당시 AI 분석',retrospective_review:'사후 재검토'})[k]}</option>`).join('')}</select></label>
-      <label>작성 주체<select name="author_type"><option value="AI">AI</option><option value="manual">직접 작성</option></select></label><label>분석 시각 (KST)<input name="analysis_at" type="datetime-local" required></label>
-      <label class="wide">분석 결과 / 검토 메모<textarea name="body" required rows="6"></textarea></label><label class="wide">확인 출처 (줄마다 URL)<textarea name="sources" rows="2"></textarea></label>
-      <label>주관적 신뢰도<input name="confidence_label" placeholder="높음 / 보통 / 낮음 / 미평가"></label><label>재검토 상태<select name="review_status"><option>검토 대기</option><option>재검토 완료</option><option>추가 자료 필요</option></select></label>
+    <form id="obs-note" class="obs-form"><label class="wide">분석 결과<textarea name="body" required rows="10" placeholder="AI 답이나 확인한 내용을 붙여넣으세요"></textarea></label>
       <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div></dialog>
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
       <details class="obs-more"><summary>조건 바꿔 찾기</summary><div class="obs-form" id="obs-filters">
@@ -2356,13 +2347,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const notePop=$('#obs-note-pop');
     notePop.addEventListener('close',()=>{noteOpen=false;});
     if(noteOpen&&!notePop.open)notePop.showModal();
-    const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');if(!notePop.open)notePop.showModal();if(kind)form.elements.kind.value=kind;if(!form.elements.analysis_at.value)form.elements.analysis_at.value=new Date(Date.now()+9*36e5).toISOString().slice(0,16);form.elements.body.focus();};
+    const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');if(!notePop.open)notePop.showModal();form.elements.body.focus();};
     $('#obs-note-open').onclick=()=>{revision=null;openNote(noteTab);};
     $('#obs-note-cancel').onclick=$('#obs-note-x').onclick=()=>{noteOpen=false;revision=null;notePop.close();};
     if(noteDraft)for(const [key,value] of Object.entries(noteDraft)){const input=$('#obs-note').elements[key];if(input)input.value=value;}
     // 관측값 사본은 반영할 때 기록에서 붙임 (요청이 짧아야 GitHub 창이 바로 열림)
-    $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,...v,sources:v.sources.split('\n').map(x=>x.trim()).filter(Boolean),snapshot:{version:d.snapshot_version},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
-    host.querySelectorAll('[data-note-edit]').forEach(b=>b.onclick=()=>{const n=d.notes.find(x=>x.id===b.dataset.noteEdit);revision=n.id;openNote();const form=$('#obs-note');for(const k of ['body','kind','author_type','confidence_label','review_status'])form.elements[k].value=n[k]||'';form.elements.sources.value=(n.sources||[]).join('\n');$('#obs-save-status').textContent='과거 기록은 유지하고 새 버전을 저장합니다.';form.scrollIntoView({block:'center'});});
+    $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,body:v.body,kind:'ai_analysis',author_type:'AI',analysis_at:new Date(Date.now()+9*36e5).toISOString().slice(0,16),review_status:'검토 대기',sources:[],snapshot:{version:d.snapshot_version},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
     const search=()=>{
       const v=id=>$('#obs-'+id).value,query=v('query').toLowerCase();
       let list=index.items.filter(x=>{const m=x.steps['30']?.own,t=x.first_public_at?.slice(11,16),session=!t?'미상':t<'09:00'?'장전':t>'15:00'?'15시 이후':'장중';return (!query||[x.title,x.partner,...x.business_tags].join(' ').toLowerCase().includes(query))&&(!v('tag')||x.business_tags.includes(v('tag')))&&(!v('kind')||obsKind(x.event_kind)===v('kind'))&&(!v('publisher')||x.publisher.includes(v('publisher')))&&(!v('source')||x.time_source.includes(v('source')))&&(!v('from')||(x.first_public_at||'')>=v('from'))&&(!v('to')||(x.first_public_at||'').slice(0,10)<=v('to'))&&(!v('session')||session===v('session'))&&(!v('quality')||x.status===v('quality'))&&(!$('#obs-has-note').checked||x.notes_count>0)&&(!v('sign')||(v('sign')==='missing'?m==null:v('sign')==='up'?m>0:m<0));})
