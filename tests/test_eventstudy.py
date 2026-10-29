@@ -391,7 +391,7 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
                 if i < 140:
                     continue
                 level = prev
-                for step in range(0, 391, 5):                       # 09:00 ~ 15:30, 5분마다
+                for step in sorted(set(range(0, 391, 5)) | {59}):   # Include actual 09:59 pre-publication quote
                     stamp = datetime.fromisoformat(day + "T09:00") + timedelta(minutes=step)
                     level *= 1 + random.normal(0, 0.002)
                     if code == "X" and day == event_day and stamp.strftime("%H:%M") == "10:05":

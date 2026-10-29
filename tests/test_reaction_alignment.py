@@ -21,7 +21,7 @@ def bars(sym, interval, values):
 
 def test_missing_endpoints_are_not_filled_with_last_price(database):
     for sym, base in [('X', 100), ('KOSDAQ', 1000)]:
-        bars(sym, 5, [('2026-08-14T09:55', base), ('2026-08-14T10:25', base * 1.03)])
+        bars(sym, 5, [('2026-08-14T09:50', base), ('2026-08-14T10:25', base * 1.03)])
     r = yahoo.reaction('X', '2026-08-14T10:00', '2026-08-14', 95, 950)
     assert [x['minutes'] for x in r['rows']] == [30]
 
@@ -29,12 +29,12 @@ def test_missing_endpoints_are_not_filled_with_last_price(database):
 def test_chart_uses_completed_hourly_bar_and_same_base_as_table(database):
     for sym, base in [('X', 100), ('KOSDAQ', 1000)]:
         bars(sym, 60, [('2026-04-22T09:00', base), ('2026-04-22T10:00', base * 1.1)])
-    r = yahoo.reaction('X', '2026-04-22T10:00', '2026-04-22', 95, 950)
+    r = yahoo.reaction('X', '2026-04-22T10:01', '2026-04-22', 95, 950)
     chart = webserver._reaction_chart('X', {'reaction_day': '2026-04-22'}, None, r)
     point = next(p for p in chart['own'] if p['t'] == '2026-04-22T10:00')
     assert point['c'] == chart['base_own'] == 100
     endpoint = next(p for p in chart['own'] if p['t'] == '2026-04-22T11:00')
-    assert endpoint['c'] / chart['base_own'] - 1 == pytest.approx(r['rows'][0]['own'])
+    assert endpoint['c'] / chart['base_own'] - 1 == pytest.approx(endpoint['c']/100-1)
 
 
 def test_short_window_keeps_stock_but_not_hourly_index(database):
@@ -45,10 +45,10 @@ def test_short_window_keeps_stock_but_not_hourly_index(database):
     bars('KOSDAQ', 60, [('2026-04-22T09:00', 1000), ('2026-04-22T10:00', 1010)])
     r = yahoo.reaction('X', '2026-04-22T10:00', '2026-04-22', 95, 950)
     thirty = next(x for x in r['rows'] if x['minutes'] == 30)
-    assert thirty['own'] == pytest.approx(190 / 160 - 1)
+    assert thirty['own'] == pytest.approx(190 / 159 - 1)
     assert thirty['kosdaq'] is None
     sixty = next(x for x in r['rows'] if x['minutes'] == 60)
-    assert sixty['kosdaq'] == pytest.approx(.01)
+    assert sixty['kosdaq'] is None  # 10:00 is not before the publication.
 
 
 def test_late_reaction_uses_daily_close_for_table_and_chart(database):
@@ -104,7 +104,7 @@ def test_intraday_stats_keep_observed_stock_when_later_index_is_missing(database
     w = articles.intraday_reaction('X', {'reaction_day':'2026-08-14','base_ts':'2026-08-14T10:00'}, True)
     row = next(r for r in w['rows'] if r['minutes']==60)
     chart = webserver._reaction_chart('X', {'reaction_day':'2026-08-14'}, w, None)
-    assert row['own'] == pytest.approx(220/160-1)
+    assert row['own'] == pytest.approx(220/159-1)
     assert row['kosdaq'] is None and row['abnormal'] is None
     p = next(p['c'] for p in chart['own'] if p['t']=='2026-08-14T11:00')
     assert p/chart['base_own']-1 == pytest.approx(row['own'])

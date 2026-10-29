@@ -37,6 +37,7 @@ def test_same_publisher_portal_and_direct_links_count_as_one_outlet(tmpdb):
         _art(conn, "direct", "2026-09-08T19:00", f"{NAME}, 카메라 공동 개발")
         _art(conn, "other", "2026-09-08T09:28", f"{NAME}, 카메라 공동 개발")
         conn.execute("UPDATE articles SET story='story', office='머니투데이'")
+        conn.executemany("INSERT INTO article_links(a,b) VALUES(?,?)", [("portal","direct"),("portal","other")])
         conn.execute("UPDATE articles SET office='이데일리' WHERE id='other'")
     rows = articles.article_rows("X")
     assert len(rows) == 1
@@ -59,15 +60,16 @@ def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
     assert {a["id"]: a for a in articles.article_rows("X")}["c"]["kind"] == "pr"
 
 
-def test_group_events_by_reaction_day():
+def test_group_events_keep_independent_same_day_events():
     def it(aid, ts, kind, day, cat="회사 발표", out=1):
         return {"id": aid, "ts": ts, "kind": kind, "category": cat, "outlets_total": out, "effect": {"reaction_day": day}}
     ev = articles.group_events([it("a", "2026-05-26T13:37", "ext", "2026-05-26"),
                                 it("b", "2026-05-26T13:47", "pr", "2026-05-26", out=3),
                                 it("c", "2026-05-26T14:00", "ext", "2026-05-26", cat="단순 언급"),
                                 it("d", "2026-06-01T09:00", "ext", "2026-06-01", cat="시황·특징주")])
-    first = next(e for e in ev if e["day"] == "2026-05-26")
-    assert first["kind"] == "pr" and first["lead"] == "b" and first["outlets"] == 4 and len(first["ids"]) == 3
+    first = next(e for e in ev if e["lead"] == "b")
+    assert first["kind"] == "pr" and first["outlets"] == 3 and len(first["ids"]) == 1
+    assert len([e for e in ev if e["day"] == "2026-05-26"]) == 3
     assert next(e for e in ev if e["day"] == "2026-06-01")["noise"]
 
 
@@ -268,6 +270,8 @@ def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
         _art(conn, "a", "2026-04-22T09:10", f"{NAME}, 82억 공급계약 체결")
         _art(conn, "b", "2026-04-22T14:14", f"{NAME}, 소형무장헬기 유도탄 공급계약→매출 확대 기대")
         conn.execute("UPDATE articles SET story='s1', office=CASE id WHEN 'a' THEN '뉴스핌' ELSE '톱스타뉴스' END")
+    with db.connect() as conn:
+        conn.execute("INSERT INTO article_links(a,b) VALUES('a','b')")
     auto = articles.article_rows("X")
     assert [a["id"] for a in auto] == ["a"] and not auto[0].get("picked")
     cloud_job.apply_inbox({"type": "article_lead", "id": "b", "ids": ["a", "b"]}, logging.getLogger())

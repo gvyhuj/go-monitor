@@ -80,7 +80,11 @@ def apply_inbox(item: dict, log):
     """사이트에서 보낸 요청 하나를 기록에 반영."""
     t = item.get("type")
     with connect() as conn:
-        if t == "pr":
+        if t in ('news_event_note', 'news_event_meta', 'news_event_link', 'news_event_split'):
+            from core.observatory import mutate
+            mutate(conn, item)
+            log.info('사건 관찰 기록 요청 반영')
+        elif t == "pr":
             title = str(item.get("title") or "").strip()[:200]
             ts = datetime.fromisoformat(str(item.get("published_ts"))).isoformat(timespec="minutes")
             if title:

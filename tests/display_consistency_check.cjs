@@ -21,14 +21,14 @@ function harness() {
     DAY_ROWS: { '2026-10-28': { close: 10740, change: 440/10300, kosdaq: .0369 } },
     isDaily: e => e.event_type === 'daily', kindOf: () => '상승', scopeTag: () => '', tierTag: () => '',
     moveBasis: () => '', sgnCls: () => '', pct: v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v*100).toFixed(2)}%`,
-    won: v => String(v), int: v => String(v), eok: v => String(v), esc: v => String(v ?? ''),
+    points: v => `${(v*100).toFixed(2)}%p`, won: v => String(v), int: v => String(v), eok: v => String(v), esc: v => String(v ?? ''),
     dayLabel: s => s.slice(0,10), hhmm: s => (s || '').slice(11,16),
     manualBlock: () => '기존 원인 본문', relatedBlock: () => '', disclosureBlock: () => '',
     flowBlock: () => '', followupBlock: () => '', fillDayEvidence: () => {},
     causeHead: () => '', CONF_RE: /nomatch/, document: {}, MAIN_DISC: new Set(),
   };
   vm.createContext(ctx);
-  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'renderEventDrawer', 'eventContext'].map(fn).join('\n'), ctx);
+  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'contributionBlock', 'renderEventDrawer', 'eventContext'].map(fn).join('\n'), ctx);
   return {ctx, $};
 }
 const event = { event_type: 'daily', status: 'closed', direction: 'up', start_ts: '2026-10-28T09:00',
@@ -70,7 +70,7 @@ test('reaction page explains distinct counts and the earlier calculation timesta
     path:{own:[[-1,0],[10,.01],[30,.02]],kq:[[-1,0],[30,.005]]},steps:{'30':{own:.02,kq:.005}}};
   Object.assign(ctx, { main:{}, api:async()=>({items:[base,{...base,id:'b',steps:{}},
       {...base,id:'c',path:null,steps:{},untimed:true}]}), artViewSeg:()=>'', isoDate:()=>'',
-    chanceTxt:()=>'', BAR_TIP:'봉 간격', dashResize:null,window:{addEventListener(){}},
+    location:{hash:"#/react"}, toTime:t=>Date.parse(t+"Z")/1000, chanceTxt:()=>'', BAR_TIP:'봉 간격', dashResize:null,window:{addEventListener(){}},
     setTimeout,clearTimeout});
   const start = source.indexOf('  const reactState =');
   const end = source.indexOf('  // 기사 대시보드:',start);
@@ -93,4 +93,15 @@ test('reaction page explains distinct counts and the earlier calculation timesta
   assert.match($('#rx-table').innerHTML, /\+1\.50%p/);
   $('#rx-csv').onclick();
   assert.ok(exported[1].some(v => v.includes('(%p)')));
+});
+
+test('contribution display and AI use percentage points without clipping', () => {
+  const {ctx}=harness();
+  const split={own:.04,market:.06,sector:-.01,specific:-.01};
+  const html=ctx.contributionBlock(split);
+  assert.match(html,/6.00%p/); assert.match(html,/-1.00%p/);
+  assert.match(html,/실제 상승·하락 원인을 확정하지/);
+  const text=ctx.eventContext({event:{...event},cause:{split}},'검토');
+  assert.match(text,/시장 추정 기여분: 6.00%p/);
+  assert.match(text,/업종 추정 기여분: -1.00%p/);
 });

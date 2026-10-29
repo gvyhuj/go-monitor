@@ -291,6 +291,8 @@ def init_db():
     with connect() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        from .observatory import migrate
+        migrate(conn)
         scols = {r["name"] for r in conn.execute("PRAGMA table_info(trader_snapshots)")}
         for col, typ in _SNAPSHOT_MIGRATIONS.items():
             if col not in scols:

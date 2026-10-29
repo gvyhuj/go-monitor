@@ -108,14 +108,14 @@ jobs:
           key: db-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 사이트 파일 묶기
-        if: always() && hashFiles('_site/index.html') != ''
+        if: success() && hashFiles('_site/index.html') != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
       - name: 사이트 올리기
         id: deploy
-        if: always() && hashFiles('_site/index.html') != ''
+        if: success() && hashFiles('_site/index.html') != ''
         uses: actions/deploy-pages@v4
 
       - name: 최신 백업 (릴리스 '최신 백업', 1시간마다 덮어씀)

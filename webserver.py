@@ -642,6 +642,25 @@ def api_articles(q):
             "summary_critical_values": summary_critical_values(len(out)), "baseline": baseline}
 
 
+def align_observation(sym, out):
+    from core.observatory import build
+    row = reaction_row(out)
+    with connect() as conn:
+        details, _ = build(conn, sym, [row])
+    d = details[row['event_id']]
+    out['observation_event_id'] = d['event_id']
+    out['observation'] = d['observation']
+    out['observation_analysis_at'] = d['analysis_at']
+    f = d['observation'].get('intraday')
+    if f:
+        out['reaction_chart'] = {**f,
+            'own':[{'t':p['time'],'c':p['stock_price']} for p in f['points'] if p['stock_price'] is not None],
+            'kq':[{'t':p['time'],'c':p['kosdaq_price']} for p in f['points'] if p['kosdaq_price'] is not None]}
+    else:
+        out['reaction_chart'] = None
+    return out
+
+
 def api_article_detail(q, aid):
     s = load_settings()
     sym = s["symbol"]
@@ -680,7 +699,7 @@ def api_article_detail(q, aid):
                 "SELECT date, close, volume FROM daily_bars WHERE symbol=? AND date BETWEEN ? AND ? ORDER BY date", (sym, lo, hi))]
             out["daily_kosdaq"] = [dict(r) for r in conn.execute(
                 "SELECT date, close FROM daily_bars WHERE symbol=? AND date BETWEEN ? AND ? ORDER BY date", (KOSDAQ, lo, hi))]
-    return out
+    return align_observation(sym, out)
 
 
 def _disc_effect(sym, r, stamp):
@@ -772,7 +791,7 @@ def api_disclosure_detail(_q, did):
         kq = kq[kq["ts"].dt.date == rs.date()] if not kq.empty else kq
         out["bars"] = bars_payload(own)
         out["kosdaq"] = bars_payload(kq, full=False)
-    return out
+    return align_observation(sym, out)
 
 
 def reaction_row(d: dict, item: dict | None = None) -> dict:
@@ -837,7 +856,32 @@ def api_reactions(_q):
     discs = (api_disclosures({}).get("items") or [])
     ad = {a["id"]: api_article_detail({}, a["id"]) for a in arts}
     dd = {x["id"]: api_disclosure_detail({}, x["id"]) for x in discs}
-    return reactions_from(arts, ad, discs, dd)
+    result = reactions_from(arts, ad, discs, dd)
+    from core.observatory import build
+    with connect() as conn:
+        build(conn, load_settings()['symbol'], result['items'])
+    return result
+
+
+def api_observatory(_q, eid=None):
+    from core.observatory import build
+    rows = api_reactions({})['items']
+    with connect() as conn:
+        details, aliases = build(conn, load_settings()['symbol'], rows)
+    if eid:
+        eid = aliases.get(eid, eid)
+        if eid not in details:
+            raise LookupError('사건 자료 없음')
+        return details[eid]
+    return {'items': [observation_summary(d) for d in details.values()], 'aliases':aliases}
+
+
+def observation_summary(d):
+    return {k:d[k] for k in ('event_id','title','event_kind','business_tags','publisher','partner','first_public_at',
+            'time_source','time_status','followup_candidate')} | {
+        'steps':(d['observation'].get('intraday') or {}).get('steps',{}),
+        'post5':d['observation'].get('windows',{}).get('5',{}).get('post',{}),
+        'status':d['observation']['status'],'notes_count':len(d['notes']), 'exposures':len(d['members'])}
 
 
 def api_article_hide(aid, hidden: bool):
@@ -869,6 +913,8 @@ GET_ROUTES = [
     (re.compile(r"^/api/disclosures$"), api_disclosures),
     (re.compile(r"^/api/disclosures/(dK?\d+)$"), api_disclosure_detail),
     (re.compile(r"^/api/reactions$"), api_reactions),
+    (re.compile(r"^/api/observatory$"), api_observatory),
+    (re.compile(r"^/api/observatory/(ne-[a-f0-9]+)$"), api_observatory),
     (re.compile(r"^/api/share$"), api_share),
     (re.compile(r"^/api/cloud$"), api_cloud),
 ]
@@ -989,6 +1035,15 @@ class Handler(BaseHTTPRequestHandler):
         if self._external():
             return self._json({"error": "공유 링크로는 보기만 할 수 있습니다."}, 403)
         try:
+            if self.path == '/api/inbox':
+                from cloud_job import apply_inbox
+                from core.ghinbox import KNOWN
+                import logging
+                item = self._body()
+                if item.get('type') not in KNOWN:
+                    raise ValueError('알 수 없는 요청')
+                apply_inbox(item, logging.getLogger('local-inbox'))
+                return self._json({'ok':True})
             m = re.match(r"^/api/events/(\d+)/analyze$", self.path)
             if m:
                 return self._json(api_event_analyze(int(m.group(1))))
