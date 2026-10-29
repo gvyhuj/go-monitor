@@ -98,18 +98,17 @@ async function main() {
       assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
       assert.equal(await page.locator("#obs-question").innerText(), "✦ AI 질문");
       assert.equal(await page.locator("#rx-tab-note").innerText(), "", "공개 직후 탭 아래 안내 문장 없음");
-      // 연한 회색 다른 기사 선에 마우스를 대면 그 기사 제목
+      // 왼쪽 목록의 다른 기사에 마우스를 올리면 오른쪽 그래프에서 그 기사 선이 진해짐 (그래프 위 마우스로는 제목을 띄우지 않음)
       if (width > 700) {
-        const cb = await page.locator("#pr-detail .rx-chart").boundingBox();
-        let tipText = "";
-        for (let x = cb.x + cb.width * 0.3; x < cb.x + cb.width * 0.6 && !tipText; x += 12)
-          for (let y = cb.y + 10; y < cb.y + cb.height - 30 && !tipText; y += 5) {
-            await page.mouse.move(x, y);
-            tipText = (await page.locator(".rx-line-tip").textContent().catch(() => "")) || "";
-          }
-        assert.match(tipText, /3분기 실적 설명회 개최|반도체 장비용 렌즈 수주/);
-        await page.mouse.move(0, 0);
-        assert.equal(await page.locator("#pr-detail .rx-line-tip").count(), 1, "제목 줄은 그래프 위 하나");
+        const chartEl = page.locator("#pr-detail .rx-chart");
+        await page.mouse.move(5, 5);
+        const before = await chartEl.screenshot();
+        await page.locator('#art-list button[data-id="2002"]').hover();
+        const after = await chartEl.screenshot();
+        assert.ok(!before.equals(after), "목록에서 고른 기사 선 강조");
+        await page.mouse.move(5, 5);
+        assert.ok((await chartEl.screenshot()).equals(before), "목록에서 벗어나면 원래대로");
+        assert.equal(await page.locator(".rx-line-tip").count(), 0);
       }
       assert.match(await page.locator("#pr-cards").innerText(), /다른 기사 중앙값/);
       assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /KOSDAQ/, "코스닥 값은 '코스닥과 비교' 표에만");
@@ -163,6 +162,13 @@ async function main() {
       await page.locator("#pr-close").click();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
       await page.locator("#pr-detail .rx-ov").waitFor();
+      // 겹쳐 보기: 중앙값·평균 문장 없음, 목록에 마우스를 올리면 그 기사 선 강조 + 제목
+      assert.doesNotMatch(await page.locator("#rx-sum").innerText(), /중앙값|오른 \d/);
+      await page.locator('#art-list button[data-id="2002"]').hover();
+      assert.equal(await page.locator('#rx-plot g.rx-g.is-hot').getAttribute("data-id"), "2002");
+      assert.match(await page.locator("#rx-hover").innerText(), /3분기 실적 설명회 개최/);
+      await page.mouse.move(5, 5);
+      assert.equal(await page.locator('#rx-plot g.rx-g.is-hot').count(), 0);
       // 전체로 간 뒤: 설명은 접혀 있고, '← 방금 본 기사'로 돌아감
       assert.equal(await page.locator("#rx-sum details.rx-sum-more").evaluate((x) => x.open), false);
       assert.match(await page.locator("#rx-sum details.rx-sum-more > summary").innerText(), /계산 기준 자세히 보기/);

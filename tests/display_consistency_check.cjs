@@ -91,7 +91,7 @@ test('news list overview explains distinct counts and the earlier calculation ti
   assert.doesNotMatch($('#rx-sum').innerHTML, /우연|p값|판단 보류/);
   ctx.points = v => v == null ? '-' : `${ctx.pct(v)}p`;
   host.querySelector('.rx-ov-tools').onchange({target:{id:'rx-vskq',checked:true}});
-  assert.match($('#rx-sum').innerHTML, /시장 웃돈 1/);
+  assert.match($('#rx-cards').innerHTML, /\+30분 중앙값[\s\S]*%p/);   // KOSDAQ 빼고 보기: 카드가 %p로
   ctx.reactionCsv(items);
   assert.ok(exported[1].some(v => v.includes('(%p)')));
   assert.equal(exported[2][0][4], '1.50');
