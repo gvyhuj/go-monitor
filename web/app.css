@@ -1525,7 +1525,6 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .rx-period input { height: 32px; padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line-2); border-radius: 8px; }
 .rx-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
-.rx-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .rx-plot { width: 100%; min-height: 240px; }
 .rx-plot svg { display: block; overflow: visible; }
 .rx-grid { stroke: var(--line); stroke-width: 1; }
@@ -1536,7 +1535,6 @@ a:not([class]):not(.tabs a):not(.seg a):not(.method-toc a):hover, a.muted:hover 
 .rx-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; pointer-events: stroke; }
 .rx-g.is-hot .rx-one:not(.on), .rx-g:hover .rx-one:not(.on) { opacity: .95; stroke-width: 2; stroke: var(--ink-2); }
 .rx-hover { margin-left: 10px; font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
-.rx-chk .tip-i { color: var(--muted); font-size: 12px; }
 .rx-one.on { stroke: var(--up); opacity: 1; stroke-width: 2.2; }
 .rx-avg { fill: none; stroke: var(--brand-blue); stroke-width: 3; pointer-events: none; }
 .rx-leg { display: inline-flex; gap: 12px; font-size: 12px; color: var(--muted); }

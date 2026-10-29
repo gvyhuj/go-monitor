@@ -10,14 +10,14 @@ test('T15 T25 T26: observed-only medians, gap labels and unchanged numeric expor
  const c=ctx(),a=fixture();const items=[a,{...a,id:'b',event_key:'b'}];const v=ov(c,items);
  assert.match(c.$('#rx-plot').innerHTML,/rx-gap/);assert.match(c.$('#rx-plot').innerHTML,/관측 데이터 없는 구간/);assert.match(c.$('#rx-plot').innerHTML,/계산에 사용되지 않습니다/);
  let exported;c.csvDownloadRows=(...args)=>exported=args;c.reactionCsv(items);assert.equal(exported[2][0][4],'3.00');assert.equal(exported[2][0][5],''); // KOSDAQ +30분: 관측값 없음은 빈칸
- v.tools.onchange({target:{id:'rx-vskq',checked:true}});
+ run(c,'reactState.vsKq=true');ov(c,items);   // 화면 체크박스는 없앴지만 계산 경로는 그대로 검사
  const svg=c.$('#rx-plot').innerHTML;assert.match(svg,/유효 사건 2건/);assert.match(svg,/rx-gap average/);assert.match(svg,/그린광학 1분 \/ KOSDAQ 5분/);
  assert.equal((svg.match(/class="rx-avg"><title>/g)||[]).length,2); // Only common minutes 4 and 9.
  run(c,'reactState.vsKq=false');ov(c,[a]);assert.doesNotMatch(c.$('#rx-plot').innerHTML,/class="rx-avg"/);
 });
 test('T27: four default sentences and expandable detailed explanation',()=>{
  const c=ctx();ov(c,[fixture()]);const s=c.$('#rx-sum').innerHTML;
- for(const text of ['동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.','주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.','중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.','‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.'])assert.ok(s.includes(text));
+ for(const text of ['동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.','주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.','중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.','시장과의 비교는 아래 ‘KOSDAQ 대비 중앙값’과 기사 화면의 ‘코스닥과 비교’에서 봅니다.'])assert.ok(s.includes(text));
  assert.match(s,/<details class="rx-sum-more"><summary>계산 기준 자세히 보기/);assert.match(s,/기사의 직접적인 효과를 뜻하지 않습니다/);
 });
 test('T16: question uses actual payload, missing data and subjective confidence language',()=>{
