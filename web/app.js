@@ -550,7 +550,8 @@
         + (extra ? `${extra.median.length ? `<span><i class="rx-sw" style="border-color:${css("--brand-blue")}"></i>중앙값</span>` : ""}<span><i class="rx-sw" style="border-color:${css("--line-2")}"></i>다른 ${esc(extra.label || "기사")} ${extra.n}건 (+${extra.until}분까지)</span>` : "");
     };
     show(null);
-    let tip = null, hot = null;
+    let tip = el.previousElementSibling && el.previousElementSibling.classList.contains("rx-line-tip") ? el.previousElementSibling : null, hot = null;
+    if (tip) tip.textContent = "";      // 탭을 바꿔 다시 그릴 때 같은 줄을 다시 씀
     const hoverOther = (p) => {
       if (!otherLines.length) return;
       let best = null;
@@ -561,13 +562,10 @@
         if (gap <= 8 && (!best || gap < best.gap)) best = { o, gap, y };
       }
       if (hot && hot !== (best && best.o)) { hot.s.applyOptions({ color: css("--line-2"), lineWidth: 1 }); hot = null; }
-      if (!best) { if (tip) tip.hidden = true; return; }
+      if (!tip) { tip = document.createElement("div"); tip.className = "rx-hover rx-line-tip"; el.before(tip); }   // 겹쳐 보기처럼 그래프 위 한 줄
+      if (!best) { tip.textContent = ""; return; }
       if (hot !== best.o) { hot = best.o; hot.s.applyOptions({ color: css("--muted"), lineWidth: 2 }); }
-      if (!tip) { tip = document.createElement("div"); tip.className = "rx-line-tip"; el.appendChild(tip); }
       tip.textContent = best.o.title;
-      tip.hidden = false;
-      tip.style.left = `${Math.min(p.point.x + 12, Math.max(0, el.clientWidth - 260))}px`;
-      tip.style.top = `${Math.max(0, best.y - 34)}px`;
     };
     chart.subscribeCrosshairMove((p) => { show(p && p.time ? p.time : null); hoverOther(p); });
     return chart;
@@ -2334,12 +2332,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     <form id="obs-note" class="obs-form"><label class="wide">분석 결과<textarea name="body" required rows="10" placeholder="AI 답이나 확인한 내용을 붙여넣으세요"></textarea></label>
       <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div></dialog>
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
-      <details class="obs-more"><summary>조건 바꿔 찾기</summary><div class="obs-form" id="obs-filters">
+      <div class="obs-form" id="obs-filters" hidden>
       <label>키워드 / 고객·파트너<input id="obs-query" type="search"></label><label>태그<select id="obs-tag"><option value="">전체</option>${[...new Set(index.items.flatMap(x=>x.business_tags))].sort().map(x=>`<option>${esc(x)}</option>`).join('')}</select></label>
       <label>종류<select id="obs-kind"><option value="">전체</option>${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></label><label>발표 주체<input id="obs-publisher"></label><label>원천<input id="obs-source"></label>
       <label>시작일<input id="obs-from" type="date"></label><label>종료일<input id="obs-to" type="date"></label><label>시간대<select id="obs-session"><option value="">전체</option><option>장전</option><option>장중</option><option>15시 이후</option><option>미상</option></select></label>
       <label>주가 +30분 부호<select id="obs-sign"><option value="">전체</option><option value="up">상승</option><option value="down">하락</option><option value="missing">미집계</option></select></label><label>자료 품질<select id="obs-quality"><option value="">전체</option><option value="complete">관측 가능</option><option value="partial">일부 미집계</option><option value="unavailable">관측값 없음</option><option value="pending">진행 중</option></select></label>
-      <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div></details>`)}
+      <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div>`)}
 `;
     host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
@@ -2475,7 +2473,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const dv = reactionSamples(list, (x) => { const s0 = (x.steps || {})[reactState.h]; return s0 && s0.own != null && s0.kq != null ? (Object.hasOwn(s0, "diff") ? s0.diff : s0.own - s0.kq) : null; });
     const card = (label, v, text) => `<div><small>${label}</small><strong class="${sgnCls(v)}">${text ?? (v == null ? "-" : fmt(v))}</strong></div>`;
     $("#rx-cards").innerHTML = card(`+${reactState.h}분 중앙값`, median(vs)) + card("평균", vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null)
-      + card(reactState.vsKq ? "시장 웃돈 / 밑돈" : "오른 / 내린", null, `${vs.filter((v) => v > 0).length} / ${vs.filter((v) => v < 0).length}`)
       + (reactState.vsKq ? "" : `<div><small>KOSDAQ 대비 중앙값</small><strong class="${sgnCls(median(dv))}">${dv.length ? points(median(dv)) : "-"}</strong></div>`);
   }
   // 기사 그래프에 겹칠 다른 기사·중앙값 (위 겹쳐 보기와 같은 조건·같은 계산). 분 = 비교 시작 기준

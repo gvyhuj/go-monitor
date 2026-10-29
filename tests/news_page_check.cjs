@@ -69,6 +69,7 @@ async function main() {
       assert.match(await page.locator("#rx-n").innerText(), /대상 3건/);
       assert.ok(await page.locator("#rx-plot .rx-avg").count() > 0, "중앙값 선");
       assert.match(await page.locator("#rx-cards").innerText(), /\+60분 중앙값/);
+      assert.doesNotMatch(await page.locator("#rx-cards").innerText(), /오른 \/ 내린/);
 
       // Sorting by reaction and the conditions apply to the list and the overview together.
       assert.deepEqual(await page.locator("#art-sort option").allInnerTexts(), ["최신순", "많이 오른 순", "많이 내린 순"]);
@@ -104,10 +105,11 @@ async function main() {
         for (let x = cb.x + cb.width * 0.3; x < cb.x + cb.width * 0.6 && !tipText; x += 12)
           for (let y = cb.y + 10; y < cb.y + cb.height - 30 && !tipText; y += 5) {
             await page.mouse.move(x, y);
-            if (await page.locator(".rx-line-tip").isVisible().catch(() => false)) tipText = await page.locator(".rx-line-tip").innerText();
+            tipText = (await page.locator(".rx-line-tip").textContent().catch(() => "")) || "";
           }
         assert.match(tipText, /3분기 실적 설명회 개최|반도체 장비용 렌즈 수주/);
         await page.mouse.move(0, 0);
+        assert.equal(await page.locator("#pr-detail .rx-line-tip").count(), 1, "제목 줄은 그래프 위 하나");
       }
       assert.match(await page.locator("#pr-cards").innerText(), /다른 기사 중앙값/);
       assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /KOSDAQ/, "코스닥 값은 '코스닥과 비교' 표에만");
@@ -203,6 +205,7 @@ async function main() {
       await page.goto(`${base}/#/pr/2005`);
       await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
       const simRows = page.locator("#obs-results tbody tr");
+      assert.equal(await page.getByText("조건 바꿔 찾기").count(), 0);
       await simRows.first().waitFor();
       const sim = await simRows.allInnerTexts();
       assert.equal(sim.filter((t) => t.includes("충북TP")).length, 1, sim.join(" / "));
