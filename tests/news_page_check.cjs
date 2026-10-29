@@ -81,18 +81,18 @@ async function main() {
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
-      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(1년\)[\s\S]*한 건당 실린 매체 \(1년 평균\)[\s\S]*1년 \(\d{4}-\d\d-\d\d부터\)\s*3건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
-      assert.match(await page.locator("#pr-score").innerText(), /1년 \(\d{4}-\d\d-\d\d부터\)\s*0건/);
+      assert.match(await page.locator("#pr-score").innerText(), /15시 이후[\s\S]*전체\s*0건/);
       // 기간을 3달·직접 고르기로 바꾸면 이름과 숫자가 따라감
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       await page.locator('#art-pop button[data-ck="range"][data-cv="92"]').click();
-      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(3달\)[\s\S]*\(3달 평균\)[\s\S]*3달 \(\d{4}-\d\d-\d\d부터\)\s*3건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 3달\s*그린광학 보도자료 · 2026-07-29 ~ 2026-10-29[\s\S]*전체\s*3건/);
       await page.locator('#art-pop button[data-ck="range"][data-cv="custom"]').click();
       await page.locator("#art-from").fill("2026-10-16"); await page.locator("#art-from").dispatchEvent("change");
       await page.locator("#art-to").fill("2026-10-22"); await page.locator("#art-to").dispatchEvent("change");
-      assert.match(await page.locator("#pr-score").innerText(), /한 달 평균 \(26-10-16~26-10-22\)[\s\S]*26-10-16~26-10-22\s*2건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*직접 고른 기간\s*그린광학 보도자료 · 2026-10-16 ~ 2026-10-22[\s\S]*전체\s*2건/);
       await page.locator('#art-pop button[data-ck="range"][data-cv="365"]').click();
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       assert.equal(await list.count(), 3);
