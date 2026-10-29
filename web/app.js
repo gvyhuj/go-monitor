@@ -2273,158 +2273,159 @@ const obsSrc = (s) => OBS_SRC[s] || s || '미상';
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
 // 비교 시작(0분)에서 m분 뒤의 시계 시각 (같은 날 안에서만 씀)
 const obsClock = (start, m) => { if(!start)return ''; const t=+start.slice(11,13)*60 + +start.slice(14,16) + m; return `${String(Math.floor(((t%1440)+1440)%1440/60)).padStart(2,'0')}:${String(((t%60)+60)%60).padStart(2,'0')}`; };
-let obsHooks = null;      // 뉴스 반응 화면이 정해 줌: 다른 사건 열기 / 닫기
-let reactFit = null;      // 줄 아래 펼친 관찰 기록의 너비를 표 보이는 너비에 맞춤
-window.addEventListener('resize', () => { if (reactFit && document.getElementById('rx-detail')) reactFit(); });
-function observationChart(d, range, difference) {
+let obsHooks = null;      // 뉴스 반응 화면이 정해 줌: 다른 사건 열기 / 닫기 / 겹칠 경로
+let obsRerender = null;   // 열린 관찰 기록을 지금 조건(+30·60분, KOSDAQ 대비)으로 다시 그림
+// overlay: 뉴스 반응 화면이 넘겨주는 다른 기사 경로·중앙값 (공개 직후에만). W: 그릴 너비(px)
+function observationChart(d, range, difference, overlay = null, W = 900) {
   const o=d.observation, f=range==='day' ? o.intraday : o.windows[range];
   const pts=f?.points||[];
   const vals=pts.flatMap(p=>difference ? [p.diff] : [p.own,p.kq]).filter(x=>x!=null);
   if (!vals.length) {
-    const daily=range==='day' && Object.values(o.windows||{}).some(w=>(w.points||[]).some(p=>p.own!=null));
+    const daily=range==='day' && (o.windows?.['5']?.points||[]).some(p=>p.own!=null);
     const why=!d.first_public_at||o.status==='unavailable'?(o.missing_reason||'공개 시각 미상')+'이라 분 단위로 비교할 수 없습니다.'
       :range==='day'?`${o.day?`${o.day} ${o.mode==='session'?obsClock(o.start,0):'09:00'}`:'반응 시점'} 앞뒤로 저장된 ${difference?'같은 시각 그린광학·KOSDAQ ':''}분봉 시세가 없습니다.`
       :`이 기간에 저장된 일별 종가가 없습니다.`;
     return `<div class="obs-empty"><strong>이 구간에는 비교할 관측 시세가 없습니다.</strong><span>${esc(why)} 없는 값은 만들지 않고 비워 둡니다.${daily?' 일별 흐름은 [전후 5거래일] 탭에서 볼 수 있습니다.':''}</span></div>`;
   }
-  const W=900,H=300,L=62,R=18,T=30,B=38;
+  const ov=range==='day'&&overlay?overlay:null;
+  const H=Math.round(Math.max(220,Math.min(300,W*0.56))),L=54,R=12,T=30,B=34;
   const x0=range==='day' ? -30 : -Number(range), x1=range==='day' ? 120 : Number(range);
   const xs=x=>L+(x-x0)/(x1-x0)*(W-L-R);
-  // 세로축 눈금은 0.25%·0.5%·1%… 단위로 반듯하게
-  const span=Math.max(...vals,0)-Math.min(...vals,0)||.01, step=[.001,.0025,.005,.01,.02,.025,.05,.1,.2,.25,.5,1].find(v=>v*4>=span*1.15)||1;
-  const lo=Math.floor((Math.min(0,...vals)-step*.15)/step)*step,hi=Math.ceil((Math.max(0,...vals)+step*.15)/step)*step;
+  // 세로축은 이 기사·KOSDAQ·중앙값에 맞춤 (다른 기사 선은 칸 밖으로 나가면 잘라 냄). 눈금은 0.25%·0.5%·1%… 단위
+  const scaleVals=[...vals,...(ov?ov.median.map(p=>p[1]):[])];
+  const span=Math.max(...scaleVals,0)-Math.min(...scaleVals,0)||.01, step=[.001,.0025,.005,.01,.02,.025,.05,.1,.2,.25,.5,1].find(v=>v*4>=span*1.15)||1;
+  const lo=Math.floor((Math.min(0,...scaleVals)-step*.15)/step)*step,hi=Math.ceil((Math.max(0,...scaleVals)+step*.15)/step)*step;
   const ys=y=>T+(hi-y)/(hi-lo)*(H-T-B);
   const fmt=v=>difference?points(v):pct(v);
   const dots=pts.length<=45;      // 일별처럼 점이 적을 때만 점을 늘 보이게, 분봉은 마우스·키보드로 고를 때만
   const lines=(key,cls,iv)=>{let last=null;return pts.map(p=>{
     if(p[key]==null)return '';
     const prev=last;last=p;
-    const tip=`${p.time.replace('T',' ')} KST · ${key==='diff'?'KOSDAQ와의 단순 차이':key==='kq'?'KOSDAQ':'그린광학'} ${fmt(p[key])} · 그린광학 ${p.stock_price??'관측값 없음'} / KOSDAQ ${p.kosdaq_price??'관측값 없음'} · ${range==='day'?iv+'분봉':'일별'}`;
+    const tip=`${p.time.replace('T',' ')} KST · ${key==='diff'?'KOSDAQ와의 단순 차이':key==='kq'?'KOSDAQ':'이 기사(그린광학)'} ${fmt(p[key])} · 그린광학 ${p.stock_price??'관측값 없음'} / KOSDAQ ${p.kosdaq_price??'관측값 없음'} · ${range==='day'?iv+'분봉':'일별'}`;
     return `${prev&&p.offset-prev.offset<=iv && (range!=="day" || p[key==="kq"?"kq_source":"own_source"]===prev[key==="kq"?"kq_source":"own_source"]) ? `<path class="${cls}" d="M${xs(prev.offset)},${ys(prev[key])}L${xs(p.offset)},${ys(p[key])}"/>`:''}<circle class="obs-point ${cls}${dots?' on':''}" cx="${xs(p.offset)}" cy="${ys(p[key])}" r="3" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
   }).join('');};
+  const path=(sr,gap=5)=>sr.map(([m,v],i)=>`${i&&m-sr[i-1][0]<=gap?'L':'M'}${xs(m).toFixed(1)},${ys(v).toFixed(1)}`).join('');
+  const clip='obs-clip-'+range;
+  const overlayHtml=ov?`<g clip-path="url(#${clip})">${ov.others.map(sr=>`<path class="obs-other" d="${path(sr)}"/>`).join('')}${ov.median.length?`<path class="rx-avg obs-median" d="${path(ov.median,1)}"/>`:''}</g>`:'';
   const markers=[{time:d.first_public_at,title:'기사 최초 공개'},...d.context.map(x=>({time:x.ts,title:x.title}))];
   const markerHtml=markers.map(m=>{if(!m.time)return '';let x;if(range==='day'){x=(toTime(m.time)-toTime(o.start))/60;}else{const p=pts.find(p=>p.time===m.time.slice(0,10));x=p?.offset;}if(x==null||x===0||x<x0||x>x1)return '';const tip=m.title+' · '+obsStamp(m.time);return `<line class="obs-marker" x1="${xs(x)}" x2="${xs(x)}" y1="${T}" y2="${H-B}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></line>`;}).join('');
-  const startLabel=range==='day'?`비교 시작 ${obsClock(o.start,0)}`:'반응일';
-  const ticks=range==='day'?[-30,0,30,60,90,120]:Array.from({length:(x1-x0)/(range==='5'?1:5)+1},(_,i)=>x0+i*(range==='5'?1:5));
-  const tickText=x=>range==='day'?obsClock(o.start,x):x===0?'반응일':`${x>0?'+':''}${x}${Math.abs(x)===x1?'거래일':'일'}`;
+  const startLabel=range==='day'?`공개 ${obsClock(o.start,0)}`:'반응일';
+  const tickStep=range==='day'?(W<460?60:30):(W<460?5:1);
+  const ticks=range==='day'?Array.from({length:150/tickStep+1},(_,i)=>-30+i*tickStep):Array.from({length:(x1-x0)/tickStep+1},(_,i)=>x0+i*tickStep);
+  const tickText=x=>range==='day'?obsClock(o.start,x):x===0?'반응일':`${x>0?'+':''}${x}일`;
   const yTicks=Array.from({length:Math.round((hi-lo)/step)+1},(_,i)=>lo+step*i);
   const caption=range==='day'
-    ? `${f.base_basis==='last_completed_before_publication'?'공개 직전 완료 시세':'직전 거래일 저장 종가'} = 0% · 그린광학 ${f.base_own_time?f.base_own_time.slice(11,16):'미상'} / KOSDAQ ${f.base_kq_time?f.base_kq_time.slice(11,16):'미상'} 기준${f.base_lag_minutes!=null?` · 공개와 ${f.base_lag_minutes}분 차이`:''} · ${f.interval||'-'}분 / ${f.kq_interval||'-'}분봉`
-    : `${f.base_day||'미상'} 저장 종가 = 0% · ${f.status==='pending'?'진행 중':'일별 관찰'}`;
-  return `<div class="obs-chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="사건 전후 ${esc(range==='day'?'당일':range+'거래일')} 그린광학 및 KOSDAQ 관측값">
+    ? `${f.base_basis==='last_completed_before_publication'?'공개 직전 완료 시세':'직전 거래일 저장 종가'} = 0% · 그린광학 ${f.base_own_time?f.base_own_time.slice(11,16):'미상'} / KOSDAQ ${f.base_kq_time?f.base_kq_time.slice(11,16):'미상'} 기준${f.base_lag_minutes!=null?` · 공개와 ${f.base_lag_minutes}분 차이`:''} · ${f.interval||'-'}분 / ${f.kq_interval||'-'}분봉${ov?` · 다른 기사·중앙값은 +${ov.until}분까지`:''}`
+    : `-${range}거래일 ~ +${range}거래일 · ${f.base_day||'미상'} 저장 종가 = 0% · ${f.status==='pending'?'진행 중':'일별 관찰'}`;
+  return `<div class="obs-chart-scroll"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="사건 ${esc(range==='day'?'공개 직후':'전후 '+range+'거래일')} 그린광학 및 KOSDAQ 관측값">
+  <defs><clipPath id="${clip}"><rect x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}"/></clipPath></defs>
   ${yTicks.map(v=>`<line class="rx-grid" x1="${L}" x2="${W-R}" y1="${ys(v)}" y2="${ys(v)}"/><text x="${L-8}" y="${ys(v)+4}" text-anchor="end">${fmt(v)}</text>`).join('')}
   <line class="obs-zero" x1="${L}" x2="${W-R}" y1="${ys(0)}" y2="${ys(0)}"/>
-  <line class="obs-start" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H-B}"/><rect class="obs-start-tag" x="${xs(0)-48}" y="${T-24}" width="96" height="20" rx="4"/><text class="obs-start-text" x="${xs(0)}" y="${T-10}" text-anchor="middle">${startLabel}</text>
-  ${markerHtml}${lines(difference?'diff':'own','obs-own',range==='day'?f.interval||1:1)}${difference?'':lines('kq','obs-kq',range==='day'?f.kq_interval||1:1)}
+  ${overlayHtml}
+  <line class="obs-start" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H-B}"/><rect class="obs-start-tag" x="${xs(0)-44}" y="${T-24}" width="88" height="20" rx="4"/><text class="obs-start-text" x="${xs(0)}" y="${T-10}" text-anchor="middle">${startLabel}</text>
+  ${markerHtml}${difference?'':lines('kq','obs-kq',range==='day'?f.kq_interval||1:1)}${lines(difference?'diff':'own','obs-own',range==='day'?f.interval||1:1)}
   ${ticks.map((x,i)=>`<text x="${xs(x)}" y="${H-12}" text-anchor="${i===0?'start':i===ticks.length-1?'end':'middle'}">${tickText(x)}</text>`).join('')}</svg></div>
   <p class="obs-caption"><span>${esc(caption)}</span><span>관측점 ${pts.filter(p=>p.own!=null).length} / KOSDAQ ${pts.filter(p=>p.kq!=null).length} · KST</span></p>`;
 }
 async function showObservation(eid) {
   const host=$('#rx-detail'); if(!host)return;
-  host.innerHTML='<section class="obs-detail"><p class="loading">사건 자료를 불러오는 중…</p></section>';
+  host.innerHTML='<section class="panel dash-card obs-detail"><p class="loading">사건 자료를 불러오는 중…</p></section>';
   let d,index;
   try { index=await api('/api/observatory'); eid=index.aliases?.[eid]||eid;d=await api('/api/observatory/'+encodeURIComponent(eid)); }
-  catch(e){host.innerHTML=`<section class="obs-detail"><p role="alert">${esc(e.message)}</p></section>`;return;}
+  catch(e){host.innerHTML=`<section class="panel dash-card obs-detail"><p role="alert">${esc(e.message)}</p></section>`;return;}
   if(!$('#rx-detail'))return;
-  let range='day',diff=false,revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,filterDraft=null;
+  let range='day',revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,filterDraft=null,openFolds=new Set();
   const NOTE_TABS=[['manual_observation','확인 사실'],['ai_analysis','AI 분석'],['retrospective_review','사후 검토']];
   const render=()=>{
     if ($('#obs-note')) noteDraft=Object.fromEntries(new FormData($('#obs-note')));
     if ($('#obs-filters')) filterDraft=[...$('#obs-filters').querySelectorAll('input,select')].map(x=>[x.id,x.type==='checkbox'?x.checked:x.value]);
+    if (host.querySelector('[data-fold]')) openFolds=new Set([...host.querySelectorAll('details[data-fold][open]')].map(x=>x.dataset.fold));
+    const diff=!!obsHooks?.vsKq?.();
     const o=d.observation,f=o.intraday||{},win=o.windows[range];
     const cards=range==='day'
-      ? [['그린광학 +30분',f.steps?.['30']?.own],['그린광학 +60분',f.steps?.['60']?.own],['KOSDAQ +30분',f.steps?.['30']?.kq],['KOSDAQ +60분',f.steps?.['60']?.kq],['시장 대비 +30분',f.steps?.['30']?.diff,true]]
-      : [['공개 전 '+range+'거래일 추세',win?.pre_trend],['공개 후 '+range+'거래일',win?.post?.own],['KOSDAQ 같은 기간',win?.post?.kq],['시장 대비 차이',win?.post?.diff,true]];
-    const cardSub=(label,v)=>v!=null?(range==='day'?`${label.startsWith('KOSDAQ')?f.kq_interval||'-':f.interval||'-'}분봉 관측값`:'일별 저장 종가'):label.startsWith('시장')?'같은 시각 비교 불가':'가격 없음 · 미집계';
+      ? [['+30분',f.steps?.['30']?.own],['+60분',f.steps?.['60']?.own],['KOSDAQ +30분',f.steps?.['30']?.kq],['시장 대비 +30분',f.steps?.['30']?.diff,true]]
+      : [['공개 전 5거래일',win?.pre_trend],['공개 후 5거래일',win?.post?.own],['KOSDAQ',win?.post?.kq],['시장 대비',win?.post?.diff,true]];
     const metrics=cards.some(([,v])=>v!=null)
-      ? `<div class="obs-cards">${cards.map(([label,v,pp])=>`<div><small>${label}</small><strong class="${sgnCls(v)}">${v==null?'미집계':pp?points(v):pct(v)}</strong><span>${cardSub(label,v)}</span></div>`).join('')}</div>`
+      ? `<div class="obs-cards">${cards.map(([label,v,pp])=>`<div><small>${label}</small><strong class="${sgnCls(v)}">${v==null?'미집계':pp?points(v):pct(v)}</strong></div>`).join('')}</div>`
       : `<p class="obs-empty-line">수치 미집계 · 기준 또는 종료 시각의 가격이 없어 계산하지 않았습니다.</p>`;
     const chips=[[OBS_KIND[obsKind(d.event_kind)],''],[`공개 시각 ${OBS_STATUS[d.time_status]||d.time_status}`,d.time_status==='confirmed'?'ok':'warn'],
       ...(d.context.some(x=>x.kind==='disc')?[['관련 공시 확인 필요','warn']]:[]),
-      [({confirmed:'동일 사건 확인',review_required:'과거 묶음 · 확인 필요',individual:'개별 사건'})[d.identity_status]||'사건 확인 필요',d.identity_status==='review_required'?'warn':''],
+      ...(d.identity_status==='review_required'?[['과거 묶음 · 확인 필요','warn']]:[]),
       [`데이터 ${OBS_STATUS[o.status]||o.status}`,o.status==='complete'?'ok':'warn'],...(d.archived_source?[['보관 기록','']]:[])];
     const lead=d.members[0]||{};
     const kindLabel=k=>({pr:'보도자료',company:'보도자료',disc:'공시'})[k]||'기사';
     const notesOf=k=>d.notes.filter(n=>n.kind===k);
     const noteHtml=n=>`<article class="obs-note"><p class="obs-note-head"><strong>${esc({manual_observation:'당시 관찰',ai_analysis:'당시 AI 해석',retrospective_review:'사후 확인'}[n.kind])}</strong> · ${esc(obsStamp(n.analysis_at||n.created_at))} · ${esc(n.author_type==='AI'?'AI':'직접 작성')} · ${esc(n.review_status||'')}</p><pre>${esc(n.body)}</pre><small>주관적 신뢰도 ${esc(n.confidence_label||'미기재')}${n.revision_parent_id?' · 이전 기록을 고친 새 버전':''}</small>${(n.sources||[]).length?`<p>${n.sources.map(s=>obsLink(s,s)).join(' · ')}</p>`:''}<button type="button" class="btn small" data-note-edit="${esc(n.id)}">새 버전으로 수정</button></article>`;
     const factLine=`공개 ${obsStamp(d.first_public_at)} · 그린광학 +30분 ${pct(f.steps?.['30']?.own)} / KOSDAQ +30분 ${pct(f.steps?.['30']?.kq)} (관측값, 기사 효과로 단정하지 않음)`;
-    host.innerHTML=`<section class="obs-detail" aria-label="기사별 관찰 기록">
-    <div class="obs-head"><div><p class="obs-eyebrow">기사별 관찰 기록</p><h2>${esc(d.title)}</h2>
-      <p class="obs-sub">${esc(obsStamp(d.first_public_at))} · ${esc(lead.office||d.publisher||'')}${d.business_tags.length?' · '+esc(d.business_tags.join(' / ')):''} · ${d.first_public_at?'최초 공개 기준':'공개 시각 미상'}</p></div>
-      <button type="button" class="btn small" id="obs-close" aria-label="관찰 기록 닫기">닫기 ✕</button></div>
+    const fold=(key,title,meta,body)=>`<details class="obs-fold" data-fold="${key}"${openFolds.has(key)?' open':''}><summary><span>${title}</span><small>${meta}</small></summary><div class="obs-fold-body">${body}</div></details>`;
+    const legend=`<span><i class="obs-l-own"></i>이 기사</span>${diff?'':'<span><i class="obs-l-kq"></i>같은 시각 KOSDAQ</span>'}${range==='day'&&obsHooks?.overlay?'<span><i class="obs-l-med"></i>전체 중앙값</span><span><i class="obs-l-other"></i>다른 기사</span>':''}`;
+    const width=Math.max(300,Math.min(900,(host.clientWidth||520)-36));
+    const nNotes=NOTE_TABS.map(([k,t])=>`${t} ${notesOf(k).length}`).join(' · ');
+    host.innerHTML=`<section class="panel dash-card obs-detail" aria-label="선택한 기사 관찰 기록">
+    <div class="obs-head"><div><p class="obs-eyebrow">선택한 기사</p><h2>${esc(d.title)}</h2>
+      <p class="obs-sub">${esc(obsStamp(d.first_public_at))} · ${esc(lead.office||d.publisher||'')}${d.business_tags.length?' · '+esc(d.business_tags.join(' / ')):''}</p></div>
+      <button type="button" class="btn small" id="obs-close" aria-label="선택 해제하고 전체 비교로">✕ 전체로</button></div>
     <div class="obs-chips">${chips.map(([t,c])=>`<span class="obs-chip ${c}">${esc(t)}</span>`).join('')}</div>
-    <div class="obs-links">${/^https?:\/\//i.test(d.primary_source_url||'')?`<a class="btn small" href="${esc(d.primary_source_url)}" target="_blank" rel="noopener noreferrer">원문 열기 ↗</a>`:''}<button type="button" class="btn small" id="obs-link">사건 링크 복사</button>
-      <details class="obs-basis"><summary>분석 기준·출처</summary><ul>
-        <li>최초 공개 ${esc(obsStamp(d.first_public_at))} · 시각 출처 ${esc(obsSrc(d.time_source))} (${esc(OBS_STATUS[d.time_status]||d.time_status)})</li>
-        <li>분석 기준 ${esc(obsStamp(d.analysis_at))} · 비교 시작 ${esc(obsStamp(o.start))}</li>
-        <li>당사 보도자료 실제 배포 ${esc(d.pr_distributed_at?obsStamp(d.pr_distributed_at):'미상')}</li>
-        <li>동일 사건 후보(미확정) ${esc((d.same_event_candidates||[]).map(x=>x.a+' ↔ '+x.b).join(', ')||'없음')}</li>
-        ${o.missing_reason?`<li>미집계 사유: ${esc(o.missing_reason)}</li>`:''}
-        <li>계산 ${esc(o.calculation_version)} · 재계산 ${esc(obsStamp(d.recomputed_at))}</li></ul>
-        <p><button type="button" class="btn small" id="obs-export">관측값 CSV</button> <button type="button" class="btn small" id="obs-sources-export">원문 목록 CSV</button></p></details></div>
-
-    <div class="obs-sec"><div class="obs-sec-head"><div><h3>공개 전후 주가 흐름</h3><p class="obs-sec-sub">같은 기준 시각의 그린광학·KOSDAQ 관측 수익률</p></div>
-      <div class="obs-legend"><span><i class="obs-l-own"></i>그린광학</span><span><i class="obs-l-kq"></i>KOSDAQ</span><span><i class="obs-l-mk"></i>기사·다른 소식</span></div></div>
-      <div class="obs-toolbar"><div class="seg" role="group" aria-label="관찰 기간">${[['day','당일'],['5','전후 5거래일'],['20','전후 20거래일']].map(([v,t])=>`<button type="button" data-obs-range="${v}" aria-pressed="${range===v}">${t}</button>`).join('')}</div>
-      <label class="obs-toggle"><input type="checkbox" id="obs-diff" ${diff?'checked':''}> KOSDAQ 차이 보기 (%p)</label></div>
-      ${(()=>{const chart=observationChart(d,range,diff);return chart+(chart.includes('<svg')?'<p id="obs-tip" class="obs-tip" role="status">선 위의 점이나 세로선을 누르면 시각과 값을 보여 줍니다.</p>':'');})()}
-      ${metrics}
-      <p class="note">${esc(win?.price_warning||'공개 직전 완료 시세를 0%로 둡니다. 15시 이후 공개는 다음 거래일 09:00부터 비교합니다. 그린광학과 KOSDAQ는 같은 기준·종료 시각일 때만 비교하고, 없는 가격은 채우지 않습니다.')} 주가 움직임은 기사의 직접 효과를 뜻하지 않습니다.</p></div>
-
-    <div class="obs-columns">
-      <section class="obs-sec"><div class="obs-sec-head"><h3>관련 소식·공시</h3><p class="obs-sec-sub">시장 반응에 겹칠 수 있는 정보</p></div>
-        ${d.members.map(m=>`<div class="obs-item"><span class="obs-dot">${kindLabel(m.kind)}</span><time>${esc(obsStamp(m.ts))}</time><br><strong>${obsLink(m.url,m.title)}</strong><p>${esc(m.office||'')} · 시각 출처 ${esc(obsSrc(m.time_source))}${m.original_ts&&m.original_ts.slice(0,16)!==(m.ts||'').slice(0,16)?` · 원래 시각 ${esc(obsStamp(m.original_ts))}`:''}</p></div>`).join('')}
-        ${d.context.map(x=>`<div class="obs-item"><span class="obs-dot muted">${x.kind==='disc'?'공시':'동시'}</span><time>${esc(obsStamp(x.ts))}</time><br><strong><a href="#/pr/${encodeURIComponent(x.id)}">${esc(x.title)}</a></strong>${x.event_id?` <button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">관찰 기록</button>`:''}</div>`).join('')}
-        ${d.context.length?'':'<p class="obs-muted">같은 시각 앞뒤 하루의 다른 소식: 수집 정보 없음(실제 없음과 다름)</p>'}</section>
-      <section class="obs-sec"><div class="obs-sec-head"><h3>당시 시장·업종 상황</h3><p class="obs-sec-sub">확인된 시세와 가능한 배경을 나눔</p></div>
-        <div class="obs-item"><span class="obs-dot">시장</span><strong>같은 시각 KOSDAQ</strong><p>+30분 ${pct(f.steps?.['30']?.kq)} · +60분 ${pct(f.steps?.['60']?.kq)}</p></div>
-        <div class="obs-item"><span class="obs-dot">추세</span><strong>공개 전 5거래일 그린광학</strong><p>${pct(o.windows['5']?.pre_trend)}</p></div>
-        <div class="obs-item"><span class="obs-dot">업종</span><strong>그날 업종·테마</strong>${[...(d.market_context?.industry||[]),...(d.market_context?.themes||[])].map(x=>`<p>${esc(x.name)} <b class="${sgnCls(x.change_rate)}">${pctRaw(x.change_rate)}</b> <small>${esc(obsSrc(x.updated_at))}</small></p>`).join('')||'<p>수집 정보 없음(실제 없음과 다름)</p>'}<p class="obs-muted">${esc(d.market_context?.basis||'')}</p></div>
-        <div class="obs-item"><span class="obs-dot">해석</span><strong>같은 시간에 겹친 것은 인과관계가 아닙니다</strong><p>기사·공시·시장 이슈가 같은 시간에 겹칠 수 있습니다.</p></div></section></div>
-
-    <div class="obs-sec"><div class="obs-sec-head"><div><h3>사건 검토 기록</h3><p class="obs-sec-sub">확인 사실 · AI 해석 · 사후 검토를 나눠 쌓습니다. 신뢰도는 작성자의 주관적 평가입니다.</p></div></div>
-      <div class="obs-tabs" role="tablist" aria-label="검토 기록 종류">${NOTE_TABS.map(([k,t])=>`<button type="button" role="tab" data-note-tab="${k}" aria-selected="${noteTab===k}">${t} <small>${notesOf(k).length}</small></button>`).join('')}</div>
-      <div class="obs-tab-body">${noteTab==='manual_observation'?`<p class="obs-muted">${esc(factLine)}</p>`:''}${notesOf(noteTab).map(noteHtml).join('')||'<p class="obs-muted">저장된 기록 없음</p>'}</div>
-      <div class="obs-cta"><button type="button" class="btn primary" id="obs-question">✦ 이 사건 AI 질문 만들기</button><button type="button" class="btn" id="obs-note-open">분석 결과 붙여넣기</button><button type="button" class="btn" id="obs-similar">유사한 사건 보기</button></div>
-      <textarea id="obs-question-text" aria-label="AI 질문과 실제 관측 자료" readonly hidden></textarea>
-      <form id="obs-note" class="obs-form" ${noteOpen?'':'hidden'}><label>기록 종류<select name="kind">${NOTE_TABS.map(([k])=>`<option value="${k}">${({manual_observation:'당시 수동 관찰',ai_analysis:'당시 AI 분석',retrospective_review:'사후 재검토'})[k]}</option>`).join('')}</select></label>
+    <div class="seg obs-range" role="group" aria-label="관찰 기간">${[['day','공개 직후'],['5','전후 5거래일']].map(([v,t])=>`<button type="button" data-obs-range="${v}" aria-pressed="${range===v}">${t}</button>`).join('')}</div>
+    <div class="obs-legend">${legend}</div>
+    ${(()=>{const chart=observationChart(d,range,diff,range==='day'&&obsHooks?.overlay?obsHooks.overlay():null,width);return chart+(chart.includes('<svg')?'<p id="obs-tip" class="obs-tip" role="status">선 위의 점이나 세로선을 누르면 시각과 값을 보여 줍니다.</p>':'');})()}
+    ${metrics}
+    <p class="obs-muted">${range==='day'?'공개 직전 완료 시세를 0%로 둡니다. 15시 이후 공개는 다음 거래일 09:00부터 비교합니다.':'공개 전에 이미 움직였는지, 공개 뒤 움직임이 이어졌는지 보는 참고용입니다. '+esc(win?.price_warning||'')} 주가 움직임은 기사의 직접 효과를 뜻하지 않습니다.</p>
+    <div class="obs-cta"><button type="button" class="btn primary" id="obs-question">✦ AI 질문 만들기</button><button type="button" class="btn" id="obs-note-open">결과 붙여넣기</button>${/^https?:\/\//i.test(d.primary_source_url||'')?`<a class="btn" href="${esc(d.primary_source_url)}" target="_blank" rel="noopener noreferrer">원문 ↗</a>`:''}</div>
+    <textarea id="obs-question-text" aria-label="AI 질문과 실제 관측 자료" readonly hidden></textarea>
+    <form id="obs-note" class="obs-form" ${noteOpen?'':'hidden'}><label>기록 종류<select name="kind">${NOTE_TABS.map(([k])=>`<option value="${k}">${({manual_observation:'당시 수동 관찰',ai_analysis:'당시 AI 분석',retrospective_review:'사후 재검토'})[k]}</option>`).join('')}</select></label>
       <label>작성 주체<select name="author_type"><option value="AI">AI</option><option value="manual">직접 작성</option></select></label><label>분석 시각 (KST)<input name="analysis_at" type="datetime-local" required></label>
       <label class="wide">분석 결과 / 검토 메모<textarea name="body" required rows="6"></textarea></label><label class="wide">확인 출처 (줄마다 URL)<textarea name="sources" rows="2"></textarea></label>
       <label>주관적 신뢰도<input name="confidence_label" placeholder="높음 / 보통 / 낮음 / 미평가"></label><label>재검토 상태<select name="review_status"><option>검토 대기</option><option>재검토 완료</option><option>추가 자료 필요</option></select></label>
-      <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div>
+      <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form>
 
-    <div class="obs-sec" id="obs-similar-sec"><div class="obs-sec-head"><div><h3>유사 사건 비교</h3><p class="obs-sec-sub" id="obs-similar-sub"></p></div></div>
-      <div id="obs-results" class="rx-table-wrap"></div>
+    <div class="obs-folds">
+    ${fold('context','관련 소식·시장 상황',`${d.members.length+d.context.length}건`,`
+      ${d.members.map(m=>`<div class="obs-item"><span class="obs-dot">${kindLabel(m.kind)}</span><time>${esc(obsStamp(m.ts))}</time><br><strong>${obsLink(m.url,m.title)}</strong><p>${esc(m.office||'')} · 시각 출처 ${esc(obsSrc(m.time_source))}${m.original_ts&&m.original_ts.slice(0,16)!==(m.ts||'').slice(0,16)?` · 원래 시각 ${esc(obsStamp(m.original_ts))}`:''}</p></div>`).join('')}
+      ${d.context.map(x=>`<div class="obs-item"><span class="obs-dot muted">${x.kind==='disc'?'공시':'동시'}</span><time>${esc(obsStamp(x.ts))}</time><br><strong><a href="#/pr/${encodeURIComponent(x.id)}">${esc(x.title)}</a></strong>${x.event_id?` <button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">이 기사 보기</button>`:''}</div>`).join('')}
+      ${d.context.length?'':'<p class="obs-muted">앞뒤 하루의 다른 소식: 수집 정보 없음(실제 없음과 다름)</p>'}
+      <div class="obs-item"><span class="obs-dot">시장</span><strong>같은 시각 KOSDAQ</strong><p>+30분 ${pct(f.steps?.['30']?.kq)} · +60분 ${pct(f.steps?.['60']?.kq)}</p></div>
+      <div class="obs-item"><span class="obs-dot">업종</span><strong>그날 업종·테마</strong>${[...(d.market_context?.industry||[]),...(d.market_context?.themes||[])].map(x=>`<p>${esc(x.name)} <b class="${sgnCls(x.change_rate)}">${pctRaw(x.change_rate)}</b> <small>${esc(obsSrc(x.updated_at))}</small></p>`).join('')||'<p>수집 정보 없음(실제 없음과 다름)</p>'}<p class="obs-muted">${esc(d.market_context?.basis||'')} 같은 시간에 겹친 것은 인과관계가 아닙니다.</p></div>`)}
+    ${fold('notes','검토 기록',nNotes,`
+      <div class="obs-tabs" role="tablist" aria-label="검토 기록 종류">${NOTE_TABS.map(([k,t])=>`<button type="button" role="tab" data-note-tab="${k}" aria-selected="${noteTab===k}">${t} <small>${notesOf(k).length}</small></button>`).join('')}</div>
+      <div class="obs-tab-body">${noteTab==='manual_observation'?`<p class="obs-muted">${esc(factLine)}</p>`:''}${notesOf(noteTab).map(noteHtml).join('')||'<p class="obs-muted">저장된 기록 없음</p>'}</div>`)}
+    ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
       <details class="obs-more"><summary>조건 바꿔 찾기</summary><div class="obs-form" id="obs-filters">
       <label>키워드 / 고객·파트너<input id="obs-query" type="search"></label><label>태그<select id="obs-tag"><option value="">전체</option>${[...new Set(index.items.flatMap(x=>x.business_tags))].sort().map(x=>`<option>${esc(x)}</option>`).join('')}</select></label>
       <label>종류<select id="obs-kind"><option value="">전체</option>${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></label><label>발표 주체<input id="obs-publisher"></label><label>원천<input id="obs-source"></label>
       <label>시작일<input id="obs-from" type="date"></label><label>종료일<input id="obs-to" type="date"></label><label>시간대<select id="obs-session"><option value="">전체</option><option>장전</option><option>장중</option><option>15시 이후</option><option>미상</option></select></label>
       <label>주가 +30분 부호<select id="obs-sign"><option value="">전체</option><option value="up">상승</option><option value="down">하락</option><option value="missing">미집계</option></select></label><label>자료 품질<select id="obs-quality"><option value="">전체</option><option value="complete">관측 가능</option><option value="partial">일부 미집계</option><option value="unavailable">관측값 없음</option><option value="pending">진행 중</option></select></label>
-      <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div></details></div>
-
-    <details class="obs-more obs-edit"><summary>분류·시각·태그 수정 / 같은 사건 연결·분리</summary><p class="obs-muted">${esc(d.source_note)}</p><form id="obs-meta" class="obs-form">
-    <label>종류<select name="event_kind">${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}" ${v===obsKind(d.event_kind)?'selected':''}>${t}</option>`).join('')}</select></label>
-    ${[['business_tags','복수 태그 (쉼표)',d.business_tags.join(', ')],['publisher','발표 주체',d.publisher],['partner','고객/파트너',d.partner],['first_public_at','최초 공개 KST (미상이면 비움)',d.first_public_at],['analysis_at','분석 기준 KST',d.analysis_at],['pr_distributed_at','당사 PR 실제 배포 KST',d.pr_distributed_at],['primary_source_url','원천 주소',d.primary_source_url],['time_source','시각 출처',d.time_source]].map(([n,t,v])=>`<label>${t}<input name="${n}" value="${esc(v||'')}"></label>`).join('')}
-    <label>시각 상태<select name="time_status">${['confirmed','estimated','unknown'].map(x=>`<option value="${x}" ${x===d.time_status?'selected':''}>${OBS_STATUS[x]}</option>`).join('')}</select></label>
-    <label class="obs-check"><input name="followup_candidate" type="checkbox" ${d.followup_candidate?'checked':''}> 후속 보도 검토 후보</label><div class="obs-form-actions"><button class="btn">암호화 정정 요청</button></div></form>
-    <form id="obs-merge" class="obs-form"><label>같은 사건으로 확인한 다른 사건 ID<input name="other_id" required placeholder="ne-…"></label><label>연결 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">같은 사건 연결 요청</button></div></form>
-    <form id="obs-split" class="obs-form"><label>분리할 원문 ID<select name="member_id">${d.members.map(m=>`<option value="${esc(m.id)}">${esc(m.id)} · ${esc(m.title)}</option>`).join("")}</select></label><label>분리 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">별도 사건으로 분리 요청</button></div></form>
-    <details><summary>변경 이력 원본</summary><pre>${esc(JSON.stringify({history:d.history,source:f.source,snapshot:d.snapshot_version},null,2))}</pre></details></details>
-    </section>`;
+      <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div></details>`)}
+    ${fold('edit','분류·연결 수정','',`<p class="obs-muted">${esc(d.source_note)}</p><form id="obs-meta" class="obs-form">
+      <label>종류<select name="event_kind">${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}" ${v===obsKind(d.event_kind)?'selected':''}>${t}</option>`).join('')}</select></label>
+      ${[['business_tags','복수 태그 (쉼표)',d.business_tags.join(', ')],['publisher','발표 주체',d.publisher],['partner','고객/파트너',d.partner],['first_public_at','최초 공개 KST (미상이면 비움)',d.first_public_at],['analysis_at','분석 기준 KST',d.analysis_at],['pr_distributed_at','당사 PR 실제 배포 KST',d.pr_distributed_at],['primary_source_url','원천 주소',d.primary_source_url],['time_source','시각 출처',d.time_source]].map(([n,t,v])=>`<label>${t}<input name="${n}" value="${esc(v||'')}"></label>`).join('')}
+      <label>시각 상태<select name="time_status">${['confirmed','estimated','unknown'].map(x=>`<option value="${x}" ${x===d.time_status?'selected':''}>${OBS_STATUS[x]}</option>`).join('')}</select></label>
+      <label class="obs-check"><input name="followup_candidate" type="checkbox" ${d.followup_candidate?'checked':''}> 후속 보도 검토 후보</label><div class="obs-form-actions"><button class="btn">암호화 정정 요청</button></div></form>
+      <form id="obs-merge" class="obs-form"><label>같은 사건으로 확인한 다른 사건 ID<input name="other_id" required placeholder="ne-…"></label><label>연결 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">같은 사건 연결 요청</button></div></form>
+      <form id="obs-split" class="obs-form"><label>분리할 원문 ID<select name="member_id">${d.members.map(m=>`<option value="${esc(m.id)}">${esc(m.id)} · ${esc(m.title)}</option>`).join("")}</select></label><label>분리 근거<input name="reason" required></label><div class="obs-form-actions"><button class="btn">별도 사건으로 분리 요청</button></div></form>
+      <details><summary>변경 이력 원본</summary><pre>${esc(JSON.stringify({history:d.history,source:f.source,snapshot:d.snapshot_version},null,2))}</pre></details>`)}
+    ${fold('basis','분석 기준·출처','',`<ul class="obs-basis-list">
+        <li>최초 공개 ${esc(obsStamp(d.first_public_at))} · 시각 출처 ${esc(obsSrc(d.time_source))} (${esc(OBS_STATUS[d.time_status]||d.time_status)})</li>
+        <li>분석 기준 ${esc(obsStamp(d.analysis_at))} · 비교 시작 ${esc(obsStamp(o.start))}</li>
+        <li>당사 보도자료 실제 배포 ${esc(d.pr_distributed_at?obsStamp(d.pr_distributed_at):'미상')}</li>
+        <li>사건 연결 ${esc(({confirmed:'동일 사건 확인',review_required:'과거 묶음 · 확인 필요',individual:'개별 사건'})[d.identity_status]||'확인 필요')} · 동일 사건 후보(미확정) ${esc((d.same_event_candidates||[]).map(x=>x.a+' ↔ '+x.b).join(', ')||'없음')}</li>
+        ${o.missing_reason?`<li>미집계 사유: ${esc(o.missing_reason)}</li>`:''}
+        <li>계산 ${esc(o.calculation_version)} · 재계산 ${esc(obsStamp(d.recomputed_at))} · 전후 20거래일 값은 AI 질문·CSV 자료에 포함</li></ul>
+      <p><button type="button" class="btn small" id="obs-link">사건 링크 복사</button> <button type="button" class="btn small" id="obs-export">관측값 CSV</button> <button type="button" class="btn small" id="obs-sources-export">원문 목록 CSV</button></p>`)}
+    </div></section>`;
     host.querySelectorAll('[data-obs-range]').forEach(b=>b.onclick=()=>{range=b.dataset.obsRange;render();});
-    $('#obs-diff').onchange=e=>{diff=e.target.checked;render();};
     host.querySelectorAll('[data-tip]').forEach(el=>{const show=()=>{if($('#obs-tip'))$('#obs-tip').textContent=el.dataset.tip;};el.onclick=show;el.onfocus=show;el.onmouseover=show;});
     host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>obsHooks?obsHooks.open(b.dataset.obsOpen):showObservation(b.dataset.obsOpen));
     $('#obs-close').onclick=()=>obsHooks?obsHooks.close():(host.innerHTML='');
     $('#obs-link').onclick=()=>navigator.clipboard.writeText(location.href).then(()=>toast('사건 링크 복사됨')).catch(()=>toast('주소창의 링크를 복사해 주세요.','err'));
-    $('#obs-question').onclick=async()=>{const q=observationQuestion(d);$('#obs-question-text').value=q;$('#obs-question-text').hidden=false;try{await navigator.clipboard.writeText(q);toast('실제 자료를 포함한 질문을 복사했습니다. AI 답을 받은 뒤 [분석 결과 붙여넣기]로 저장하세요.');}catch(e){toast('아래 질문을 선택해서 복사해 주세요.','err');}};
+    $('#obs-question').onclick=async()=>{const q=observationQuestion(d);$('#obs-question-text').value=q;$('#obs-question-text').hidden=false;try{await navigator.clipboard.writeText(q);toast('실제 자료를 포함한 질문을 복사했습니다. AI 답을 받은 뒤 [결과 붙여넣기]로 저장하세요.');}catch(e){toast('아래 질문을 선택해서 복사해 주세요.','err');}};
     const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');form.hidden=false;if(kind)form.elements.kind.value=kind;if(!form.elements.analysis_at.value)form.elements.analysis_at.value=new Date(Date.now()+9*36e5).toISOString().slice(0,16);form.elements.body.focus();};
     $('#obs-note-open').onclick=()=>{revision=null;openNote(noteTab);};
     $('#obs-note-cancel').onclick=()=>{noteOpen=false;revision=null;$('#obs-note').hidden=true;};
-    $('#obs-similar').onclick=()=>$('#obs-similar-sec').scrollIntoView({block:'start',behavior:'smooth'});
     $('#obs-sources-export').onclick=()=>csvDownloadRows('사건_원문목록',['사건 ID','원문 ID','제목','매체','URL','공개 KST','수집 KST','원래 시각','시각 출처','PR 실제 배포 KST','분석 기준 KST'],d.members.map(m=>[d.event_id,m.id,m.title,m.office,m.url,m.ts,m.collected_at,m.original_ts,m.time_source,d.pr_distributed_at,d.analysis_at]));
-    $('#obs-export').onclick=()=>{const p=range==='day'?f:win;csvDownloadRows('사건_관측', ['event_id','범위','KST 관측 시각','상대 시점','원시 주가','원시 KOSDAQ','주가 수익률 %','KOSDAQ 수익률 %','차이 %p','공개 시각','기준 주가 시각','기준 지수 시각','주가 기준가격','KOSDAQ 기준가격','주가 봉','지수 봉','출처','계산 버전','상태'],(p?.points||[]).map(x=>[d.event_id,range,x.time,x.offset,x.stock_price??'',x.kosdaq_price??'',...['own','kq','diff'].map(k=>x[k]==null?'':x[k]*100),d.first_public_at,p.base_own_time||p.base_day,p.base_kq_time||p.base_day,p.base_own,p.base_kq,p.interval||'daily',p.kq_interval||'daily',JSON.stringify(p.source),o.calculation_version,x.own==null||x.kq==null?'partial':'observed']));};
+    $('#obs-export').onclick=()=>{const rows=[];for(const [rk,p] of [['day',f],['5',o.windows['5']],['20',o.windows['20']]])for(const x of (p?.points||[]))rows.push([d.event_id,rk,x.time,x.offset,x.stock_price??'',x.kosdaq_price??'',...['own','kq','diff'].map(k=>x[k]==null?'':x[k]*100),d.first_public_at,p.base_own_time||p.base_day,p.base_kq_time||p.base_day,p.base_own,p.base_kq,p.interval||'daily',p.kq_interval||'daily',JSON.stringify(p.source),o.calculation_version,x.own==null||x.kq==null?'partial':'observed']);
+      csvDownloadRows('사건_관측', ['event_id','범위','KST 관측 시각','상대 시점','원시 주가','원시 KOSDAQ','주가 수익률 %','KOSDAQ 수익률 %','차이 %p','공개 시각','기준 주가 시각','기준 지수 시각','주가 기준가격','KOSDAQ 기준가격','주가 봉','지수 봉','출처','계산 버전','상태'],rows);};
     $('#obs-meta').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));v.business_tags=v.business_tags.split(',').map(x=>x.trim()).filter(Boolean);v.followup_candidate=!!v.followup_candidate;for(const k of ['first_public_at','analysis_at','pr_distributed_at'])v[k]=v[k]||null;try{await sendInbox({type:'news_event_meta',event_id:eid,...v});}catch(_) {}};
     $('#obs-split').onsubmit=async e=>{e.preventDefault();try{await sendInbox({type:'news_event_split',event_id:eid,...Object.fromEntries(new FormData(e.target))});}catch(_) {}};
     $('#obs-merge').onsubmit=async e=>{e.preventDefault();try{await sendInbox({type:'news_event_link',event_id:eid,...Object.fromEntries(new FormData(e.target))});}catch(_) {}};
@@ -2436,9 +2437,9 @@ async function showObservation(eid) {
       const list=index.items.filter(x=>{const m=x.steps['30']?.own,t=x.first_public_at?.slice(11,16),session=!t?'미상':t<'09:00'?'장전':t>'15:00'?'15시 이후':'장중';return (!query||[x.title,x.partner,...x.business_tags].join(' ').toLowerCase().includes(query))&&(!v('tag')||x.business_tags.includes(v('tag')))&&(!v('kind')||obsKind(x.event_kind)===v('kind'))&&(!v('publisher')||x.publisher.includes(v('publisher')))&&(!v('source')||x.time_source.includes(v('source')))&&(!v('from')||(x.first_public_at||'')>=v('from'))&&(!v('to')||(x.first_public_at||'').slice(0,10)<=v('to'))&&(!v('session')||session===v('session'))&&(!v('quality')||x.status===v('quality'))&&(!$('#obs-has-note').checked||x.notes_count>0)&&(!v('sign')||(v('sign')==='missing'?m==null:v('sign')==='up'?m>0:m<0));})
         .sort((a,b)=>(b.first_public_at||'').localeCompare(a.first_public_at||''));
       const values=list.map(x=>x.steps['30']?.own).filter(x=>x!=null).sort((a,b)=>a-b),n=values.length;
-      $('#obs-similar-sub').textContent=v('tag')?`태그 「${v('tag')}」 사건 · 사건 단위 집계`:'조건에 맞는 사건 · 사건 단위 집계';
-      $('#obs-results').innerHTML=`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>분류</th><th>+30분</th><th>KOSDAQ 대비</th><th>+5거래일</th><th>기록</th></tr></thead><tbody>${list.slice(0,50).map(x=>`<tr${x.event_id===d.event_id?' class="on"':''}><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(0,10):'미상')}</td><td>${esc(x.title)}</td><td class="nowrap">${esc(OBS_KIND[obsKind(x.event_kind)])}</td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="num">${pct(x.post5.own)}</td><td class="nowrap">${x.event_id===d.event_id?'<span class="obs-muted">지금 보는 사건</span>':`<button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">기록 보기</button>`}</td></tr>`).join('')||'<tr><td colspan="7">조건에 맞는 사건이 없습니다.</td></tr>'}</tbody></table>
-      <p class="obs-muted">${list.length}사건 · ${list.reduce((s,x)=>s+x.exposures,0)}원문 기록 · 유효 n=${n} (사건 ID별 1건)${list.length>50?' · 최근 50건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 평균 ${pct(values.reduce((a,b)=>a+b,0)/n)} / 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`;
+      $('#obs-similar-sub').textContent=`${v('tag')?`태그 「${v('tag')}」 `:''}${list.length}건`;
+      $('#obs-results').innerHTML=`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${list.slice(0,50).map(x=>`<tr${x.event_id===d.event_id?' class="on"':''}><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">${esc(OBS_KIND[obsKind(x.event_kind)])}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap">${x.event_id===d.event_id?'<span class="obs-muted">지금 기사</span>':`<button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button>`}</td></tr>`).join('')||'<tr><td colspan="5">조건에 맞는 사건이 없습니다.</td></tr>'}</tbody></table>
+      <p class="obs-muted">유효 n=${n} (사건 ID별 1건)${list.length>50?' · 최근 50건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)} · 평균 ${pct(values.reduce((a,b)=>a+b,0)/n)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`;
       $('#obs-results').querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>obsHooks?obsHooks.open(b.dataset.obsOpen):showObservation(b.dataset.obsOpen));
     };
     $('#obs-filters').oninput=search;$('#obs-filters').onchange=search;
@@ -2446,16 +2447,21 @@ async function showObservation(eid) {
     else $('#obs-tag').value=d.business_tags.find(t=>[...$('#obs-tag').options].some(o=>o.value===t))||'';
     search();
   };render();
+  obsRerender=render;
 }
 
   async function pageReact() {
     main.innerHTML = `<div class="wrap dash">
       <div class="page-head"><div><h1 class="page-title">뉴스</h1><p class="page-sub">비교 시작을 0분으로 맞춰 주가 흐름을 겹쳐 봅니다. 선행 공시나 묶음 최초 공개를 기준으로 삼을 수 있어 대표 기사 발행 시각과 다를 수 있습니다. 장 외·15시 이후 기준은 다음 거래일 장 시작부터 비교하며, 표에 실제 기준 시각을 표시합니다.</p></div>${artViewSeg("react")}</div>
       <div id="rx-ctl" class="rx-ctl"></div>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3><span class="rx-hover" id="rx-hover"></span><span class="spacer"></span><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span style="color:var(--up)">— 선택 기사</span><span>┈ 관측 누락 (계산 제외)</span><span><i class="rx-l-avg"></i>평균</span><span title="표에서 기사를 누르면 그 기사의 같은 시간 KOSDAQ"><i class="rx-l-kq"></i>고른 기사의 KOSDAQ</span></span></div>
-        <div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-gap-note" role="status"></p><p class="note" id="rx-sum"></p></section>
-      <section class="panel dash-card"><div class="dash-card-head"><h3>기사별 반응</h3><small class="muted">머리글로 정렬 · 줄/선을 누르면 사건 관찰 기록</small><span class="spacer"></span><button class="btn small" type="button" id="rx-csv">엑셀로</button></div>
-        <div class="rx-table-wrap"><table class="rx-table" id="rx-table"></table></div></section><div id="rx-detail-home"><div id="rx-detail" role="region" aria-label="기사별 관찰 기록"></div></div></div>`;
+      <div class="rx-split">
+      <section class="panel dash-card rx-list"><div class="dash-card-head"><h3>기사별 반응</h3><small class="muted">머리글로 정렬 · 줄이나 선을 누르면 오른쪽에서 그 기사를 봅니다</small><span class="spacer"></span><button class="btn small" type="button" id="rx-csv">엑셀로</button></div>
+        <div class="rx-table-wrap"><table class="rx-table" id="rx-table"></table></div></section>
+      <aside class="rx-side">
+      <section class="panel dash-card" id="rx-overview"><div class="dash-card-head rx-ov-head"><div><p class="obs-eyebrow">여러 기사 겹쳐 보기</p><h3>공개 뒤 주가 <small class="muted" id="rx-n"></small></h3></div><span class="rx-leg"><span><i class="rx-l-one"></i>기사 하나</span><span><i class="rx-l-avg"></i>중앙값</span><span>┈ 관측 누락 (계산 제외)</span></span></div>
+        <span class="rx-hover" id="rx-hover"></span><div id="rx-plot" class="rx-plot"></div><p class="note" id="rx-gap-note" role="status"></p><p class="note" id="rx-sum"></p></section>
+      <div id="rx-detail" role="region" aria-label="선택한 기사" hidden></div>
+      </aside></div></div>`;
     let items = [];
     try { items = (await api("/api/reactions")).items || []; }
     catch (e) { $("#rx-plot").innerHTML = `<div class="empty"><strong>반응 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
@@ -2491,6 +2497,8 @@ async function showObservation(eid) {
     };
     const stepV = (x, m) => { const s0 = (x.steps || {})[m]; if (!s0 || s0.own == null) return null; return reactState.vsKq ? (Object.hasOwn(s0,"diff") ? s0.diff : s0.kq == null ? null : s0.own - s0.kq) : s0.own; };
     const median = (vs) => { const a = vs.filter((v) => v != null).sort((p, q) => p - q); if (!a.length) return null; const h = a.length >> 1; return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; };
+    // 파란 선: 각 시각에 관측된 사건(중복 제외 2건 이상)의 중앙값 — 크게 움직인 몇 건에 끌려가지 않게
+    const centerPath = (list, X0, X1) => { const out = []; for (let m = X0; m <= X1; m += 1) { const vs = reactionSamples(list, x => at(series(x), m)); if (vs.length >= 2) out.push([m, median(vs), vs.length]); } return out; };
     function plot(list) {
       const el = $("#rx-plot"), W = el.clientWidth || 800, H = Math.max(240, Math.min(380, W * 0.42)), L = 44, R = 12, T = 12, B = 26;
       // 공개 뒤 +H분까지 (앞쪽은 H의 1/4만큼 공개 전도 보여 줌)
@@ -2501,8 +2509,7 @@ async function showObservation(eid) {
       let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
       const pad = Math.max(0.005, (hi - lo) * 0.08); lo -= pad; hi += pad;
       const xs = (m) => L + ((m - X0) / (X1 - X0)) * (W - L - R), ys = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-      const avg = [];
-      for (let m = X0; m <= X1; m += 1) { const vs = reactionSamples(list, x => at(series(x), m)); if (vs.length >= 2) avg.push([m, vs.reduce((a, b) => a + b, 0) / vs.length, vs.length]); }
+      const avg = centerPath(list, X0, X1);
       const clip = (s) => { const v0 = at(s, X0); const inR = s.filter(([m]) => m > X0); return v0 == null ? inR : [[X0, v0], ...inR]; };
       const d = (s, gap = 1) => { const points = clip(s); return points.map(([m, v], i) => `${i && m - points[i - 1][0] <= gap && points[i][3]===points[i-1][3] ? "L" : "M"}${xs(m).toFixed(1)},${ys(v).toFixed(1)}`).join(""); };
       const gaps = (series, gap, cls, start, intervals) => series.slice(1).map((p,i) => {
@@ -2521,7 +2528,7 @@ async function showObservation(eid) {
         <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
         ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "비교 시작" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
         ${lines.map((o) => { const dd = d(o.s, o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" d="${dd}"/><path class="rx-hit" d="${dd}"/>${gaps(o.s,o.x.interval||1,reactState.pick===o.x.id?"on":"",o.x.start,`그린광학 ${o.x.interval}분 / KOSDAQ ${o.x.kq_interval||"-"}분`)}${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1" fill="#9aa5b6"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
-        ${avg.length ? `<path class="rx-avg" d="${d(avg)}"/>${gaps(avg,1,"average",null,`그린광학 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 평균" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
+        ${avg.length ? `<path class="rx-avg" d="${d(avg)}"/>${gaps(avg,1,"average",null,`그린광학 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 중앙값" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
         ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
           const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
           const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1), o.x.kq_interval || 1)}"/>` : "";
@@ -2535,21 +2542,21 @@ async function showObservation(eid) {
     const kqV = (x, m) => { const s0 = (x.steps || {})[m]; return s0 && s0.kq != null ? s0.kq : null; };
     const valOf = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : k === "kq30" ? kqV(x, "30") : k === "kq60" ? kqV(x, "60") : x[k]);
     function table(list) {
-      parkDetail();         // 표를 다시 그리기 전에 펼친 관찰 기록을 잠시 빼 둠 (내용·입력 유지)
       const k = reactState.sort, dir = reactState.dir;
       const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
       const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : reactState.vsKq ? points(v) : pct(v)}</td>`;
       const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
       const baseTip = "분석 기준 직전 가격 대비. 장 전·장 외는 전 거래일 종가, 15시 이후는 해당일 종가 대비 다음 거래일 장 시작부터 비교합니다.";
       const tips = { interval: BAR_TIP, 30: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, 60: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, kq30: "같은 시간 KOSDAQ", kq60: "같은 시간 KOSDAQ" };
-      $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${reactState.vsKq && (c === "30" || c === "60") ? `그린광학−KOSDAQ +${c}분` : t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+      // 표에는 고른 시간(+30분 또는 +60분)의 열만 (엑셀에는 둘 다)
+      const shownCols = cols.filter(([c]) => !["30", "kq30", "60", "kq60"].includes(c) || c === reactState.h || c === "kq" + reactState.h);
+      $("#rx-table").innerHTML = `<thead><tr>${shownCols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${reactState.vsKq && (c === "30" || c === "60") ? `그린광학−KOSDAQ +${c}분` : t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
         <tbody>${sorted.map((x) => `<tr tabindex="0" aria-label="${esc(x.title)} 관찰 기록" data-id="${esc(x.id)}"${reactState.pick === x.id ? ' class="on"' : ""}>
-          <td>${x.ts ? `${x.ts.slice(2, 10).replace(/-/g, ".")} ${x.untimed ? "시각 미상" : hhmm(x.ts)}` : "-"}${x.time_quality === "check_time" ? ' <small class="time-src warn" title="공개 시각 확인 필요">시각?</small>' : ""}<br><small class="muted">${x.untimed ? "공개 시각 미상 · 분 단위 비교 불가" : esc(reactionBasisText(x))}</small></td>
+          <td class="nowrap" title="${esc(x.untimed ? "공개 시각 미상 · 분 단위 비교 불가" : reactionBasisText(x))}">${x.ts ? `${x.ts.slice(2, 10).replace(/-/g, ".")} ${x.untimed ? "시각 미상" : hhmm(x.ts)}` : "-"}${x.time_quality === "check_time" ? ' <small class="time-src warn" title="공개 시각 확인 필요">시각?</small>' : ""}</td>
           <td class="nowrap">${kindTxt(x)}</td>
           <td class="rx-title"><a href="#/pr/${esc(x.id)}">${esc(x.title)}</a> <small class="muted">${esc(x.office || "")}</small></td>
           <td class="nowrap muted" title="${BAR_TIP}">${x.interval ? `${x.interval}분${x.kq_interval && x.kq_interval !== x.interval ? ` <small>(KOSDAQ ${x.kq_interval}분)</small>` : ""}` : "-"}</td>
-          ${["30", "60"].map((m) => num(stepV(x, m), m === reactState.h) + `<td class="num muted ${sgnCls(kqV(x, m))}">${kqV(x, m) == null ? "-" : pct(kqV(x, m))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
-      placeDetail();
+          ${[reactState.h].map((m) => num(stepV(x, m), m === reactState.h) + `<td class="num muted ${sgnCls(kqV(x, m))}">${kqV(x, m) == null ? "-" : pct(kqV(x, m))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${shownCols.length}" class="muted">조건에 맞는 기사가 없습니다.</td></tr>`}</tbody>`;
     }
     function draw() {
       const list = items.filter(pass);
@@ -2558,56 +2565,53 @@ async function showObservation(eid) {
       $("#rx-n").textContent = `대상 ${list.length}건 · 경로 ${plotted}건 · +${reactState.h}분 집계 ${measured}건${reactState.vsKq ? " · KOSDAQ 대비 차이" : ""}`;
       const s = (m) => { const vs = reactionSamples(list, x => stepV(x, m)); if (!vs.length) return null;
         const up = vs.filter((v) => v > 0).length, dn = vs.filter((v) => v < 0).length;
-        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${reactState.vsKq ? points(median(vs)) : pct(median(vs))}</b> (${reactState.vsKq ? "시장 웃돈" : "오른"} ${up} · ${reactState.vsKq ? "시장 밑돈" : "내린"} ${dn} · ${reactState.vsKq ? "시장과 같음" : "보합"} ${vs.length - up - dn}, 중복 제외 ${vs.length}사건)`; };
+        const mean = vs.reduce((a, b) => a + b, 0) / vs.length, fmt = (v) => reactState.vsKq ? points(v) : pct(v);
+        return `+${m}분 중앙값 <b class="${sgnCls(median(vs))}">${fmt(median(vs))}</b> · 평균 ${fmt(mean)} (${reactState.vsKq ? "시장 웃돈" : "오른"} ${up} · ${reactState.vsKq ? "시장 밑돈" : "내린"} ${dn} · ${reactState.vsKq ? "시장과 같음" : "보합"} ${vs.length - up - dn}, 중복 제외 ${vs.length}사건)`; };
       $("#rx-sum").innerHTML = (s(reactState.h) || `+${reactState.h}분 집계 가능한 자료가 없습니다.`)
         + `<br><span class="muted">집계 제외 ${list.length - measured}건: 공개 시각 미상 또는 기준·종료 시각의 관측값 부족. KOSDAQ 대비 차이는 양쪽의 같은 시각 가격이 있을 때만 계산합니다.</span>`
         + `<br>동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.
         <br>주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.
-        <br>평균은 분석 가능한 사건이 2건 이상일 때 표시합니다.
+        <br>중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.
         <br>‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.
         <br>주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.
-        <details><summary>계산 기준 자세히 보기</summary>평균은 각 시각 유효 사건의 산술평균, 중앙값은 정렬했을 때 가운데 값입니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 평균을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
-        + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 평균입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
+        <details><summary>계산 기준 자세히 보기</summary>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다. 평균은 아래 숫자로 함께 적습니다. 사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
+        + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
       const buckets=new Map(); for(const x of list){const v=stepV(x,reactState.h);if(v==null)continue;const k=(x.event_key||x.id)+'|'+(x.start||'');if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(v);}
       const conflicts=[...buckets.entries()].filter(([,v])=>Math.max(...v)-Math.min(...v)>=1e-8);
       $("#rx-sum").innerHTML+=`<details><summary>집계 품질: 충돌/제외 ${conflicts.length}사건 · 시각 미상 ${list.filter(x=>x.untimed).length}건 · 중복 제외 ${[...buckets.values()].reduce((n,v)=>n+v.length-1,0)}건</summary>${conflicts.map(([k,v])=>esc(k)+': '+v.map(pct).join(', ')).join('<br>')||'충돌 없음'}</details>`;
       table(list);
+      if (!$("#rx-detail").hidden && obsRerender) obsRerender();
     }
-    // 관찰 기록은 누른 줄 바로 아래에 펼침. 그 줄이 지금 조건에서 안 보이면 표 아래에 둠
-    function parkDetail() { const det = $("#rx-detail"), home = $("#rx-detail-home"); if (det?.isConnected && home && det.parentElement !== home) home.appendChild(det); }
-    function fitDetail() { const det = $("#rx-detail"); if (!det?.isConnected) return; const wrap = $("#rx-table").closest(".rx-table-wrap"); if (wrap) det.style.width = det.closest(".rx-detail-row") ? `${wrap.clientWidth}px` : ""; }
-    function placeDetail() {
-      const det = $("#rx-detail"); if (!det?.isConnected) return;
-      const row = det.dataset.open && reactState.pick ? [...$("#rx-table").querySelectorAll("tr[data-id]")].find((r) => r.dataset.id === reactState.pick) : null;
-      if (row) { const tr = document.createElement("tr"), td = document.createElement("td"); tr.className = "rx-detail-row"; td.colSpan = row.children.length; tr.appendChild(td); row.after(tr); td.appendChild(det); }
-      fitDetail();
-    }
-    reactFit = fitDetail;
-    const scrollToDetail = () => { const row = $("#rx-table").querySelector("tr.on"); (row && $("#rx-detail").closest(".rx-detail-row") ? row : $("#rx-detail")).scrollIntoView({ block: "start", behavior: "smooth" }); };
+    // 기사를 고르면 오른쪽 그래프 자리가 그 기사 패널로 바뀜 (표·필터·스크롤은 그대로)
+    const narrow = () => window.matchMedia("(max-width: 1100px)").matches;
+    function showSide(open) { $("#rx-overview").hidden = open; $("#rx-detail").hidden = !open; }
     async function openEvent(eid, push = true) {
       const row = items.find((x) => x.event_id === eid);
       reactState.pick = row ? row.id : null;
-      $("#rx-detail").dataset.open = "1";
-      if (push) history.pushState(null, "", `#/react/event/${eid}`);      // 주소만 바꿈: 페이지를 다시 그리지 않아 표·필터·스크롤 유지
-      draw();
+      if (push) history.pushState(null, "", `#/react/event/${eid}`);      // 주소만 바꿈: 페이지를 다시 그리지 않음
+      obsRerender = null; showSide(true); draw();
       await showObservation(eid);
-      fitDetail(); scrollToDetail();
+      if (narrow()) $("#rx-detail").scrollIntoView({ block: "start", behavior: "smooth" });
     }
     function closeEvent() {
-      const det = $("#rx-detail"), picked = reactState.pick;
-      delete det.dataset.open; det.innerHTML = ""; reactState.pick = null;
+      const picked = reactState.pick;
+      $("#rx-detail").innerHTML = ""; obsRerender = null; reactState.pick = null; showSide(false);
       history.pushState(null, "", "#/react");
       draw();
       const row = picked && [...$("#rx-table").querySelectorAll("tr[data-id]")].find((r) => r.dataset.id === picked);
-      if (row) { row.scrollIntoView({ block: "nearest" }); row.focus({ preventScroll: true }); }
+      if (row) { if (narrow()) row.scrollIntoView({ block: "center" }); row.focus({ preventScroll: true }); }
     }
     function openRow(id) {
-      if (reactState.pick === id && $("#rx-detail").dataset.open) return closeEvent();     // 같은 줄을 다시 누르면 닫기
+      if (reactState.pick === id && !$("#rx-detail").hidden) return closeEvent();     // 같은 줄을 다시 누르면 전체로
       const selected = items.find((x) => x.id === id);
       if (selected?.event_id) return openEvent(selected.event_id);
       reactState.pick = id; draw();
     }
-    obsHooks = { open: (eid) => openEvent(eid), close: closeEvent };
+    // 고른 기사의 '공개 직후' 그래프에 겹칠 다른 기사·중앙값 (위 전체 그래프와 같은 조건·같은 계산)
+    const overlay = () => { const list = items.filter(pass), X1 = +reactState.h;
+      return { until: X1, vsKq: reactState.vsKq, median: centerPath(list, -30, X1),
+        others: list.filter((x) => x.id !== reactState.pick).map((x) => series(x).filter(([m]) => m >= -30 && m <= X1)).filter((sr) => sr.length) }; };
+    obsHooks = { open: (eid) => openEvent(eid), close: closeEvent, overlay, vsKq: () => reactState.vsKq };
     drawCtl(); draw();
     const deepId = location.hash.match(/^#\/react\/event\/(ne-[a-f0-9]+)$/)?.[1];
     if (deepId) openEvent(deepId, false);

@@ -15,7 +15,7 @@ test('T15 T25 T26: observed-only means, gap labels and unchanged numeric export'
 });
 test('T27: four default sentences and expandable detailed explanation',async()=>{
  const c=ctx();c.api=async()=>({items:[fixture()]});await c.pageReact();const s=c.$('#rx-sum').innerHTML;
- for(const text of ['동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.','주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.','평균은 분석 가능한 사건이 2건 이상일 때 표시합니다.','‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.'])assert.ok(s.includes(text));
+ for(const text of ['동일한 사건을 다룬 기사가 여러 개 있어도 통계에는 1건만 반영합니다.','주가 데이터가 부족한 경우 해당 구간의 계산에서 제외합니다.','중앙값 선은 분석 가능한 사건이 2건 이상일 때 표시합니다.','‘KOSDAQ 움직임 빼고 보기’를 선택하면 시장 전체의 상승·하락 영향을 단순 차감하여 비교합니다.'])assert.ok(s.includes(text));
  assert.match(s,/<details><summary>계산 기준 자세히 보기/);assert.match(s,/기사의 직접적인 효과를 뜻하지 않습니다/);
 });
 test('T16: question uses actual payload, missing data and subjective confidence language',()=>{
@@ -43,4 +43,18 @@ test('automatic company announcements stay in the press release group as before 
  const click=v=>c.$('#rx-ctl').onclick({target:{closest:()=>({dataset:{k:'kind',v}})}});
  click('pr');let rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="a"/);assert.doesNotMatch(rows,/data-id="b"/);assert.match(rows,/>보도자료</);
  click('ext');rows=c.$('#rx-table').innerHTML;assert.match(rows,/data-id="b"/);assert.doesNotMatch(rows,/data-id="a"/);
+});
+test('blue line is the median: one large mover does not pull it; mean is shown only as a number',async()=>{
+ const c=ctx(),a=fixture();
+ const mk=(id,v)=>({...a,id,event_key:id,steps:{30:{own:v,kq:null,diff:null}},path:{own:[[0,0],[4,v]],kq:[]}});
+ c.api=async()=>({items:[mk('a',.01),mk('b',.02),mk('c',.30)]});await c.pageReact();
+ const svg=c.$('#rx-plot').innerHTML;
+ const ys=[...svg.matchAll(/<circle cx="[^"]+" cy="([^"]+)"[^>]*class="rx-avg"/g)].map(m=>+m[1]);
+ assert.equal(ys.length,2);                       // minutes 0 and 4
+ const endY=id=>{const g=svg.slice(svg.indexOf(`data-id="${id}"`));const d=g.match(/class="rx-one[^"]*" d="([^"]+)"/)[1];return +d.split(',').pop();};
+ assert.ok(Math.abs(ys[1]-endY('b'))<0.1,'파란 점은 가운데 기사(2%)와 같은 높이');
+ assert.ok(Math.abs(ys[1]-endY('c'))>10,'크게 튄 기사 쪽으로 끌려가지 않음');
+ const sum=c.$('#rx-sum').innerHTML;
+ assert.match(sum,/\+30분 중앙값 <b[^>]*>2\.00%<\/b> · 평균 11\.00%/);
+ assert.match(svg,/실제 공통 시각의 중앙값/);
 });

@@ -1,4 +1,4 @@
-// News reaction → event observation detail: opens right under the clicked row, keeps the list in place.
+// News reaction → selected article: the single chart panel on the right switches to it, the list stays in place.
 // Usage: node tests/observation_detail_check.cjs [SITE_DIR]   (site built like tests/public_refresh_check.cjs)
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -48,44 +48,49 @@ async function main() {
       await page.goto(`${base}/#/react`);
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
-      const row = page.locator('#rx-table tr[data-id="1002"]');
+      const row = page.locator('#rx-table tr[data-id="1002"]'), rowCell = row.locator("td").first();   // 제목은 기사 상세로 가는 링크라 첫 칸을 누름
       await row.waitFor();
 
-      // Opening: right under the row, address changes without redrawing the page.
+      // Opening: the right-hand chart panel switches to this article; the list and page stay as they are.
       await page.evaluate(() => { document.querySelector("#rx-ctl").dataset.marker = "kept"; });
-      await row.click();
+      await rowCell.click();
       const head = page.locator("#rx-detail .obs-head h2");
       await head.filter({ hasText: "검증용 신규 설비 투자" }).waitFor();
-      assert.equal(await row.evaluate((r) => r.nextElementSibling?.classList.contains("rx-detail-row")), true);
+      assert.equal(await page.locator("#rx-overview").isHidden(), true);
+      assert.equal(await page.locator("#rx-detail").isVisible(), true);
+      assert.equal(await page.locator("#rx-detail .obs-detail").count(), 1, "그래프 패널은 한 곳만");
       assert.equal(await page.locator("#rx-ctl").getAttribute("data-marker"), "kept", "페이지 전체가 다시 그려짐");
       assert.match(await page.evaluate(() => location.hash), /^#\/react\/event\/ne-/);
+      assert.equal(await row.getAttribute("class"), "on");
       const url = page.url();
-      for (const label of ["공개 전후 주가 흐름", "관련 소식·공시", "당시 시장·업종 상황", "사건 검토 기록", "유사 사건 비교"])
-        assert.ok((await page.locator("#rx-detail").innerText()).includes(label), label);
+      assert.deepEqual(await page.locator("#rx-detail [data-obs-range]").allInnerTexts(), ["공개 직후", "전후 5거래일"]);
+      for (const label of ["관련 소식·시장 상황", "검토 기록", "유사 사건", "분류·연결 수정", "분석 기준·출처"])
+        assert.ok((await page.locator("#rx-detail .obs-fold > summary").allInnerTexts()).some((t) => t.includes(label)), label);
 
-      // Typing inside the panel (inside the table) is not swallowed by row keyboard handling.
+      // Typing inside the panel works; the note form opens from the action button.
       await page.locator("#obs-note-open").click();
       const body = page.locator('#obs-note textarea[name="body"]');
       await body.pressSequentially("메모 공백 입력");
       assert.equal(await body.inputValue(), "메모 공백 입력");
 
-      // Closing returns to the list; clicking the same row twice toggles.
+      // Closing returns to the overview chart; clicking the same row twice toggles.
       await page.locator("#obs-close").click();
-      assert.equal(await page.locator(".rx-detail-row").count(), 0);
+      assert.equal(await page.locator("#rx-overview").isVisible(), true);
+      assert.equal(await page.locator("#rx-detail").isHidden(), true);
       assert.equal(await page.evaluate(() => location.hash), "#/react");
-      await row.click(); await head.waitFor();
-      await row.click();
-      assert.equal(await page.locator(".rx-detail-row").count(), 0);
+      await rowCell.click(); await head.waitFor();
+      await rowCell.click();
+      assert.equal(await page.locator("#rx-detail").isHidden(), true);
 
-      // A shared link opens the same event under its row.
+      // A shared link opens the same article in the panel with its row marked.
       await page.goto("about:blank"); await page.goto(url);
       await head.filter({ hasText: "검증용 신규 설비 투자" }).waitFor();
-      assert.equal(await page.locator('#rx-table tr[data-id="1002"]').evaluate((r) => r.nextElementSibling?.classList.contains("rx-detail-row")), true);
+      assert.equal(await page.locator('#rx-table tr[data-id="1002"]').getAttribute("class"), "on");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       assert.deepEqual(errors, []);
       await page.close();
     }
-    console.log("사건 관찰 상세 검증 통과: 누른 줄 바로 아래 펼침 · 페이지 유지 · 입력 · 닫기 · 공유 링크 · 모바일");
+    console.log("사건 관찰 검증 통과: 오른쪽 그래프 한 곳에서 전환 · 페이지 유지 · 입력 · 전체로 · 공유 링크 · 모바일");
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
