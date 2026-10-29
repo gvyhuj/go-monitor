@@ -718,7 +718,7 @@
       $("#q-volume").innerHTML = `${int(px.volume)}<small>주</small>`;
     } else renderQuote();
     const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
-    const isPr = (a) => a.kind === "pr";
+    const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const pr = ar.filter(isPr), ext = ar.length - pr.length;
     const outlets = pr.reduce((t, a) => t + (a.outlets_total || 1), 0);
     const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
@@ -780,8 +780,8 @@
     api("/api/events").then((d) => fillToday(daily, arts, discs, d.events || [])).catch(() => fillToday(daily, arts, discs, []));
     const count = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) m[d] = (m[d] || 0) + 1; }); return m; };
     const shown = (a) => !a.hidden && a.category !== "단순 언급" && a.ts;
-    const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr")), (a) => a.ts.slice(0, 10));
-    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr"), (a) => a.ts.slice(0, 10));
+    const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
+    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company"), (a) => a.ts.slice(0, 10));
     const discN = count(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf)), (x) => x.ts.slice(0, 10));
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     const net = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ko-KR")}</span>`);
@@ -926,7 +926,7 @@
     let events = [];
     const fillDay = () => { fillToday(daily, arts, discs, events, onNews, calState.sel); const g = $("#rec-bento"); if (g) $(".b-seg", g).innerHTML = segHtml(); drawHeadSide(); };
     api("/api/events").then((d) => { events = d.events || []; if ($("#view")) fillDay(); }).catch(() => {});
-    const isPr = (a) => a.kind === "pr";
+    const isPr = (a) => a.kind === "pr" || a.kind === "company";
     const news = (ds) => {
       const ar = artDay[ds] || [];
       return { pr: ar.filter(isPr).length, ext: ar.filter((a) => !isPr(a)).length, disc: (discDay[ds] || []).length };
@@ -2132,7 +2132,7 @@
         <h3>탭과 건수</h3>
         <ul>
           <li><b>건수</b>: '기사'는 같은 내용을 하나로 센 수, '보도'는 그 기사를 실은 매체마다 하나로 센 수입니다. 예: 6월 22일 LIG 공급계약 소식을 이데일리·뉴시스·머니투데이 3곳이 실었다면 기사 1건, 보도 3건입니다. 공시 탭은 켠 종류만 세고, 전체 공시 수를 함께 적습니다.</li>
-          <li><b>그린광학 보도자료</b>: 직접 등록했거나 담당자가 당사 PR로 확인한 보도자료입니다. 자동 회사 발표 분류만으로 당사 PR이라고 보지 않습니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
+          <li><b>그린광학 보도자료</b>: 직접 등록한 보도자료와, 제목·본문으로 '회사 발표'로 분류된 기사입니다. 목록에서 구분을 직접 고칠 수 있습니다.</li>
           <li><b>외부 기사</b>: 그 밖의 기사입니다. 이름만 나오는 기사(단순 언급)와 주가 움직임을 다룬 기사(시황·특징주)는 모으지 않습니다.</li>
           <li><b>공시</b>: DART·거래소(KIND) 공시입니다. 위 종류 버튼으로 켠 공시만 목록과 건수에 들어갑니다.</li>
           <li>목록 한 줄은 같은 내용 묶음(여러 매체가 같은 내용을 낸 것) 하나입니다. 같은 날이라도 내용이 다르면 따로 나옵니다. 한 달 평균은 최근 6개월 건수 ÷ 6입니다. 실린 매체는 같은 내용을 낸 매체 수입니다.</li>
@@ -2375,7 +2375,8 @@ async function showObservation(eid) {
     catch (e) { $("#rx-plot").innerHTML = `<div class="empty"><strong>반응 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
     if (!$("#rx-plot")) return;
     const topics = [...new Set(items.map((x) => x.topic).filter(Boolean))].sort();
-    const kindOk = (x) => reactState.kind === "all" || (x.event_kind ? obsKind(x.event_kind) === ({pr:'company_press_release',ext:'external_article',disc:'disclosure'}[reactState.kind]) : reactState.kind === 'pr' ? x.kind === 'pr' : reactState.kind === 'disc' ? x.kind === 'disc' : x.kind === 'ext' || x.kind === 'company');
+    const kindOk = (x) => reactState.kind === "all" || (reactState.kind === "pr" ? x.kind === "pr" || x.kind === "company"
+      : reactState.kind === "disc" ? x.kind === "disc" && MAIN_DISC.has(x.pblntf || "") : x.kind === "ext");
     // 기사를 모으는 기간 (반응을 재는 시간 +30·60분과는 별개): 전체 / 최근 3·6달·1년 / 직접 고르기
     const RX_RANGES = [["all", "전체 기간"], ["92", "최근 3달"], ["183", "최근 6달"], ["365", "최근 1년"], ["custom", "직접 고르기…"]];
     const inRange = (x) => {
@@ -2451,7 +2452,7 @@ async function showObservation(eid) {
       const k = reactState.sort, dir = reactState.dir;
       const sorted = [...list].sort((p, q) => { const a = valOf(p, k), b = valOf(q, k); if (a == null) return 1; if (b == null) return -1; return (a < b ? -1 : a > b ? 1 : 0) * dir; });
       const num = (v, on) => `<td class="num ${sgnCls(v)}${on ? " h-on" : ""}">${v == null ? "-" : reactState.vsKq ? points(v) : pct(v)}</td>`;
-      const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.event_kind ? OBS_KIND[obsKind(x.event_kind)] : x.kind === "pr" ? "보도자료" : "외부기사");
+      const kindTxt = (x) => (x.kind === "disc" ? "공시" : x.kind === "pr" || x.kind === "company" ? "보도자료" : "외부기사");
       const baseTip = "분석 기준 직전 가격 대비. 장 전·장 외는 전 거래일 종가, 15시 이후는 해당일 종가 대비 다음 거래일 장 시작부터 비교합니다.";
       const tips = { interval: BAR_TIP, 30: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, 60: reactState.vsKq ? "이 종목 − KOSDAQ" : baseTip, kq30: "같은 시간 KOSDAQ", kq60: "같은 시간 KOSDAQ" };
       $("#rx-table").innerHTML = `<thead><tr>${cols.map(([c, t]) => `<th data-sort="${c}"${c === k ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}${c === reactState.h ? ' class="h-on"' : ""}${tips[c] ? ` title="${esc(tips[c])}"` : ""}>${reactState.vsKq && (c === "30" || c === "60") ? `그린광학−KOSDAQ +${c}분` : t}${c === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
@@ -2548,7 +2549,7 @@ async function showObservation(eid) {
     const out = [];
     for (const a of items) {
       if (a.hidden) continue;
-      const kind = a.kind === "pr" || a.manual ? "그린광학 보도자료" : "외부 기사";
+      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : "외부 기사";
       const base = { kind, category: a.category || "-", lead: a.id };
       out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
         url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
@@ -2827,8 +2828,8 @@ async function showObservation(eid) {
       noise: ["단순 언급", "시황·특징주"].includes(a.category) }))).filter((e) => byId.has(e.lead));
     items.forEach((a) => { if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext"; });
     const groups = {
-      pr: events.filter((e) => e.kind === "pr"),
-      ext: events.filter((e) => e.kind !== "pr" && !e.noise),
+      pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
+      ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
     const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. discTypes가 null이면 '전체'(처음 기본값),
@@ -3029,7 +3030,7 @@ async function showObservation(eid) {
         if (lead) { selId = current = lead.id; history.replaceState(null, "", `#/pr/${lead.id}`); }
       }
       const ev = events.find((e) => e.ids.includes(selId));
-      if (ev) artState.cat = ev.kind === "pr" ? "pr" : "ext";
+      if (ev) artState.cat = ev.kind === "pr" || ev.kind === "company" ? "pr" : "ext";
     }
     if (!current) { const first = shown(artState.cat)[0] || events[0]; current = first && (first.lead || first.id); }
     $("#art-sub").innerHTML = items.length ? ""
@@ -3114,7 +3115,7 @@ async function showObservation(eid) {
         : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
         ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
-          const ck = isDisc ? "disc" : a.kind === "pr" ? "pr" : "ext";
+          const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : ""}</p>`;
     if (!isDisc) html += timeForm(a);
@@ -3166,7 +3167,7 @@ async function showObservation(eid) {
     // 구분·악재 표시 고치기 (직접 등록한 기사는 늘 그린광학 보도자료)
     if (!a.manual && !isDisc) {
       // 지금 들어 있는 탭의 반대쪽으로만: 그린광학 보도자료 탭(확인된 보도자료·회사 관련 보도)이면 '외부 기사로', 외부 기사면 '보도자료로'
-      const toKinds = a.kind === "pr" ? ["ext"] : ["pr"];
+      const toKinds = a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"];
       html += `<div class="ask-row editable art-fix">
         ${toKinds.map((k) => `<button class="btn small" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}
 
@@ -3380,7 +3381,7 @@ async function showObservation(eid) {
     // 그날 나온 소식 (같은 내용으로 묶인 다른 매체 기사도 각자 공개 시각에). 지금 연 기사·공시는 종류·날짜와 상관없이 늘 넣음
     // (전날 장 마감 뒤 공개라 반응일 차트를 열었으면 첫 봉에 표시)
     const on = (x) => x.ts && x.ts.slice(0, 10) === ds && !x.untimed;
-    const isPrA = (a) => a.kind === "pr";
+    const isPrA = (a) => a.kind === "pr" || a.kind === "company";
     const news = [];
     for (const a of arts) {
       if (a.hidden || a.category === "단순 언급") continue;
