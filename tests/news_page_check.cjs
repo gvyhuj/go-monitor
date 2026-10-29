@@ -96,8 +96,26 @@ async function main() {
       assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
       await page.locator('#pr-detail [data-rxr="5"]').click();
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
-      for (const label of ["이 기사를 실은 매체", "관련 소식·시장 상황", "검토 기록", "유사 사건", "분류·연결 수정", "분석 기준·출처"]) {
+      for (const label of ["관련 소식·시장 상황", "검토 기록", "유사 사건"]) {
         await page.locator("#pr-detail .obs-fold > summary", { hasText: label }).first().waitFor();
+      }
+      // 접는 항목은 세 개뿐: 실은 매체는 '수정' 메뉴로, 분류·연결 수정·분석 기준은 없앰
+      assert.deepEqual((await page.locator("#pr-detail .obs-folds > .obs-fold > summary, #obs-extras > .obs-fold > summary").allInnerTexts()).map((t) => t.split("\n")[0]),
+        ["관련 소식·시장 상황", "검토 기록", "유사 사건"]);
+      // '수정' 메뉴 → 실은 매체 · 같은 내용 합치기 팝업
+      if (width > 700) {
+        await page.locator(".art-more > summary").click();
+        await page.locator("#art-outlets").click();
+        await page.locator("#outlets-pop .outlet-list li").first().waitFor();
+        assert.match(await page.locator("#outlets-pop").innerText(), /이 기사를 실은 매체 · 같은 내용 합치기[\s\S]*검증일보/);
+        assert.equal(await page.locator(".art-more").evaluate((x) => x.open), false, "메뉴는 닫힘");
+        await page.keyboard.press("Escape");
+        assert.equal(await page.locator("#outlets-pop").isVisible(), false);
+        // 수정·엑셀로는 조건·정렬과 같은 높이, 오른쪽 끝
+        const hs = await page.evaluate(() => ["#art-cond", "#art-sort", "#art-csv", ".art-more > summary"].map((q) => Math.round((q === "#art-sort" ? document.querySelector(q).closest("label") : document.querySelector(q)).getBoundingClientRect().height)));
+        assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `높이 ${hs}`);
+        const right = await page.evaluate(() => { const c = document.querySelector("#art-cat").closest(".controls").getBoundingClientRect().right; return c - document.querySelector(".art-more").getBoundingClientRect().right; });
+        assert.ok(right < 2, `수정 메뉴가 오른쪽 끝 (${right}px)`);
       }
 
       // Result paste form opens and accepts typing.
@@ -108,8 +126,7 @@ async function main() {
       await page.locator("#obs-note-cancel").click();
 
       // The event ID is visible for linking, and old 뉴스 반응 links open the same article in the list.
-      await page.locator("#pr-detail .obs-fold > summary", { hasText: "분석 기준·출처" }).click();
-      const eid = await page.locator(".obs-eid").innerText();
+      const eid = await page.locator("#obs-extras").getAttribute("data-eid");
       assert.match(eid, /^ne-[0-9a-f]+$/);
       await page.locator("#pr-close").click();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
@@ -142,6 +159,15 @@ async function main() {
       await page.keyboard.press("Escape");
       assert.equal(await pop.isVisible(), false, "Esc로 팝업 닫힘");
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2003", "팝업은 기사 화면을 떠나지 않음");
+
+      // 유사 사건: 같은 주제(같은 묶음·같은 제목, 예전 기록 포함)는 한 줄만
+      await page.goto(`${base}/#/pr/2005`);
+      await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
+      const simRows = page.locator("#obs-results tbody tr");
+      await simRows.first().waitFor();
+      const sim = await simRows.allInnerTexts();
+      assert.equal(sim.filter((t) => t.includes("충북TP")).length, 1, sim.join(" / "));
+      assert.match(sim.find((t) => t.includes("충북TP")), /같은 주제 3건/);
 
       // 주가 기록 1일 차트: 날짜는 달력에서만 (키보드로 숫자를 넣어도 바뀌지 않음)
       await page.goto(`${base}/#/`);
