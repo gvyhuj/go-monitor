@@ -402,7 +402,7 @@ def trader_tops(conn, sym: str) -> dict:
 
 def trader_tops_live(conn, sym: str, day: str) -> dict | None:
     """장중 오늘 거래원 매수·매도 상위 5 (가장 최근 1분 기록)."""
-    ts = conn.execute("SELECT MAX(ts) FROM trader_snapshots WHERE symbol=? AND substr(ts,1,10)=?", (sym, day)).fetchone()[0]
+    ts = conn.execute("SELECT MAX(ts) FROM trader_snapshots WHERE symbol=? AND ts >= ? AND ts < ? || 'z'", (sym, day, day)).fetchone()[0]
     if not ts:
         return None
     rows = conn.execute("SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_snapshots WHERE symbol=? AND ts=?",

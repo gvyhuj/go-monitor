@@ -97,12 +97,12 @@ MIN_DAY_MINUTES = 100        # 그날 1분봉이 이만큼 있으면 1분봉으�
 
 def series(conn, code: str, day: str, min_minutes: int = MIN_DAY_MINUTES) -> tuple[int | None, list]:
     """그날 가장 촘촘한 봉: 1분봉(minute_bars) → 야후 5분 → 60분. (간격, [(ts, close)])"""
-    rows = conn.execute("SELECT ts, close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts", (code, day)).fetchall()
+    rows = conn.execute("SELECT ts, close FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts", (code, day, day)).fetchall()
     if rows and len(rows) >= min_minutes:
         return 1, [tuple(r) for r in rows]
     for iv in sorted(RANGES):
-        rows = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND substr(ts,1,10)=? ORDER BY ts",
-                            (code, iv, day)).fetchall()
+        rows = conn.execute("SELECT ts, close FROM coarse_bars WHERE symbol=? AND interval=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts",
+                            (code, iv, day, day)).fetchall()
         if rows:
             return iv, [tuple(r) for r in rows]
     return None, []
@@ -132,8 +132,8 @@ def krx_closes(conn, code: str) -> dict:
         if nb:
             out[d] = nb
             continue
-        m = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? AND substr(ts,12,5)<='15:30' "
-                         "ORDER BY ts DESC LIMIT 1", (code, d)).fetchone()
+        m = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? "
+                         "ORDER BY ts DESC LIMIT 1", (code, d, d + "T15:31")).fetchone()
         out[d] = m[0] if m and m[0] else c
     return out
 
@@ -218,7 +218,7 @@ def day_bars(code: str, day: str) -> tuple[int | None, list[dict]]:
     with connect() as conn:
         for iv in sorted(RANGES):
             rows = conn.execute("SELECT ts, open, high, low, close, volume FROM coarse_bars WHERE symbol=? AND interval=? "
-                                "AND substr(ts,1,10)=? ORDER BY ts", (code, iv, day)).fetchall()
+                                "AND ts >= ? AND ts < ? || 'z' ORDER BY ts", (code, iv, day, day)).fetchall()
             if rows:
                 return iv, [{"t": r[0], "o": r[1], "h": r[2], "l": r[3], "c": r[4], "v": int(r[5] or 0)} for r in rows]
     return None, []
