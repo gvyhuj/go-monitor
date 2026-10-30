@@ -80,20 +80,10 @@ test('news list overview explains distinct counts and the earlier calculation ti
   assert.match($('#rx-n').textContent,/대상 3건 · 경로 2건 · \+30분 집계 1건/);
   assert.match($('#rx-sum').innerHTML,/집계 제외 2건/);
   assert.match($('#rx-plot').innerHTML,/비교 시작/);
-  let exported;
-  ctx.csvDownloadRows = (...args) => { exported = args; };
-  ctx.reactionCsv(items);
-  assert.ok(exported[1].includes('분석 기준 시각'));
-  assert.ok(exported[2][0].includes('2026-04-22T19:20'));
-  assert.ok(exported[2][0].includes('2026-04-22T14:10'));
-  assert.ok(exported[2][0].some(v => String(v).includes('선행 공시 2026-04-22 14:10')));
   assert.doesNotMatch($('#rx-sum').innerHTML, /우연|p값|판단 보류/);
   ctx.points = v => v == null ? '-' : `${ctx.pct(v)}p`;
   vm.runInContext('reactState.vsKq=true',ctx); ctx.reactionOverview(host, items);
   assert.match($('#rx-cards').innerHTML, /\+30분 중앙값[\s\S]*%p/);   // KOSDAQ 빼고 보기: 카드가 %p로
-  ctx.reactionCsv(items);
-  assert.ok(exported[1].some(v => v.includes('(%p)')));
-  assert.equal(exported[2][0][4], '1.50');
 });
 
 test('drawer no longer shows the model contribution box; AI text keeps percentage points', () => {

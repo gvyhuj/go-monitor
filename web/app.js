@@ -1395,22 +1395,6 @@
       requestAnimationFrame(fitDayChart);
     }
 
-    // 고른 날 주요 숫자 (토스 '1일 범위·52주 범위'·투자자별, 네이버 시가·고가·저가·거래량 칸 참고)
-    function keyStats(ds, px) {
-      const from = new Date(new Date(ds).getTime() - 365 * 864e5).toISOString().slice(0, 10);
-      const yr = daily.filter((x) => x.date > from && x.date <= ds);
-      const hi52 = Math.max(...yr.map((x) => x.high || x.close)), lo52 = Math.min(...yr.map((x) => x.low || x.close));
-      const full = daily[0].date <= from;
-      const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${int(v)}</span>`);
-      const cell = (k, v) => `<div><dt>${k}</dt><dd class="num">${v}</dd></div>`;
-      return `<dl class="key-stats">
-        ${cell("시가", won(px.open))}${cell("고가", won(px.high))}${cell("저가", won(px.low))}${cell("종가", won(px.close))}
-        ${cell("거래량", `${int(px.volume)}주`)}
-        ${cell(full ? "52주 최고" : "기록 중 최고", won(hi52))}${cell(full ? "52주 최저" : "기록 중 최저", won(lo52))}
-        ${px.foreign != null || px.organ != null || px.individual != null ? cell("개인·외국인·기관", `${signed(px.individual)} · ${signed(px.foreign)} · ${signed(px.organ)}`) : ""}
-      </dl>`;
-    }
-
     function dayPanel() {
       const ds = calState.sel, px = price[ds], ar = artDay[ds] || [], dc = discDay[ds] || [];
       const li = (href, meta, title) => `<li><span class="muted">${meta}</span> <a href="${href}">${esc(title)}</a></li>`;
@@ -2321,8 +2305,6 @@ function observationQuestion(d) {
   const mc=d.market_context&&{...d.market_context,industry:(d.market_context.industry||[]).map(calcAt),themes:(d.market_context.themes||[]).map(calcAt)};
   return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
-const OBS_SRC = {disclosure:'공시 접수 시각',manual:'직접 입력',page:'기사 원문',original_page:'기사 원문',naver:'네이버',google:'구글 뉴스',gnews:'구글 뉴스',unknown:'미상',calc:'자체 계산',fixture:'검증용 자료'};
-const obsSrc = (s) => OBS_SRC[s] || s || '미상';
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
 // 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문·결과 저장, 관련 소식, 검토 기록, 유사 사건, 분류·연결 수정.
 // 그래프와 숫자는 기사 상세가 그림. host: 접는 항목을 넣을 곳. 버튼(#obs-question, #obs-note-open)은 기사 상세에 이미 있음
@@ -2335,7 +2317,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   const range='day';
   let revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,openFolds=new Set();
   const NOTE_TABS=[['manual_observation','확인 사실'],['ai_analysis','AI 분석'],['retrospective_review','사후 검토']];
-  const stampText=t=>t?t.replace('T',' '):'미상';
   const render=()=>{
     if (host.querySelector('#obs-note')) noteDraft=Object.fromEntries(new FormData(host.querySelector('#obs-note')));
     if (host.querySelector('[data-fold]')) openFolds=new Set([...host.querySelectorAll('details[data-fold][open]')].map(x=>x.dataset.fold));
@@ -2343,7 +2324,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const lead=d.members[0]||{};
     const kindLabel=k=>({pr:'보도자료',company:'보도자료',disc:'공시'})[k]||'기사';
     const notesOf=k=>d.notes.filter(n=>n.kind===k);
-    const noteHtml=n=>`<article class="obs-note"><p class="obs-note-head"><strong>${esc({manual_observation:'당시 관찰',ai_analysis:'당시 AI 해석',retrospective_review:'사후 확인'}[n.kind])}</strong> · ${esc(obsStamp(n.analysis_at||n.created_at))} · ${esc(n.author_type==='AI'?'AI':'직접 작성')} · ${esc(n.review_status||'')}</p><pre>${esc(n.body)}</pre><small>주관적 신뢰도 ${esc(n.confidence_label||'미기재')}${n.revision_parent_id?' · 이전 기록을 고친 새 버전':''}</small>${(n.sources||[]).length?`<p>${n.sources.map(s=>obsLink(s,s)).join(' · ')}</p>`:''}<button type="button" class="btn small" data-note-edit="${esc(n.id)}">새 버전으로 수정</button></article>`;
     const factLine=`공개 ${obsStamp(d.first_public_at)} · 그린광학 +30분 ${pct(f.steps?.['30']?.own)} / KOSDAQ +30분 ${pct(f.steps?.['30']?.kq)} (관측값, 기사 효과로 단정하지 않음)`;
     const fold=(key,title,meta,body)=>`<details class="obs-fold" data-fold="${key}"${openFolds.has(key)?' open':''}><summary><span>${title}</span><small>${meta}</small></summary><div class="obs-fold-body">${body}</div></details>`;
     const nNotes=NOTE_TABS.map(([k,t])=>`${t} ${notesOf(k).length}`).join(' · ');
@@ -2513,13 +2493,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         others: lines.map((o) => o.sr), ids: lines.map((o) => o.x.id) };
     } finally { reactState.vsKq = keep; }
   }
-  // 엑셀: 지금 목록의 반응 (+30·+60분 모두)
-  function reactionCsv(list) {
-    const kqV = (x, m) => { const s0 = (x.steps || {})[m]; return s0 && s0.kq != null ? s0.kq : null; };
-    const val = (x, k) => (["30", "60"].includes(k) ? stepV(x, k) : kqV(x, k.slice(2)));
-    csvDownloadRows("기사_반응", ["공개", "종류", "제목", "봉", ...["30", "kq30", "60", "kq60"].map((k) => k.startsWith("kq") ? `KOSDAQ +${k.slice(2)}분` : reactState.vsKq ? `그린광학−KOSDAQ +${k}분 (%p)` : `그린광학 +${k}분`), "주제", "언론사", "분석 기준 시각", "비교 시작 시각", "기준 설명", "동일 사건 키", "KST", "기준 가격 시각", "가격 소스", "계산 버전", "사건 ID"],
-      list.map((x) => [x.ts, x.kind, x.title, x.interval || "", ...["30", "kq30", "60", "kq60"].map((k) => { const v = val(x, k); return v == null ? "" : (v * 100).toFixed(2); }), x.topic || "", x.office || "", x.analysis_ts || "", x.start || "", reactionBasisText(x), x.event_key || x.id, "Asia/Seoul", x.base_price_time || "", JSON.stringify(x.price_source || {}), x.calculation_version || "", x.event_id || ""]));
-  }
+
 
   // 기사 대시보드: 월별·주제·언론사·기자 막대를 누르면 서로 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
   const pivotState = { range: "all", unit: "outlet", kind: "all", f: {}, pages: { office: 0, reporter: 0, feed: 0 }, q: { office: "", reporter: "" } };
