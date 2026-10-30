@@ -24,6 +24,17 @@ test('T16: question uses actual payload, missing data and subjective confidence 
  const c=ctx();const q=c.observationQuestion({event_id:'ne-test',title:'fixture',observation:{intraday:null,missing_reason:'공개 시각 미상'},members:[{title:'source',url:'https://example.org'}],context:[],snapshot_version:'v-test'});
  assert.match(q,/공개 시각 미상/);assert.match(q,/https:\/\/example.org/);assert.match(q,/v-test/);assert.match(q,/추가 외부 기사·공시 검색/);assert.match(q,/주관적 평가/);
 });
+test('question copy: future days dropped, no-trade minute labelled, calc time explained',()=>{
+ const c=ctx();const pt=(t,o,sp,kp)=>({time:t,offset:o,stock_price:sp,kosdaq_price:kp,own:sp&&0,kq:kp&&0,diff:sp&&kp&&0});
+ const q=c.observationQuestion({event_id:'e',title:'t',members:[],context:[],snapshot_version:'v',
+  observation:{day:'2026-10-15',intraday:{points:[pt('2026-10-15T10:24',84,11300,763),pt('2026-10-15T10:25',85,null,763.4)]},windows:{'20':{points:[pt('2026-10-29',10,10170,753),pt('2026-10-30',11,null,null)]}}},
+  market_context:{industry:[{name:'반도체',change_rate:-1,updated_at:'calc'}],themes:[{name:'x',change_rate:1,updated_at:'2026-10-15T15:42'}]}});
+ const j=JSON.parse(q.slice(q.indexOf('{'),q.lastIndexOf('}')+1));
+ assert.deepEqual(j.observation.windows['20'].points.map(p=>p.time),['2026-10-29']);
+ assert.equal(j.observation.intraday.points[1].note,'이 1분 체결 없음');assert.ok(!('stock_price' in j.observation.intraday.points[1]));
+ assert.match(j.market_context.industry[0].updated_at,/^2026-10-15 구성 종목 시가총액 가중 등락률로 자체 계산/);
+ assert.equal(j.market_context.themes[0].updated_at,'2026-10-15T15:42');
+});
 test('article chart overlay: other listed articles and their median as price changes, never the selected one',()=>{
  const c=ctx(),a=fixture();const mk=(id,v)=>({...a,id,event_key:id,steps:{30:{own:v,kq:.01,diff:v-.01}},path:{own:[[-40,0],[0,0],[4,v]],kq:[[0,0],[4,.01]]}});
  run(c,'reactState.vsKq=true');   // 'KOSDAQ 빼고 보기'를 켜 둬도 기사 그래프 겹침은 등락률
