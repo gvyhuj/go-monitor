@@ -326,6 +326,7 @@ def api_daily(_q):
     """달력·일별 표용: 날마다 시가·고가·저가·종가·전일 대비 등락·거래량·KOSDAQ 등락·투자자별 순매수 (일봉 전체)."""
     sym = load_settings()["symbol"]
     with connect() as conn:
+        reg = regular_ohlc(conn, sym)
         own = conn.execute("SELECT date, close, volume, open, high, low, base FROM daily_bars WHERE symbol=? AND close > 0 "
                            "ORDER BY date", (sym,)).fetchall()
         kq = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND close > 0", (KOSDAQ,)).fetchall())
@@ -342,6 +343,8 @@ def api_daily(_q):
     for i, (d, c, v, o, h, lo, base) in enumerate(own):
         prev = base or (own[i - 1][1] if i else None)      # 네이버 기준가 (없으면 전날 종가)
         f = inv.get(d) or inv.get(d.replace("-", "")) or (None, None, None, None)
+        if d in reg:                    # 시가·고가·저가는 거래소 정규장 1분봉으로 (네이버 일봉 값은 넥스트레이드 장외 체결이 섞일 수 있음)
+            o, h, lo = reg[d]
         days.append({"date": d, "close": c, "volume": v, "open": o, "high": h, "low": lo,
                      "change": c / prev - 1 if prev else None, "base": prev,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
@@ -372,6 +375,23 @@ def peer_changes(conn, sym: str) -> tuple[list[dict], dict]:
 
 # 사업 분야 칸에 보여 줄 네이버 업종(WICS) = 비교 종목 묶음과 같은 네 업종. 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
 INDUSTRY_NAMES = [name for _, name in feed.WICS_PEERS]
+
+
+def regular_ohlc(conn, sym: str) -> dict:
+    """{날짜: (시가, 고가, 저가)} 거래소 정규장(09:00~15:30) 1분봉으로. 네이버 당일 1분봉(시가·고가·저가가 있는 봉)이 있는 날만
+    (지난 1분봉 보충분은 종가만 있어 쓰지 않음)."""
+    out = {}
+    for d, ts, o, h, lo in conn.execute(
+            "SELECT substr(ts,1,10), ts, open, high, low FROM minute_bars WHERE symbol=? AND source='naver_today' "
+            "AND substr(ts,12,5) BETWEEN '09:00' AND '15:30' ORDER BY ts", (sym,)):
+        if not (o and h and lo):
+            continue
+        if d not in out:
+            out[d] = [o, h, lo]
+        else:
+            out[d][1] = max(out[d][1], h)
+            out[d][2] = min(out[d][2], lo)
+    return {d: tuple(v) for d, v in out.items()}
 
 
 def industry_rates(conn, calc: set | None = None) -> dict:

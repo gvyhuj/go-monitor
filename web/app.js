@@ -1154,9 +1154,10 @@
       const lq = live && q && q.price != null ? q : null;
       const base = px.base || (lq && lq.change != null ? lq.price - lq.change : null);
       const colored = (v) => `<span class="${base && v ? sgnCls(v - base) : ""}">${v ? won(v) : "-"}</span>`;
-      // 시가·고가·저가·거래량·대금: 오늘은 네이버 현재가 한 번 받은 값으로 모두 맞춤 (분봉 합계·10분마다 받는 숫자와 섞이지 않게)
+      // 시가·고가·저가: 거래소 정규장(09:00~15:30) 1분봉 기준 (네이버 현재가는 장 마감 뒤 넥스트레이드 장외 값으로 바뀌어 섞이지 않게)
+      // 거래량·대금: 오늘은 네이버 현재가 값 (넥스트레이드 포함 통합)
       const vol = lq && lq.volume != null ? lq.volume : px.volume;
-      const op = (lq && lq.open) || px.open, hi = (lq && lq.high) || px.high, lo = (lq && lq.low) || px.low;
+      const op = px.open, hi = px.high, lo = px.low;
       const value = lq && lq.value_text ? lq.value_text : info.accumulatedTradingValue || "-";
       const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
@@ -1184,7 +1185,7 @@
       const ratio = (k, per) => { const d = numOf(info[per]); return lq && d > 0 ? `${(lq.price / d).toFixed(2)}배` : now(k); };
       const cap = lq && lq.market_cap ? capTxt(lq.market_cap) : now("marketValue");
       const asOf = lq ? hhmm(lq.traded_at.slice(0, 16)) : nv.fetched_at ? hhmm(nv.fetched_at) : "";
-      return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시/고/저, 거래량/거래대금, 52주 최고/최저는 KRX+NXT 통합 기준으로 제공됩니다."])}</h4>
+      return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시가·고가·저가는 거래소 정규장(09:00~15:30) 기준입니다.", "거래량·거래대금은 넥스트레이드(장외) 포함 통합 값입니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
         <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}
