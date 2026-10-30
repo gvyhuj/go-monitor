@@ -354,3 +354,16 @@ def test_peerfit_prefers_group_that_moves_with_stock(tmp_path, monkeypatch):
     by = {r['name']: r for r in res['rows']}
     assert by['테마 우주항공']['corr_ex_market'] > .9 > by['WICS 우주항공과국방']['corr_ex_market'] + .5
     assert '테마 우주항공' in peerfit.summary_line(res)
+
+
+def test_regular_ohlc_ignores_after_hours_and_history_bars(tmp_path, monkeypatch):
+    import webserver as ws
+    from core import db
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    with db.connect() as conn:
+        rows = [('2026-10-30T09:00', 10000, 10150, 9950, 'naver_today'), ('2026-10-30T12:20', 9720, 9720, 9700, 'naver_today'),
+                ('2026-10-30T15:30', 9830, 9830, 9830, 'naver_today'), ('2026-10-30T16:12', 10300, 10300, 10300, 'naver_today'),
+                ('2026-10-29T09:00', 10640, 10640, 10640, 'naver_history')]
+        conn.executemany("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES ('000001',?,?,?,?,?,1,?)",
+                         [(t, o, h, l, o, s) for t, o, h, l, s in rows])
+        assert ws.regular_ohlc(conn, '000001') == {'2026-10-30': (10000, 10150, 9700)}
