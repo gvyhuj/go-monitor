@@ -2161,7 +2161,6 @@
     const L = [];
     L.push(`아래는 '${name}' 주가 움직임에 대해 내 사이트가 자동으로 모은 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
     L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
-    L.push("시장·종목 고유 추정분은 모형 추정치이며 실제 원인이 아닙니다. 기여 비중이나 주도 판정을 하지 말고, 음수 또는 실제 등락보다 큰 추정치를 그대로 제시하세요.");
     L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     L.push("검색한 자료는 아래 거래일 날짜와 맞는지 꼭 확인하고, 검색으로 확인한 지수·등락률이 아래 숫자와 다르면 다르다고 적어줘.");
     L.push("답의 첫 줄은 '한 줄 요약'으로 써줘. 한국어 존댓말로.", "");
@@ -2176,16 +2175,8 @@
     L.push(isDaily(e)
       ? `[움직임] ${day} 하루 (${prev ? md(prev) : "전일"} 기준가 → ${snapshot.label}${snapshot.price != null ? ` ${won(snapshot.price)}원` : ""}) ${pct(snapshot.change)} · KOSDAQ${snapshot.live && snapshot.live.ext ? " 정규장" : " 같은 날"} ${pct(snapshot.kosdaq)} · 거래대금(저장 당시) ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` (${valX})` : ""}`
       : `[움직임] ${e.start_ts.replace("T", " ")}~${hhmm(e.last_ts)} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` · 그날 하루 거래대금 ${valX}` : ""}`);
-    if (snapshot) L.push(`[분석 기준] ${dailyEvidenceNote(e)} 아래 몫 나누기·수급은 저장 당시 자료입니다.`);
+    if (snapshot) L.push(`[분석 기준] ${dailyEvidenceNote(e)} 아래 수급은 저장 당시 자료입니다.`);
     if (recent.length) L.push(`[직전 ${recent.length}거래일] ${recent.map((x) => `${md(x.date)} ${pct(x.own)}(KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)})`).join(", ")}`);
-    const sp = c.split;
-    if (sp && sp.own != null) {
-      const kq = sp.kosdaq != null ? sp.kosdaq : e.kosdaq_change;
-      const mk = sp.beta_market != null && kq != null ? ` (KOSDAQ ${pct(kq)} × 이 종목의 평소 시장 민감도 ${sp.beta_market.toFixed(2)})` : "";
-      L.push(`[몫 나누기] 그린광학 실제 등락률: ${pct(sp.own)}; 시장 추정 기여분: ${points(sp.market)}${mk}; 종목 고유 추정분: ${points(sp.specific)}`);
-      if (sp.rarity != null) L.push(`[고유 몫 드문 정도] 평소 ${sp.n_null}거래일의 고유 움직임 중 이만큼 이상 컸던 날 ${(sp.rarity * 100).toFixed(0)}%`);
-      else if (sp.z != null) L.push(`[고유 몫 크기] 평소 하루 고유 변동폭의 ${Math.abs(sp.z).toFixed(1)}배`);
-    }
     const f = c.flows;
     if (f) {
       const r = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${x.net >= 0 ? "+" : ""}${int(x.net)}주`;
@@ -3206,7 +3197,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
     if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
-    // 결론 먼저: 판정 · 고유 반응 · 실린 매체 · 장 외/공시 먼저
+    // 결론 먼저: 판정 · 실린 매체 · 장 외/공시 먼저
     let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
       <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
@@ -3235,23 +3226,20 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ? "15시 넘어 공개 → 그날 남은 거래가 짧아 다음 거래일 장 시작 30분 반응으로 잽니다 (다음 거래일 09:30 뒤 그래프가 나옴)"
       : "오후 늦게(14시 이후) 공개");
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("공개 시각 확인 필요: 구글 뉴스 시각이 16:00 또는 17:00으로 표시됨");
-    // 발표 직후: 시간대별로 같은 방식(시장 몫 + 고유 움직임)으로 한 표에, 30분 줄을 대표로 (공개 시각이 확실하고 분봉이 있을 때)
+    // 발표 직후: +5·15·30·60·120분 이 종목·KOSDAQ 등락, 30분 줄을 대표로 (공개 시각이 확실하고 분봉이 있을 때)
     const iw = d.intraday;
     const ic = !iw && d.intraday_coarse;
     const span0 = (w) => (w.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
       : w.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(w.day)}) 장 시작 뒤` : `${hhmm(w.start)} 공개부터`);
     let numsHtml = "";
     if (iw) {
-      const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, abnormal: iw.abnormal }];
+      const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, kosdaq: iw.kosdaq }];
       numsHtml = `${simpleSteps(d.observation?.intraday ? Object.entries(d.observation.intraday.steps).map(([m,r])=>({minutes:+m,...r})) : rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), iw.minutes)}
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
-        <details class="stat-more"><summary>통계로 보기 (참고)</summary>
-          <div class="rx-steps">${rows.map((r) => `<span><small class="muted">+${r.minutes}분 고유 움직임</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
-          <div class="vb-note">고유 움직임 = 이 종목 등락 − (시장이 움직인 만큼 평소 관계로 예상한 등락). +${iw.minutes}분 기준으로 평소 같은 길이 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>. 기사 하나만으로 판단하기엔 잡음이 큽니다.</div>
-        </details>`;
+`;
     } else if (ic) {
       numsHtml = `${simpleSteps(d.observation?.intraday ? Object.entries(d.observation.intraday.steps).map(([m,r])=>({minutes:+m,...r})) : ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
-        <div class="vb-note">기준·종료 시각에 기록된 가격만 사용합니다. '-'는 해당 시각 가격이 없어 미계산이며 보합이 아닙니다. KOSDAQ도 같은 두 시각의 가격이 있을 때만 비교합니다. 장 전·장 외의 기준가는 저장된 전 거래일 일봉 종가(종목은 시간외 포함 가능)입니다. 평소 관계를 뺀 '고유 움직임' 계산은 하지 않음.</div>`;
+        <div class="vb-note">기준·종료 시각에 기록된 가격만 사용합니다. '-'는 해당 시각 가격이 없어 미계산이며 보합이 아닙니다. KOSDAQ도 같은 두 시각의 가격이 있을 때만 비교합니다. 장 전·장 외의 기준가는 저장된 전 거래일 일봉 종가(종목은 시간외 포함 가능)입니다.</div>`;
     }
     // 공개 뒤 주가: 한 차트에 이 기사 + KOSDAQ + (지금 목록의) 다른 기사·중앙값. 탭으로 전후 5거래일
     const win5 = d.observation?.windows?.["5"];

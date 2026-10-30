@@ -1275,7 +1275,6 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
   background: repeating-linear-gradient(to bottom, var(--mk-pub) 0 4px, transparent 4px 7px); }
 .rx-pub[hidden] { display: none; }
 .rx-pub-tag { position: absolute; top: 2px; left: 1px; transform: translateX(-50%); padding: 0 7px; border-radius: 999px; background: var(--mk-pub); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }
-.rx-steps { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 4px 0 6px; }
 .rec-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 12px; }
 .rec-period input { height: 34px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 8px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); }
 .days-controls .rec-period { margin: 0; }   /* 나란히 놓인 두 칸은 윗선을 맞춤 */
@@ -1384,8 +1383,6 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .simple-steps thead th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .simple-steps tbody th { text-align: left; font-weight: 600; color: var(--ink-2); }
 .simple-steps .main { font-weight: 800; }
-.stat-more { margin-top: 10px; font-size: 13px; }
-.stat-more summary { cursor: pointer; color: var(--muted); }
 .rx-kq { fill: none; stroke: var(--ink-2); stroke-width: 1.6; stroke-dasharray: 5 4; pointer-events: none; }
 /* News list = one page: filters once (tabs · 조건 · 정렬), list with reaction values, one chart on the right. */
 .art-dd { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); padding: 6px 10px; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; min-height: 34px; }

@@ -1,7 +1,7 @@
 """원인은 직접 붙여넣은 글(ChatGPT 등)로, 숫자는 자동 기록으로.
 
 자동 원인 추정(결론·원인 후보·'관련 기사 N건' 같은 배경 추정)은 실제와 다르게 엮는 경우가 있어 화면에서 뺍니다.
-숫자와 사실 자료(몫 나누기, 창구 매매, 비교 종목, 테마 등락, 기사 목록)는 그대로 둡니다.
+숫자와 사실 자료(창구 매매, 테마 등락, 기사 목록)는 그대로 둡니다. 몫 나누기(시장·고유 몫)는 싣지 않습니다.
 
 연결 규칙
 - 하루 기록: 같은 날의 '하루' 원인 (장중에 여러 번 넣으면 넣은 시각·그때 등락과 함께 모두 남고, 최신이 대표)
@@ -140,7 +140,9 @@ def facts_only(c: dict | None) -> dict | None:
     if not c:
         return c
     out = {k: v for k, v in c.items()
-           if k not in ("headline", "confidence", "summary_line", "desk", "candidates", "drivers", "notes")}
+           if k not in ("headline", "confidence", "summary_line", "desk", "candidates", "drivers", "notes", "split")}
+    if isinstance(out.get("causal"), dict):         # 몫 나누기(시장·고유 몫, 이례성)는 싣지 않음: 거래 강도·직전 며칠 등락만
+        out["causal"] = {k: v for k, v in out["causal"].items() if k in ("intensity", "recent")}
     b = c.get("buyer")
     if b:
         lines = []

@@ -86,13 +86,13 @@ test('news list overview explains distinct counts and the earlier calculation ti
   assert.match($('#rx-cards').innerHTML, /\+30분 중앙값[\s\S]*%p/);   // KOSDAQ 빼고 보기: 카드가 %p로
 });
 
-test('drawer no longer shows the model contribution box; AI text keeps percentage points', () => {
+test('drawer and AI text carry no share split (market·own), only theme moves', () => {
   const {ctx,$}=harness();
   const split={own:.04,market:.06,specific:-.02};
   ctx.renderEventDrawer({event:{...event},cause:{split}});
   assert.doesNotMatch($('#drawer-body').innerHTML,/모형 추정 기여분/);
   const text=ctx.eventContext({event:{...event},cause:{split}},'검토');
-  assert.match(text,/시장 추정 기여분: 6.00%p/);
+  assert.doesNotMatch(text,/몫 나누기|추정 기여분|고유/);   // 몫 나누기는 AI 질문에도 싣지 않음
   assert.doesNotMatch(text,/업종/);                      // 업종 몫은 계산하지 않음
   assert.match(text,/\[그날 네이버 테마 등락\]/);
 });

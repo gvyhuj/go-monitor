@@ -93,7 +93,7 @@ def test_facts_only_strips_conclusions():
     out = manual.facts_only(c)
     for k in ("headline", "confidence", "summary_line", "desk", "candidates", "drivers", "notes"):
         assert k not in out
-    assert out["split"] == {"own": -0.08} and out["flows"] == {"a": 1}
+    assert "split" not in out and out["flows"] == {"a": 1}
     kinds = [ln["kind"] for ln in out["buyer"]["lines"]]
     assert kinds == ["업종 묶음", "외국인 확정치"]
     assert out["buyer"]["lines"][0]["text"] == "34개 중 16개도 순매도했습니다."
@@ -198,3 +198,11 @@ def test_inbox_accepts_every_type_the_site_sends():
         if t in ("pr", "analyze"):
             continue
         assert ghinbox.parse({"title": "[요청] x", "body": "```enc\nAAAA\n```"}, unseal=lambda _b, t=t: {"type": t})["type"] == t
+
+
+def test_facts_only_drops_share_split():
+    # 몫 나누기(시장·고유 몫, 이례성)는 사이트에 싣지 않음. 거래 강도·직전 며칠 등락은 남김
+    c = {"split": {"own": .04, "market": .01, "specific": .03},
+         "causal": {"abnormal": {"z": 3}, "event_study": {"ok": True}, "intensity": {"value_x": 2.0}, "recent": [1]}}
+    out = manual.facts_only(c)
+    assert "split" not in out and out["causal"] == {"intensity": {"value_x": 2.0}, "recent": [1]}
