@@ -2294,7 +2294,7 @@ const obsKind = (k) => k === 'external_company_announcement' ? 'external_article
 const obsLink = (url,label) => /^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `${esc(label)} (원문 주소 없음)`;
 function observationQuestion(d) {
   const o=d.observation, f=o.intraday || {};
-  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:d.market_context,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 일별 저장 종가의 장후 포함·기업행동 보정 여부도 확인해 주세요.`;
+  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:d.market_context,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
 const OBS_SRC = {disclosure:'공시 접수 시각',manual:'직접 입력',page:'기사 원문',original_page:'기사 원문',naver:'네이버',google:'구글 뉴스',gnews:'구글 뉴스',unknown:'미상',calc:'자체 계산',fixture:'검증용 자료'};
 const obsSrc = (s) => OBS_SRC[s] || s || '미상';
@@ -3344,7 +3344,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           else empty("이 기간에 저장된 일별 종가가 없습니다.");
           const post = (win5 && win5.post) || {};
           $("#pr-cards", box).innerHTML = card("공개 전 5거래일", win5 && win5.pre_trend) + card("공개 후 5거래일", post.own) + card("KOSDAQ", post.kq) + card("시장 대비", post.diff, points);
-          $("#rx-tab-note", box).textContent = `${win5 && win5.base_day ? `${win5.base_day} 저장 종가 = 0%. ` : ""}공개 전에 이미 움직였는지, 공개 뒤 움직임이 이어졌는지 보는 참고용입니다. ${(win5 && win5.price_warning) || ""}`;
+          $("#rx-tab-note", box).textContent = `${win5 && win5.base_day ? `${win5.base_day} 거래소 종가 = 0%. ` : ""}공개 전에 이미 움직였는지, 공개 뒤 움직임이 이어졌는지 보는 참고용입니다. ${(win5 && win5.price_warning) || ""}`;
         }
       };
       box.querySelectorAll("[data-rxr]").forEach((b) => (b.onclick = () => { drawTab(b.dataset.rxr); enter(rxEl, "mv-reveal"); }));

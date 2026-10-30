@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timedelta
 from . import yahoo
 
-VERSION = 'observatory-2-before-publication'
+VERSION = 'observatory-3-krx-close'
 KINDS = ('company_press_release', 'external_article', 'disclosure')
 # Earlier builds offered a fourth kind. Stored values and history stay as written; they are read as external articles.
 LEGACY_KINDS = {'external_company_announcement': 'external_article'}
@@ -243,7 +243,7 @@ def daily_window(conn,symbol,day,n,days=None):
     days = days or calendar(conn,symbol)
     i = days.index(day)
     base_day = days[i-1] if i else None
-    prices = {s:{r[0]:r[1] for r in conn.execute('SELECT date,close FROM daily_bars WHERE symbol=?',(s,))} for s in (symbol,yahoo.INDEX)}
+    prices = {s:yahoo.krx_closes(conn,s) for s in (symbol,yahoo.INDEX)}   # 거래소 정규장 종가 (시간외 제외)
     a,b = prices[symbol].get(base_day),prices[yahoo.INDEX].get(base_day)
     points = []
     for j in range(max(0,i-n), min(len(days),i+n+1)):
@@ -256,8 +256,8 @@ def daily_window(conn,symbol,day,n,days=None):
     return {'points':points,'base_day':base_day,'base_own':a,'base_kq':b,'range':n,
             'post':{k:end.get(k) for k in ('own','kq','diff')},'pre_trend':ratio(a,pre.get('stock_price')),
             'status':'pending' if i+n>=len(days) else 'complete' if end.get('diff') is not None else 'partial',
-            'source':'저장 일봉 close (정규장/장후 포함 여부·기업행동 보정 확인 필요)',
-            'price_warning':'주의/보정 확인 필요: 일봉 close는 장후 체결을 포함할 수 있어 정규장 종가와 동일하다고 보장하지 않습니다.'}
+            'source':'거래소(KRX) 정규장 종가: 다음 거래일 기준가(거래소 전일 종가)로 확인, 마지막 날은 15:30까지 마지막 1분 시세. 넥스트레이드 시간외 체결 제외. KOSDAQ은 지수 종가',
+            'price_warning':'기업행동(분할·증자 등) 수정주가 보정은 하지 않습니다. 보정이 있었던 기간은 외부 수정주가와 다를 수 있습니다.'}
 
 
 def tags(title):

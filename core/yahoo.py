@@ -117,6 +117,27 @@ def _day_rows(conn, code: str, day: str):
     return None, [], None, []
 
 
+def krx_closes(conn, code: str) -> dict:
+    """거래소(KRX) 정규장 종가 {날짜: 가격}. 저장 일봉 close는 네이버 기준(넥스트레이드 시간외 ~20:00 포함 마지막 체결가)이라
+    외부 시세(거래소 종가)와 다를 수 있음 → 분석·AI 질문은 이 값을 씀.
+    1) 다음 거래일의 기준가(base = 그날 종가 − 전일 대비 = 거래소 전일 종가)
+    2) 없으면(마지막 날) 그날 15:30까지의 마지막 1분 시세(네이버 1분봉은 정규장만 저장)
+    3) 그래도 없으면 저장 close (지수는 시간외가 없어 close 그대로)"""
+    rows = conn.execute("SELECT date, close, base FROM daily_bars WHERE symbol=? ORDER BY date", (code,)).fetchall()
+    if code == INDEX:
+        return {d: c for d, c, _ in rows}
+    out = {}
+    for i, (d, c, _) in enumerate(rows):
+        nb = rows[i + 1][2] if i + 1 < len(rows) else None
+        if nb:
+            out[d] = nb
+            continue
+        m = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? AND substr(ts,12,5)<='15:30' "
+                         "ORDER BY ts DESC LIMIT 1", (code, d)).fetchone()
+        out[d] = m[0] if m and m[0] else c
+    return out
+
+
 def reaction_frame(conn, code, day, start, kind, min_minutes=MIN_DAY_MINUTES):
     """Shared observed prices and bases for tables and charts, without interpolation."""
     iv, own = series(conn, code, day, min_minutes)
@@ -126,7 +147,8 @@ def reaction_frame(conn, code, day, start, kind, min_minutes=MIN_DAY_MINUTES):
     if kind in ("open", "late"):
         prev = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                             (code, day)).fetchone()
-        b_own = prev[1] if prev else None
+        # 기준 = 전 거래일 거래소 정규장 종가 (넥스트레이드 시간외 마지막 가격이 아님)
+        b_own = krx_closes(conn, code).get(prev[0]) if prev else None
         pk = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (INDEX, prev[0])).fetchone() if prev else None
         b_idx = pk[0] if pk else None
         own_time = prev[0] if prev and b_own else None
@@ -148,7 +170,7 @@ def reaction_frame(conn, code, day, start, kind, min_minutes=MIN_DAY_MINUTES):
             "base_own_time": own_time, "base_kq_time": idx_time,
             "comparable": bool(own_time and own_time == idx_time),
             "base_lag_minutes": (start-datetime.fromisoformat(own_time)).total_seconds()/60 if own_time and kind == "session" else None,
-            "base_basis": "previous_stored_close" if kind in ("open", "late") else "last_completed_before_publication",
+            "base_basis": "previous_krx_close" if kind in ("open", "late") else "last_completed_before_publication",
             "base_own": b_own, "base_kq": b_idx, "own": own, "kq": idx}
 
 

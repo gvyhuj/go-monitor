@@ -313,3 +313,18 @@ def test_note_from_site_gets_stored_observation(database):
     saved=json.loads(database.execute("SELECT payload FROM news_event_notes WHERE id='r-site'").fetchone()[0])
     assert saved['snapshot']['version']=='v9'
     assert saved['snapshot']['observation']['intraday']['steps']['30']['own']==pytest.approx(.03)
+
+def test_krx_close_not_after_hours_last_price(database):
+    # 네이버 일봉 close = 넥스트레이드 시간외 포함 마지막 가격 → 분석은 거래소 정규장 종가(다음 날 기준가)로
+    for d,c,b in [('2026-10-14',12600,12820),('2026-10-15',10900,12620),('2026-10-16',11660,11200)]:
+        database.execute('INSERT INTO daily_bars(symbol,date,open,high,low,close,volume,base) VALUES (?,?,?,?,?,?,1,?)',('X',d,c,c,c,c,b))
+    for d,c in [('2026-10-14',800),('2026-10-15',760),('2026-10-16',790)]:
+        database.execute('INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,1)',('KOSDAQ',d,c,c,c,c))
+    minute(database,'X','2026-10-16T15:30',11470); minute(database,'X','2026-10-16T19:59',11660)   # 시간외는 1분봉에 없지만 있어도 15:30 이후는 무시
+    k = yahoo.krx_closes(database,'X')
+    assert k['2026-10-14']==12620 and k['2026-10-15']==11200 and k['2026-10-16']==11470
+    assert yahoo.krx_closes(database,'KOSDAQ')['2026-10-15']==760
+    f = yahoo.reaction_frame(database,'X','2026-10-15',datetime(2026,10,15,9,0),'late',min_minutes=1)
+    assert f['base_own']==12620 and f['base_basis']=='previous_krx_close'
+    w = ob.daily_window(database,'X','2026-10-15',1)
+    assert w['base_own']==12620 and [p['stock_price'] for p in w['points']]==[12620,11200,11470]
