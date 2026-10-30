@@ -154,16 +154,57 @@ def investors(code: str) -> list[dict]:
              "foreign": _num(r.get("frgn_ntby_qty")), "organ": _num(r.get("orgn_ntby_qty"))} for r in rows]
 
 
-def trial(code: str, now: datetime) -> str:
-    """시험 운행: 한투에서 받은 값과 기록(네이버) 값을 나란히. 화면·기록은 바꾸지 않음. 실행 기록 한 줄."""
-    from .db import connect, get_state
+def _bar(r, d_key="stck_bsop_date", t_key="stck_cntg_hour", px=("stck_oprc", "stck_hgpr", "stck_lwpr", "stck_prpr"), vol="cntg_vol"):
+    d, t = r.get(d_key) or "", r.get(t_key) or ""
+    if len(d) != 8 or len(t) != 6:
+        return None
+    o, h, lo, c = (_num(r.get(k)) for k in px)
+    return {"ts": f"{d[:4]}-{d[4:6]}-{d[6:]}T{t[:2]}:{t[2:4]}", "open": o, "high": h, "low": lo, "close": c, "volume": _num(r.get(vol))}
+
+
+def day_minutes(code: str, day: str, until_hhmmss: str = "153000") -> list[dict]:
+    """지난 날짜 1분봉 (그 시각까지 최근 120개쯤, 오래된 순). day=YYYY-MM-DD."""
+    rows = _get("/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice", "FHKST03010230",
+                {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code, "FID_INPUT_HOUR_1": until_hhmmss,
+                 "FID_INPUT_DATE_1": day.replace("-", ""), "FID_PW_DATA_INCU_YN": "Y", "FID_FAKE_TICK_INCU_YN": ""}
+                ).get("output2") or []
+    return sorted([b for b in (_bar(r) for r in rows) if b], key=lambda b: b["ts"])
+
+
+def index_minutes(no: str = KOSDAQ_INDEX) -> list[dict]:
+    """KOSDAQ 지수 당일 1분봉 (오래된 순)."""
+    rows = _get("/uapi/domestic-stock/v1/quotations/inquire-time-indexchartprice", "FHKUP03500200",
+                {"FID_COND_MRKT_DIV_CODE": "U", "FID_ETC_CLS_CODE": "0", "FID_INPUT_ISCD": no,
+                 "FID_INPUT_HOUR_1": "60", "FID_PW_DATA_INCU_YN": "Y"}).get("output2") or []
+    px = ("bstp_nmix_oprc", "bstp_nmix_hgpr", "bstp_nmix_lwpr", "bstp_nmix_prpr")
+    return sorted([b for b in (_bar(r, px=px) for r in rows) if b], key=lambda b: b["ts"])
+
+
+def daily(code: str, start: str, end: str, index: bool = False) -> list[dict]:
+    """일봉 (최대 100개, 오래된 순). start·end=YYYY-MM-DD. index=True면 업종 지수(KOSDAQ=1001)."""
+    if index:
+        path, tr = "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice", "FHKUP03500100"
+        params = {"FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": code}
+        keys = ("bstp_nmix_oprc", "bstp_nmix_hgpr", "bstp_nmix_lwpr", "bstp_nmix_prpr")
+    else:
+        path, tr = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", "FHKST03010100"
+        params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code, "FID_ORG_ADJ_PRC": "0"}
+        keys = ("stck_oprc", "stck_hgpr", "stck_lwpr", "stck_clpr")
+    rows = _get(path, tr, {**params, "FID_INPUT_DATE_1": start.replace("-", ""), "FID_INPUT_DATE_2": end.replace("-", ""),
+                           "FID_PERIOD_DIV_CODE": "D"}).get("output2") or []
+    out = []
+    for r in rows:
+        d = r.get("stck_bsop_date") or ""
+        o, h, lo, c = (_num(r.get(k)) for k in keys)
+        if len(d) == 8 and c:
+            out.append({"date": f"{d[:4]}-{d[4:6]}-{d[6:]}", "open": o, "high": h, "low": lo, "close": c,
+                        "volume": _num(r.get("acml_vol")), "value": _num(r.get("acml_tr_pbmn"))})
+    return sorted(out, key=lambda x: x["date"])
+
+
+def probe(code: str, now: datetime) -> str:
+    """시험: 한투에서 실제로 무엇을 얼마나 받을 수 있는지 (일봉·지난 1분봉·지수 1분봉의 범위). 기록은 바꾸지 않음."""
     parts, errs = [], []
-    nq = {}
-    st = get_state(f"quote:{code}")
-    try:
-        nq = json.loads(st["value"]) if st and st.get("value") else {}
-    except ValueError:
-        pass
 
     def step(label, fn):
         try:
@@ -172,31 +213,33 @@ def trial(code: str, now: datetime) -> str:
             errs.append(f"{label} {e}")
             return None
 
+    span = lambda xs, k: f"{len(xs)}개 {xs[0][k]}~{xs[-1][k]}" if xs else "0개"
     q = step("현재가", lambda: quote(code))
     if q:
-        nv = lambda k: nq.get(k) if nq.get(k) is not None else "-"
-        parts.append(f"현재가 한투 {q['price']} / 네이버 {nv('price')}, 시가 {q['open']}, 고가 {q['high']}, 저가 {q['low']}, "
-                     f"기준가 {q['base']}, 거래량 {q['volume']} / 네이버 {nv('volume')}, 시총 {q['market_cap_100m']}억, "
-                     f"PER {q['per']} PBR {q['pbr']} EPS {q['eps']} BPS {q['bps']}")
-    for mk in ("NX", "UN"):                         # 넥스트레이드·통합 시세를 따로 주는지
-        x = step(f"현재가({mk})", lambda mk=mk: quote(code, mk))
-        if x:
-            parts.append(f"{mk} 현재가 {x['price']} 거래량 {x['volume']}")
-    # 장중이면 지금까지, 아니면 마지막 거래일 장 마감(15:30)까지
-    hhmm = now.strftime("%H%M%S") if now.weekday() < 5 and "090000" <= now.strftime("%H%M%S") <= "153000" else "153000"
-    m = step("1분봉", lambda: minutes(code, hhmm))
-    if m:
-        with connect() as conn:
-            mine = {r[0]: r[1:] for r in conn.execute(
-                "SELECT ts, open, high, low, close FROM minute_bars WHERE symbol=? AND ts >= ? AND ts <= ?",
-                (code, m[0]["ts"], m[-1]["ts"]))}
-        same = sum(1 for b in m if b["ts"] in mine and abs((mine[b["ts"]][3] or 0) - (b["close"] or 0)) < 1e-6)
-        parts.append(f"1분봉 {len(m)}개({m[0]['ts'][11:]}~{m[-1]['ts'][11:]}) 중 네이버 종가 일치 {same}·네이버에 없음 "
-                     f"{sum(1 for b in m if b['ts'] not in mine)}")
-    k = step("KOSDAQ", index_quote)
-    if k:
-        parts.append(f"KOSDAQ 한투 {k['price']} ({k['rate']}%)")
+        parts.append(f"현재가 {q['price']} 기준가 {q['base']} 시가 {q['open']} 거래량 {q['volume']} 대금 {q['value']} 시총 {q['market_cap_100m']}억 PER {q['per']} PBR {q['pbr']}")
+    end = now.date().isoformat()
+    for label, s0 in (("일봉 최근", (now - timedelta(days=150)).date().isoformat()), ("일봉 3년 전", "2023-01-01"), ("일봉 2020", "2020-01-01")):
+        d = step(label, lambda s0=s0: daily(code, s0, end if label == "일봉 최근" else (datetime.fromisoformat(s0) + timedelta(days=140)).date().isoformat()))
+        if d is not None:
+            parts.append(f"{label} {span(d, 'date')}")
+    k = step("KOSDAQ 일봉", lambda: daily(KOSDAQ_INDEX, (now - timedelta(days=150)).date().isoformat(), end, index=True))
+    if k is not None:
+        parts.append(f"KOSDAQ 일봉 {span(k, 'date')}" + (f" 마지막 종가 {k[-1]['close']}" if k else ""))
+    last = (k or [{}])[-1].get("date") if k else None
+    m = step("오늘 1분봉", lambda: minutes(code, "153000"))
+    if m is not None:
+        parts.append(f"당일 1분봉 {span(m, 'ts')}")
+    for back in (7, 30, 90, 200, 365):
+        day = (now - timedelta(days=back))
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+        dm = step(f"지난 1분봉({back}일 전)", lambda d=day.date().isoformat(): day_minutes(code, d))
+        if dm is not None:
+            parts.append(f"{back}일 전({day.date().isoformat()}) 1분봉 {span(dm, 'ts')}")
+    im = step("KOSDAQ 1분봉", index_minutes)
+    if im is not None:
+        parts.append(f"KOSDAQ 1분봉 {span(im, 'ts')}" + (f" 마지막 {im[-1]['close']}" if im else ""))
     inv = step("투자자", lambda: investors(code))
-    if inv:
-        parts.append(f"투자자 {inv[0]['date']} 개인 {inv[0]['individual']} 외국인 {inv[0]['foreign']} 기관 {inv[0]['organ']}")
+    if inv is not None:
+        parts.append(f"투자자 {len(inv)}일 {inv[-1]['date'] if inv else ''}~{inv[0]['date'] if inv else ''}")
     return "한투 시험: " + (" · ".join(parts) or "받은 값 없음") + (" · 실패: " + " / ".join(errs) if errs else "")
