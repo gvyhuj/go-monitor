@@ -9,6 +9,8 @@
 #     DATA_KEY       기록 백업용 열쇠 (선택. 없으면 SITE_PASSWORD 사용. 한 번 정하면 바꾸지 마세요)
 #     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET  네이버 검색 API (선택. NAVER API HUB의 Client ID·Secret, 하루 2만5천 건 무료)
 #     DART_API_KEY                           금융감독원 DART 오픈API (공시 목록, 무료. 없으면 네이버 공시 목록)
+#     KIS_APP_KEY / KIS_APP_SECRET           한국투자증권 Open API (선택. 시세 조회만)
+#     CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID  실시간 중계 서버 (선택)
 # - 기록(SQLite)은 암호화해서 실행 사이에 넘기고(Actions 캐시), 1시간마다 릴리스 '최신 백업'에도 백업합니다.
 # - 사이트에서 '기사 직접 등록'·'목록에서 빼기'를 누르면 GitHub 이슈(내용 암호화)가 만들어지고, 다음 정기 실행 때 저장소 주인이 만든 이슈만 반영합니다.
 #   (이슈로 바로 시작된 실행은 GitHub이 기록 저장을 막아서, 이슈로는 실행하지 않음)
@@ -55,6 +57,8 @@ jobs:
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}          # 선택: 국제·정치 이슈 기사 검색 (없으면 건너뜀)
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       DART_API_KEY: ${{ secrets.DART_API_KEY }}                # 공시 목록 (금융감독원 DART, 없으면 예전처럼 네이버)
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}                  # 한국투자증권 Open API (시세 조회만, 시험 운행 중)
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
       GO_INTERVAL_MIN: "5"
       GO_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && '1' || '' }}
       GITHUB_TOKEN: ${{ github.token }}
