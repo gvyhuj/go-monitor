@@ -326,6 +326,26 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
+    // 주가 기록: 아래 칸은 네이버 테마 등락 (네이버 값 그대로), 누르면 그날 오른·내린 종목과 편입 이유
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      const seg = page.locator("#rec-bento .b-seg");
+      await seg.locator(".seg-chip").first().waitFor();
+      assert.match(await seg.innerText(), /10\/28 테마 등락\s*네이버 테마[\s\S]*방위산업\/전쟁 및 테러\s*\+0\.80%[\s\S]*우주항공산업\s*−2\.40%/);
+      assert.doesNotMatch(await seg.innerText(), /WICS|반도체/);
+      await seg.getByRole("button", { name: /우주항공산업/ }).click();
+      const pop = page.locator("#ind-modal");
+      await pop.locator("#ind-body .ind-rate").waitFor();
+      assert.match(await pop.innerText(), /10\/28 우주항공산업[\s\S]*−2\.40%[\s\S]*네이버 테마 '우주항공산업\(누리호\/인공위성 등\)'[\s\S]*오른 종목 3 · 내린 종목 15 · 전체 20[\s\S]*넣은 이유: 위성용 광학계 공급[\s\S]*검증위성\s*\+3\.10%[\s\S]*검증방산\s*−4\.20%/);
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
     // 움직임: 기사 열기(떠오르기·제목 옮겨 가기), 겹쳐 보기 선 그리기, 기간 숫자 올라가기 — 끝나면 값은 그대로
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -354,23 +374,20 @@ async function main() {
       assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "sticky", "오른쪽 상세는 화면에 고정");
       // 오른쪽 상세 위에서 휠을 돌려도 화면이 내려감 (안에서 끝까지 내리면 화면으로 이어짐)
       assert.notEqual(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain");
-      // 주가 기록: 기간 차트 종가 선 그리기, 1일 차트 나타나기, 날짜를 바꾸면 머리 박스 숫자 올라가기
+      // 주가 기록: 기간·1일 차트는 선 그리기 없이 바로 (메인 차트), 날짜를 바꾸면 머리 박스 숫자 올라가기
       await page.goto(`${base}/#/`);
       await page.locator("#rec-head .rh-box").waitFor();
-      await page.locator('[data-range="1m"], [data-range="30"], .rec-tabs button:nth-child(3)').first().click();
-      await page.locator("#rec-chart.mv-reveal .rc-line").waitFor();
+      for (const n of [1, 2]) {
+        await page.locator(".rec-tabs button").nth(n).click();
+        await page.locator("#rec-chart .rc-line").waitFor();
+        assert.equal(await page.locator("#rec-chart").evaluate((el) => el.classList.contains("mv-reveal") || el.getAnimations().length > 0), false, "기간 차트 선 그리기 없음");
+      }
       await page.locator('.rec-tabs button[data-range="1d"]').click();
-      await page.locator("#rec-chart .day-chart.mv-reveal, #rec-chart .mv-reveal").first().waitFor().catch(() => {});
+      await page.locator("#rec-chart .rc-head").waitFor();
+      assert.equal(await page.locator("#rec-chart .mv-reveal").count(), 0, "1일 차트 나타나기 없음");
       await page.locator('[data-step="-1"]').first().click();
       await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));
       assert.ok(await page.locator("#rec-head [data-key='rh-price']").evaluate((el) => el.closest(".rh-box") !== null));
-      // 기간 차트: 1주를 누르면 칸이 왼쪽→오른쪽으로 펼쳐지는 움직임이 끝까지 (중간에 다시 시작하지 않음)
-      await page.locator(".rec-tabs button").nth(1).click();
-      await page.locator("#rec-chart.mv-reveal").waitFor();
-      const t1 = await page.locator("#rec-chart").evaluate((el) => el.getAnimations()[0].currentTime);
-      await page.waitForTimeout(250);
-      const t2 = await page.locator("#rec-chart").evaluate((el) => (el.getAnimations()[0] || { currentTime: 9999 }).currentTime);
-      assert.ok(t2 > t1, `펼침이 이어짐 ${t1} → ${t2}`);
       // 뉴스 대시보드: 위 숫자 올라가기, 작은 추이선·월별 추이 선 그리기
       await page.goto(`${base}/#/pivot`);
       await page.locator("#dash-kpi [data-count]").first().waitFor();
