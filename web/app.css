@@ -282,6 +282,9 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
 /* 업종 칸을 누르면 뜨는 창 */
 .ind-rate { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
 .ind-rate b { font-size: 26px; }
+.ind-link { margin: 16px 0 0; font-size: 14px; }
+.ind-link a { color: var(--brand-blue); font-weight: 600; text-decoration: none; }
+.ind-link a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ind-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
 .ind-list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .ind-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
