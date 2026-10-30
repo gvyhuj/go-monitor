@@ -2623,6 +2623,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
       list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
+    const boardKeys = {};
     function board(el, dim) {
       const all = base.filter((r) => pass(r, dim));
       // 이름 찾기: 순위는 전체 기준 그대로 두고, 찾는 말이 들어간 줄만 보여 줌 (기자는 '이름 · 언론사'에서 찾음)
@@ -2640,11 +2641,14 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         const pr = x.by["그린광학 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
           <span class="rk">${x.rank}</span>
-          <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
+          <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%;--i:${i}"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
             <b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
-          <span class="ct"><b>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
+          <span class="ct"><b data-count="${x.n}" data-key="bd-${dim}-${esc(x.key)}" data-from0>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
           <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
       }).join("")}</ol>${dashPager(dim, pages[dim], full.length)}` : `<p class="muted">${nq ? `“${esc(pivotState.q[dim])}”이(가) 들어간 ${dim === "reporter" ? "기자" : "언론사"}가 없습니다.` : "해당 기사가 없습니다."}</p>`;
+      // 막대가 위에서부터 차례로 왼쪽→오른쪽으로 자라고 건수는 올라감 (조건·쪽·찾기가 바뀔 때만, 창 크기만 바뀌면 안 함)
+      const bk = JSON.stringify([pivotState.range, pivotState.unit, pivotState.kind, F, pages[dim], pivotState.q[dim]]);
+      if (bk !== boardKeys[dim]) { boardKeys[dim] = bk; drawOnce(el, "mv-grow", 1400); countUp(el); }
       if (dim === "reporter") {               // 기자 이름을 못 읽은 기사도 숫자로 (언론사별)
         const miss = all.filter((r) => !r.reporter);
         if (miss.length) {

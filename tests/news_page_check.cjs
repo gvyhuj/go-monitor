@@ -345,6 +345,10 @@ async function main() {
       await page.locator("#dash-kpi [data-count]").first().waitFor();
       assert.equal(await page.locator("#dash-kpi [data-count]").count(), 5);
       await page.locator("#dash-month.mv-draw-dash .dl-line").first().waitFor({ state: "attached" });
+      // 상위 언론사·자주 쓴 기자: 막대가 왼쪽에서 자라고 건수가 올라감
+      await page.locator("#dash-office.mv-grow .dash-row .bar").first().waitFor({ state: "attached" });
+      assert.ok(await page.locator("#dash-office .dash-row .bar").first().evaluate((el) => el.getAnimations().length > 0), "막대 자라기");
+      assert.ok(await page.locator("#dash-office .ct b[data-count]").count() > 0);
       await page.goto(`${base}/#/days`);
       await page.locator(".ps-cards").waitFor();
       assert.equal(await page.locator(".ps-cards").evaluate((el) => getComputedStyle(el).display), "grid", "기간 카드 옆으로 넘기기는 되돌림");
