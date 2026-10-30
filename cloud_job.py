@@ -786,6 +786,22 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
+    # 하루 한 번: 이 종목 일별 등락을 KOSDAQ·네이버 업종(WICS)·네이버 테마 중 어느 묶음이 더 잘 설명하는지 (실행 기록에 한 줄)
+    if (get_state("peerfit:day") or {}).get("value") != now.date().isoformat():
+        try:
+            from core import macro as _m, peerfit
+            with connect() as conn:
+                missing = [x["code"] for x in _m.basket_codes()
+                           if not conn.execute("SELECT 1 FROM daily_bars WHERE symbol=? LIMIT 1", (x["code"],)).fetchone()]
+            if missing:                       # 테마 대형 종목 일봉 (처음 한 번)
+                _m.sync_daily_bars(missing)
+            with connect() as conn:
+                res = peerfit.compare(conn, code)
+            set_state("peerfit", json.dumps(res, ensure_ascii=False))
+            set_state("peerfit:day", now.date().isoformat())
+            annotate("notice", peerfit.summary_line(res))
+        except Exception as e:  # noqa: BLE001 - 참고용 계산이라 실패해도 계속
+            annotate("warning", f"묶음 설명력 계산 실패: {type(e).__name__}: {str(e)[:150]}")
     lap("마무리")
     annotate("notice", f"단계별 시간(초, 합계 {sum(x for _, x in _LAP[1]):.0f}): " + " · ".join(f"{k} {v:.0f}" for k, v in _LAP[1]))
     return 1 if failed else 0
