@@ -117,8 +117,8 @@ def _flows(symbol: str, t0: datetime, t1: datetime, window_volume: int):
     day = t1.date().isoformat()
     with connect() as conn:
         snaps = [r[0] for r in conn.execute(
-            "SELECT DISTINCT ts FROM trader_snapshots WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts",
-            (symbol, day))]
+            "SELECT DISTINCT ts FROM trader_snapshots WHERE symbol=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts",
+            (symbol, day, day))]
         if not snaps:
             # 장중 1분 기록이 없으면 장 마감 시점 기록(네이버 → 다음 금융 순)으로 대신
             for src in ("네이버", "다음 금융"):
@@ -220,8 +220,8 @@ def _daily_close(code: str, day: str):
 
 def _price_on(code: str, day: str):
     with connect() as conn:
-        r = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts DESC LIMIT 1",
-                         (code, day)).fetchone()
+        r = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts DESC LIMIT 1",
+                         (code, day, day)).fetchone()
     return float(r[0]) if r else None
 
 
@@ -413,8 +413,8 @@ def _daily_change(code: str, day: str):
     with connect() as conn:
         a = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND ts<? ORDER BY ts DESC LIMIT 1",
                          (code, day + "T00:00")).fetchone()
-        b = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts DESC LIMIT 1",
-                         (code, day)).fetchone()
+        b = conn.execute("SELECT close FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts DESC LIMIT 1",
+                         (code, day, day)).fetchone()
     return (b[0] / a[0] - 1) if a and b and a[0] else None
 
 

@@ -181,8 +181,23 @@ def ratio(value, base):
     return value / base - 1 if value and base and value > 0 and base > 0 else None
 
 
+_CAL = {}
+
+
 def calendar(conn, symbol):
     # Observed exchange sessions, not weekdays; KOSDAQ includes stock suspension days.
+    # 사건마다 1분봉 전체를 훑지 않게, 마지막 봉이 그대로면 앞서 구한 달력을 다시 씀
+    sig = (conn.execute('PRAGMA database_list').fetchone()[2], symbol, *(conn.execute(q, (s,)).fetchone()[0] for s in (symbol, yahoo.INDEX) for q in (
+        'SELECT MAX(date) FROM daily_bars WHERE symbol=?', 'SELECT MAX(ts) FROM minute_bars WHERE symbol=?',
+        'SELECT MAX(ts) FROM coarse_bars WHERE symbol=?')),
+        conn.execute('SELECT COUNT(*) FROM daily_bars WHERE symbol=?', (symbol,)).fetchone()[0])
+    if sig not in _CAL:
+        _CAL.clear()
+        _CAL[sig] = _calendar(conn, symbol)
+    return list(_CAL[sig])
+
+
+def _calendar(conn, symbol):
     return [r[0] for r in conn.execute('SELECT date d FROM daily_bars WHERE symbol IN (?,?) UNION '
             'SELECT substr(ts,1,10) d FROM minute_bars WHERE symbol IN (?,?) UNION '
             'SELECT substr(ts,1,10) d FROM coarse_bars WHERE symbol IN (?,?) ORDER BY d',
@@ -210,7 +225,7 @@ def observe(conn, symbol, public_at, unknown=False):
                        'kq': price_source(conn,yahoo.INDEX,day,frame['kq_interval'])}
     pts = []
     own, idx = dict(frame['own']),dict(frame['kq'])
-    sources={s:{r[0][:16]:r[1] for r in conn.execute('SELECT ts,source FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=?',(s,day))}
+    sources={s:{r[0][:16]:r[1] for r in conn.execute("SELECT ts,source FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z'",(s,day,day))}
              for s in (symbol,yahoo.INDEX)}
     for ts in sorted(set(own)|set(idx)):
         minute = (kst(ts)-start).total_seconds()/60
@@ -235,7 +250,7 @@ def observe(conn, symbol, public_at, unknown=False):
 
 def price_source(conn,symbol,day,iv):
     if iv == 1:
-        return ', '.join(r[0] for r in conn.execute('SELECT DISTINCT source FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=?',(symbol,day)))
+        return ', '.join(r[0] for r in conn.execute("SELECT DISTINCT source FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z'",(symbol,day,day)))
     return 'Yahoo 완료 봉' if iv else '관측값 없음'
 
 

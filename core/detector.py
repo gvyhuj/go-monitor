@@ -544,7 +544,7 @@ def requested_event(symbol: str, day: str, t_from: str | None = None, t_to: str 
     with connect() as conn:
         dr = conn.execute("SELECT close, volume FROM daily_bars WHERE symbol=? AND date=?", (symbol, day)).fetchone()
         mins = [dict(r) for r in conn.execute(
-            "SELECT ts, close, volume FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? ORDER BY ts", (symbol, day))]
+            "SELECT ts, close, volume FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z' ORDER BY ts", (symbol, day, day))]
     if t_from or t_to:
         if not mins:
             raise ValueError(f"{day} 분봉 기록이 없어 시간대 분석을 할 수 없습니다 (분봉은 최근 약 4개월만 보관). 시간대를 비우면 하루 기준으로 분석합니다.")
