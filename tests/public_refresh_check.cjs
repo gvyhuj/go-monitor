@@ -86,10 +86,24 @@ async function main() {
     await detail.getByText("배포 0").first().waitFor();
     assert.equal(await selected(), FIRST);
 
-    // 1. A new publication is applied automatically, on the same article.
+    // 1. A new publication is applied automatically, on the same article — without a blank/loading frame or replayed motion.
+    // 매 화면(프레임)마다 '불러오는 중'이 보이는지·움직임 클래스가 붙어 있는지 기록 (그려지지 않은 중간 상태는 세지 않음)
+    await page.evaluate(() => {
+      window.__flicker = [];
+      const before = new Set(document.getAnimations());      // 처음 들어올 때 시작된 움직임은 빼고
+      const look = () => {
+        const m = document.querySelector("#main");
+        if (m && m.querySelector(".loading")) window.__flicker.push("loading");
+        const run = m ? document.getAnimations().filter((a) => a.playState === "running" && !before.has(a) && a.effect && m.contains(a.effect.target)) : [];
+        if (run.length) window.__flicker.push("motion " + run[0].effect.target.className);
+        requestAnimationFrame(look);
+      };
+      requestAnimationFrame(look);
+    });
     revision = 1;
     await tick();
     await detail.getByText("배포 1").first().waitFor();
+    assert.deepEqual(await page.evaluate(() => window.__flicker), [], "자동 갱신 때 '불러오는 중'이나 움직임이 다시 나옴(깜빡임)");
     assert.match(await title.innerText(), /검증용 광학 부품 공급 계약/);
     assert.ok(page.url().endsWith(`#/pr/${FIRST}`));
     assert.equal(await selected(), FIRST);

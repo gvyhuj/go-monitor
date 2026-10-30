@@ -32,7 +32,13 @@
   const MOTION = () => !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const EASE = "cubic-bezier(.2,.8,.2,1)";
   // 들어오는 칸: 살짝 아래에서 떠오르며 나타남 (같은 칸에 다시 넣을 때마다)
-  function enter(el, cls = "mv-in") { if (!el || !el.classList || !MOTION()) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  // 자동 새로고침(새 자료가 올라와 같은 화면을 다시 그릴 때)에는 나타나기·선 그리기를 하지 않음 → 깜빡이지 않게
+  let QUIET = false;
+  async function quietly(fn) {
+    QUIET = true;
+    try { return await fn(); } finally { requestAnimationFrame(() => requestAnimationFrame(() => { QUIET = false; })); }
+  }
+  function enter(el, cls = "mv-in") { if (!el || !el.classList || !MOTION() || QUIET) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
   // 선 그리기 한 번: 끝나면 풀어서 같은 칸을 다시 그려도(창 크기 변화 등) 또 그리지 않음
   function drawOnce(el, cls, ms = 1200) { if (!el || !el.classList || !MOTION()) return; enter(el, cls); clearTimeout(el._mvOnce); el._mvOnce = setTimeout(() => el.classList.remove(cls), ms); }
   // 숫자 올라가기: [data-count]의 이전 값 → 새 값 (끝나면 원래 글자 그대로). data-key로 이전 값을 기억
@@ -1065,7 +1071,7 @@
     };
     const inRange = () => spanRows(daily, calState);
 
-    let chart = null, loadSeq = 0, coarseAll = null;
+    let chart = null, loadSeq = 0, coarseAll = null, daySig = "";
     const st = {};
     function shell() {
       box.innerHTML = `<div class="bento" id="rec-bento"><section class="panel rec-card">
@@ -1330,12 +1336,13 @@
     }
 
     // 고른 날 1분 차트 (없으면 야후 5분·60분봉), 구간 골라 원인 묻기
-    async function dayChart() {
+    // silent: 30초마다 새 자료 확인 → 바뀐 게 없으면 그대로, 바뀌었으면 '불러오는 중'·움직임 없이 한 번에 바꿈
+    async function dayChart(silent) {
       const seq = ++loadSeq, ds = calState.sel;
       const el = calState.range === "1d" ? $("#rec-chart") : $("#rec-daychart");
       if (!el) return;
-      if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; }
-      el.innerHTML = `<p class="loading">불러오는 중…</p>`;
+      const drop = () => { if (chart) { try { chart.remove(); } catch (_) {} charts = charts.filter((c) => c !== chart); chart = null; } };
+      if (!silent) { drop(); el.innerHTML = `<p class="loading">불러오는 중…</p>`; }
       let d = null;
       try { d = await api(`/api/intraday?date=${ds}`); } catch (_) { d = null; }   // 날짜로 받음 (장중엔 일봉 마지막 날 ≠ 실시간 분봉 날)
       if (d && d.date !== ds) d = null;
@@ -1348,6 +1355,10 @@
         } catch (_) {}
       }
       if (seq !== loadSeq || !el.isConnected) return;
+      const sig = JSON.stringify([ds, coarseIv, d && d.bars && d.bars.length, d && d.bars && d.bars[d.bars.length - 1], d && d.events && d.events.length]);
+      if (silent && sig === daySig) return;
+      daySig = sig;
+      if (silent) { QUIET = true; drop(); requestAnimationFrame(() => requestAnimationFrame(() => { QUIET = false; })); }
       const i = daily.findIndex((x) => x.date === ds);
       const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
         <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
@@ -1463,7 +1474,7 @@
     timers.push(setInterval(() => {          // 1일 탭에서 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인 입력 중이면 그대로)
       const host = calState.range === "1d" ? "#rec-chart" : "#rec-daychart";
       if (calState.sel !== latest || !$(host) || $(`${host} [data-range-form]:not([hidden])`)) return;
-      dayChart();
+      dayChart(true);
     }, 30000));
   }
   let recResize = null;
@@ -3136,13 +3147,18 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         checking = true;
         const activeRoute = location.hash;
         try {
+          const used = Object.keys(KVC);                 // 지금 화면이 쓴 자료 (새 판에서 미리 받아 둠)
           const next = await cloudLive(true);
           if (activeRoute !== location.hash || !$("#pr-detail") || next.published_at === displayedPublication) return;
           if (main.querySelector("input:focus, textarea:focus, #pr-form:not([hidden]), #merge-list:not([hidden]), #art-bulk:not([hidden])")) return;
+          // 자료를 다 받은 뒤 한 번에 다시 그림: 그동안 지금 화면을 그대로 두고, 높이를 잡아 둬서 스크롤이 튀지 않게
+          await Promise.all(used.map((k) => kv(k).catch(() => null)));
+          if (activeRoute !== location.hash || !$("#pr-detail")) return;
           const scrollPosition = window.scrollY;
-          cleanupPage();
-          await pagePR(current);
+          main.style.minHeight = `${main.offsetHeight}px`;
+          await quietly(async () => { cleanupPage(); await pagePR(current); });
           window.scrollTo(0, scrollPosition);
+          requestAnimationFrame(() => { main.style.minHeight = ""; });
         } catch (_) {
         } finally { checking = false; }
       }, 30000));
