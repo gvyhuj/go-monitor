@@ -447,6 +447,15 @@ def main(argv) -> int:
         except Exception as e:
             log.warning("사이트 요청 확인 실패(계속 진행): %s", e)
 
+    # 한 번만: 지금까지 붙여넣은 AI 메모 전부 삭제 (주가 기록의 원인 글 + 뉴스 사건의 메모). 이후 새로 넣는 것은 그대로 둠
+    if not get_state("notes:purged_v1"):
+        with connect() as conn:
+            n_mc = conn.execute("DELETE FROM manual_causes").rowcount
+            n_nn = conn.execute("DELETE FROM news_event_notes").rowcount if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='news_event_notes'").fetchone() else 0
+        set_state("notes:purged_v1", now.isoformat(timespec="minutes"))
+        annotate("notice", f"AI 메모 삭제: 주가 기록 원인 글 {n_mc}건, 뉴스 사건 메모 {n_nn}건")
+
     # 한 번만: 거슬러 채웠던 2026년 전 기사('구분 미확인')는 필요 없어 지움
     if not get_state("articles:purge_pre_coverage_v1"):
         from core.articles import COVERAGE_FROM
