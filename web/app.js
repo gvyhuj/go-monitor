@@ -1244,13 +1244,10 @@
     }
 
     // 일별 종가 선 (기간 탭), 선 위에 그날 소식 점, 마우스로 훑으면 그날 숫자
-    let drawnKey = "";      // 선 그리기는 기간이 바뀔 때만 (창 크기 변화로 다시 그릴 때는 안 함)
     function lineChart(H = 280) {
       const el = $("#rec-chart");
       if (calState.range === "1d") return;          // 1일 탭은 위 칸에 그날 1분 차트 (dayChart)
       const rows = inRange();
-      const key = rows.length ? `${rows[0].date}~${rows[rows.length - 1].date}` : "";
-      const drawNow = key !== drawnKey; drawnKey = key;
       if (!rows.length) { el.innerHTML = `<p class="muted day-nochart">고른 기간에 거래일이 없습니다.</p>`; return; }
       const W = Math.max(320, Math.round(el.clientWidth || 760)), L = 8, R = 62, T = 16, B = 26;
       const cs = rows.map((x) => x.close), lo = Math.min(...cs), hi = Math.max(...cs), pad = (hi - lo) * 0.08 || hi * 0.02;
@@ -1332,8 +1329,6 @@
         if (hot) { hot.classList.remove("hot"); hot = null; }
       });
       svg.addEventListener("click", (ev) => { const h = ev.target.closest(".dl-hit"); if (h) pick(rows[+h.dataset.i].date); });
-      // 종가 선이 왼쪽에서 오른쪽으로 그려짐 (1일 차트와 같은 방식: 칸 자체를 펼침 → 바로 뒤 크기 맞춤으로 다시 그려도 끊기지 않음)
-      if (drawNow) drawOnce(el, "mv-reveal", 1000);
     }
 
     // 1일 탭: 그날 급등·급락 줄이 없거나 적어 왼쪽 칸이 오른쪽 '주요 숫자'보다 짧으면, 남는 만큼 1분 차트를 키워 빈칸을 없앰
@@ -1382,7 +1377,6 @@
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
-      enter($(".day-chart", art), "mv-reveal");      // 그날 1분 차트도 왼쪽→오른쪽으로 나타남
       chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
         news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
