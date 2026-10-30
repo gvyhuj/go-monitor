@@ -572,9 +572,14 @@ def snapshot_themes(code: str, now: datetime, trading_day: str) -> int:
         if int(g["no"]) in mine:
             try:
                 det = fetch_theme_detail(int(g["no"]))
-                top = sorted(det["stocks"], key=lambda s: -s["chg"])[:3]
+                srt = sorted(det["stocks"], key=lambda s: -s["chg"])
+                top = srt[:3]
                 me = next((s for s in det["stocks"] if s["code"] == code), None)
-                leaders[int(g["no"])] = json.dumps({"top": top, "me": me}, ensure_ascii=False)
+                # 화면 테마 칸을 누르면 뜨는 창: 네이버 테마 구성 종목 중 많이 오른·내린 5개 (네이버 값 그대로)
+                pick = lambda xs: [{"name": x["name"], "change": x["chg"] / 100} for x in xs]
+                leaders[int(g["no"])] = json.dumps({"top": top, "me": me, "up": pick([x for x in srt if x["chg"] > 0][:5]),
+                                                    "down": pick([x for x in reversed(srt) if x["chg"] < 0][:5]),
+                                                    "fall": sum(1 for x in srt if x["chg"] < 0)}, ensure_ascii=False)
             except naver.DataSourceError:
                 pass
     with connect() as conn:

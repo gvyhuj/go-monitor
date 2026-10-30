@@ -289,6 +289,7 @@ def api_intraday(q):
     with connect() as conn:
         ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
         ind_info = industry_info(conn).get(d)
+        th, th_info = (x.get(d) for x in theme_rows(conn, sym))
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
         # 장중 오늘: 비교 종목 일봉이 아직 없으므로 1분봉으로 그날 등락 (목록 순서는 api_daily의 peers와 같음)
         pl = None
@@ -300,7 +301,7 @@ def api_intraday(q):
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "foreign_est": fe, "traders_live": tl, "peers_live": pl}
+            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl, "peers_live": pl}
 
 
 def api_events(q):
@@ -334,6 +335,7 @@ def api_daily(_q):
         calc = set()
         ind, ind_info, tops = industry_rates(conn, calc), industry_info(conn), trader_tops(conn, sym)
         peers, peer_chg = peer_changes(conn, sym)
+        th, th_info = theme_rows(conn, sym)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -345,7 +347,7 @@ def api_daily(_q):
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
                      "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d),
-                     "industries_calc": d in calc, "peers": peer_chg.get(d)})
+                     "industries_calc": d in calc, "peers": peer_chg.get(d), "themes": th.get(d), "theme_info": th_info.get(d)})
     return {"days": days, "peers": peers}
 
 
@@ -408,6 +410,32 @@ def trader_tops_live(conn, sym: str, day: str) -> dict | None:
     rows = conn.execute("SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_snapshots WHERE symbol=? AND ts=?",
                         (sym, ts)).fetchall()
     return {**_tops([tuple(r) for r in rows]), "ts": ts}
+
+
+def theme_rows(conn, sym: str) -> tuple[dict, dict]:
+    """네이버 테마(이 종목이 속한 테마 전부) 날짜별 ({날짜: {테마: 등락률}}, {날짜: {테마: 칸을 누르면 뜨는 창 자료}}).
+    등락률·종목 수·오른/내린 종목은 네이버 테마 화면 값 그대로 (theme_daily, 테마 기록을 시작한 날부터)."""
+    rates, info = {}, {}
+    mine = {no: (name, reason) for no, name, reason in conn.execute(
+        "SELECT theme_no, theme_name, reason FROM stock_themes WHERE code=?", (sym,))}
+    if not mine:
+        return rates, info
+    q = ("SELECT date, theme_no, change_rate, rise, total, leaders FROM theme_daily WHERE theme_no IN (%s)"
+         % ",".join("?" * len(mine)))
+    for d, no, rate, rise, total, leaders in conn.execute(q, list(mine)):
+        if rate is None:
+            continue
+        name, reason = mine[no]
+        rates.setdefault(d, {})[name] = rate / 100
+        try:
+            ld = json.loads(leaders) if leaders else {}
+        except ValueError:
+            ld = {}
+        me = ld.get("me") or {}
+        info.setdefault(d, {})[name] = {"rise": rise, "fall": ld.get("fall"), "total": total, "up": ld.get("up") or [],
+                                        "down": ld.get("down") or [], "reason": reason or "",
+                                        "me": me.get("chg") / 100 if me.get("chg") is not None else None}
+    return rates, info
 
 
 def industry_info(conn) -> dict:

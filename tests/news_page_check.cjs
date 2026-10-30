@@ -326,6 +326,26 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
+    // 주가 기록: 아래 칸은 네이버 테마 등락 (네이버 값 그대로), 누르면 그날 오른·내린 종목과 편입 이유
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      const seg = page.locator("#rec-bento .b-seg");
+      await seg.locator(".seg-chip").first().waitFor();
+      assert.match(await seg.innerText(), /10\/28 테마 등락\s*네이버 테마[\s\S]*방위산업\/전쟁 및 테러\s*\+0\.80%[\s\S]*우주항공산업\s*−2\.40%/);
+      assert.doesNotMatch(await seg.innerText(), /WICS|반도체/);
+      await seg.getByRole("button", { name: /우주항공산업/ }).click();
+      const pop = page.locator("#ind-modal");
+      await pop.locator("#ind-body .ind-rate").waitFor();
+      assert.match(await pop.innerText(), /10\/28 우주항공산업[\s\S]*−2\.40%[\s\S]*네이버 테마 '우주항공산업\(누리호\/인공위성 등\)'[\s\S]*오른 종목 3 · 내린 종목 15 · 전체 20[\s\S]*넣은 이유: 위성용 광학계 공급[\s\S]*검증위성\s*\+3\.10%[\s\S]*검증방산\s*−4\.20%/);
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
     // 움직임: 기사 열기(떠오르기·제목 옮겨 가기), 겹쳐 보기 선 그리기, 기간 숫자 올라가기 — 끝나면 값은 그대로
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

@@ -1056,7 +1056,7 @@
         daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
-          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null,
+          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null, themes: lv.themes || null, theme_info: lv.theme_info || null,
           foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, peers: lv.peers_live || null, live: true });
         DAY_ROWS[lv.date] = daily[daily.length - 1];
       } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
@@ -1217,27 +1217,29 @@
     // 아래 작은 칸: 고른 날 사업 분야
     const selRow = () => { const i = daily.findIndex((x) => x.date === calState.sel); return i >= 0 ? i : daily.length - 1; };
     const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
-    // 사업 분야: 네이버 업종(WICS) 고른 날 등락률 (2026-10-26부터 기록, 그 전 날은 구성 종목으로 다시 계산한 값)
-    const INDUSTRY_LABELS = [["우주항공과국방", "우주항공·국방"], ["반도체와반도체장비", "반도체"], ["디스플레이장비및부품", "디스플레이 장비·부품"], ["디스플레이패널", "디스플레이 패널"]];
+    // 고른 날 네이버 테마 등락률: 네이버가 이 종목을 넣어 둔 테마 전부, 네이버 테마 화면 값 그대로 (기록을 시작한 날부터)
+    const themeLabel = (n) => String(n).replace(/\s*\(.*\)\s*$/, "");      // '우주항공산업(누리호/인공위성 등)' → '우주항공산업'
+    const themeNames = () => { for (let i = daily.length - 1; i >= 0; i--) if (daily[i].themes && Object.keys(daily[i].themes).length) return Object.keys(daily[i].themes).sort(); return []; };
     function segHtml() {
-      const x = daily[selRow()], ind = x.industries || {};
-      return `<span class="tl">${mdOf(x.date)} 업종 등락 <small class="muted">네이버 업종(WICS)${x.industries_calc ? " · 구성 종목으로 다시 계산" : ""}</small></span>
-          <span class="seg-chips">${INDUSTRY_LABELS.map(([k, label]) =>
-            `<button type="button" class="seg-chip" data-ind="${esc(k)}" title="누르면 이 업종의 그날 오른·내린 종목">${label} <b class="${ind[k] == null ? "" : sgnCls(ind[k])}">${ind[k] == null ? "-" : pct(ind[k])}</b></button>`).join("")}</span>`;
+      const x = daily[selRow()], th = x.themes || {}, names = themeNames();
+      return `<span class="tl">${mdOf(x.date)} 테마 등락 <small class="muted">네이버 테마</small></span>
+          <span class="seg-chips">${names.length ? names.map((k) =>
+            `<button type="button" class="seg-chip" data-theme="${esc(k)}" title="${esc(k)} · 누르면 이 테마의 그날 오른·내린 종목">${esc(themeLabel(k))} <b class="${th[k] == null ? "" : sgnCls(th[k])}">${th[k] == null ? "-" : pct(th[k])}</b></button>`).join("")
+            : `<span class="muted">테마 기록이 아직 없습니다</span>`}</span>`;
     }
-    // 업종 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 많이 오른·내린 종목 5개씩
-    function openIndustry(k) {
-      const x = daily[selRow()], label = (INDUSTRY_LABELS.find(([n]) => n === k) || [k, k])[1];
-      const rate = (x.industries || {})[k], info = (x.industry_info || {})[k];
+    // 테마 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 네이버가 이 종목을 이 테마에 넣은 이유, 많이 오른·내린 종목 5개씩
+    function openTheme(k) {
+      const x = daily[selRow()], rate = (x.themes || {})[k], info = (x.theme_info || {})[k];
       const list = (xs) => xs && xs.length ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}</span><b class="${sgnCls(s.change)}">${pct(s.change)}</b></li>`).join("")}</ul>` : `<p class="muted">-</p>`;
-      $("#ind-title").textContent = `${mdOf(x.date)} ${label}`;
+      const nm = (STATUS && STATUS.name) || "이 종목";
+      $("#ind-title").textContent = `${mdOf(x.date)} ${themeLabel(k)}`;
       $("#ind-body").innerHTML = rate == null && !info
-        ? `<p class="note">이 날은 업종 기록이 없습니다.</p>`
+        ? `<p class="note">이 날은 테마 기록이 없습니다. 네이버는 테마 등락률의 지난 기록을 주지 않아, 기록을 시작한 날부터 있습니다.</p>`
         : `<p class="ind-rate"><b class="${rate == null ? "" : sgnCls(rate)}">${rate == null ? "-" : pct(rate)}</b>
-             <span class="muted">네이버 업종(WICS) '${esc(k)}'${x.live ? " · 장중 값" : ""}</span></p>
-           ${x.industries_calc ? `<p class="note">네이버는 업종 등락률의 지난 기록을 주지 않아(2026-10-26부터 직접 기록), 이 날은 지금의 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균해 다시 계산했습니다. 네이버 값과 0.1~0.2%p 안팎 다를 수 있고, 그 사이 편입·편출된 종목은 반영되지 않습니다.</p>` : ""}
-           ${info ? `<p class="muted">오른 종목 ${int(info.rise)} · 내린 종목 ${int(info.fall)} · 전체 ${int(info.total)}</p>
-           <div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}`;
+             <span class="muted">네이버 테마 '${esc(k)}'${x.live ? " · 장중 값" : ""}</span></p>
+           ${info ? `<p class="muted">오른 종목 ${int(info.rise)}${info.fall != null ? ` · 내린 종목 ${int(info.fall)}` : ""} · 전체 ${int(info.total)}${info.me != null ? ` · ${esc(nm)} <b class="${sgnCls(info.me)}">${pct(info.me)}</b>` : ""}</p>
+           ${info.reason ? `<p class="note">네이버가 ${esc(nm)}을(를) 이 테마에 넣은 이유: ${esc(info.reason)}</p>` : ""}
+           ${(info.up && info.up.length) || (info.down && info.down.length) ? `<div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}` : ""}`;
       $("#ind-modal").hidden = false;
     }
 
@@ -1417,8 +1419,8 @@
       const jp = ev.target.closest("[data-jump]");
       if (jp) { try { jp.showPicker(); } catch (_) {} return; }      // 날짜는 달력에서만 고름
       if (ev.target.closest("[data-head].is-click")) { openHead(); return; }
-      const ib = ev.target.closest("[data-ind]");
-      if (ib) { openIndustry(ib.dataset.ind); return; }
+      const ib = ev.target.closest("[data-theme]");
+      if (ib) { openTheme(ib.dataset.theme); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;

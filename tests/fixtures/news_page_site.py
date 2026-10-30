@@ -78,6 +78,16 @@ def main(out: Path) -> None:
         for aid, ts in (("2005", "2026-10-16T10:00"), ("2006", "2026-10-19T10:30")):
             conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (aid, SYMBOL, ts, "검증지역", "충북TP 우주항공 기업 지원사업 선정", f"https://example.org/{aid}", "언론 분석", "제목", aid, ts))
+        # 네이버 테마 (이 종목이 속한 테마 2개, 10/27~10/28 기록)
+        conn.executemany("INSERT INTO stock_themes(code, theme_no, theme_name, reason, updated_at) VALUES (?,?,?,?,?)",
+                         [(SYMBOL, 7, "우주항공산업(누리호/인공위성 등)", "위성용 광학계 공급", "2026-10-20T09:00"),
+                          (SYMBOL, 9, "방위산업/전쟁 및 테러", "적외선 광학계", "2026-10-20T09:00")])
+        for day, a, b in (("2026-10-27", 1.25, -0.5), ("2026-10-28", -2.4, 0.8)):
+            for no, name, rate in ((7, "우주항공산업(누리호/인공위성 등)", a), (9, "방위산업/전쟁 및 테러", b)):
+                conn.execute("INSERT INTO theme_daily(date, theme_no, name, change_rate, rank, n_themes, rise, total, leaders, mine, updated_at) "
+                             "VALUES (?,?,?,?,1,250,3,20,?,1,?)", (day, no, name, rate, json.dumps({
+                                 "up": [{"name": "검증위성", "change": 0.031}], "down": [{"name": "검증방산", "change": -0.042}],
+                                 "fall": 15, "me": {"chg": 0.6}}, ensure_ascii=False), day + "T15:30"))
         conn.execute("CREATE TABLE IF NOT EXISTS news_event_records (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         conn.execute("INSERT INTO news_event_records VALUES (?,?)", ("ne-0000000000a1", json.dumps({
             "event_id": "ne-0000000000a1", "title": "충북TP 우주항공 기업 지원사업 선정", "event_kind": "external_article",
