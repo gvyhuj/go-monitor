@@ -369,8 +369,7 @@ def test_regular_ohlc_ignores_after_hours_and_history_bars(tmp_path, monkeypatch
         assert ws.regular_ohlc(conn, '000001') == {'2026-10-30': (10000, 10150, 9700)}
 
 
-def test_kis_token_reused_and_trial_line(tmp_path, monkeypatch):
-    import json as _json
+def test_kis_token_reused_and_probe_line(tmp_path, monkeypatch):
     from datetime import datetime
     from core import db, kis
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
@@ -379,25 +378,27 @@ def test_kis_token_reused_and_trial_line(tmp_path, monkeypatch):
     def fake(method, path, *, headers, params=None, body=None, timeout=10):
         calls.append(path)
         if path == '/oauth2/tokenP':
-            return {'access_token': 'T1', 'access_token_token_expired': '2026-10-31 09:00:00'}
-        assert headers['authorization'] == 'Bearer T1'
+            return {'access_token': 'SECRETTOK', 'access_token_token_expired': '2026-10-31 09:00:00'}
+        assert headers['authorization'] == 'Bearer SECRETTOK'
         if path.endswith('inquire-price'):
-            return {'rt_cd': '0', 'output': {'stck_prpr': '9800', 'stck_oprc': '9800', 'stck_hgpr': '10250', 'stck_lwpr': '9700',
-                                             'stck_sdpr': '10170', 'acml_vol': '39255', 'hts_avls': '1147', 'per': '23.50'}}
-        if path.endswith('itemchartprice'):
+            return {'rt_cd': '0', 'output': {'stck_prpr': '9800', 'stck_sdpr': '10170', 'acml_vol': '39255', 'hts_avls': '1147', 'per': '47.12'}}
+        if path.endswith('itemchartprice') and 'daily' not in path:
             return {'rt_cd': '0', 'output2': [{'stck_bsop_date': '20261030', 'stck_cntg_hour': '153000', 'stck_prpr': '9830',
                                                'stck_oprc': '9830', 'stck_hgpr': '9830', 'stck_lwpr': '9830', 'cntg_vol': '227'}]}
-        if path.endswith('index-price'):
-            return {'rt_cd': '0', 'output': {'bstp_nmix_prpr': '760.10', 'bstp_nmix_prdy_ctrt': '-3.83'}}
+        if path.endswith('inquire-daily-itemchartprice'):
+            return {'rt_cd': '0', 'output2': [{'stck_bsop_date': '20261029', 'stck_clpr': '10150', 'stck_oprc': '10640'},
+                                              {'stck_bsop_date': '20261030', 'stck_clpr': '9800', 'stck_oprc': '9800'}]}
+        if path.endswith('dailychartprice'):
+            return {'rt_cd': '1', 'msg_cd': 'E', 'msg1': '조회 불가'}
+        if path.endswith('indexchartprice'):
+            return {'rt_cd': '0', 'output2': [{'stck_bsop_date': '20261030', 'bstp_nmix_prpr': '724.38', 'stck_cntg_hour': '153000'}]}
+        if path.endswith('inquire-investor'):
+            return {'rt_cd': '0', 'output': [{'stck_bsop_date': '20261030', 'prsn_ntby_qty': '4438'}]}
         return {'rt_cd': '1', 'msg_cd': 'X', 'msg1': '없음'}
     monkeypatch.setattr(kis, '_http', fake)
     monkeypatch.setattr(kis, 'GAP', 0)
-    with db.connect() as conn:
-        conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES ('000001','2026-10-30T15:30',9830,9830,9830,9830,227,'naver_today')")
-    db.set_state('quote:000001', _json.dumps({'price': 9800, 'volume': 39255}))
-    line = kis.trial('000001', datetime(2026, 10, 30, 16, 30))
-    assert calls.count('/oauth2/tokenP') == 1
-    kis.trial('000001', datetime(2026, 10, 30, 16, 40))
+    line = kis.probe('000001', datetime(2026, 10, 31, 1, 0))
+    kis.probe('000001', datetime(2026, 10, 31, 2, 0))
     assert calls.count('/oauth2/tokenP') == 1, '토큰은 다시 받지 않음'
-    assert '현재가 한투 9800 / 네이버 9800' in line and '1분봉 1개(15:30~15:30) 중 네이버 종가 일치 1' in line
-    assert 'KOSDAQ 한투 760.1' in line and '실패: 투자자' in line and 'T1' not in line
+    assert '현재가 9800 기준가 10170' in line and '일봉 최근 2개 2026-10-29~2026-10-30' in line
+    assert '당일 1분봉 1개' in line and '실패: 지난 1분봉(7일 전)' in line and 'SECRETTOK' not in line

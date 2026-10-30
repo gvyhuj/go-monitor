@@ -786,11 +786,13 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
-    # 한투 Open API 시험 운행: 열쇠가 있으면 한투에서 받은 시세를 기록(네이버) 값과 나란히 실행 기록에 (화면·기록은 그대로)
+    # 한투 Open API 시험: 열쇠가 있으면 한투에서 받을 수 있는 자료의 범위(일봉·지난 1분봉·지수 1분봉)를 실행 기록에 (화면·기록은 그대로)
     try:
         from core import kis
-        if kis.enabled():
-            annotate("notice", kis.trial(code, feed.kst_now().replace(tzinfo=None)))
+        last_probe = (get_state("kis:probe_at") or {}).get("value") or ""
+        if kis.enabled() and last_probe < (now - timedelta(minutes=50)).isoformat(timespec="minutes"):      # 한 시간에 한 번쯤
+            set_state("kis:probe_at", now.isoformat(timespec="minutes"))
+            annotate("notice", kis.probe(code, feed.kst_now().replace(tzinfo=None)))
     except Exception as e:  # noqa: BLE001 - 시험이라 실패해도 계속
         annotate("warning", f"한투 시험 실패: {type(e).__name__}: {str(e)[:150]}")
     # 하루 한 번: 이 종목 일별 등락을 KOSDAQ·네이버 업종(WICS)·네이버 테마 중 어느 묶음이 더 잘 설명하는지 (실행 기록에 한 줄)
