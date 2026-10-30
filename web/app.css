@@ -1794,6 +1794,8 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .mv-reveal { animation: mv-reveal var(--dur-draw) var(--ease-draw); }
 .mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
 .mv-draw-dash .dl-line.s-ext { animation-delay: 120ms; }
+@keyframes mv-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.mv-grow .dash-row .bar { transform-origin: left center; animation: mv-grow 700ms var(--ease-draw) both; animation-delay: calc(var(--i, 0) * 30ms); }
 /* 7 살짝 커졌다 돌아옴 (소식 건수 변화), 목록에 마우스 */
 .mv-pop { display: inline-block; animation: mv-pop 360ms var(--ease); }
 .art-list button { transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
@@ -1809,6 +1811,7 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .mv-confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
 @media (prefers-reduced-motion: reduce) {
   .mv-in, .mv-page, .mv-pop, .mv-reveal, dialog[open].disc-pop, dialog[open].disc-pop::backdrop, .art-pop, .art-more-menu, .engine .dot { animation: none !important; }
+  .mv-grow .dash-row .bar { animation: none !important; }
   .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
   .art-list button:hover { transform: none; }
   .mv-confetti { display: none; }
