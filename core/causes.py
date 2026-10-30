@@ -120,7 +120,7 @@ def _flows(symbol: str, t0: datetime, t1: datetime, window_volume: int):
             (symbol, day, day))]
         if not snaps:
             # 장중 1분 기록이 없으면 장 마감 시점 기록(네이버 → 다음 금융 순)으로 대신
-            for src in ("네이버", "다음 금융"):
+            for src in ("한투", "네이버", "다음 금융"):
                 got = [dict(x) for x in conn.execute(
                     "SELECT name AS trader_no, name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
                     "WHERE symbol=? AND date=? AND source=?", (symbol, day, src))]
@@ -142,29 +142,35 @@ def _flows(symbol: str, t0: datetime, t1: datetime, window_volume: int):
 
         b1 = eod_rows if eod_rows is not None else load(s1)
         b0 = load(s0) if (s0 and eod_rows is None) else {}
+        fx = {ts: (b, sl) for ts, b, sl in conn.execute(        # 외국계 창구 합계 (한투가 따로 줌)
+            "SELECT ts, buy, sell FROM broker_foreign_snapshots WHERE symbol=? AND ts IN (?, ?)", (symbol, s1, s0 or s1))}
+    caps = _caps(b1.values())
     rows = []
     for no, r in b1.items():
         p = b0.get(no, {"buy": 0, "sell": 0})
-        buy, sell = r["buy"] - p["buy"], r["sell"] - p["sell"]
-        if s0 and buy == 0 and sell == 0:
+        buy, sell = _side_diff(r, p, "buy"), _side_diff(r, p, "sell")
+        if s0 and not buy and not sell:
             continue
-        bt = r.get("buy_top5")
-        st = r.get("sell_top5")
-        rows.append({
-            "name": r["name"], "buy": buy, "sell": sell, "net": buy - sell, "foreign": bool(r["is_foreign"]),
-            # 상위 5위 안 = 실시간 반영 / 밖 = 밀려난 시점에서 멈춤 / 0 이고 5위 밖 = 집계 안 됨
-            "buy_state": ("top5" if bt else "out" if r["buy"] > 0 else "none") if bt is not None else "unknown",
-            "sell_state": ("top5" if st else "out" if r["sell"] > 0 else "none") if st is not None else "unknown",
-        })
+        rows.append({"name": r["name"], "buy": buy, "sell": sell, "foreign": bool(r["is_foreign"]),
+                     "buy_state": _side_state(r, "buy"), "sell_state": _side_state(r, "sell"),
+                     **_bounded_net(buy, sell, r, caps)})
     if not rows:
         return None
-    for r in rows:
-        r["net_is_min"] = (r["net"] > 0 and r["sell_state"] == "none") or (r["net"] < 0 and r["buy_state"] == "none")
     basis = "구간" if s0 else ("장 마감 기록" if eod_rows is not None else "당일 누적")
-    foreign_net = sum(r["net"] for r in rows if r["foreign"])
-    foreign_buy = sum(r["buy"] for r in rows if r["foreign"])
-    top_buyers = sorted([r for r in rows if r["net"] > 0], key=lambda r: -r["net"])[:5]
-    top_sellers = sorted([r for r in rows if r["net"] < 0], key=lambda r: r["net"])[:5]
+    if s1 in fx and None not in fx[s1] and (not s0 or (s0 in fx and None not in fx[s0])):
+        f0 = fx[s0] if s0 else (0, 0)
+        foreign_buy, foreign_net = fx[s1][0] - f0[0], (fx[s1][0] - fx[s1][1]) - (f0[0] - f0[1])
+    else:
+        foreign_net = sum(r["net"] for r in rows if r["foreign"] and r["net"] is not None)
+        foreign_buy = sum(r["buy"] for r in rows if r["foreign"] and r["buy"] is not None)
+    top_buyers = sorted([r for r in rows if (r["net"] or 0) > 0], key=lambda r: -r["net"])[:5]
+    top_sellers = sorted([r for r in rows if (r["net"] or 0) < 0], key=lambda r: r["net"])[:5]
+    # 거래소가 공개한 상위 5곳 그대로 (그 시각 누적): AI 질문에 순매수 추정과 함께 원래 숫자를 넣음
+    top5 = {"buy": [{"name": r["name"], "qty": r["buy"], "foreign": bool(r["is_foreign"])}
+                    for r in sorted((r for r in b1.values() if r.get("buy_top5") and r.get("buy") is not None), key=lambda r: -r["buy"])],
+            "sell": [{"name": r["name"], "qty": r["sell"], "foreign": bool(r["is_foreign"])}
+                     for r in sorted((r for r in b1.values() if r.get("sell_top5") and r.get("sell") is not None), key=lambda r: -r["sell"])],
+            "at": s1}
     from .feed import last_crosscheck
     cc = last_crosscheck(symbol)
     if cc and cc.get("ts", "")[:10] != day:
@@ -181,11 +187,11 @@ def _flows(symbol: str, t0: datetime, t1: datetime, window_volume: int):
                  "sell_state": "top5" if m["sell_top5"] else ("out" if m["sell"] else "none")}
             r["net_is_min"] = (r["net"] > 0 and r["sell_state"] == "none") or (r["net"] < 0 and r["buy_state"] == "none")
             rows.append(r)
-        top_buyers = sorted([r for r in rows if r["net"] > 0], key=lambda r: -r["net"])[:5]
-        top_sellers = sorted([r for r in rows if r["net"] < 0], key=lambda r: r["net"])[:5]
+        top_buyers = sorted([r for r in rows if (r["net"] or 0) > 0], key=lambda r: -r["net"])[:5]
+        top_sellers = sorted([r for r in rows if (r["net"] or 0) < 0], key=lambda r: r["net"])[:5]
     with connect() as conn:
         eod = {}
-        for src in ("네이버", "다음 금융"):
+        for src in ("한투", "네이버", "다음 금융"):
             got = [dict(x) for x in conn.execute(
                 "SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
                 "WHERE symbol=? AND date=? AND source=?", (symbol, day, src))]
@@ -194,12 +200,59 @@ def _flows(symbol: str, t0: datetime, t1: datetime, window_volume: int):
     return {
         "basis": basis, "from_ts": s0, "to_ts": s1, "window_volume": window_volume,
         "foreign_net": foreign_net, "foreign_buy": foreign_buy,
-        "top_buyers": top_buyers, "top_sellers": top_sellers,
+        "top_buyers": top_buyers, "top_sellers": top_sellers, "top5": top5,
         "crosscheck": cc, "eod": eod,
-        "source": "한국거래소 → 코스콤 '종목별 매매 상위 5개 증권사' 자료 (네이버 증권에서 수집)",
+        "source": "한국거래소 '종목별 매매 상위 5개 증권사' 자료 ("
+                  + ("한국투자증권 Open API" if any(r.get("buy") is None or r.get("sell") is None for r in b1.values()) or "한투" in eod
+                     else "네이버 증권") + "에서 수집)",
         "note": ("구간 시작 전·후 거래원 기록의 차이입니다. " if s0 else "구간 시작 전 기록이 없어 그날 누적 기준입니다. ")
                 + "매수·매도 각각 상위 5개 증권사만 공개되는 추정치라, 5위 밖 거래는 보이지 않습니다.",
     }
+
+
+def _qty(v) -> str:
+    return "5위 밖(수량 비공개)" if v is None else f"{v:,}주"
+
+
+def _side_state(r: dict, side: str) -> str:
+    """상위 5위 안 = 실시간 반영 / 밖 = 밀려난 시점에서 멈춤(네이버) / 0이고 5위 밖 = 집계 안 됨 /
+    hidden = 5위 밖이라 수량을 모름(한투는 상위 5위에 든 쪽 수량만 줌)."""
+    v, top = r.get(side), r.get(f"{side}_top5")
+    if v is None:
+        return "hidden"
+    if top is None:
+        return "unknown"
+    return "top5" if top else "out" if v > 0 else "none"
+
+
+def _side_diff(r: dict, p: dict, side: str):
+    """구간 증감 (어느 시각이든 수량을 모르면 None)."""
+    v, pv = r.get(side), p.get(side, 0)
+    return None if v is None or pv is None else v - pv
+
+
+def _caps(rows) -> dict:
+    """그 시각 상위 5위 마지막 수량: 5위 밖 창구의 그쪽 수량은 이보다 작음 (모르는 쪽의 위 한계)."""
+    rows = list(rows)
+    out = {}
+    for side in ("buy", "sell"):
+        xs = [r[side] for r in rows if r.get(f"{side}_top5") and r.get(side) is not None]
+        out[side] = min(xs) if xs else None
+    return out
+
+
+def _bounded_net(buy, sell, r: dict, caps: dict) -> dict:
+    """창구 순매수. 한쪽 수량을 모르면(상위 5위 밖) 그쪽은 5위 마지막 수량보다 작다는 것만 써서
+    '최소 순매수(순매도)'로만 셈. 그것으로도 방향을 모르면 None (0이 아님)."""
+    if buy is not None and sell is not None:
+        net = buy - sell
+        return {"net": net, "net_is_min": (net > 0 and _side_state(r, "sell") == "none")
+                or (net < 0 and _side_state(r, "buy") == "none")}
+    if buy is not None and caps.get("sell") is not None and buy - caps["sell"] > 0:
+        return {"net": buy - caps["sell"], "net_is_min": True}
+    if sell is not None and caps.get("buy") is not None and sell - caps["buy"] > 0:
+        return {"net": -(sell - caps["buy"]), "net_is_min": True}
+    return {"net": None, "net_is_min": False}
 
 
 def _norm(name: str) -> str:
@@ -255,11 +308,13 @@ def _buyer_context(symbol: str, day, flows: dict, sign: int, related: list, fetc
             peer_rows[r["code"]] = info["traders"]
             continue
         with connect() as conn:
-            got = [dict(x) for x in conn.execute(
-                "SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
-                "WHERE symbol=? AND date=? AND source='네이버'", (r["code"], dstr))]
-        if got:
-            peer_rows[r["code"]] = got
+            for src in ("한투", "네이버"):
+                got = [dict(x) for x in conn.execute(
+                    "SELECT name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
+                    "WHERE symbol=? AND date=? AND source=?", (r["code"], dstr, src))]
+                if got:
+                    peer_rows[r["code"]] = got
+                    break
 
     def peers_of(bname):
         out = []
@@ -269,7 +324,8 @@ def _buyer_context(symbol: str, day, flows: dict, sign: int, related: list, fetc
                 continue
             hit = next((t for t in rows if _norm(t["name"]) == _norm(bname)), None)
             pp = _price_on(r["code"], dstr) or _daily_close(r["code"], dstr)
-            pnet = (hit["buy"] - hit["sell"]) if hit else 0
+            # 한쪽 수량을 모르면(한투, 상위 5위 밖) 최소 순매수로만, 방향도 모르면 0 (같은·반대 방향 어느 쪽에도 세지 않음)
+            pnet = (_bounded_net(hit["buy"], hit["sell"], hit, _caps(rows))["net"] or 0) if hit else 0
             out.append({"code": r["code"], "name": r["name"], "net": pnet, "price": pp,
                         "amount": pnet * pp if (pp and hit) else None, "listed": bool(hit)})
         return out
@@ -732,7 +788,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
                 "type": "flow", "kind": "broker", "timing": "동시",
                 "title": f"{r['name']} 창구에 {'매수' if r['net'] > 0 else '매도'} 집중",
                 "summary": f"구간 거래량의 {abs(r['net']) / window_volume * 100:.0f}%가 한 증권사 창구에서 순{'매수' if r['net'] > 0 else '매도'}됐습니다.",
-                "evidence": [f"{r['name']} 매수 {r['buy']:,}주 / 매도 {r['sell']:,}주"], "links": [],
+                "evidence": [f"{r['name']} 매수 {_qty(r['buy'])} / 매도 {_qty(r['sell'])}"], "links": [],
             })
     basket = None
     if buyer:

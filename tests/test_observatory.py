@@ -434,3 +434,49 @@ def test_kis_backfill_replaces_history_in_steps(tmp_path, monkeypatch):
     with db.connect() as conn:
         rows = dict(conn.execute("SELECT ts, source FROM minute_bars WHERE symbol='000001'").fetchall())
     assert rows['2026-10-29T09:00'] == 'kis_backfill' and '2026-10-29T10:00' not in rows and rows['2026-10-27T10:00'] == 'naver_history'
+
+
+def _member_out(buys, sells, glob=(5000, 3000)):
+    """한투 '주식현재가 회원사' 응답: buys/sells = [(번호, 이름, 수량, 외국계?)] 상위 순."""
+    o = {'glob_total_shnu_qty': str(glob[0]), 'glob_total_seln_qty': str(glob[1])}
+    for key, xs in (('shnu', buys), ('seln', sells)):
+        for i, (no, nm, q, fx) in enumerate(xs, 1):
+            o.update({f'{key}_mbcr_no{i}': no, f'{key}_mbcr_name{i}': nm, f'total_{key}_qty{i}': str(q),
+                      f'{key}_mbcr_glob_yn_{i}': 'Y' if fx else 'N'})
+    return o
+
+
+def test_kis_brokers_unknown_side_is_not_zero(tmp_path, monkeypatch):
+    # 한투 거래원: 매수 상위 5곳은 매수만, 매도 상위 5곳은 매도만 → 모르는 쪽은 0이 아니라 '모름'.
+    # 순매수는 아는 만큼만(5위 마지막 수량을 넘지 않는다는 것으로 최소치), 방향도 모르면 순위에서 뺌
+    from datetime import datetime
+    from core import causes, db, feed, kis
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    buys = [('1', '키움증권', 9000, False), ('2', '모건스탠리', 6000, True), ('3', '미래에셋', 3000, False), ('4', 'NH투자', 2500, False), ('5', '삼성', 2000, False)]
+    sells = [('3', '미래에셋', 8000, False), ('6', '신한', 4000, False), ('7', 'KB', 3500, False), ('8', '한화', 3200, False), ('9', '토스', 3000, False)]
+    info = kis.parse_members(_member_out(buys, sells))
+    by = {t['name']: t for t in info['traders']}
+    assert by['키움증권']['buy'] == 9000 and by['키움증권']['sell'] is None and by['모건스탠리']['foreign']
+    assert by['미래에셋']['buy'] == 3000 and by['미래에셋']['sell'] == 8000 and info['foreign_buy'] == 5000
+    monkeypatch.setattr(kis, 'members', lambda code, market='J': info)
+    feed.snapshot_traders('000001', datetime(2026, 11, 2, 10, 30))
+    f = causes._flows('000001', datetime(2026, 11, 2, 9, 0), datetime(2026, 11, 2, 10, 30), 50000)
+    tb = {r['name']: r for r in f['top_buyers']}
+    # 키움: 매도는 5위(3000주) 밖이라 3000주 미만 → 순매수 최소 6000주
+    assert tb['키움증권']['net'] == 6000 and tb['키움증권']['net_is_min'] and tb['키움증권']['sell_state'] == 'hidden'
+    # 삼성: 매수 2000 < 매도 5위 3000 → 방향을 모름 → 순위에서 빠짐 (0으로 치지 않음)
+    assert '삼성' not in tb and all(r['name'] != '삼성' for r in f['top_sellers'])
+    # 미래에셋: 양쪽 다 상위 5위 → 정확한 순매도 −5000
+    ts = {r['name']: r for r in f['top_sellers']}
+    assert ts['미래에셋']['net'] == -5000 and not ts['미래에셋']['net_is_min']
+    # 외국계 합계는 한투가 따로 주는 값 (상위 5곳 합이 아님)
+    assert f['foreign_net'] == 2000 and f['foreign_buy'] == 5000
+    assert [x['qty'] for x in f['top5']['buy']] == [9000, 6000, 3000, 2500, 2000] and '한국투자증권' in f['source']
+    # 구간(10:30→10:40) 증감: 외국계 합계도 같은 두 시각의 차이
+    buys2 = [('1', '키움증권', 20000, False)] + buys[1:]
+    monkeypatch.setattr(kis, 'members', lambda code, market='J': kis.parse_members(_member_out(buys2, sells, glob=(7000, 3500))))
+    feed.snapshot_traders('000001', datetime(2026, 11, 2, 10, 40))
+    g = causes._flows('000001', datetime(2026, 11, 2, 10, 30), datetime(2026, 11, 2, 10, 40), 20000)
+    assert g['basis'] == '구간' and g['foreign_net'] == 1500
+    assert [(r['name'], r['net']) for r in g['top_buyers']] == [('키움증권', 8000)]     # 11000 − 매도 5위 밖(3000 미만)

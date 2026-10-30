@@ -171,10 +171,16 @@ def record_error(err: Exception):
 
 # ------------------------------------------------------------------ 원인 분석용 수집
 
+def fetch_traders(code: str) -> dict:
+    """거래원(증권사 창구) 그날 누적: 한투 열쇠가 있으면 한투, 없으면 네이버 (로컬 실행용)."""
+    from . import kis
+    return kis.members(code) if kis.enabled() else naver.fetch_trader_info(code)
+
+
 def snapshot_traders(code: str, now: datetime | None = None) -> int:
-    """거래원(증권사 창구) 당일 누적 수량을 1분 단위로 저장."""
+    """거래원(증권사 창구) 당일 누적 수량을 1분 단위로 저장. 한투는 상위 5위 밖 쪽 수량을 주지 않아 NULL(모름)."""
     now = now or kst_now()
-    info = naver.fetch_trader_info(code)
+    info = fetch_traders(code)
     today = now.strftime("%Y%m%d")
     rows = [t for t in info["traders"] if (t.get("bizdate") or today) == today]
     if not rows:
@@ -187,7 +193,10 @@ def snapshot_traders(code: str, now: datetime | None = None) -> int:
             [(code, ts, t["trader_no"], t["name"], t["buy"], t["sell"], int(t["foreign"]),
               int(t["buy_top5"]), int(t["sell_top5"])) for t in rows],
         )
-    # 네이버가 함께 주는 외국계 창구 추정 합계 (장중 순매수 칸용 — 거래소 개인·외국인·기관 확정치는 장 마감 뒤에만 나옴)
+        if info.get("foreign_buy") is not None or info.get("foreign_sell") is not None:
+            conn.execute("INSERT OR REPLACE INTO broker_foreign_snapshots(symbol, ts, buy, sell) VALUES (?, ?, ?, ?)",
+                         (code, ts, info.get("foreign_buy"), info.get("foreign_sell")))
+    # 함께 주는 외국계 창구 합계 (장중 순매수 칸용 — 거래소 개인·외국인·기관 확정치는 장 마감 뒤에만 나옴)
     set_state(f"foreign_est:{code}", json.dumps({"date": now.date().isoformat(), "ts": ts,
                                                   "buy": info.get("foreign_buy"), "sell": info.get("foreign_sell")}))
     return len(rows)
@@ -282,12 +291,12 @@ def sync_research(code: str) -> int:
 
 
 def end_of_day_traders(code: str, peers: list[str], now: datetime | None = None):
-    """장 마감 시점 거래원 저장 (이 종목 + 같은 업종, 네이버)."""
+    """장 마감 시점 거래원 저장 (이 종목 + 같은 테마 대형 종목. 한투, 열쇠가 없으면 네이버)."""
     now = now or kst_now()
     date = now.date().isoformat()
     for c in [code] + list(peers):
-        try:                                   # 네이버만 사용 (다음 금융은 쓰지 않음)
-            save_trader_daily(c, naver.fetch_trader_info(c), date)
+        try:
+            save_trader_daily(c, fetch_traders(c), date)
         except Exception:
             continue
 
@@ -381,6 +390,7 @@ def purge_related_bars(main_symbol: str, keep_days: int = 10):
             (main_symbol, KOSDAQ, cutoff),
         )
         conn.execute("DELETE FROM trader_snapshots WHERE ts < ?", (cutoff,))
+        conn.execute("DELETE FROM broker_foreign_snapshots WHERE ts < ?", (cutoff,))
         # 시장 전체 뉴스는 60일만 보관 (저장 용량을 작게)
         conn.execute("DELETE FROM macro_news WHERE ts < ?",
                      ((kst_now() - timedelta(days=60)).isoformat(timespec="minutes"),))

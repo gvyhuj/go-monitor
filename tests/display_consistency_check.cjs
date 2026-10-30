@@ -96,3 +96,14 @@ test('drawer and AI text carry no share split (market·own), only theme moves', 
   assert.doesNotMatch(text,/업종/);                      // 업종 몫은 계산하지 않음
   assert.match(text,/\[그날 네이버 테마 등락\]/);
 });
+
+test('AI text: broker top-5 as published, nets marked as minimum when one side is hidden', () => {
+  const {ctx}=harness();
+  const flows={basis:'당일 누적',foreign_net:2000,top_buyers:[{name:'키움증권',net:6000,net_is_min:true,foreign:false}],
+    top_sellers:[{name:'미래에셋',net:-5000,net_is_min:false,foreign:false}],
+    top5:{at:'2026-10-28T10:30',buy:[{name:'키움증권',qty:9000,foreign:false},{name:'모건스탠리',qty:6000,foreign:true}],sell:[{name:'미래에셋',qty:8000,foreign:false}]}};
+  const text=ctx.eventContext({event:{...event},cause:{flows}},'검토');
+  assert.match(text,/\[창구 상위 5 \(거래소 공개, 10:30까지 그날 누적\)\] 매수: 키움증권 9000주, 모건스탠리\(외국계\) 6000주 \/ 매도: 미래에셋 8000주/);
+  assert.match(text,/순매수 상위: 키움증권 \+6000주 이상 \/ 순매도 상위: 미래에셋 -5000주 \/ 외국계 창구 합계 \+2000주/);
+  assert.match(text,/최소치에 '이상'을 붙임/);
+});

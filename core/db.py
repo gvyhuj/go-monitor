@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS investor_daily (
     close REAL, volume INTEGER, foreign_ratio REAL,
     PRIMARY KEY(symbol, bizdate)
 );
+CREATE TABLE IF NOT EXISTS broker_foreign_snapshots (  -- 외국계 창구 합계 그날 누적, 거래원 기록과 같은 시각 (한투가 따로 줌)
+    symbol TEXT NOT NULL, ts TEXT NOT NULL, buy INTEGER, sell INTEGER,
+    PRIMARY KEY(symbol, ts)
+);
+
 CREATE TABLE IF NOT EXISTS trader_daily (          -- 장 마감 시점 거래원 (출처별), 같은 업종 종목 포함
     symbol TEXT NOT NULL,
     date TEXT NOT NULL,

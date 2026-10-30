@@ -1931,7 +1931,7 @@
       </div>`;
   }
 
-  const STATE_TXT = { top5: "", out: "5위 밖·멈춤", none: "미집계", unknown: "" };
+  const STATE_TXT = { top5: "", out: "5위 밖·멈춤", none: "미집계", unknown: "", hidden: "5위 밖" };
 
   function flowBlock(c) {
     const f = c && c.flows, inv = c && c.investor_day;
@@ -1942,7 +1942,7 @@
     if (f) {
       const all = [...f.top_buyers, ...f.top_sellers];
       const max = Math.max(1, ...all.map((r) => Math.abs(r.net)));
-      const sideTxt = (v, st) => (v === 0 && st === "none" ? "미집계(5위 밖)" : `${int(v)}주${st === "out" ? " (5위 밖으로 밀려나 멈춤)" : ""}`);
+      const sideTxt = (v, st) => (v == null || st === "hidden" ? "5위 밖(수량 비공개)" : v === 0 && st === "none" ? "미집계(5위 밖)" : `${int(v)}주${st === "out" ? " (5위 밖으로 밀려나 멈춤)" : ""}`);
       const row = (r) => {
         const tip = `매수 ${sideTxt(r.buy, r.buy_state)} / 매도 ${sideTxt(r.sell, r.sell_state)}`;
         const st = r.net > 0 ? r.buy_state : r.sell_state;
@@ -2179,8 +2179,13 @@
     if (recent.length) L.push(`[직전 ${recent.length}거래일] ${recent.map((x) => `${md(x.date)} ${pct(x.own)}(KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)})`).join(", ")}`);
     const f = c.flows;
     if (f) {
-      const r = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${x.net >= 0 ? "+" : ""}${int(x.net)}주`;
-      L.push(`[창구] 순매수 상위: ${(f.top_buyers || []).map(r).join(", ") || "-"} / 순매도 상위: ${(f.top_sellers || []).map(r).join(", ") || "-"} / 외국계 합계 ${int(f.foreign_net || 0)}주`);
+      const r = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${x.net >= 0 ? "+" : ""}${int(x.net)}주${x.net_is_min ? " 이상" : ""}`;
+      const q = (x) => `${x.name}${x.foreign ? "(외국계)" : ""} ${int(x.qty)}주`;
+      // 거래소가 공개하는 건 매수·매도 각각 상위 5곳뿐: 그 숫자 그대로 + 순매수는 아는 만큼만('이상'은 최소치)
+      if (f.top5 && ((f.top5.buy || []).length || (f.top5.sell || []).length))
+        L.push(`[창구 상위 5 (거래소 공개, ${f.top5.at ? `${hhmm(f.top5.at)}까지 ` : ""}그날 누적)] 매수: ${(f.top5.buy || []).map(q).join(", ") || "-"} / 매도: ${(f.top5.sell || []).map(q).join(", ") || "-"}`);
+      L.push(`[창구 순매수${f.basis === "구간" ? ` ${hhmm(f.from_ts)}~${hhmm(f.to_ts)}` : ""}] 순매수 상위: ${(f.top_buyers || []).map(r).join(", ") || "-"} / 순매도 상위: ${(f.top_sellers || []).map(r).join(", ") || "-"} / 외국계 창구 합계 ${f.foreign_net >= 0 ? "+" : ""}${int(f.foreign_net || 0)}주`);
+      L.push("(창구 순매수: 매수·매도 중 한쪽만 상위 5위에 든 창구는 다른 쪽 수량이 공개되지 않아, 5위 마지막 수량을 넘지 않는다는 것만으로 계산한 최소치에 '이상'을 붙임. 상위 5곳 밖 창구는 보이지 않음)");
     } else L.push("[창구] 사이트에 이 시간대 거래원 기록 없음 (없다는 뜻이 아니라 수집되지 않음)");
     const inv = c.investor_day;
     if (inv) L.push(`[투자자별 확정치] 외국인 ${int(inv.foreign_net || 0)}주, 기관 ${int(inv.organ_net || 0)}주, 개인 ${int(inv.individual_net || 0)}주`);
