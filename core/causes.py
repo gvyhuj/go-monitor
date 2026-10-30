@@ -1,11 +1,11 @@
 """이상변동 원인 판단 (실무 3단계).
 
-① 몫 나누기   실제 = 시장 몫 + 업종 몫 + 이 종목 고유 몫 (고유 몫이 평소의 몇 배인지 = 이례성)
+① 몫 나누기   실제 = 시장 몫 + 이 종목 고유 몫 (고유 몫이 평소의 몇 배인지 = 이례성)
 ② 기사 직후 검증   기사·PR 직후 30분(또는 다음 날 시초가)이 평소보다 드물게 움직였나
-③ 수급   거래량 배수, 증권사 창구(업종 묶음 매수 / 이 종목 집중 매수), 외국인·기관 순매수
+③ 수급   거래량 배수, 증권사 창구(테마 묶음 매수 / 이 종목 집중 매수), 외국인·기관 순매수
 
 판단 순서
-- 시장·업종·고유 추정분은 %p로 제시하며 원인 순위 근거로 사용하지 않음
+- 시장·고유 추정분은 %p로 제시하며 원인 순위 근거로 사용하지 않음
 - 고유 몫이 이례적 + 기사가 ②통과 → 그 기사
 - 고유 몫이 이례적 + 수급만 뚜렷 → 수급 ('누가'만 알고 '왜'는 모르므로 신뢰도 최대 중간)
 - 모두 아니면 → 원인 미확인
@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -25,7 +24,7 @@ from . import analysis
 from .db import connect
 
 KOSDAQ = "KOSDAQ"
-CAUSE_VERSION = "19"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름, 18: 비교 종목을 네이버 업종(WICS)으로)
+CAUSE_VERSION = "20"   # 분석 항목이 바뀌면 올림 → 최근 이상변동을 자동 재분석 (20: 업종 몫 뺌 — 시장 몫 + 고유 몫, 15: 하루 몫 나누기를 기사 분석과 같은 분야별 회귀로, 17: 직전 5거래일 흐름, 18: 비교 종목을 네이버 업종(WICS)으로)
 
 POS_WORDS = ("수주", "계약", "공급", "협약", "MOU", "선정", "개발", "출시", "흑자", "최대", "증가", "확대", "양산",
              "수출", "승인", "인증", "특허", "투자 유치", "호실적", "상향", "수혜", "강세", "급등", "신고가")
@@ -242,7 +241,7 @@ def _buyer_context(symbol: str, day, flows: dict, sign: int, related: list, fetc
         return None
     dstr = day.isoformat()
 
-    # 같은 날 같은 업종 종목의 거래원 (오늘이면 지금 받아오고, 지난 날짜는 장 마감 기록)
+    # 같은 날 같은 테마 종목의 거래원 (오늘이면 지금 받아오고, 지난 날짜는 장 마감 기록)
     peer_infos = {}
     if fetch:
         try:
@@ -275,7 +274,7 @@ def _buyer_context(symbol: str, day, flows: dict, sign: int, related: list, fetc
                         "amount": pnet * pp if (pp and hit) else None, "listed": bool(hit)})
         return out
 
-    # 상위 창구 중 '업종 묶음 매매' 근거가 가장 강한 곳을 고름 (외국계 우선, 같은 방향 업종 종목 수)
+    # 상위 창구 중 '테마 묶음 매매' 근거가 가장 강한 곳을 고름 (외국계 우선, 같은 방향 테마 종목 수)
     def strength(r):
         ps = peers_of(r["name"])
         same = sum(1 for x in ps if x["net"] * r["net"] > 0)
@@ -297,21 +296,21 @@ def _buyer_context(symbol: str, day, flows: dict, sign: int, related: list, fetc
         opp = [p for p in peers if p["net"] * net < 0]
         if len(same) >= 2 and len(same) >= len(opp):
             share = (own_amount / (own_amount + tot) * 100) if (own_amount and tot) else None
-            lines.append({"kind": "업종 묶음", "strong": True, "text":
+            lines.append({"kind": "테마 묶음", "strong": True, "text":
                 f"같은 날 {name} 창구가 확인한 비교 종목 {len(peers)}개 중 {len(same)}개도 순{side}했습니다"
                 f"({', '.join(p['name'] for p in sorted(same, key=lambda p: -abs(p['amount'] or 0))[:5])})"
                 f"(합계 약 {_eok(tot)})." + (f" 이 종목은 그중 {share:.0f}% 수준입니다." if share is not None else "")
-                + " 이 종목만 겨냥했다기보다 업종을 묶어 사고판 흐름일 가능성이 큽니다."})
+                + " 이 종목만 겨냥했다기보다 테마를 묶어 사고판 흐름일 가능성이 큽니다."})
         elif not same:
             lines.append({"kind": "개별 관심", "strong": True, "text":
-                f"같은 업종 종목의 상위 거래원에는 {name} 창구의 순{side}가 없습니다. "
-                "업종 전체보다 이 종목에 대한 개별 관심일 가능성이 있습니다."})
+                f"같은 테마 종목의 상위 거래원에는 {name} 창구의 순{side}가 없습니다. "
+                "테마 전체보다 이 종목에 대한 개별 관심일 가능성이 있습니다."})
         else:
-            lines.append({"kind": "업종 일부", "strong": False, "text":
-                f"{name} 창구가 같은 업종 {len(peers)}개 중 {len(same)}개 종목에서도 순{side}했습니다."})
+            lines.append({"kind": "테마 일부", "strong": False, "text":
+                f"{name} 창구가 같은 테마 {len(peers)}개 중 {len(same)}개 종목에서도 순{side}했습니다."})
     else:
-        lines.append({"kind": "업종 비교", "strong": False, "text":
-            "이날 같은 업종 종목의 거래원 기록이 없어 묶음 매매 여부를 확인하지 못했습니다."})
+        lines.append({"kind": "테마 비교", "strong": False, "text":
+            "이날 같은 테마 종목의 거래원 기록이 없어 묶음 매매 여부를 확인하지 못했습니다."})
 
     # (b) 며칠째 같은 방향인가 (외국계 창구 추정 + 거래소 확정 외국인)
     with connect() as conn:
@@ -478,36 +477,26 @@ def _calendar(day, sign: int) -> list[dict]:
     return out
 
 
-def _decompose_window(symbol: str, day, own, kq, related, daily: bool):
-    """실제 변동 = 시장 몫 + 업종 몫 + 이 종목 고유 몫 (민감도는 일별 회귀값을 씀)."""
+def _decompose_window(symbol: str, day, own, kq, daily: bool):
+    """실제 변동 = 시장 몫 + 이 종목 고유 몫 (민감도는 일별 회귀값을 씀)."""
     from . import articles as _articles
-    peers = [{"code": r["code"], "name": r["name"]} for r in related]
     try:
-        dc = _articles.decompose(symbol, day.isoformat(), peers)
+        dc = _articles.decompose(symbol, day.isoformat())
     except Exception:
         dc = None
     if daily and dc and dc.get("d0"):
         d0 = dc["d0"]
-        return {"own": d0["own"], "market": d0["market"], "sector": d0["sector"], "specific": d0["abnormal"],
-                "z": d0.get("z"), "kosdaq": d0.get("kosdaq"), "sector_avg": d0.get("sector_avg"),
-                "method": dc.get("method"), "beta_market": dc.get("beta_market"), "beta_sector": dc.get("beta_sector"),
+        return {"own": d0["own"], "market": d0["market"], "specific": d0["abnormal"],
+                "z": d0.get("z"), "kosdaq": d0.get("kosdaq"),
+                "method": dc.get("method"), "beta_market": dc.get("beta_market"),
                 "sigma": dc.get("sigma"), "basis": "하루"}
-    if own is None:
-        return None
-    vals = [r["change"] for r in related if r.get("change") is not None]
-    sec = sum(vals) / len(vals) if len(vals) >= 2 else None
+    if own is None or kq is None:
+        return None  # Missing market prices are not zero market influence.
     bm = (dc or {}).get("beta_market")
     bm = 1.0 if bm is None else bm
-    bs = (dc or {}).get("beta_sector")
-    bs = (1.0 if sec is not None else 0.0) if bs is None else bs
-    bsm = (dc or {}).get("beta_sector_market")
-    bsm = 1.0 if bsm is None else bsm
-    if kq is None or sec is None:
-        return None  # Missing comparison prices are not zero market/sector influence.
     mk = bm * kq
-    sc = bs * (sec - bsm * kq)
-    return {"own": own, "market": mk, "sector": sc, "specific": own - mk - sc, "z": None, "kosdaq": kq,
-            "sector_avg": sec, "method": (dc or {}).get("method") or "단순", "beta_market": bm, "beta_sector": bs,
+    return {"own": own, "market": mk, "specific": own - mk, "z": None, "kosdaq": kq,
+            "method": (dc or {}).get("method") or "단순", "beta_market": bm,
             "sigma": (dc or {}).get("sigma"), "basis": "구간"}
 
 
@@ -523,64 +512,6 @@ def _returns(code: str, lo: str, hi: str) -> dict:
     return out
 
 
-def _segment_links(symbol: str, day, groups: dict) -> dict:
-    """분야별 '평소 연동성': 이벤트 전 약 120거래일 동안 시장(KOSDAQ) 영향을 뺀 뒤
-    이 종목과 그 분야 평균이 얼마나 함께 움직였는지 (상관계수, -1~1).
-    사업상 연결이 있어도 주가에 실제로 나타나지 않으면 원인 판단에서 낮게 보기 위함."""
-    import numpy as np
-    hi = (day - timedelta(days=1)).isoformat()
-    lo = (day - timedelta(days=200)).isoformat()
-    own, kq = _returns(symbol, lo, hi), _returns(KOSDAQ, lo, hi)
-    out = {}
-    for seg, codes in groups.items():
-        series = [_returns(c, lo, hi) for c in codes]
-        dates = [d for d in own if d in kq and sum(1 for s in series if d in s) >= max(1, len(series) // 2)]
-        if len(dates) < 40:
-            continue
-        o = np.array([own[d] for d in dates])
-        m = np.array([kq[d] for d in dates])
-        g = np.array([np.mean([s[d] for s in series if d in s]) for d in dates])
-        X = np.column_stack([np.ones_like(m), m])
-        ro = o - X @ np.linalg.lstsq(X, o, rcond=None)[0]
-        rg = g - X @ np.linalg.lstsq(X, g, rcond=None)[0]
-        if ro.std() > 0 and rg.std() > 0:
-            r = float(np.corrcoef(ro, rg)[0, 1])
-            n = len(dates)
-            z, se = math.atanh(max(-0.999, min(0.999, r))), 1 / math.sqrt(n - 3)
-            out[seg] = {"corr": r, "n": n, "lo": math.tanh(z - 1.96 * se), "hi": math.tanh(z + 1.96 * se)}
-    return out
-
-
-def _link_label(c, lo=None):
-    """95% 범위의 아래쪽 값으로 판단: 0을 넘어야 '우연이 아닌 연동'으로 봄."""
-    if c is None:
-        return "-"
-    if lo is None:
-        return "강함" if c >= 0.4 else "보통" if c >= 0.2 else "약함"
-    return "강함" if lo >= 0.25 else "보통" if lo > 0 else "확인 안 됨"
-
-
-def _segments(related: list[dict], sign: int, links: dict | None = None) -> list[dict]:
-    """사업 분야별 비교 종목 평균 변동 + 평소 연동성 (연동성 감안해 의미 있는 분야가 앞)."""
-    links = links or {}
-    by = {}
-    for r in related:
-        if r.get("change") is None:
-            continue
-        by.setdefault(r.get("source") or "비교 종목", []).append(r)
-    out = []
-    for name, ms in by.items():
-        avg = sum(m["change"] for m in ms) / len(ms)
-        L = links.get(name) or {}
-        lk = L.get("corr")
-        out.append({"name": name, "avg": avg, "n": len(ms), "link": lk, "link_label": _link_label(lk, L.get("lo")),
-                    "link_lo": L.get("lo"), "link_hi": L.get("hi"), "link_n": L.get("n"),
-                    "same": sum(1 for m in ms if m["change"] * sign > 0.003),
-                    "members": sorted(ms, key=lambda m: -m["change"] * sign)})
-    out.sort(key=lambda g: -(g["avg"] * sign) * (max(0.0, g["link"]) if g["link"] is not None else 0.3))
-    return out
-
-
 def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, sign) -> list[dict]:
     """한눈에 점검: ① 몫 나누기 → ② 기사 직후 검증 → ③ 수급, 그리고 참고 자료."""
     out = []
@@ -590,12 +521,11 @@ def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, s
     if split and split.get("own") is not None:
         txt = (f"그린광학 실제 등락률: {_fmt_pct(split['own'])} · "
                f"시장 추정 기여분: {split['market']*100:+.2f}%p · "
-               f"업종 추정 기여분: {split['sector']*100:+.2f}%p · "
                f"종목 고유 추정분: {split['specific']*100:+.2f}%p. "
                "과거 관계에 따른 모형 추정이며 실제 상승·하락 원인을 확정하지 않습니다.")
         add("① 몫 나누기", "part", txt)
     else:
-        add("① 몫 나누기", "no", "시장·업종 시세가 없어 나누지 못했습니다")
+        add("① 몫 나누기", "no", "시장 시세가 없어 나누지 못했습니다")
     news = [c for c in ranked if c["type"] in ("article", "pr", "disclosure")]
     passed = [c for c in news if c["checks"][1]["ok"]]
     if passed:
@@ -623,7 +553,7 @@ def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, s
 def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | None = None) -> dict:
     """한 이상변동의 원인 후보를 계산해 events.cause_json 에 저장하고 돌려준다.
 
-    fetch: 같은 업종 종목 분봉·뉴스를 그 자리에서 받아오는 함수 (감시 엔진이 넘겨줌).
+    fetch: 같은 테마 종목 분봉·뉴스를 그 자리에서 받아오는 함수 (감시 엔진이 넘겨줌).
     ev: events 표에 없는 기록(급등·급락이 없는 날의 하루 기록)을 줄 때. 이때는 저장하지 않고 돌려주기만 함.
     """
     if ev is None:
@@ -765,70 +695,16 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     if late and not any(c["type"] == "article" for c in cands):
         notes.append(f"구간 뒤에 나온 기사 {len(late)}건은 주가가 먼저 움직인 뒤 확인된 정보라 원인 후보에서 뺐습니다.")
 
-    # --- 4. 업종 동반 움직임 -------------------------------------------------
-    with connect() as conn:
-        rel = [dict(r) for r in conn.execute("SELECT * FROM related_stocks ORDER BY source DESC, code")]
-    if fetch and rel:
-        try:
-            fetch("related_bars", [r["code"] for r in rel], day)
-        except Exception as e:  # 보조 정보
-            notes.append(f"같은 업종 종목 시세를 받지 못했습니다: {e}")
-    related = []
-    for r in rel:
-        if daily:
-            ch = _daily_change(r["code"], day.isoformat())
-        else:
-            df = analysis.load_range(r["code"], t1 - timedelta(days=1), t1 + timedelta(minutes=5))
-            ch = _change(df, t0, t1)
-        related.append({"code": r["code"], "name": r["name"], "change": ch, "source": r["source"]})
-    valid = [r for r in related if r["change"] is not None]
-    groups = {}                     # 업종(비교 종목 묶음)별 종목 코드 — 지금은 네이버 업종(WICS)
-    for r in rel:
-        groups.setdefault(r["source"] or "비교 종목", []).append(r["code"])
-    try:
-        seg_links = _segment_links(symbol, day, groups) if groups else {}
-    except Exception:
-        seg_links = {}
-    segments = _segments(related, sign, seg_links)
-    background = []          # 시장·업종이 왜 움직였는지 보여주는 소식 (② 바깥 흐름 쪽 근거)
-    co_names = ""
-    if valid and own is not None:
-        same = [r for r in valid if r["change"] * (own if own else sign) > 0 and abs(r["change"]) >= 0.005]
-        avg = sum(r["change"] for r in valid) / len(valid)
-        frac = len(same) / len(valid)
-        if frac >= 0.5 and avg * sign > 0 and abs(avg) >= max(0.005, 0.25 * abs(own)):
-            co_names = ", ".join(f"{r['name']} {_fmt_pct(r['change'])}" for r in sorted(same, key=lambda r: -abs(r["change"]))[:4])
-            # 같이 움직인 종목의 뉴스 중 구간 직전 기사 (업종·정책 이슈 단서)
-            peer_news = []
-            if fetch:
-                for r in sorted(same, key=lambda r: -abs(r["change"]))[:3]:
-                    try:
-                        fetch("news", r["code"], day)
-                    except Exception:
-                        pass
-            with connect() as conn:
-                for r in same[:6]:
-                    for n in conn.execute(
-                            "SELECT * FROM news WHERE symbol=? AND ts BETWEEN ? AND ? ORDER BY ts DESC LIMIT 2",
-                            (r["code"], look_from.isoformat(timespec="minutes"),
-                             (t_start + timedelta(minutes=1)).isoformat(timespec="minutes"))):
-                        peer_news.append({**dict(n), "peer": r["name"]})
-            for n in peer_news:
-                news_view.append({"ts": n["ts"], "office": n["office"], "title": n["title"], "url": n["url"],
-                                  "timing": "선행", "direct": False, "symbol": n["symbol"], "peer": n["peer"]})
-            background += [{"ts": n["ts"], "text": f"{n['peer']} 관련 기사: {n['title']}", "title": n["title"], "url": n["url"]}
-                           for n in peer_news[:3]]
-    elif not valid:
-        notes.append("이 시간대 같은 업종 종목 시세가 없어 업종 비교를 하지 못했습니다.")
+    background = []          # 시장·테마가 왜 움직였는지 보여주는 소식 (② 바깥 흐름 쪽 근거)
     if kq is None:
         notes.append("이 시간대 KOSDAQ 시세가 없어 시장 비교를 하지 못했습니다.")
 
     # --- 6. 수급: 누가 샀고 누가 팔았나 (③) --------------------------------------
     flows = _flows(symbol, _dt(ev["start_ts"]) if daily else t_start, t1, window_volume)
     inv = _investor_day(symbol, day.isoformat())
-    # 창구 비교 종목: 사업 분야별 비교 종목 + 네이버 방위산업·우주항공 테마 대형 종목
+    # 창구 비교 종목: 네이버 테마(방위산업·우주항공 등) 대형 종목
     from . import macro as _macro
-    trader_peers = [dict(r) for r in rel]
+    trader_peers = []
     for x in _macro.basket_codes():
         if x["code"] != symbol and all(x["code"] != r["code"] for r in trader_peers):
             trader_peers.append({"code": x["code"], "name": x["name"], "source": x["segment"]})
@@ -872,13 +748,13 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
                 g = seg_of.get(x["code"])
                 if g and g not in segs:
                     segs.append(g)
-            sector_word = ("·".join(segs[:2]) + " 분야") if segs else "같은 업종"
+            sector_word = ("·".join(segs[:2]) + " 테마") if segs else "같은 테마"
             signed = buyer["qty"] if buyer["side"] == "매수" else -buyer["qty"]
             basket = {
                 "type": "flow", "kind": "basket", "timing": "동시", "who": who, "sector_word": sector_word, "segments": segs,
                 "title": f"{who}, {sector_word} 묶음 {buyer['side']} (이 종목 {signed:+,}주 · {peers_txt})",
                 "summary": f"같은 날 {buyer['broker']} 창구가 이 종목과 함께, 거래원을 확인한 비교 종목 {len(buyer['peers'])}개 중 {len(sp)}개를 순{buyer['side']}했습니다. "
-                           f"이 종목 하나가 아니라 {'외국계 자금이 ' if buyer['foreign'] else ''}업종을 묶어 사고판 흐름입니다. "
+                           f"이 종목 하나가 아니라 {'외국계 자금이 ' if buyer['foreign'] else ''}테마를 묶어 사고판 흐름입니다. "
                            f"이 종목에서 이 창구 물량은 {'구간' if buyer.get('basis') == '구간' else '그날'} 거래량의 약 {share*100:.0f}%입니다.",
                 "evidence": [f"이 종목 {buyer['side']} {buyer['qty']:,}주" + (f" (약 {_eok(buyer['amount'])})" if buyer.get("amount") else "")]
                             + [f"{x['name']} 순{'매수' if x['net'] > 0 else '매도'} {abs(x['net']):,}주" + (f" (약 {_eok(abs(x['amount']))})" if x.get("amount") else "") for x in sp[:4]]
@@ -890,8 +766,8 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
             cands.append({
                 "type": "flow", "kind": "focus", "timing": "동시",
                 "title": f"{who} 이 종목 집중 {buyer['side']} ({buyer['qty']:,}주, 거래량의 {share*100:.0f}%)",
-                "summary": "같은 업종 종목에서는 이 창구의 같은 방향 매매가 보이지 않아, 업종보다 이 종목 자체에 대한 매매입니다.",
-                "evidence": [f"같은 업종 확인 {len(buyer['peers'])}개 중 같은 방향 {len(sp)}개"], "links": [],
+                "summary": "같은 테마 종목에서는 이 창구의 같은 방향 매매가 보이지 않아, 테마보다 이 종목 자체에 대한 매매입니다.",
+                "evidence": [f"같은 테마 확인 {len(buyer['peers'])}개 중 같은 방향 {len(sp)}개"], "links": [],
             })
     if inv and daily:
         vol = inv.get("volume") or window_volume or 0
@@ -908,26 +784,18 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     if not flows:
         notes.append("이 시간대 거래원 기록이 없습니다. 거래원은 감시 엔진이 켜져 있을 때 5분마다, 장 마감 기록은 매일 쌓입니다.")
 
-    # --- ① 몫 나누기: 실제 = 시장 몫 + 업종 몫 + 이 종목 고유 몫 ---------------------
-    split = _decompose_window(symbol, day, own, kq, related, daily)
+    # --- ① 몫 나누기: 실제 = 시장 몫 + 이 종목 고유 몫 ---------------------
+    split = _decompose_window(symbol, day, own, kq, daily)
     from . import causal as _causal
-    from .detector import load_settings as _ls
-    _cfg = _ls()                    # 업종 ETF 목록 (factor_etfs)
-    try:
-        factor = _causal.factor_attribution(symbol, day.isoformat(), _cfg.get("factor_etfs") or [])
-    except Exception as e:
-        factor = {"ok": False, "reason": str(e)}
-    ds = _causal.day_split(symbol, day.isoformat(), _cfg.get("factor_etfs") or []) if daily else None
+    ds = _causal.day_split(symbol, day.isoformat()) if daily else None
     if ds and ds.get("d0") and ds["method"] != "단순":
-        # 하루 이벤트: 시장(KOSDAQ) + 사업 분야별(·업종 ETF) 회귀. 기사·공시 모음과 같은 계산
+        # 하루 이벤트: 시장(KOSDAQ) 회귀. 기사·공시 모음과 같은 계산
         p0 = ds["d0"]
-        split = {"own": p0["own"], "market": p0["market"], "sector": p0["sector"], "specific": p0["abnormal"],
-                 "z": p0["z"], "kosdaq": p0["kosdaq"], "sector_avg": (split or {}).get("sector_avg"),
-                 "method": ds["method"], "beta_market": ds["beta_market"], "beta_sector": None,
-                 "sigma": ds["sigma"], "basis": "하루", "rarity": p0.get("rarity"), "n_null": p0.get("n_null"),
-                 "factor_parts": [{"name": "시장(KOSDAQ)", "factor": p0["kosdaq"], "beta": ds["beta_market"],
-                                   "contrib": p0["market"]}] + p0["parts"]}
-    causal = {"factor": factor}
+        split = {"own": p0["own"], "market": p0["market"], "specific": p0["abnormal"],
+                 "z": p0["z"], "kosdaq": p0["kosdaq"],
+                 "method": ds["method"], "beta_market": ds["beta_market"],
+                 "sigma": ds["sigma"], "basis": "하루", "rarity": p0.get("rarity"), "n_null": p0.get("n_null")}
+    causal = {}
     try:
         causal["intensity"] = _causal.trading_intensity(symbol, day.isoformat())
     except Exception:
@@ -937,9 +805,9 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     except Exception:
         causal["recent"] = None
     es = None
-    if daily and not (split and split.get("method") in ("팩터", "분야별 회귀")):
+    if daily and not (split and split.get("method") == "시장 회귀"):
         try:
-            es = _causal.event_study(symbol, day.isoformat())   # 업종 ETF 기록이 모자랄 때 시장만 감안한 대체 계산
+            es = _causal.event_study(symbol, day.isoformat())   # 하루 몫 나누기 기록이 모자랄 때 대체 계산
         except Exception as e:
             es = {"ok": False, "reason": str(e)}
         causal["event_study"] = es
@@ -971,7 +839,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     unusual = bool(abn and abn["p"] < 0.05 and spec is not None and spec * sign > 0)
     own_led = (not external_led) and unusual
 
-    # --- 바깥 흐름의 배경 소식 (테마·업종 시황·거시 이슈) ----------------------------
+    # --- 바깥 흐름의 배경 소식 (테마·시황·거시 이슈) ----------------------------
     from . import macro as _macro
     if fetch:
         for k in ("macro_backfill", "board"):
@@ -991,15 +859,14 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
                                "title": None, "url": None})
         geo = _macro.supporting_topics(macro_ctx.get("topics", []), sign)
         BIZ = {"방산", "광학", "우주", "소재", "반도체"}
-        sector_moved = bool(split and split.get("sector") is not None and move_own
-                            and split["sector"] * sign > 0 and abs(split["sector"]) >= 0.25 * abs(move_own)) or bool(st)
+        sector_moved = bool(st)
         market_wide = []
         for g in geo:
             if g["relevance"] not in BIZ:
                 market_wide.append(g)
                 continue
             if not sector_moved:
-                continue                       # 업종이 실제로 같이 움직인 날만 업종 배경으로 인정
+                continue                       # 테마가 실제로 같이 움직인 날만 테마 배경으로 인정
             for i in ([i for i in g["items"] if i["lead"]] or g["items"])[:2]:
                 background.append({"ts": i["ts"], "text": f"{g['topic']}: {i['title']} ({i['office']})", "title": i["title"], "url": i["url"]})
         macro_ctx["market_wide"] = [{"topic": g["topic"], "items": [i for i in g["items"] if i["lead"]][:2]} for g in market_wide[:3]]
@@ -1009,13 +876,13 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
                     i = m["items"][0]
                     background.append({"ts": i["ts"], "text": f"시장 전체 이슈({m['topic']}): {i['title']}", "title": i["title"], "url": i.get("url")})
         try:
-            sn = _macro.sector_news(look_from, t1, [r["name"] for r in rel])
+            sn = _macro.sector_news(look_from, t1, [])
         except Exception:
             sn = []
         sn_dir = [x for x in sn if x["tone"] * sign > 0 and x["ts"] <= t1.isoformat(timespec="minutes")]
         if sn:
             macro_ctx["sector_news"] = [{k: x[k] for k in ("ts", "title", "office", "url", "hit")} for x in sn[:6]]
-        background = [{"ts": x["ts"], "text": f"업종 시황: {x['title']} ({x['office']})", "title": x["title"], "url": x["url"]}
+        background = [{"ts": x["ts"], "text": f"시황: {x['title']} ({x['office']})", "title": x["title"], "url": x["url"]}
                       for x in sn_dir[:3]] + background
     try:
         art_ctx = _articles.before_event(symbol, t_start, t1)
@@ -1023,31 +890,21 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         art_ctx = None
         notes.append(f"직전 기사 반응을 계산하지 못했습니다: {e}")
 
-    # --- 업종이 왜 움직였나: 묶음 매수·시장업종 흐름의 배경 이슈 (추정) ---------------------
+    # --- 테마가 왜 움직였나: 묶음 매수·시장 흐름의 배경 이슈 (추정) ---------------------
     from . import newssearch as _ns
     prev_close = datetime.fromisoformat((prev_day or (day - timedelta(days=1)).isoformat()) + "T15:30")
-    seg_avg_all = {g["name"]: g["avg"] for g in segments}
     drv_seg = None
     if basket and basket.get("segments"):
         drv_seg = basket["segments"][0]
-    elif split and move_own and split["market"] * sign > 0 and abs(split["market"]) >= 0.5 * abs(move_own) \
-            and abs(split["market"]) >= abs(split["sector"]):
+    elif split and move_own and split["market"] * sign > 0 and abs(split["market"]) >= 0.5 * abs(move_own):
         drv_seg = "시장"                                    # 시장 전체가 끌고 간 날은 시장 전체 이슈를 찾음
-    elif split and split.get("factor_parts"):
-        big_f = max(split["factor_parts"][1:], key=lambda x: x["contrib"] * sign, default=None)
-        if big_f and big_f["contrib"] * sign > 0:
-            kw = "방산" if "방산" in big_f["name"] else "반도체" if "반도체" in big_f["name"] else None
-            drv_seg = next((g["name"] for g in segments if kw and kw in g["name"]), kw)
-    if not drv_seg:
-        moved = [g for g in segments if g["avg"] * sign >= 0.01 and (g["link_lo"] is None or g["link_lo"] > 0)]
-        drv_seg = max(moved, key=lambda g: g["avg"] * sign)["name"] if moved else None
     why, why_ok, why_text = None, False, None
     if drv_seg:
         try:
             why = _macro.drivers(drv_seg, min(prev_close, look_from), t_start, t1, sign)
         except Exception as e:
             notes.append(f"배경 이슈를 찾지 못했습니다: {e}")
-    seg_move = (kq if drv_seg == "시장" else seg_avg_all.get(drv_seg)) if drv_seg else None
+    seg_move = kq if drv_seg == "시장" else None
     if why and why.get("top"):
         top_t = why["top"]
         it = (top_t.get("items") or [None])[0]
@@ -1060,11 +917,11 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         if top_t["n_cited"] and top_t["n_lead"]:
             why_text += f" · 그날 {'증시' if drv_seg == '시장' else drv_seg} 시황 기사 {top_t['n_cited']}건도 이 이유를 꼽음"
         if seg_move is not None:
-            why_text += (f" · KOSDAQ {_fmt_pct(seg_move)}" if drv_seg == "시장" else f" · {drv_seg} 비교 종목 평균 {_fmt_pct(seg_move)}")
+            why_text += f" · KOSDAQ {_fmt_pct(seg_move)}"
     elif drv_seg and not _ns.enabled():
         notes.append("국제·정치 기사 수집이 꺼져 있어, 증권 뉴스에 나온 이슈만 배경으로 확인했습니다.")
     if buyer and why_text:
-        buyer["lines"].insert(1, {"kind": "배경 이슈", "strong": why_ok, "text": f"{'시장 전체가' if drv_seg == '시장' else drv_seg + ' 업종이'} 움직인 배경(추정): {why_text}",
+        buyer["lines"].insert(1, {"kind": "배경 이슈", "strong": why_ok, "text": f"{'시장 전체가' if drv_seg == '시장' else drv_seg + ' 테마가'} 움직인 배경(추정): {why_text}",
                                   **({"url": why['top']['items'][0]['url']} if why and why['top'].get('items') else {})})
 
     # --- 참고 자료 (순위에는 넣지 않음): 종목토론방 · 큰 주문 · 회사 일정 ---------------
@@ -1127,7 +984,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         elif c["type"] == "flow":
             if c.get("kind") == "basket":
                 c2 = {"ok": why_ok, "text": (f"왜 샀을까(추정) — {why_text}" if why_text
-                                             else "업종을 묶어 산 이유를 알려주는 이슈 기사는 찾지 못함")}
+                                             else "테마를 묶어 산 이유를 알려주는 이슈 기사는 찾지 못함")}
                 if why_text:
                     c["evidence"] = [f"왜 샀을까(추정): {why_text}"] + c.get("evidence", [])
                     c["links"] = [{"title": i["title"], "url": i["url"]} for i in why["top"]["items"][:2]] + c.get("links", [])
@@ -1156,7 +1013,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         if c["type"] == "article":
             c["label"] = c.get("category") or "이 종목 기사"
         if c["type"] == "market":
-            c["label"] = "시장·업종 흐름"
+            c["label"] = "시장·테마 흐름"
     ranked.sort(key=lambda c: -c["score"])
     top = ranked[:4]
     if not top or top[0]["confidence"] == "낮음":
@@ -1166,7 +1023,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         top = [{
             "type": "own", "label": "원인 미확인", "score": 0, "confidence": "낮음", "timing": "동시", "n_ok": 0,
             "title": "원인 미확인" + (f" (고유 움직임 {_fmt_pct(spec)}, 평소의 {abs(abn['z']):.1f}배)" if abn and spec is not None else ""),
-            "summary": "시장·업종 흐름, 기사 직후 움직임, 수급 중 어느 것도 이 움직임을 충분히 설명하지 못했습니다. "
+            "summary": "시장·테마 흐름, 기사 직후 움직임, 수급 중 어느 것도 이 움직임을 충분히 설명하지 못했습니다. "
                        "거래가 적은 종목이라 일부 투자자의 매매만으로 움직였을 수 있습니다."
                        + (" 아래 후보는 근거가 약한 참고용입니다." if top else ""),
             "evidence": [b for b in bits if b], "links": [], "checks": [],
@@ -1176,7 +1033,7 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
     desk = _desk(split, ext_share, abn, unusual, ranked, chk3_own, basket, bz, conc, cal, sign)
     lead_txt = ""
     if split and split.get("own"):
-        lead_txt = (f"실제 {_fmt_pct(split['own'])} = 시장 {_fmt_pct(split['market'])} + 업종 {_fmt_pct(split['sector'])} "
+        lead_txt = (f"실제 {_fmt_pct(split['own'])} = 시장 {_fmt_pct(split['market'])} "
                     f"+ 이 종목 고유 {_fmt_pct(split['specific'])}. ")
     if best["type"] == "own":
         summary_line = lead_txt + "세 가지 근거 모두 이 움직임을 충분히 설명하지 못했습니다."
@@ -1198,7 +1055,6 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         "split": split,
         "causal": causal,
         "desk": desk,
-        "segments": [{k: g[k] for k in ("name", "avg", "n", "same", "link", "link_label", "link_lo", "link_hi", "link_n")} for g in segments],
         "board": bz,
         "orders": conc,
         "calendar": cal,
@@ -1211,7 +1067,6 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         "macro": macro_ctx,
         "drivers": why,
         "articles": art_ctx,
-        "related": related,
         "news": sorted(news_view, key=lambda n: n["ts"]),
         "disclosures": discl,
         "notes": notes,
@@ -1311,7 +1166,7 @@ def refresh_days(symbol: str, now: datetime, fetch=None, log=None, max_n: int = 
 def refresh_pending(symbol: str, now: datetime, fetch=None, log=None, max_n: int = 8) -> int:
     """기록 단계 관리.
     1차    : 감지 직후
-    준최종 : 움직임이 끝나고 15분 뒤 (추가 기사·공시·업종 흐름 반영)
+    준최종 : 움직임이 끝나고 15분 뒤 (추가 기사·공시·테마 흐름 반영)
     최종   : 그날 장 마감(18시) 이후 (투자자별 순매수 확정분 반영)
     """
     with connect() as conn:

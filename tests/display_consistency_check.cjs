@@ -23,12 +23,12 @@ function harness() {
     moveBasis: () => '', sgnCls: () => '', pct: v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v*100).toFixed(2)}%`,
     points: v => `${(v*100).toFixed(2)}%p`, won: v => String(v), int: v => String(v), eok: v => String(v), esc: v => String(v ?? ''),
     dayLabel: s => s.slice(0,10), hhmm: s => (s || '').slice(11,16),
-    manualBlock: () => '기존 원인 본문', relatedBlock: () => '', disclosureBlock: () => '',
+    manualBlock: () => '기존 원인 본문', disclosureBlock: () => '',
     flowBlock: () => '', followupBlock: () => '', fillDayEvidence: () => {},
     causeHead: () => '', CONF_RE: /nomatch/, document: {}, MAIN_DISC: new Set(),
   };
   vm.createContext(ctx);
-  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'renderEventDrawer', 'eventContext'].map(fn).join('\n'), ctx);
+  vm.runInContext(['liveFor', 'dailySnapshot', 'dailyEvidenceNote', 'renderEventDrawer', 'themeLine', 'eventContext'].map(fn).join('\n'), ctx);
   return {ctx, $};
 }
 const event = { event_type: 'daily', status: 'closed', direction: 'up', start_ts: '2026-10-28T09:00',
@@ -86,12 +86,13 @@ test('news list overview explains distinct counts and the earlier calculation ti
   assert.match($('#rx-cards').innerHTML, /\+30분 중앙값[\s\S]*%p/);   // KOSDAQ 빼고 보기: 카드가 %p로
 });
 
-test('drawer no longer shows the model contribution box; AI text keeps percentage points', () => {
+test('drawer and AI text carry no share split (market·own), only theme moves', () => {
   const {ctx,$}=harness();
-  const split={own:.04,market:.06,sector:-.01,specific:-.01};
+  const split={own:.04,market:.06,specific:-.02};
   ctx.renderEventDrawer({event:{...event},cause:{split}});
   assert.doesNotMatch($('#drawer-body').innerHTML,/모형 추정 기여분/);
   const text=ctx.eventContext({event:{...event},cause:{split}},'검토');
-  assert.match(text,/시장 추정 기여분: 6.00%p/);
-  assert.match(text,/업종 추정 기여분: -1.00%p/);
+  assert.doesNotMatch(text,/몫 나누기|추정 기여분|고유/);   // 몫 나누기는 AI 질문에도 싣지 않음
+  assert.doesNotMatch(text,/업종/);                      // 업종 몫은 계산하지 않음
+  assert.match(text,/\[그날 네이버 테마 등락\]/);
 });

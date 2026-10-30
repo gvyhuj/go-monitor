@@ -346,6 +346,15 @@ async function main() {
       assert.doesNotMatch(await pop.innerText(), /넣은 이유/);
       assert.equal(await pop.getByRole("link", { name: /네이버에서 보기/ }).getAttribute("href"), "https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=7");
       await page.keyboard.press("Escape");
+      // 하루 창: 업종(WICS) 비교 종목 대신 그날 네이버 테마 등락 (업종 몫 계산은 하지 않음)
+      await page.locator("[data-head].is-click").first().click();
+      const rel = page.locator("#drawer-body [data-ev-rel]");
+      await rel.locator(".rel").waitFor();
+      assert.match(await rel.innerText(), /그날 테마 등락[\s\S]*방위산업\/전쟁 및 테러[\s\S]*\+0\.80%[\s\S]*우주항공산업[\s\S]*−2\.40%/);
+      assert.doesNotMatch(await page.locator("#drawer-body").innerText(), /사업 분야별 비교 종목|업종/);
+      assert.equal(await rel.getByRole("link", { name: /우주항공산업/ }).getAttribute("href"), "https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=7");
+      if (process.env.SHOT_DIR) { await page.waitForTimeout(800); await page.screenshot({ path: path.join(process.env.SHOT_DIR, "day-theme-drawer.png") }); }
+      await page.keyboard.press("Escape");
       // 테마 기록 전 날: WICS로 채우지 않고 '-' + '기록 전' (마우스를 올리면 이유), 눌러도 링크는 있음
       await page.locator('.rec-tabs button[data-range="1d"]').click();
       await page.locator('[data-step="-1"]').first().click();

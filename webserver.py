@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
-from core import analysis, articles, causes, cloud, feed, macro, manual, naver, share
+from core import analysis, articles, causes, cloud, feed, manual, naver, share
 from core.db import connect, get_state, init_db
 from core.detector import load_settings
 
@@ -170,9 +170,6 @@ def api_status(_q):
         n_bars = conn.execute("SELECT COUNT(*) FROM minute_bars WHERE symbol=?", (sym,)).fetchone()[0]
         n_events = conn.execute("SELECT COUNT(*) FROM events WHERE symbol=?", (sym,)).fetchone()[0]
         first_bar = conn.execute("SELECT MIN(ts) FROM minute_bars WHERE symbol=?", (sym,)).fetchone()[0]
-        # 사업 분야별 비교 종목 묶음 (분야 이름과 종목 수만, 설정 순서대로)
-        segments = [{"name": r[0] or "비교 종목", "n": r[1]} for r in conn.execute(
-            "SELECT source, COUNT(*) FROM related_stocks GROUP BY source ORDER BY MIN(rowid)")]
     dv = data["value"] if data else ""
     return {
         "symbol": sym, "name": s.get("display_name", sym),
@@ -181,7 +178,6 @@ def api_status(_q):
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
         "last_bar_ts": last_bar, "first_bar_ts": first_bar, "bars_count": n_bars, "events_count": n_events,
-        "segments": segments,
         "collect": _collect_status(sym),
         "viewer": viewer, "share": share.status() if viewer == "local" else None,
         "cloud": cloud.status() if viewer == "local" else None,
@@ -287,21 +283,12 @@ def api_intraday(q):
     if dr and dr["base"]:
         prev_close, day_close = float(dr["base"]), float(dr["close"])
     with connect() as conn:
-        ind = industry_rates(conn).get(d)       # 장중 오늘 줄용 (일봉이 아직 없어 화면이 이 값으로 업종 등락을 보여 줌)
-        ind_info = industry_info(conn).get(d)
         th, th_info = (x.get(d) for x in theme_rows(conn, sym))
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
-        # 장중 오늘: 비교 종목 일봉이 아직 없으므로 1분봉으로 그날 등락 (목록 순서는 api_daily의 peers와 같음)
-        pl = None
-        if d == dates[0]:
-            rel = conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?) ORDER BY source DESC, code",
-                               (sym, KOSDAQ)).fetchall()
-            pl = [causes._daily_change(r[0], d) for r in rel]
-            pl = [None if v is None else round(v, 5) for v in pl] if any(v is not None for v in pl) else None
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "industries": ind, "industry_info": ind_info, "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl, "peers_live": pl}
+            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl}
 
 
 def api_events(q):
@@ -333,9 +320,7 @@ def api_daily(_q):
         inv = {r[0]: r[1:] for r in conn.execute(
             "SELECT bizdate, foreign_net, organ_net, individual_net, foreign_ratio FROM investor_daily WHERE symbol=?",
             (sym,))}
-        calc = set()
-        ind, ind_info, tops = industry_rates(conn, calc), industry_info(conn), trader_tops(conn, sym)
-        peers, peer_chg = peer_changes(conn, sym)
+        tops = trader_tops(conn, sym)
         th, th_info = theme_rows(conn, sym)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
@@ -349,32 +334,10 @@ def api_daily(_q):
                      "change": c / prev - 1 if prev else None, "base": prev,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
-                     "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d),
-                     "industries_calc": d in calc, "peers": peer_chg.get(d), "themes": th.get(d), "theme_info": th_info.get(d)})
+                     "traders": tops.get(d), "themes": th.get(d), "theme_info": th_info.get(d)})
     with connect() as conn:
         theme_nos = {name: no for no, name in conn.execute("SELECT theme_no, theme_name FROM stock_themes WHERE code=?", (sym,))}
-    return {"days": days, "peers": peers, "theme_nos": theme_nos}    # 테마 이름 → 네이버 테마 번호 (네이버에서 보기 링크)
-
-
-def peer_changes(conn, sym: str) -> tuple[list[dict], dict]:
-    """메인 기록 창의 '사업 분야별 비교 종목'용: 비교 종목 목록 [{name, source}]와 {날짜: [그날 등락률(목록 순서), 없으면 None]}.
-    그날 자동 분석이 없는 날(장중의 오늘, 60일보다 오래된 날)도 일봉으로 보여 주려고."""
-    rel = [dict(r) for r in conn.execute("SELECT code, name, source FROM related_stocks WHERE code NOT IN (?, ?) "
-                                         "ORDER BY source DESC, code", (sym, KOSDAQ))]
-    out: dict = {}
-    for i, r in enumerate(rel):
-        prev = None
-        for d, c, base in conn.execute("SELECT date, close, base FROM daily_bars WHERE symbol=? AND close > 0 ORDER BY date",
-                                       (r["code"],)):
-            b = base or prev
-            if b:
-                out.setdefault(d, [None] * len(rel))[i] = round(c / b - 1, 5)
-            prev = c
-    return [{"name": r["name"], "source": r["source"]} for r in rel], out
-
-
-# 사업 분야 칸에 보여 줄 네이버 업종(WICS) = 비교 종목 묶음과 같은 네 업종. 방산·우주항공은 WICS에서 '우주항공과국방' 한 업종
-INDUSTRY_NAMES = [name for _, name in feed.WICS_PEERS]
+    return {"days": days, "theme_nos": theme_nos}    # 테마 이름 → 네이버 테마 번호 (네이버에서 보기 링크)
 
 
 def regular_ohlc(conn, sym: str) -> dict:
@@ -392,19 +355,6 @@ def regular_ohlc(conn, sym: str) -> dict:
             out[d][1] = max(out[d][1], h)
             out[d][2] = min(out[d][2], lo)
     return {d: tuple(v) for d, v in out.items()}
-
-
-def industry_rates(conn, calc: set | None = None) -> dict:
-    """{날짜: {업종: 등락률(소수)}}. 없는 날은 키가 없음.
-    2026-10-26부터는 네이버 값을 기록, 그 전 날은 구성 종목으로 다시 계산한 값(updated_at='calc') → calc에 그 날짜를 담음."""
-    out = {}
-    q = "SELECT date, name, change_rate, updated_at FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
-    for d, name, rate, upd in conn.execute(q, INDUSTRY_NAMES):
-        if rate is not None:
-            out.setdefault(d, {})[name] = rate / 100
-            if calc is not None and upd == "calc":
-                calc.add(d)
-    return out
 
 
 def _tops(rows) -> dict:
@@ -459,18 +409,6 @@ def theme_rows(conn, sym: str) -> tuple[dict, dict]:
     return rates, info
 
 
-def industry_info(conn) -> dict:
-    """업종 칸을 누르면 뜨는 창용 {날짜: {업종: {rise, fall, total, up: [...], down: [...]}}}."""
-    out = {}
-    q = "SELECT date, name, rise, fall, total FROM industry_daily WHERE name IN (%s)" % ",".join("?" * len(INDUSTRY_NAMES))
-    for d, name, rise, fall, total in conn.execute(q, INDUSTRY_NAMES):
-        out.setdefault(d, {})[name] = {"rise": rise, "fall": fall, "total": total, "up": [], "down": []}
-    for d, name, movers in conn.execute("SELECT date, name, movers FROM industry_movers"):
-        if d in out and name in out[d] and movers:
-            out[d][name].update(json.loads(movers))
-    return out
-
-
 def api_event_detail(q, eid):
     s = load_settings()
     sym = s["symbol"]
@@ -486,16 +424,9 @@ def api_event_detail(q, eid):
     t0, t1 = datetime.fromisoformat(r["start_ts"]), datetime.fromisoformat(r["last_ts"])
     own = analysis.load_range(sym, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
     kq = analysis.load_range(KOSDAQ, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
-    rel = []
     cause = manual.facts_only(causes.stored(eid))
-    if cause:
-        for x in cause.get("related") or []:
-            df = analysis.load_range(x["code"], t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
-            if not df.empty:
-                rel.append({"code": x["code"], "name": x["name"], "change": x.get("change"),
-                            "bars": bars_payload(df, full=False)})
     return {"event": ev, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "cause": cause, "related_bars": rel,
+            "cause": cause,
             "followups": causes.followup_filings(sym, day)}
 
 
@@ -519,21 +450,14 @@ def api_day_detail(q, day):
     own = analysis.load_range(sym, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
     kq = analysis.load_range(KOSDAQ, t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
     cause = manual.facts_only(causes.day_stored(sym, day))
-    rel = []
-    for x in (cause or {}).get("related") or []:
-        df = analysis.load_range(x["code"], t0 - timedelta(minutes=30), t1 + timedelta(minutes=60))
-        if not df.empty:
-            rel.append({"code": x["code"], "name": x["name"], "change": x.get("change"), "bars": bars_payload(df, full=False)})
     return {"event": ev, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
-            "cause": cause, "related_bars": rel, "followups": causes.followup_filings(sym, day)}
+            "cause": cause, "followups": causes.followup_filings(sym, day)}
 
 
 def _live_fetch(kind, arg, day):
-    """화면에서 '다시 분석'을 누르면 같은 업종 시세·뉴스를 바로 받아와 반영."""
+    """화면에서 '다시 분석'을 누르면 같은 테마 종목 거래원·뉴스를 바로 받아와 반영."""
     now = feed.kst_now()
-    if kind == "related_bars":
-        feed.sync_related_bars(list(arg), history=(day != now.date()), now=now)
-    elif kind == "news":
+    if kind == "news":
         feed.sync_news(arg, 10)
     elif kind == "peer_traders":
         if day != now.date():
@@ -639,8 +563,7 @@ def _data_stamp(sym):
     with connect() as conn:
         a = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol=?", (sym,)).fetchone()[0]
         b = conn.execute("SELECT MAX(ts) FROM minute_bars WHERE symbol=?", (sym,)).fetchone()[0]
-        c = conn.execute("SELECT COUNT(*) FROM related_stocks").fetchone()[0]
-    return f"{a}|{b}|{c}"
+    return f"{a}|{b}"
 
 
 def _effect_cached(sym, a, stamp):

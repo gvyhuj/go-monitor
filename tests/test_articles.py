@@ -102,26 +102,22 @@ def _series(code, rets, start="2026-01-01"):
     return d
 
 
-def test_day_split_uses_related_segment_not_noise_and_no_alpha(tmpdb):
+def test_day_split_market_only_and_no_alpha(tmpdb):
     import numpy as np
     from core import causal
     rng = np.random.default_rng(1)
     n = 150
     mkt = rng.normal(0, 0.01, n)
-    seg_a = 0.8 * mkt + rng.normal(0, 0.01, n)          # 이 종목과 같이 움직이는 분야
-    seg_b = rng.normal(0, 0.01, n)                       # 상관없는 분야
-    own = 0.004 + 1.2 * mkt + 1.0 * (seg_a - 0.8 * mkt) + rng.normal(0, 0.004, n)   # 매일 +0.4% 추세
+    own = 0.004 + 1.2 * mkt + rng.normal(0, 0.004, n)   # 매일 +0.4% 추세
     own[-1] += 0.05                                      # 마지막 날: 기사 효과 +5%
-    for code, r in (("X", own), ("KOSDAQ", mkt), ("A1", seg_a), ("B1", seg_b)):
+    for code, r in (("X", own), ("KOSDAQ", mkt)):
         _series(code, r)
     with db.connect() as conn:
-        conn.executemany("INSERT INTO related_stocks(code, name, market, source) VALUES (?,?,?,?)",
-                         [("A1", "a", "", "분야A"), ("B1", "b", "", "분야B")])
         last = conn.execute("SELECT MAX(date) FROM daily_bars WHERE symbol='X'").fetchone()[0]
     sp = causal.day_split("X", last)
-    beta = {p["name"]: p["beta"] for p in sp["parts"]}
-    # 릿지로 조금 줄어들지만(1.0 → 0.7~1.0) 상관없는 분야는 0 근처
-    assert sp["method"] == "분야별 회귀" and 0.6 < beta["분야A"] <= 1.05 and abs(beta["분야B"]) < 0.15
+    # 업종 몫은 계산하지 않음: 시장 몫 + 고유 몫
+    assert sp["method"] == "시장 회귀" and 1.0 < sp["beta_market"] < 1.4
+    assert "sector" not in sp["d0"] and abs(sp["d0"]["own"] - sp["d0"]["market"] - sp["d0"]["abnormal"]) < 1e-12
     assert sp["d0"]["rarity"] is not None and sp["d0"]["rarity"] < 0.05   # 평소 기록 중 가장 큰 축
     # 추세(+0.4%)를 빼지 않으므로 고유 몫 ≈ 5% + 0.4%
     assert 0.045 < sp["d0"]["abnormal"] < 0.06 and sp["d0"]["z"] > 5

@@ -172,7 +172,7 @@ def test_read_only_validation_excludes_news_and_preserves_database(tmp_path):
     assert all(item["est_to"] < item["date"] for item in report["results"])
 
 
-def test_daily_study_reaches_article_detail_with_peer_data(tmp_path, monkeypatch):
+def test_daily_study_reaches_article_detail_market_only(tmp_path, monkeypatch):
     from datetime import datetime
 
     from core import articles, db
@@ -192,7 +192,7 @@ def test_daily_study_reaches_article_detail_with_peer_data(tmp_path, monkeypatch
         connection.execute("INSERT INTO related_stocks(code,name,source) VALUES (?,?,?)", ("PEER", "비교", "업종"))
     result = articles.effect("X", datetime.fromisoformat(dates[160] + "T11:00"))
     study = result["event_study"]
-    assert study["ok"] and study["beta_sector"] is not None
+    assert study["ok"] and study["beta_sector"] is None      # 업종 몫은 계산하지 않음 (비교 종목이 있어도)
     assert len(study["car"]) == 5 and study["est_to"] < dates[160]
     assert result["measure"]["value"] == study["ar"]
     assert result["measure"]["method"] == "event-study-v2"
@@ -410,7 +410,7 @@ def test_intraday_reaction_uses_30_minutes_after_reliable_time(tmp_path, monkeyp
     assert [r["minutes"] for r in hit["rows"]] == [5, 15, 30, 60, 120]
     thirty = next(r for r in hit["rows"] if r["minutes"] == 30)
     assert thirty["abnormal"] == pytest.approx(hit["abnormal"]) and thirty["own"] == pytest.approx(hit["own"])
-    assert all(r["own"] == pytest.approx(r["market"] + r["sector"] + r["abnormal"]) for r in hit["rows"])
+    assert all(r["own"] == pytest.approx(r["market"] + r["abnormal"]) and "sector" not in r for r in hit["rows"])
     before_open = reaction(event_day + "T08:00")
     assert before_open["kind"] == "open" and before_open["start"] == event_day + "T09:00" and before_open["end"] == event_day + "T09:30"
     assert reaction(event_day + "T10:00", time_ok=False) is None        # 공개 시각 확인 필요
