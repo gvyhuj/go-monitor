@@ -2293,8 +2293,13 @@ const OBS_KIND = {company_press_release:'당사 보도자료',external_article:'
 const obsKind = (k) => k === 'external_company_announcement' ? 'external_article' : k;
 const obsLink = (url,label) => /^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `${esc(label)} (원문 주소 없음)`;
 function observationQuestion(d) {
-  const o=d.observation, f=o.intraday || {};
-  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:d.market_context,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
+  // 질문용 사본 정리: 아직 오지 않은 날(값 없음)은 빼고, 거래 없던 1분은 그렇다고 적고, 'calc' 시각은 뜻을 풀어 씀
+  const o0=d.observation, o={...o0};
+  if(o0.intraday)o.intraday={...o0.intraday,points:(o0.intraday.points||[]).map(p=>p.stock_price==null&&p.kosdaq_price!=null?{time:p.time,offset:p.offset,kosdaq_price:p.kosdaq_price,kq:p.kq,note:'이 1분 체결 없음'}:p)};
+  if(o0.windows)o.windows=Object.fromEntries(Object.entries(o0.windows).map(([k,w])=>[k,{...w,points:(w.points||[]).filter(p=>p.stock_price!=null||p.kosdaq_price!=null)}]));
+  const calcAt=x=>x.updated_at==='calc'?{...x,updated_at:`${o0.day||'그날'} 구성 종목 시가총액 가중 등락률로 자체 계산(지금 구성 기준)`}:x;
+  const mc=d.market_context&&{...d.market_context,industry:(d.market_context.industry||[]).map(calcAt),themes:(d.market_context.themes||[]).map(calcAt)};
+  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
 const OBS_SRC = {disclosure:'공시 접수 시각',manual:'직접 입력',page:'기사 원문',original_page:'기사 원문',naver:'네이버',google:'구글 뉴스',gnews:'구글 뉴스',unknown:'미상',calc:'자체 계산',fixture:'검증용 자료'};
 const obsSrc = (s) => OBS_SRC[s] || s || '미상';
@@ -2308,12 +2313,11 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   catch(e){host.innerHTML=`<p class="obs-muted" role="alert">사건 관찰 기록을 불러오지 못했습니다: ${esc(e.message)}</p>`;return;}
   if(!host.isConnected)return;
   const range='day';
-  let revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,filterDraft=null,openFolds=new Set();
+  let revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,openFolds=new Set();
   const NOTE_TABS=[['manual_observation','확인 사실'],['ai_analysis','AI 분석'],['retrospective_review','사후 검토']];
   const stampText=t=>t?t.replace('T',' '):'미상';
   const render=()=>{
     if (host.querySelector('#obs-note')) noteDraft=Object.fromEntries(new FormData(host.querySelector('#obs-note')));
-    if (host.querySelector('#obs-filters')) filterDraft=[...host.querySelector('#obs-filters').querySelectorAll('input,select')].map(x=>[x.id,x.type==='checkbox'?x.checked:x.value]);
     if (host.querySelector('[data-fold]')) openFolds=new Set([...host.querySelectorAll('details[data-fold][open]')].map(x=>x.dataset.fold));
     const o=d.observation,f=o.intraday||{};
     const lead=d.members[0]||{};
@@ -2327,13 +2331,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     <dialog class="disc-pop note-pop" id="obs-note-pop" aria-label="결과 붙여넣기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>결과 붙여넣기 <small class="muted">AI 답이나 확인한 내용을 이 사건 기록으로 저장</small></strong><button type="button" class="btn-link" id="obs-note-x" aria-label="닫기">✕</button></div>
     <form id="obs-note" class="obs-form"><label class="wide">분석 결과<textarea name="body" required rows="10" placeholder="AI 답이나 확인한 내용을 붙여넣으세요"></textarea></label>
       <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div></dialog>
-    ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>
-      <div class="obs-form" id="obs-filters" hidden>
-      <label>키워드 / 고객·파트너<input id="obs-query" type="search"></label><label>태그<select id="obs-tag"><option value="">전체</option>${[...new Set(index.items.flatMap(x=>x.business_tags))].sort().map(x=>`<option>${esc(x)}</option>`).join('')}</select></label>
-      <label>종류<select id="obs-kind"><option value="">전체</option>${Object.entries(OBS_KIND).map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></label><label>발표 주체<input id="obs-publisher"></label><label>원천<input id="obs-source"></label>
-      <label>시작일<input id="obs-from" type="date"></label><label>종료일<input id="obs-to" type="date"></label><label>시간대<select id="obs-session"><option value="">전체</option><option>장전</option><option>장중</option><option>15시 이후</option><option>미상</option></select></label>
-      <label>주가 +30분 부호<select id="obs-sign"><option value="">전체</option><option value="up">상승</option><option value="down">하락</option><option value="missing">미집계</option></select></label><label>자료 품질<select id="obs-quality"><option value="">전체</option><option value="complete">관측 가능</option><option value="partial">일부 미집계</option><option value="unavailable">관측값 없음</option><option value="pending">진행 중</option></select></label>
-      <label class="obs-check"><input id="obs-has-note" type="checkbox"> 검토 기록 있는 사건만</label></div>`)}
+    ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>`)}
 `;
     host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
@@ -2347,25 +2345,30 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if(noteDraft)for(const [key,value] of Object.entries(noteDraft)){const input=$('#obs-note').elements[key];if(input)input.value=value;}
     // 관측값 사본은 반영할 때 기록에서 붙임 (요청이 짧아야 GitHub 창이 바로 열림)
     $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,body:v.body,kind:'ai_analysis',author_type:'AI',analysis_at:new Date(Date.now()+9*36e5).toISOString().slice(0,16),review_status:'검토 대기',sources:[],snapshot:{version:d.snapshot_version},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
-    const search=()=>{
-      const v=id=>$('#obs-'+id).value,query=v('query').toLowerCase();
-      let list=index.items.filter(x=>{const m=x.steps['30']?.own,t=x.first_public_at?.slice(11,16),session=!t?'미상':t<'09:00'?'장전':t>'15:00'?'15시 이후':'장중';return (!query||[x.title,x.partner,...x.business_tags].join(' ').toLowerCase().includes(query))&&(!v('tag')||x.business_tags.includes(v('tag')))&&(!v('kind')||obsKind(x.event_kind)===v('kind'))&&(!v('publisher')||x.publisher.includes(v('publisher')))&&(!v('source')||x.time_source.includes(v('source')))&&(!v('from')||(x.first_public_at||'')>=v('from'))&&(!v('to')||(x.first_public_at||'').slice(0,10)<=v('to'))&&(!v('session')||session===v('session'))&&(!v('quality')||x.status===v('quality'))&&(!$('#obs-has-note').checked||x.notes_count>0)&&(!v('sign')||(v('sign')==='missing'?m==null:v('sign')==='up'?m>0:m<0));})
-        .sort((a,b)=>(b.first_public_at||'').localeCompare(a.first_public_at||''));
-      // 같은 주제(뉴스 목록에서 한 줄로 묶인 기사)는 한 줄로: 가장 최근 것 하나만 쓰고 건수만 표시
+    // 유사 사건: 이 사건과 분야 태그나 고객·파트너가 겹치는 사건만. '기술·개발'은 제목에 흔한 말이라 그것만 겹치면 넣지 않음
+    const similar=()=>{
+      const WEAK=new Set(['기술·개발']),myTags=d.business_tags||[],partner=(d.partner||'').trim();
+      const hasPartner=partner&&partner!=='미확인';
+      const mine=new Set((topicOf&&topicOf({...d,member_ids:(d.members||[]).map(m=>String(m.id))}))||[d.event_id]);
+      const sameTopic=x=>x.event_id===d.event_id||((topicOf&&topicOf(x))||[x.event_id]).some(k=>mine.has(k));
+      const scored=index.items.filter(x=>!sameTopic(x)).map(x=>{const shared=myTags.filter(t=>(x.business_tags||[]).includes(t)),byPartner=hasPartner&&(x.partner||'').trim()===partner;
+        return {x,shared,byPartner,score:shared.reduce((a,t)=>a+(WEAK.has(t)?.5:1),0)+(byPartner?2:0)};}).filter(r=>r.score>=1)
+        .sort((a,b)=>b.score-a.score||(b.x.first_public_at||'').localeCompare(a.x.first_public_at||''));
+      // 같은 주제(뉴스 목록에서 한 줄로 묶인 기사)는 한 줄로: 가장 관련 높은 것 하나만 쓰고 건수만 표시
       const byTopic=new Map();
-      for(const x of list){const keys=(topicOf&&topicOf(x))||[x.event_id];const g=keys.map(k=>byTopic.get(k)).find(Boolean);
-        if(g){g.n++;if(x.event_id===d.event_id)g.on=true;keys.forEach(k=>byTopic.set(k,g));}else{const ng={x,n:1,on:x.event_id===d.event_id};keys.forEach(k=>byTopic.set(k,ng));}}
-      const topics=[...new Set(byTopic.values())];list=topics.map(g=>g.x);
-      const values=list.map(x=>x.steps['30']?.own).filter(x=>x!=null).sort((a,b)=>a-b),n=values.length;
-      $('#obs-similar-sub').textContent=`${v('tag')?`태그 「${v('tag')}」 `:''}${list.length}건`;
-      $('#obs-results').innerHTML=`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${topics.slice(0,50).map(({x,n:cnt,on})=>`<tr${on?' class="on"':''}><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">${esc(OBS_KIND[obsKind(x.event_kind)])}${cnt>1?` · 같은 주제 ${cnt}건`:''}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap">${on?'<span class="obs-muted">지금 기사</span>':`<button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button>`}</td></tr>`).join('')||'<tr><td colspan="5">조건에 맞는 사건이 없습니다.</td></tr>'}</tbody></table>
-      <p class="obs-muted">유효 n=${n} (같은 주제는 1건)${list.length>50?' · 최근 50건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)} · 평균 ${pct(values.reduce((a,b)=>a+b,0)/n)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`;
+      for(const r of scored){const keys=(topicOf&&topicOf(r.x))||[r.x.event_id];const g=keys.map(k=>byTopic.get(k)).find(Boolean);
+        if(g){g.n++;keys.forEach(k=>byTopic.set(k,g));}else{const ng={...r,n:1};keys.forEach(k=>byTopic.set(k,ng));}}
+      const topics=[...new Set(byTopic.values())];
+      const basis=[...myTags.map(t=>`「${t}」`),hasPartner?`파트너 「${partner}」`:''].filter(Boolean).join(' ');
+      if(!basis){$('#obs-similar-sub').textContent='비교 기준 없음';$('#obs-results').innerHTML='<p class="obs-muted">이 기사 제목에는 분야 태그(방산·우주항공·반도체·수주·공급 등)와 고객·파트너가 없어 비교할 사건을 고르지 않았습니다.</p>';return;}
+      const values=topics.map(r=>r.x.steps['30']?.own).filter(x=>x!=null).sort((a,b)=>a-b),n=values.length;
+      $('#obs-similar-sub').textContent=`${basis} · ${topics.length}건`;
+      $('#obs-results').innerHTML=topics.length?`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${topics.slice(0,30).map(({x,n:cnt,shared,byPartner})=>`<tr><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">겹침 ${esc([...shared,byPartner?'파트너':''].filter(Boolean).join('·'))}${cnt>1?` · 같은 주제 ${cnt}건`:''}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap"><button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button></td></tr>`).join('')}</tbody></table>
+      <p class="obs-muted">유효 n=${n} (같은 주제는 1건, 지금 기사 제외)${topics.length>30?' · 관련 높은 30건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`
+        :`<p class="obs-muted">${esc(basis)}이(가) 겹치는 다른 사건이 아직 없습니다.</p>`;
       $('#obs-results').querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
     };
-    $('#obs-filters').oninput=search;$('#obs-filters').onchange=search;
-    if(filterDraft)for(const [id,val] of filterDraft){const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=val;else el.value=val;}}
-    else $('#obs-tag').value=d.business_tags.find(t=>[...$('#obs-tag').options].some(o=>o.value===t))||'';
-    search();
+    similar();
   };render();
 }
 

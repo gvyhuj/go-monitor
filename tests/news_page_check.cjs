@@ -227,15 +227,20 @@ async function main() {
       assert.equal(await pop.isVisible(), false, "Esc로 팝업 닫힘");
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2003", "팝업은 기사 화면을 떠나지 않음");
 
-      // 유사 사건: 같은 주제(같은 묶음·같은 제목, 예전 기록 포함)는 한 줄만
+      // 유사 사건: 분야 태그가 겹치는 다른 사건만 (지금 기사와 같은 주제·예전 기록은 빼고, 전체 목록이 나오면 안 됨)
       await page.goto(`${base}/#/pr/2005`);
       await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
       const simRows = page.locator("#obs-results tbody tr");
-      assert.equal(await page.getByText("조건 바꿔 찾기").count(), 0);
       await simRows.first().waitFor();
       const sim = await simRows.allInnerTexts();
-      assert.equal(sim.filter((t) => t.includes("충북TP")).length, 1, sim.join(" / "));
-      assert.match(sim.find((t) => t.includes("충북TP")), /같은 주제 3건/);
+      assert.equal(sim.length, 1, sim.join(" / "));
+      assert.match(sim[0], /우주항공 부품주 동향[\s\S]*겹침 우주항공/);
+      assert.match(await page.locator("#obs-similar-sub").innerText(), /「우주항공」 · 1건/);
+      await page.goto(`${base}/#/pr/2003`);
+      await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
+      await simRows.first().waitFor();
+      const sim2 = await simRows.allInnerTexts();
+      assert.ok(sim2.some((t) => t.includes("광학미러 공급 계약")) && !sim2.some((t) => /실적 설명회|우주항공/.test(t)), sim2.join(" / "));
 
       // 일별 표: 위 다섯 칸 줄 대신 고른 기간 요약 카드 4개 + 순매수·거래량 한 줄
       await page.goto(`${base}/#/days`);
