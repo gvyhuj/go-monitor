@@ -1,0 +1,30 @@
+# 주간 백업 속 붙여넣은 AI 메모 지우기 (손으로 한 번 실행). 백업의 다른 기록은 그대로 두고 같은 이름으로 덮어씀.
+name: 백업 속 AI 메모 지우기
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write     # 릴리스 백업 덮어쓰기
+
+jobs:
+  scrub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GO_SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+      GO_DATA_KEY: ${{ secrets.DATA_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: 주간 백업 받기
+        run: gh release download weekly-backup -p '*.db.enc' -D weekly
+      - name: 메모 지우기
+        run: python scrub_backup_notes.py weekly/*.db.enc
+      - name: 같은 이름으로 다시 올리기
+        run: gh release upload weekly-backup weekly/*.db.enc --clobber
