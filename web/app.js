@@ -2693,7 +2693,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       $("#dash-chips").innerHTML = Object.keys(F).length ? Object.entries(F).map(([d, v]) => `<button type="button" class="chip-f" data-d="${d}" data-v="${esc(v)}">${DIMS[d]}: ${esc(v)} ✕</button>`).join("")
         + `<button type="button" class="btn-link" id="dash-clear">모두 풀기</button>` : "";
       dashLine($("#dash-month"), dashAgg(base.filter((r) => pass(r, "month")), "month"), F.month);
-      if (drawNow) drawOnce($("#dash-month"), "mv-draw-dash");
+      if (drawNow) drawOnce($("#dash-month"), "mv-reveal", 1000);      // 칸 자체를 펼침: 안을 다시 그려도 처음부터 다시 하지 않음
       board($("#dash-office"), "office");
       board($("#dash-reporter"), "reporter");
       tiles($("#dash-topic"));
@@ -2719,7 +2719,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     });
     let rz = null;                    // 창 폭이 바뀌면 추이 그래프를 다시 (대시보드를 떠나면 한 번만 남는 처리기는 아무것도 안 함)
     if (dashResize) window.removeEventListener("resize", dashResize);
-    dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#dash-month")) draw(); }, 200); };
+    // 폭이 바뀔 때만 다시 그림 (폰에서 스크롤하면 주소창이 접히며 높이만 바뀌어 resize가 와도 다시 그리지 않음 → 움직임이 두 번 나오지 않게)
+    let lastW = window.innerWidth;
+    dashResize = () => { clearTimeout(rz); rz = setTimeout(() => { if (window.innerWidth === lastW) return; lastW = window.innerWidth; if ($("#dash-month")) draw(); }, 200); };
     window.addEventListener("resize", dashResize);
     const firstPages = () => { const p = pivotState.pages; p.office = p.reporter = p.feed = 0; };     // 조건이 바뀌면 첫 쪽부터
     const toggle = (d, v) => { if (F[d] === v) delete F[d]; else F[d] = v; firstPages(); draw(); };

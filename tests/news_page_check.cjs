@@ -344,7 +344,12 @@ async function main() {
       await page.goto(`${base}/#/pivot`);
       await page.locator("#dash-kpi [data-count]").first().waitFor();
       assert.equal(await page.locator("#dash-kpi [data-count]").count(), 5);
-      await page.locator("#dash-month.mv-draw-dash .dl-line").first().waitFor({ state: "attached" });
+      await page.locator("#dash-month.mv-reveal .dl-line").first().waitFor({ state: "attached" });
+      // 폰 스크롤처럼 높이만 바뀌는 resize에는 다시 그리지 않음 (월별 추이 움직임이 두 번 나오던 문제)
+      await page.evaluate(() => { window.__svg = document.querySelector("#dash-month svg"); window.dispatchEvent(new Event("resize")); });
+      await page.waitForTimeout(400);
+      assert.ok(await page.evaluate(() => document.querySelector("#dash-month svg") === window.__svg), "같은 폭이면 다시 그리지 않음");
+      assert.equal(await page.locator("#dash-month svg").evaluate((el) => getComputedStyle(el).animationName), "none", "추이 그래프에 페이드가 겹치지 않음");
       // 상위 언론사·자주 쓴 기자: 막대가 왼쪽에서 자라고 건수가 올라감
       await page.locator("#dash-office.mv-grow .dash-row .bar").first().waitFor({ state: "attached" });
       assert.ok(await page.locator("#dash-office .dash-row .bar").first().evaluate((el) => el.getAnimations().length > 0), "막대 자라기");
