@@ -786,15 +786,17 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
-    # 한투 Open API 시험: 열쇠가 있으면 한투에서 받을 수 있는 자료의 범위(일봉·지난 1분봉·지수 1분봉)를 실행 기록에 (화면·기록은 그대로)
+    # 한투 열쇠가 있으면: 지난 기록(일봉·KOSDAQ 일봉·지난 1분봉)을 한투로 다시 받기 (장중엔 조금씩, 장 밖엔 많이)
     try:
-        from core import kis
-        last_probe = (get_state("kis:probe_at") or {}).get("value") or ""
-        if kis.enabled() and last_probe < (now - timedelta(minutes=50)).isoformat(timespec="minutes"):      # 한 시간에 한 번쯤
-            set_state("kis:probe_at", now.isoformat(timespec="minutes"))
-            annotate("notice", kis.probe(code, feed.kst_now().replace(tzinfo=None)))
-    except Exception as e:  # noqa: BLE001 - 시험이라 실패해도 계속
-        annotate("warning", f"한투 시험 실패: {type(e).__name__}: {str(e)[:150]}")
+        from core import kis, kis_backfill
+        if kis.enabled():
+            n_now = feed.kst_now().replace(tzinfo=None)
+            busy = n_now.weekday() < 5 and "08:50" <= n_now.strftime("%H:%M") <= "15:40"
+            msg = kis_backfill.run(code, n_now, 4 if busy else 40, log=log)
+            if msg:
+                annotate("notice", msg)
+    except Exception as e:  # noqa: BLE001 - 다음 실행에 이어서
+        annotate("warning", f"한투 다시 받기 실패(다음 실행에 이어서): {type(e).__name__}: {str(e)[:150]}")
     # 하루 한 번: 이 종목 일별 등락을 KOSDAQ·네이버 업종(WICS)·네이버 테마 중 어느 묶음이 더 잘 설명하는지 (실행 기록에 한 줄)
     if (get_state("peerfit:day") or {}).get("value") != now.date().isoformat():
         try:
