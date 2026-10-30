@@ -1219,27 +1219,31 @@
     const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
     // 고른 날 네이버 테마 등락률: 네이버가 이 종목을 넣어 둔 테마 전부, 네이버 테마 화면 값 그대로 (기록을 시작한 날부터)
     const themeLabel = (n) => String(n).replace(/\s*\(.*\)\s*$/, "");      // '우주항공산업(누리호/인공위성 등)' → '우주항공산업'
-    const themeNames = () => { for (let i = daily.length - 1; i >= 0; i--) if (daily[i].themes && Object.keys(daily[i].themes).length) return Object.keys(daily[i].themes).sort(); return []; };
+    const themeNames = () => { for (let i = daily.length - 1; i >= 0; i--) if (daily[i].themes && Object.keys(daily[i].themes).length) return Object.keys(daily[i].themes).sort(); return Object.keys(THEME_NOS).sort(); };
+    const themeFrom = () => { const r = daily.find((x) => x.themes && Object.keys(x.themes).length); return r ? r.date : null; };   // 테마 기록 첫날
+    const themeUrl = (k) => THEME_NOS[k] != null ? `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${encodeURIComponent(THEME_NOS[k])}` : null;
+    // 기록 전 날: 다른 분류(WICS)로 채우지 않고 '-' + 이유 (칸 이름 옆 '기록 전', 마우스를 올리면 설명)
+    const noThemeTip = () => `네이버는 테마 등락률의 지난 기록을 주지 않아${themeFrom() ? ` ${mdOf(themeFrom())}부터` : ""} 직접 기록합니다. 그 전 날은 비어 있습니다.`;
     function segHtml() {
-      const x = daily[selRow()], th = x.themes || {}, names = themeNames();
-      return `<span class="tl">${mdOf(x.date)} 테마 등락 <small class="muted">네이버 테마</small></span>
+      const x = daily[selRow()], th = x.themes || {}, names = themeNames(), none = !Object.keys(th).length;
+      return `<span class="tl">${mdOf(x.date)} 테마 등락 <small class="muted">네이버 테마${none && names.length ? ` · <span title="${esc(noThemeTip())}">기록 전 ⓘ</span>` : ""}</small></span>
           <span class="seg-chips">${names.length ? names.map((k) =>
-            `<button type="button" class="seg-chip" data-theme="${esc(k)}" title="${esc(k)} · 누르면 이 테마의 그날 오른·내린 종목">${esc(themeLabel(k))} <b class="${th[k] == null ? "" : sgnCls(th[k])}">${th[k] == null ? "-" : pct(th[k])}</b></button>`).join("")
+            `<button type="button" class="seg-chip" data-theme="${esc(k)}" title="${esc(none ? noThemeTip() : `${k} · 누르면 이 테마의 그날 오른·내린 종목`)}">${esc(themeLabel(k))} <b class="${th[k] == null ? "" : sgnCls(th[k])}">${th[k] == null ? "-" : pct(th[k])}</b></button>`).join("")
             : `<span class="muted">테마 기록이 아직 없습니다</span>`}</span>`;
     }
-    // 테마 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 네이버가 이 종목을 이 테마에 넣은 이유, 많이 오른·내린 종목 5개씩
+    // 테마 칸을 누르면: 그날 등락률, 오른·내린 종목 수, 많이 오른·내린 종목 5개씩, 네이버 테마 화면 링크
     function openTheme(k) {
-      const x = daily[selRow()], rate = (x.themes || {})[k], info = (x.theme_info || {})[k];
+      const x = daily[selRow()], rate = (x.themes || {})[k], info = (x.theme_info || {})[k], url = themeUrl(k);
       const list = (xs) => xs && xs.length ? `<ul class="ind-list">${xs.map((s) => `<li><span>${esc(s.name)}</span><b class="${sgnCls(s.change)}">${pct(s.change)}</b></li>`).join("")}</ul>` : `<p class="muted">-</p>`;
       const nm = (STATUS && STATUS.name) || "이 종목";
+      const link = url ? `<p class="ind-link"><a href="${esc(url)}" target="_blank" rel="noopener">네이버에서 보기 ↗</a></p>` : "";
       $("#ind-title").textContent = `${mdOf(x.date)} ${themeLabel(k)}`;
       $("#ind-body").innerHTML = rate == null && !info
-        ? `<p class="note">이 날은 테마 기록이 없습니다. 네이버는 테마 등락률의 지난 기록을 주지 않아, 기록을 시작한 날부터 있습니다.</p>`
+        ? `<p class="note">이 날은 테마 기록이 없습니다. ${esc(noThemeTip())}</p>${link}`
         : `<p class="ind-rate"><b class="${rate == null ? "" : sgnCls(rate)}">${rate == null ? "-" : pct(rate)}</b>
              <span class="muted">네이버 테마 '${esc(k)}'${x.live ? " · 장중 값" : ""}</span></p>
            ${info ? `<p class="muted">오른 종목 ${int(info.rise)}${info.fall != null ? ` · 내린 종목 ${int(info.fall)}` : ""} · 전체 ${int(info.total)}${info.me != null ? ` · ${esc(nm)} <b class="${sgnCls(info.me)}">${pct(info.me)}</b>` : ""}</p>
-           ${info.reason ? `<p class="note">네이버가 ${esc(nm)}을(를) 이 테마에 넣은 이유: ${esc(info.reason)}</p>` : ""}
-           ${(info.up && info.up.length) || (info.down && info.down.length) ? `<div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}` : ""}`;
+           ${(info.up && info.up.length) || (info.down && info.down.length) ? `<div class="ind-cols"><div><h3 class="d-sec">많이 오른 종목</h3>${list(info.up)}</div><div><h3 class="d-sec">많이 내린 종목</h3>${list(info.down)}</div></div>` : ""}` : ""}${link}`;
       $("#ind-modal").hidden = false;
     }
 
@@ -2008,7 +2012,8 @@
   // 그날 일봉 자료 (비교 종목 등락·투자자별 순매수·장 마감 거래원). 자동 분석이 없는 날의 메인 기록 창에서 씀
   let PEERS = [], dailyP = null;
   const DAY_ROWS = {};
-  function keepDaily(d) { PEERS = d.peers || PEERS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
+  function keepDaily(d) { PEERS = d.peers || PEERS; THEME_NOS = d.theme_nos || THEME_NOS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
+  let THEME_NOS = {};     // 테마 이름 → 네이버 테마 번호
   const ensureDaily = () => (dailyP ||= api("/api/daily").then(keepDaily).catch(() => { dailyP = null; return []; }));
   function dayRelatedBlock(ds, own) {
     const ch = (DAY_ROWS[ds] || {}).peers;

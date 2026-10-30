@@ -342,7 +342,19 @@ async function main() {
       await seg.getByRole("button", { name: /우주항공산업/ }).click();
       const pop = page.locator("#ind-modal");
       await pop.locator("#ind-body .ind-rate").waitFor();
-      assert.match(await pop.innerText(), /10\/28 우주항공산업[\s\S]*−2\.40%[\s\S]*네이버 테마 '우주항공산업\(누리호\/인공위성 등\)'[\s\S]*오른 종목 3 · 내린 종목 15 · 전체 20[\s\S]*넣은 이유: 위성용 광학계 공급[\s\S]*검증위성\s*\+3\.10%[\s\S]*검증방산\s*−4\.20%/);
+      assert.match(await pop.innerText(), /10\/28 우주항공산업[\s\S]*−2\.40%[\s\S]*네이버 테마 '우주항공산업\(누리호\/인공위성 등\)'[\s\S]*오른 종목 3 · 내린 종목 15 · 전체 20[\s\S]*검증위성\s*\+3\.10%[\s\S]*검증방산\s*−4\.20%/);
+      assert.doesNotMatch(await pop.innerText(), /넣은 이유/);
+      assert.equal(await pop.getByRole("link", { name: /네이버에서 보기/ }).getAttribute("href"), "https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=7");
+      await page.keyboard.press("Escape");
+      // 테마 기록 전 날: WICS로 채우지 않고 '-' + '기록 전' (마우스를 올리면 이유), 눌러도 링크는 있음
+      await page.locator('.rec-tabs button[data-range="1d"]').click();
+      await page.locator('[data-step="-1"]').first().click();
+      await page.locator('[data-step="-1"]').first().click();
+      await page.waitForFunction(() => /10\/26 테마 등락/.test(document.querySelector("#rec-bento .b-seg").innerText));
+      assert.match(await seg.innerText(), /기록 전[\s\S]*방위산업\/전쟁 및 테러\s*-[\s\S]*우주항공산업\s*-/);
+      assert.match(await seg.locator("[title*='10/27부터']").first().getAttribute("title"), /지난 기록을 주지 않아 10\/27부터/);
+      await seg.getByRole("button", { name: /우주항공산업/ }).click();
+      assert.match(await pop.innerText(), /이 날은 테마 기록이 없습니다[\s\S]*네이버에서 보기/);
       assert.deepEqual(errors, []);
       await page.close();
     }

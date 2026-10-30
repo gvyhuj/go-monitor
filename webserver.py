@@ -348,7 +348,9 @@ def api_daily(_q):
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
                      "industries": ind.get(d), "industry_info": ind_info.get(d), "traders": tops.get(d),
                      "industries_calc": d in calc, "peers": peer_chg.get(d), "themes": th.get(d), "theme_info": th_info.get(d)})
-    return {"days": days, "peers": peers}
+    with connect() as conn:
+        theme_nos = {name: no for no, name in conn.execute("SELECT theme_no, theme_name FROM stock_themes WHERE code=?", (sym,))}
+    return {"days": days, "peers": peers, "theme_nos": theme_nos}    # 테마 이름 → 네이버 테마 번호 (네이버에서 보기 링크)
 
 
 def peer_changes(conn, sym: str) -> tuple[list[dict], dict]:
@@ -416,8 +418,7 @@ def theme_rows(conn, sym: str) -> tuple[dict, dict]:
     """네이버 테마(이 종목이 속한 테마 전부) 날짜별 ({날짜: {테마: 등락률}}, {날짜: {테마: 칸을 누르면 뜨는 창 자료}}).
     등락률·종목 수·오른/내린 종목은 네이버 테마 화면 값 그대로 (theme_daily, 테마 기록을 시작한 날부터)."""
     rates, info = {}, {}
-    mine = {no: (name, reason) for no, name, reason in conn.execute(
-        "SELECT theme_no, theme_name, reason FROM stock_themes WHERE code=?", (sym,))}
+    mine = {no: name for no, name in conn.execute("SELECT theme_no, theme_name FROM stock_themes WHERE code=?", (sym,))}
     if not mine:
         return rates, info
     q = ("SELECT date, theme_no, change_rate, rise, total, leaders FROM theme_daily WHERE theme_no IN (%s)"
@@ -425,7 +426,7 @@ def theme_rows(conn, sym: str) -> tuple[dict, dict]:
     for d, no, rate, rise, total, leaders in conn.execute(q, list(mine)):
         if rate is None:
             continue
-        name, reason = mine[no]
+        name = mine[no]
         rates.setdefault(d, {})[name] = rate / 100
         try:
             ld = json.loads(leaders) if leaders else {}
@@ -433,7 +434,7 @@ def theme_rows(conn, sym: str) -> tuple[dict, dict]:
             ld = {}
         me = ld.get("me") or {}
         info.setdefault(d, {})[name] = {"rise": rise, "fall": ld.get("fall"), "total": total, "up": ld.get("up") or [],
-                                        "down": ld.get("down") or [], "reason": reason or "",
+                                        "down": ld.get("down") or [],
                                         "me": me.get("chg") / 100 if me.get("chg") is not None else None}
     return rates, info
 
