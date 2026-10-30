@@ -391,6 +391,7 @@ def test_kis_token_reused_and_trial_line(tmp_path, monkeypatch):
             return {'rt_cd': '0', 'output': {'bstp_nmix_prpr': '760.10', 'bstp_nmix_prdy_ctrt': '-3.83'}}
         return {'rt_cd': '1', 'msg_cd': 'X', 'msg1': '없음'}
     monkeypatch.setattr(kis, '_http', fake)
+    monkeypatch.setattr(kis, 'GAP', 0)
     with db.connect() as conn:
         conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES ('000001','2026-10-30T15:30',9830,9830,9830,9830,227,'naver_today')")
     db.set_state('quote:000001', _json.dumps({'price': 9800, 'volume': 39255}))

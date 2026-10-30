@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -79,7 +80,25 @@ def token(now: datetime | None = None) -> str:
     return tok
 
 
-def _get(path: str, tr_id: str, params: dict) -> dict:
+_LAST = [0.0]
+GAP = float(os.environ.get("KIS_MIN_GAP", "0.6"))      # 요청 사이 최소 간격(초). 한투 '초당 거래건수 초과'를 피하려고
+
+
+def _get(path: str, tr_id: str, params: dict, _retry: bool = True) -> dict:
+    wait = _LAST[0] + GAP - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _LAST[0] = time.monotonic()
+    try:
+        return _get_once(path, tr_id, params)
+    except KisError as e:
+        if _retry and "초당" in str(e):                # 한도에 걸리면 1초 쉬고 한 번만 다시
+            time.sleep(1.0)
+            return _get(path, tr_id, params, _retry=False)
+        raise
+
+
+def _get_once(path: str, tr_id: str, params: dict) -> dict:
     h = {"authorization": f"Bearer {token()}", "appkey": os.environ["KIS_APP_KEY"],
          "appsecret": os.environ["KIS_APP_SECRET"], "tr_id": tr_id, "custtype": "P"}
     r = _http("GET", path, headers=h, params=params)
@@ -163,7 +182,8 @@ def trial(code: str, now: datetime) -> str:
         x = step(f"현재가({mk})", lambda mk=mk: quote(code, mk))
         if x:
             parts.append(f"{mk} 현재가 {x['price']} 거래량 {x['volume']}")
-    hhmm = min(now.strftime("%H%M%S"), "153000")
+    # 장중이면 지금까지, 아니면 마지막 거래일 장 마감(15:30)까지
+    hhmm = now.strftime("%H%M%S") if now.weekday() < 5 and "090000" <= now.strftime("%H%M%S") <= "153000" else "153000"
     m = step("1분봉", lambda: minutes(code, hhmm))
     if m:
         with connect() as conn:
