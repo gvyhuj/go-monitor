@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import gzip
 import json
 import os
 import secrets
@@ -37,6 +38,12 @@ def encrypt(key: bytes, data: bytes) -> bytes:
 def decrypt(key: bytes, blob: bytes) -> bytes:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     return AESGCM(key).decrypt(blob[:12], blob[12:], None)
+
+
+def read_item(key: bytes, blob: bytes) -> bytes:
+    """사이트 자료 파일 하나를 풀어 원래 JSON 바이트로 (gzip으로 줄여 둔 것도 풂)."""
+    raw = decrypt(key, blob)
+    return gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
 
 
 def file_name(key: str) -> str:
@@ -69,12 +76,15 @@ def build(out: Path, password: str, salt: bytes, items: list[tuple[str, str, boo
         else:
             shutil.copyfile(src, dst)
     key = derive_key(password, salt)
+    # 암호화하면 GitHub Pages가 압축해 줄 수 없으므로 먼저 gzip으로 줄임 (JSON은 보통 1/5~1/10).
+    # 내용 지문(files)을 live에 넣어, 브라우저가 바뀌지 않은 파일은 새 판이 올라와도 다시 받지 않게 함
+    raws = [(k, base64.b64decode(v) if is_b64 else v.encode("utf-8")) for k, v, is_b64 in items if not k.startswith("ui:")]
+    files = {k: hashlib.sha256(salt + raw).hexdigest()[:16] for k, raw in raws if k != "live"}   # salt: 비밀번호가 바뀌면 지문도 바뀜
     n = 0
-    for k, v, is_b64 in items:
-        if k.startswith("ui:"):
-            continue
-        raw = base64.b64decode(v) if is_b64 else v.encode("utf-8")
-        (out / "d" / file_name(k)).write_bytes(encrypt(key, raw))
+    for k, raw in raws:
+        if k == "live":
+            raw = json.dumps({**json.loads(raw), "files": files}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        (out / "d" / file_name(k)).write_bytes(encrypt(key, gzip.compress(raw, compresslevel=6, mtime=0)))
         n += 1
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")

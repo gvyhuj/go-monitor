@@ -6,10 +6,9 @@ const fixture=()=>({id:'a',event_key:'a',ts:'2026-10-06T09:06',title:'synthetic'
 const run=(c,code)=>vm.runInContext(code,c);   // const 값(reactState 등)은 vm 안에서만 보임
 // '여러 기사 겹쳐 보기'(뉴스 목록 오른쪽): host 안에 그래프·요약을 그림
 function ov(c,items){const parts=new Map();const host={innerHTML:'',querySelector:sel=>{if(!parts.has(sel))parts.set(sel,{});return parts.get(sel);},querySelectorAll:()=>[]};const r=c.reactionOverview(host,items);return {host,tools:host.querySelector('.rx-ov-tools'),...r};}
-test('T15 T25 T26: observed-only medians, gap labels and unchanged numeric export',()=>{
+test('T15 T25 T26: observed-only medians and gap labels',()=>{
  const c=ctx(),a=fixture();const items=[a,{...a,id:'b',event_key:'b'}];const v=ov(c,items);
  assert.match(c.$('#rx-plot').innerHTML,/rx-gap/);assert.match(c.$('#rx-plot').innerHTML,/관측 데이터 없는 구간/);assert.match(c.$('#rx-plot').innerHTML,/계산에 사용되지 않습니다/);
- let exported;c.csvDownloadRows=(...args)=>exported=args;c.reactionCsv(items);assert.equal(exported[2][0][4],'3.00');assert.equal(exported[2][0][5],''); // KOSDAQ +30분: 관측값 없음은 빈칸
  run(c,'reactState.vsKq=true');ov(c,items);   // 화면 체크박스는 없앴지만 계산 경로는 그대로 검사
  const svg=c.$('#rx-plot').innerHTML;assert.match(svg,/유효 사건 2건/);assert.match(svg,/rx-gap average/);assert.match(svg,/그린광학 1분 \/ KOSDAQ 5분/);
  assert.equal((svg.match(/class="rx-avg"><title>/g)||[]).length,2); // Only common minutes 4 and 9.

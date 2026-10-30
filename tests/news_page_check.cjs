@@ -300,6 +300,32 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
+    // 주가 기록 1일 차트: 30초마다 새 자료를 확인하지만, 바뀐 게 없으면 다시 그리지 않음 (깜빡임 없음)
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.install({ time: new Date("2026-10-29T12:00:00+09:00") });
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#rec-head .rh-box").waitFor();
+      await page.locator('.rec-tabs button[data-range="1d"]').click();
+      await page.locator("#rec-chart .rc-head").waitFor();
+      await page.evaluate(() => {
+        window.__chart = document.querySelector("#rec-chart .rc-head"); window.__seen = [];
+        new MutationObserver(() => { if (document.querySelector("#rec-chart .loading")) window.__seen.push("loading"); })
+          .observe(document.querySelector("#rec-chart"), { subtree: true, childList: true });
+      });
+      await page.clock.fastForward(31000);
+      await page.waitForTimeout(300);
+      await page.clock.fastForward(31000);
+      await page.waitForTimeout(300);
+      assert.ok(await page.evaluate(() => document.querySelector("#rec-chart .rc-head") === window.__chart), "같은 자료인데 1일 차트를 다시 그림");
+      assert.deepEqual(await page.evaluate(() => window.__seen), [], "'불러오는 중'이 다시 나옴");
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
     // 움직임: 기사 열기(떠오르기·제목 옮겨 가기), 겹쳐 보기 선 그리기, 기간 숫자 올라가기 — 끝나면 값은 그대로
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

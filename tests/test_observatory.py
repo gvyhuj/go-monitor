@@ -137,7 +137,7 @@ def test_T20_encrypted_static_and_inbox(database,tmp_path):
     output=tmp_path/'site';sitebuild.build(output,'synthetic-test-password',b'test-salt-only', [('observation:'+eid,json.dumps(item),False)])
     for f in output.rglob('*'):
         if f.is_file():assert b'PRIVATE NOTE SENTINEL' not in f.read_bytes()
-    assert json.loads(sitebuild.decrypt(key,(output/'d'/sitebuild.file_name('observation:'+eid)).read_bytes()))==item
+    assert json.loads(sitebuild.read_item(key,(output/'d'/sitebuild.file_name('observation:'+eid)).read_bytes()))==item
 
 def test_T22_missing_market_not_zero(database,monkeypatch):
     from core import causes,articles

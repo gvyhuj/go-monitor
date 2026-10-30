@@ -9,6 +9,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
@@ -44,15 +45,17 @@ async function main() {
       if (["/d/live.bin", "/d/article_details.bin"].includes(pathname)) {
         const decoder = crypto.createDecipheriv("aes-256-gcm", key, content.subarray(0, 12));
         decoder.setAuthTag(content.subarray(-16));
-        const data = JSON.parse(Buffer.concat([decoder.update(content.subarray(12, -16)), decoder.final()]));
+        const plain = Buffer.concat([decoder.update(content.subarray(12, -16)), decoder.final()]);
+        const data = JSON.parse(plain[0] === 0x1f && plain[1] === 0x8b ? zlib.gunzipSync(plain) : plain);
         if (pathname === "/d/live.bin") {
           liveRequests += 1;
           data.published_at = `2026-10-23T14:${String(revision * 3).padStart(2, "0")}:00+09:00`;
+          if (data.files) data.files.article_details = `${data.files.article_details}-${revision}`;   // 내용이 바뀐 파일은 지문도 바뀜
         } else {
           for (const id of [FIRST, SECOND]) data[id].article.office = `${data[id].article.office} · 배포 ${revision}`;
         }
         const nonce = crypto.randomBytes(12), encoder = crypto.createCipheriv("aes-256-gcm", key, nonce);
-        content = Buffer.concat([nonce, encoder.update(JSON.stringify(data)), encoder.final(), encoder.getAuthTag()]);
+        content = Buffer.concat([nonce, encoder.update(zlib.gzipSync(JSON.stringify(data))), encoder.final(), encoder.getAuthTag()]);
       }
       const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css" };
       response.writeHead(200, { "Content-Type": mime[path.extname(filename)] || "application/octet-stream", "Cache-Control": "no-store" });
@@ -86,10 +89,24 @@ async function main() {
     await detail.getByText("배포 0").first().waitFor();
     assert.equal(await selected(), FIRST);
 
-    // 1. A new publication is applied automatically, on the same article.
+    // 1. A new publication is applied automatically, on the same article — without a blank/loading frame or replayed motion.
+    // 매 화면(프레임)마다 '불러오는 중'이 보이는지·움직임 클래스가 붙어 있는지 기록 (그려지지 않은 중간 상태는 세지 않음)
+    await page.evaluate(() => {
+      window.__flicker = [];
+      const before = new Set(document.getAnimations());      // 처음 들어올 때 시작된 움직임은 빼고
+      const look = () => {
+        const m = document.querySelector("#main");
+        if (m && m.querySelector(".loading")) window.__flicker.push("loading");
+        const run = m ? document.getAnimations().filter((a) => a.playState === "running" && !before.has(a) && a.effect && m.contains(a.effect.target)) : [];
+        if (run.length) window.__flicker.push("motion " + run[0].effect.target.className);
+        requestAnimationFrame(look);
+      };
+      requestAnimationFrame(look);
+    });
     revision = 1;
     await tick();
     await detail.getByText("배포 1").first().waitFor();
+    assert.deepEqual(await page.evaluate(() => window.__flicker), [], "자동 갱신 때 '불러오는 중'이나 움직임이 다시 나옴(깜빡임)");
     assert.match(await title.innerText(), /검증용 광학 부품 공급 계약/);
     assert.ok(page.url().endsWith(`#/pr/${FIRST}`));
     assert.equal(await selected(), FIRST);
