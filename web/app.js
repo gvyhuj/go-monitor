@@ -139,18 +139,21 @@
   }
   const aesKey = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   const fileName = (k) => k.replace(/[:/]/g, "_") + ".bin";
-  async function fetchBin(key, bust) {
-    const res = await fetch(`d/${fileName(key)}?v=${encodeURIComponent(bust)}`, { cache: "no-store" });
+  // keep: 내용 지문으로 받는 파일 → 내용이 같으면 주소도 같으니 브라우저에 받아 둔 것을 그대로 씀
+  async function fetchBin(key, bust, keep) {
+    const res = await fetch(`d/${fileName(key)}?v=${encodeURIComponent(bust)}`, { cache: keep ? "force-cache" : "no-store" });
     if (res.status === 404) throw new Error("아직 사이트에 올라오지 않은 자료입니다. 다음 자동 수집 때 반영됩니다.");
     if (!res.ok) throw new Error(`자료를 받지 못했습니다 (${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
   }
   async function openBin(buf, k) {
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(0, 12) }, k, buf.slice(12));
+    let plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(0, 12) }, k, buf.slice(12)));
+    if (plain[0] === 0x1f && plain[1] === 0x8b)        // 올릴 때 gzip으로 줄여 둔 자료
+      plain = new Uint8Array(await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
     return JSON.parse(new TextDecoder().decode(plain));
   }
-  async function staticGet(key, bust) {
-    const buf = await fetchBin(key, bust);
+  async function staticGet(key, bust, keep) {
+    const buf = await fetchBin(key, bust, keep);
     try { return await openBin(buf, SKEY); }
     catch (_) { forgetKey(); location.reload(); throw new Error("비밀번호가 바뀌었습니다. 다시 들어와 주세요."); }
   }
@@ -264,19 +267,25 @@
   }
 
   // ---- 클라우드 모드: 올라온 묶음(live)과 개별 자료(kv)를 PC 화면과 같은 형식으로 돌려줌
-  let LIVE = null, LIVE_AT = 0, KVC = {};
+  let LIVE = null, LIVE_AT = 0, KVC = {}, KVV = {};
+  const fileVer = (L, key) => (L && L.files && L.files[key]) || null;     // 자료 파일 내용 지문 (새 사이트만)
   async function cloudLive(force) {
     if (!LIVE || force || Date.now() - LIVE_AT > 60000) {
       const next = STATIC ? await staticGet("live", Date.now()) : await rawApi("/api/live");
-      if (!LIVE || next.published_at !== LIVE.published_at) KVC = {};
+      if (!LIVE || next.published_at !== LIVE.published_at) {
+        // 새 판: 내용이 그대로인 자료는 받아 둔 것을 계속 씀 (지문이 없는 예전 판이면 모두 새로)
+        for (const k of Object.keys(KVC)) if (!KVV[k] || KVV[k] !== fileVer(next, k)) { delete KVC[k]; delete KVV[k]; }
+      }
       LIVE = next; LIVE_AT = Date.now();
     }
     return LIVE;
   }
   async function kv(key) {
     if (!KVC[key]) {
-      const p = STATIC ? staticGet(key, (LIVE && LIVE.published_at) || Date.now()) : rawApi(`/api/kv/${encodeURIComponent(key)}`);
-      KVC[key] = p.catch((e) => { delete KVC[key]; throw e; });
+      const ver = STATIC ? fileVer(LIVE, key) : null;
+      const p = STATIC ? staticGet(key, ver || (LIVE && LIVE.published_at) || Date.now(), !!ver) : rawApi(`/api/kv/${encodeURIComponent(key)}`);
+      KVC[key] = p.catch((e) => { delete KVC[key]; delete KVV[key]; throw e; });
+      KVV[key] = ver;
     }
     return KVC[key];
   }

@@ -9,6 +9,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
@@ -44,15 +45,17 @@ async function main() {
       if (["/d/live.bin", "/d/article_details.bin"].includes(pathname)) {
         const decoder = crypto.createDecipheriv("aes-256-gcm", key, content.subarray(0, 12));
         decoder.setAuthTag(content.subarray(-16));
-        const data = JSON.parse(Buffer.concat([decoder.update(content.subarray(12, -16)), decoder.final()]));
+        const plain = Buffer.concat([decoder.update(content.subarray(12, -16)), decoder.final()]);
+        const data = JSON.parse(plain[0] === 0x1f && plain[1] === 0x8b ? zlib.gunzipSync(plain) : plain);
         if (pathname === "/d/live.bin") {
           liveRequests += 1;
           data.published_at = `2026-10-23T14:${String(revision * 3).padStart(2, "0")}:00+09:00`;
+          if (data.files) data.files.article_details = `${data.files.article_details}-${revision}`;   // 내용이 바뀐 파일은 지문도 바뀜
         } else {
           for (const id of [FIRST, SECOND]) data[id].article.office = `${data[id].article.office} · 배포 ${revision}`;
         }
         const nonce = crypto.randomBytes(12), encoder = crypto.createCipheriv("aes-256-gcm", key, nonce);
-        content = Buffer.concat([nonce, encoder.update(JSON.stringify(data)), encoder.final(), encoder.getAuthTag()]);
+        content = Buffer.concat([nonce, encoder.update(zlib.gzipSync(JSON.stringify(data))), encoder.final(), encoder.getAuthTag()]);
       }
       const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css" };
       response.writeHead(200, { "Content-Type": mime[path.extname(filename)] || "application/octet-stream", "Cache-Control": "no-store" });
