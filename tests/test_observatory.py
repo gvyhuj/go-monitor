@@ -328,3 +328,29 @@ def test_krx_close_not_after_hours_last_price(database):
     assert f['base_own']==12620 and f['base_basis']=='previous_krx_close'
     w = ob.daily_window(database,'X','2026-10-15',1)
     assert w['base_own']==12620 and [p['stock_price'] for p in w['points']]==[12620,11200,11470]
+
+
+def test_peerfit_prefers_group_that_moves_with_stock(tmp_path, monkeypatch):
+    import random
+    from datetime import date, timedelta
+    from core import db, peerfit
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    rnd = random.Random(3)
+    days, d = [], date(2026, 5, 1)
+    while len(days) < 70:
+        if d.weekday() < 5: days.append(d.isoformat())
+        d += timedelta(days=1)
+    own, kq = 10000.0, 800.0
+    with db.connect() as conn:
+        conn.execute("INSERT INTO stock_themes(code, theme_no, theme_name) VALUES ('000001', 7, '우주항공')")
+        for day in days:
+            m, th, ind = rnd.gauss(0, .01), rnd.gauss(0, .02), rnd.gauss(0, .01)
+            kq *= 1 + m; own *= 1 + .5 * m + th + rnd.gauss(0, .003)
+            for sym, v in (('000001', own), ('KOSDAQ', kq)):
+                conn.execute("INSERT INTO daily_bars(symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,1)", (sym, day, v, v, v, v))
+            conn.execute("INSERT INTO theme_daily(date, theme_no, name, change_rate) VALUES (?, 7, '우주항공', ?)", (day, (th + m) * 100))
+            conn.execute("INSERT INTO industry_daily(date, industry_no, name, change_rate) VALUES (?, 284, '우주항공과국방', ?)", (day, (ind + m) * 100))
+        res = peerfit.compare(conn, '000001')
+    by = {r['name']: r for r in res['rows']}
+    assert by['테마 우주항공']['corr_ex_market'] > .9 > by['WICS 우주항공과국방']['corr_ex_market'] + .5
+    assert '테마 우주항공' in peerfit.summary_line(res)
