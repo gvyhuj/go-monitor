@@ -209,6 +209,13 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         fresh.add(key)
 
     fresh: set[str] = set()
+    import time as _time
+    laps, t0 = [], [_time.monotonic()]
+
+    def lap(label):                       # 사이트 자료 단계별 걸린 시간 (실행 기록용)
+        t = _time.monotonic()
+        laps.append(f"{label} {t - t0[0]:.0f}")
+        t0[0] = t
     today = now.date().isoformat()
     full = all(not c["built_at"].startswith(today) for c in cached.values() if c["key"].startswith("event:")) \
         and not _market_hours(now)                       # 하루 한 번(장 외) 전체 다시 계산
@@ -228,6 +235,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
             (e["cause_updated_at"] or "") > c["built_at"] or (e["last_ts"] or "") > c["built_at"]
         keep(key, lambda i=e["id"]: ws.api_event_detail({}, i), need)
 
+    lap("이벤트")
     # 급등·급락이 없는 날의 하루 분석
     with connect() as conn:
         dcs = [dict(r) for r in conn.execute("SELECT date, analyzed_at FROM day_causes WHERE date >= ? ORDER BY date",
@@ -239,6 +247,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         need = version_changed or full or c is None or (x["analyzed_at"] or "") > c["built_at"]
         keep(key, lambda d=x["date"]: ws.api_day_detail({}, d), need)
 
+    lap("하루 분석")
     # 지난 날짜 장중 차트
     first = ws.api_intraday({})
     for d in (first.get("dates") or [])[1:]:
@@ -247,6 +256,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         c = cached.get(key)
         keep(key, lambda d=d: ws.api_intraday({"date": d}), c is None or c["built_at"][:10] <= d)
 
+    lap("지난 장중")
     want.add("daily")
     keep("daily", lambda: ws.api_daily({}), True)               # 달력용 일별 등락 (가벼워서 매번)
     want.add("coarse")
@@ -254,6 +264,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
          or "close_point" not in (cached["coarse"].get("value") or ""))   # 야후 5분·60분봉 (하루 한 번, 종가 점이 없는 예전 자료면 다시)
 
     want |= {"articles", "article_details", "disclosures", "disclosure_details"}
+    lap("일별")
     lst = ws.api_articles({})
     keep("articles", lambda: lst, True)
     art_det, disc_det = {}, {}
@@ -264,7 +275,9 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
             out[a["id"]] = ws.api_article_detail({}, a["id"])
         art_det.update(out)
         return out
+    lap("기사 목록")
     keep("article_details", details, True)
+    lap("기사 상세")
     dl = {}
     def disc_list():
         dl.update(ws.api_disclosures({}))
@@ -277,6 +290,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         disc_det.update(out)
         return out
     keep("disclosure_details", disc_details, True)
+    lap("공시")
     want.add("reactions")             # 뉴스 반응: 위에서 계산한 상세에서 바로 (다시 계산하지 않음)
     if not {"articles", "article_details", "disclosures", "disclosure_details"}.issubset(fresh):
         raise RuntimeError("기사·공시 재계산 실패: 이전 계산값으로 새 사이트를 배포하지 않습니다.")
@@ -296,6 +310,7 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
         key = 'observation:' + eid
         want.add(key)
         keep(key, lambda d=detail:d, True)
+    lap("사건 관찰")
     if not {'reactions','observatory', *('observation:'+eid for eid in observations)}.issubset(fresh):
         raise RuntimeError('사건 관찰 자료 생성 실패: 이전 계산과 혼합 배포하지 않습니다.')
     with connect() as conn:
@@ -311,8 +326,11 @@ def refresh_items(now: datetime, log=None, history=None) -> list[tuple[str, str,
                          (history.version,))
     if log:
         log(f"사이트 자료: 새로 계산 {len(fresh)}건, 보관본 사용 {len(want) - len(fresh)}건"
-            + (" (하루 한 번 전체 갱신)" if full else ""))
+            + (" (하루 한 번 전체 갱신)" if full else "") + " · 걸린 시간(초) " + " / ".join(laps))
 
     items = [cloud._live_item()]                          # 실시간 요약은 매번
+    if log:
+        lap("저장·실시간 요약")
+        log("사이트 자료 " + laps[-1])
     items += [(k, cached[k]["value"], bool(cached[k]["b64"])) for k in sorted(want) if k in cached]
     return items

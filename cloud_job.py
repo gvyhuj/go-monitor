@@ -24,6 +24,7 @@ import secrets
 import base64
 import gzip
 import hashlib
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -35,6 +36,16 @@ FLAG_FIELDS = ["history_synced_on", "eod_done_on", "last_quote_at", "daily_synce
                "last_news_at", "last_discl_at", "last_related_at", "last_investor_at", "last_crosscheck_at",
                "eod_traders_on", "first_backfill_done", "last_macro_at", "last_theme_at", "eod_theme_on",
                "eod_daily_on", "overseas_on"]
+
+
+# 단계별 걸린 시간 (실행 기록 맨 끝에 한 줄로): 어디가 느린지 보고 장중 실행 간격을 줄이는 데 씀
+_LAP = [time.monotonic(), []]
+
+
+def lap(label: str):
+    t = time.monotonic()
+    _LAP[1].append((label, t - _LAP[0]))
+    _LAP[0] = t
 
 
 def _enc(v):
@@ -401,6 +412,7 @@ def main(argv) -> int:
     code = settings["symbol"]
     now = feed.kst_now()
     log.info("클라우드 감시 실행 (%s, %s)", task, now.isoformat(timespec="minutes"))
+    lap("준비")
 
     site_ok = False
     inbox_n = 0
@@ -541,6 +553,7 @@ def main(argv) -> int:
     except Exception as e:      # noqa: BLE001 - 정리가 실패해도 수집은 계속
         annotate("warning", f"기사 정리 실패: {type(e).__name__}: {str(e)[:150]}")
 
+    lap("요청·기사 정리")
     failed = None
     try:
         # 수집: 데스크톱 감시 엔진과 같은 규칙을 한 번 실행 (마지막 실행 시각은 기록에 저장)
@@ -552,6 +565,7 @@ def main(argv) -> int:
             c.run_once()
         finally:
             save_flags(c)
+        lap("수집(시세·기사·공시)")
 
         # 국제·정치 이슈 기사 (구글 뉴스): 매 실행마다 (내부에서 장중 15분·장 밖 60분 간격으로 조절)
         from core import newssearch
@@ -589,6 +603,7 @@ def main(argv) -> int:
                     conn.execute("UPDATE events SET cause_stage=NULL WHERE symbol=? AND substr(start_ts,1,10)=?", (code, d))
                 annotate("notice", f"{d} 이슈 기사 {added}건 보충 → 그날 이상변동 다시 분석")
 
+        lap("이슈 기사")
         n = detect_symbol(code)
         if n:
             log.info("신규 이상변동 %d건", n)
@@ -619,6 +634,7 @@ def main(argv) -> int:
             causes.refresh_days(code, feed.kst_now(), fetch=c.fetch, log=log)
         except Exception as e:  # noqa: BLE001
             log.warning("하루 분석 실패: %s", e)
+        lap("이상변동 분석")
         # 급등·급락 알림 (GitHub 앱 푸시: 저장소 주인 @언급)
         try:
             from core import alerts
@@ -676,6 +692,7 @@ def main(argv) -> int:
         summary(f"- 수집·분석 오류: {e}")
         import traceback
         annotate("error", "수집·분석 오류: " + "".join(traceback.format_exception(e)[-4:]))
+    lap("알림·기타")
     set_state("monitor_status", "running")
     # 갱신 멈춤 알림 (수집이 실패한 실행에서도 확인하도록 수집 try 밖에서)
     if static:
@@ -703,7 +720,9 @@ def main(argv) -> int:
             summary(f"- 업로드 실패: {e}")
     if static:
         try:
+            lap("점검")
             r = build_static_site(now, log)
+            lap("사이트 만들기")
             repo = os.environ.get("GITHUB_REPOSITORY", "")
             if repo:
                 owner, name = repo.split("/", 1)
@@ -767,6 +786,8 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
+    lap("마무리")
+    annotate("notice", f"단계별 시간(초, 합계 {sum(x for _, x in _LAP[1]):.0f}): " + " · ".join(f"{k} {v:.0f}" for k, v in _LAP[1]))
     return 1 if failed else 0
 
 
