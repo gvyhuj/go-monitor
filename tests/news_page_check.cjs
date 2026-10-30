@@ -57,6 +57,9 @@ async function main() {
 
       // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 그린광학 보도자료.
       assert.deepEqual(await page.locator(".view-seg a").allInnerTexts(), ["목록", "대시보드"]);
+      // README 탭 없음, 맨 아래 출처 문구·로그아웃 없음
+      assert.deepEqual(await page.locator(".tabs a").allInnerTexts(), ["주가 기록", "뉴스"]);
+      assert.equal((await page.locator("#foot").innerText()).trim(), "");
       assert.deepEqual((await list.evaluateAll((xs) => xs.map((x) => x.dataset.id))).sort(), ["2001", "2002", "2003"]);
       // 목록 숫자는 기본 +60분, 겹쳐 보기의 +30분을 누르면 목록도 +30분으로
       assert.match(await page.locator('#art-list button[data-id="2001"] .al-rx').innerText(), /^−2\.\d\d%\s*\+60분$/);
@@ -303,6 +306,15 @@ async function main() {
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.equal(await page.locator("#rx-plot.mv-draw").count(), 1, "겹쳐 보기 선 그리기");
+      // 조건을 바꿀 때마다 위 요약 숫자가 올라감 (처음 한 번만이 아니라)
+      for (const cv of ["all", "92"]) {
+        await page.locator("#art-cond").click();
+        await page.locator(`#art-pop button[data-ck="range"][data-cv="${cv}"]`).click();
+        const seen = new Set();
+        for (let i = 0; i < 8; i++) { seen.add(await page.locator('#pr-score b[data-key="sc-pr-month"]').textContent()); await page.waitForTimeout(40); }
+        assert.ok(seen.size > 1, `기간 ${cv}: 숫자가 바뀌며 올라감 ${[...seen]}`);
+        await page.keyboard.press("Escape");
+      }
       await page.locator('#art-list button[data-id="2001"]').click();
       await page.locator("#pr-detail .pr-title").waitFor();
       assert.equal(await page.locator("#pr-detail.mv-in").count(), 1, "기사 상세 떠오르기");
@@ -315,12 +327,24 @@ async function main() {
       await page.goto(`${base}/#/`);
       await page.locator("#rec-head .rh-box").waitFor();
       await page.locator('[data-range="1m"], [data-range="30"], .rec-tabs button:nth-child(3)').first().click();
-      await page.locator("#rec-chart.mv-draw-line .rc-line").waitFor();
+      await page.locator("#rec-chart.mv-reveal .rc-line").waitFor();
       await page.locator('.rec-tabs button[data-range="1d"]').click();
       await page.locator("#rec-chart .day-chart.mv-reveal, #rec-chart .mv-reveal").first().waitFor().catch(() => {});
       await page.locator('[data-step="-1"]').first().click();
       await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));
       assert.ok(await page.locator("#rec-head [data-key='rh-price']").evaluate((el) => el.closest(".rh-box") !== null));
+      // 기간 차트: 1주를 누르면 칸이 왼쪽→오른쪽으로 펼쳐지는 움직임이 끝까지 (중간에 다시 시작하지 않음)
+      await page.locator(".rec-tabs button").nth(1).click();
+      await page.locator("#rec-chart.mv-reveal").waitFor();
+      const t1 = await page.locator("#rec-chart").evaluate((el) => el.getAnimations()[0].currentTime);
+      await page.waitForTimeout(250);
+      const t2 = await page.locator("#rec-chart").evaluate((el) => (el.getAnimations()[0] || { currentTime: 9999 }).currentTime);
+      assert.ok(t2 > t1, `펼침이 이어짐 ${t1} → ${t2}`);
+      // 뉴스 대시보드: 위 숫자 올라가기, 작은 추이선·월별 추이 선 그리기
+      await page.goto(`${base}/#/pivot`);
+      await page.locator("#dash-kpi [data-count]").first().waitFor();
+      assert.equal(await page.locator("#dash-kpi [data-count]").count(), 5);
+      await page.locator("#dash-month.mv-draw-dash .dl-line").first().waitFor({ state: "attached" });
       await page.goto(`${base}/#/days`);
       await page.locator(".ps-cards").waitFor();
       assert.equal(await page.locator(".ps-cards").evaluate((el) => getComputedStyle(el).display), "grid", "기간 카드 옆으로 넘기기는 되돌림");
