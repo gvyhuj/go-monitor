@@ -570,7 +570,7 @@
     // 휠·끌기로 확대·이동되지 않게 고정 (기사 화면을 스크롤하다 차트가 줌되던 문제). 마우스를 올리면 숫자는 그대로 보임
     const fixed = { handleScroll: false, handleScale: false };
     const chart = baseChart(el, false, daily ? { ...fixed, timeScale: { borderVisible: false, timeVisible: false, tickMarkFormatter: dfmt, fixLeftEdge: true, fixRightEdge: true }, localization: { locale: "ko-KR", timeFormatter: dfmt } } : fixed);
-    const ownColor = matchMedia("(prefers-color-scheme: dark)").matches ? css("--lens") : css("--navy-2");
+    const ownColor = css("--mk-pub");      // 이 종목 선·이름표는 공개 시각 표시와 같은 주황 (KOSDAQ 회색 점선·다른 기사와 구분)
     const ownName = (STATUS && STATUS.name) || "이 종목";      // 회사 이름 (비공개 설정의 display_name)
     const fmt = { type: "custom", minMove: 0.01, formatter: (v) => pctRaw(v) };
     let otherLines = [];       // 연한 회색 다른 기사 선 (목록에서 마우스를 올린 기사는 진하게)
