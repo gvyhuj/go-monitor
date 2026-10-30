@@ -1130,13 +1130,11 @@
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
-    // 오른쪽 '주요 숫자' (네이버 종목 화면처럼). 고른 날의 기록 + 네이버 '지금' 숫자(현재 기준)
-    // ⓘ에 마우스를 올리거나(폰은 누르면) 설명 (네이버 종목 화면 설명 그대로)
+    // 오른쪽 '주요 숫자'. 고른 날의 기록 + '지금' 숫자(현재 기준: 시총·PER·PBR)
+    // ⓘ에 마우스를 올리거나(폰은 누르면) 설명
     const TIPS = {
-      PER: ["주가가 주당순이익(EPS)의 몇 배인지 나타내는 지표입니다.", "· PER = 현재가 ÷ EPS"],
-      EPS: ["1주당 벌어들인 순이익입니다.", "지배기업귀속 최근 4분기 합산 순이익을 수정평균발행주식수로 나눈 값이며, 보통주와 우선주를 합산해서 계산합니다."],
-      PBR: ["주가가 주당순자산(BPS)의 몇 배인지 나타내는 지표입니다.", "· PBR = 현재가 ÷ BPS"],
-      BPS: ["1주당 순자산(자본)입니다.", "최근 분기 자본총계를 수정기말유통주식수로 나눈 값이며, 보통주와 우선주를 합산해 계산합니다."],
+      PER: ["주가가 1주당 순이익의 몇 배인지 나타내는 지표입니다.", "· PER = 현재가 ÷ 1주당 순이익"],
+      PBR: ["주가가 1주당 순자산의 몇 배인지 나타내는 지표입니다.", "· PBR = 현재가 ÷ 1주당 순자산"],
     };
     const tip = (title, lines) => `<span class="tip" tabindex="0" aria-label="${esc(title)} 설명">ⓘ<span class="tip-box" role="tooltip">${title ? `<b>${esc(title)}</b>` : ""}${lines.map((l) => `<span>${esc(l)}</span>`).join("")}</span></span>`;
     const tipK = (k) => `${k} ${tip(k, TIPS[k])}`;
@@ -1144,7 +1142,7 @@
       const ds = calState.sel, px = price[ds], i = daily.findIndex((x) => x.date === ds);
       if (!px) return "";
       const isLatest = ds === latest, q = STATUS && STATUS.quote, live = isLatest ? liveFor(ds) : null;
-      const nv = (STATUS && STATUS.naver) || {}, info = nv.info || {};
+      const nv = (STATUS && STATUS.fund) || {}, info = nv.info || {};
       const from = new Date(new Date(ds).getTime() - 365 * 864e5).toISOString().slice(0, 10);
       const yr = daily.filter((x) => x.date > from && x.date <= ds);
       const hi52 = Math.max(...yr.map((x) => x.high || x.close)), lo52 = Math.min(...yr.map((x) => x.low || x.close));
@@ -1178,14 +1176,14 @@
       // 장중: 거래소 개인·외국인·기관은 장 마감 뒤에만 나오므로, 외국인 자리에 증권사 외국계 창구 추정(매수 − 매도)
       const fe = !inv && px.foreign_est && px.foreign_est.date === ds && px.foreign_est.buy != null ? px.foreign_est : null;
       const now = (k) => info[k] || "-";
-      // 시총·PER·PBR은 가격 따라 바뀌므로 가격과 같은 순간 값으로: 시총은 현재가 응답, PER·PBR = 현재가 ÷ EPS·BPS (네이버 정의 그대로)
+      // 시총·PER·PBR은 가격과 같은 순간 값 (현재가를 받을 때 함께 받음)
       const numOf = (s) => { const v = parseFloat(String(s || "").replace(/[^0-9.\-]/g, "")); return isFinite(v) ? v : null; };
       const capTxt = (v) => { const e = Math.round(v / 1e8), jo = Math.floor(e / 1e4), r = e % 1e4;
         return jo ? `${jo}조${r ? ` ${r.toLocaleString("ko-KR")}억` : ""}` : `${r.toLocaleString("ko-KR")}억`; };
-      const ratio = (k, per) => { const d = numOf(info[per]); return lq && d > 0 ? `${(lq.price / d).toFixed(2)}배` : now(k); };
+      const ratio = (k) => { const v = numOf(info[k]); return v != null && v > 0 ? `${v.toFixed(2)}배` : "-"; };
       const cap = lq && lq.market_cap ? capTxt(lq.market_cap) : now("marketValue");
       const asOf = lq ? hhmm(lq.traded_at.slice(0, 16)) : nv.fetched_at ? hhmm(nv.fetched_at) : "";
-      return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시가·고가·저가는 거래소 정규장(09:00~15:30) 기준입니다.", "거래량·거래대금은 넥스트레이드(장외) 포함 통합 값입니다."])}</h4>
+      return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시가·고가·저가는 거래소 정규장(09:00~15:30) 기준입니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
         <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}
@@ -1194,8 +1192,8 @@
           : fe ? `<div><small>개인</small><b class="muted">-</b></div><div><small>외국인 <em class="muted">추정</em> ${tip("", [`${fe.ts ? `${hhmm(fe.ts)} 기준 ` : ""}외국계 창구 추정입니다.`, "개인·기관과 거래소 확정치는 장 마감 뒤에 나옵니다."])}</small><b>${signed(fe.buy - fe.sell)}</b></div><div><small>기관</small><b class="muted">-</b></div>`
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
-        ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>네이버 ${asOf}</small></span>
-          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per", "eps"))}${kv(tipK("PBR"), ratio("pbr", "bps"))}${kv(tipK("EPS"), now("eps"))}${kv(tipK("BPS"), now("bps"))}</dl></div>` : ""}`;
+        ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>${asOf}</small></span>
+          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per"))}${kv(tipK("PBR"), ratio("pbr"))}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");

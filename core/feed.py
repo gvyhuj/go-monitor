@@ -54,21 +54,69 @@ def completed_only(bars: list[naver.Bar], now: datetime) -> list[naver.Bar]:
     return [b for b in bars if b.ts < cur_minute]
 
 
+def _kis_bars(rows) -> list[naver.Bar]:
+    return [naver.Bar(ts=r["ts"], open=r["open"] or r["close"], high=r["high"] or r["close"], low=r["low"] or r["close"],
+                      close=r["close"], volume=int(r["volume"] or 0)) for r in rows if r.get("close")]
+
+
 def sync_today(code: str, is_index: bool = False, now: datetime | None = None) -> int:
     now = now or kst_now()
-    bars = completed_only(naver.fetch_today_minutes(code, is_index=is_index), now)
     symbol = KOSDAQ if is_index else code
+    from . import kis
+    if kis.enabled():                    # 한국투자증권 (열쇠가 있으면 시세는 모두 한투)
+        n = now.replace(tzinfo=None)
+        if is_index:
+            rows = kis.index_bars()
+        else:
+            with connect() as conn:
+                since = conn.execute("SELECT MAX(ts) FROM minute_bars WHERE symbol=? AND source='kis' AND ts >= ?",
+                                     (symbol, n.date().isoformat())).fetchone()[0]
+            rows = kis.today_bars(code, n, since)
+        return _upsert(symbol, completed_only(_kis_bars(rows), now), "kis", replace=True)
+    bars = completed_only(naver.fetch_today_minutes(code, is_index=is_index), now)
     return _upsert(symbol, bars, "naver_today", replace=True)
 
 
 def sync_history(code: str, days: int = 14, now: datetime | None = None) -> int:
-    """과거 분봉 보충. 이미 있는 분봉(당일 분봉 OHLC 등)은 덮어쓰지 않음."""
+    """과거 분봉 보충. 이미 있는 분봉(당일 분봉 OHLC 등)은 덮어쓰지 않음. 한투를 쓰면 지난 분봉은 kis_backfill이 채움."""
+    from . import kis
+    if kis.enabled():
+        return 0
     now = now or kst_now()
     bars = naver.fetch_history_minutes(code, now.date() - timedelta(days=days), now.date())
     return _upsert(code, completed_only(bars, now), "naver_history", replace=False)
 
 
+def _kis_quotes(code: str):
+    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 체결 시각은 장 시각으로:
+    장중 지금 / 15:30~18:00(거래소 시간외) 지금 / 그 뒤·다음 날 장 전에는 마지막 거래일 18:00."""
+    from . import kis
+    now = kst_now().replace(tzinfo=None)
+    q = kis.quote(code)
+    with connect() as conn:
+        last_day = conn.execute("SELECT MAX(substr(ts,1,10)) FROM minute_bars WHERE symbol=?", (code,)).fetchone()[0]
+    hm = now.strftime("%H:%M")
+    is_today = last_day == now.date().isoformat()
+    open_ = is_today and "09:00" <= hm < "15:30"
+    at = f"{now.date().isoformat()}T{hm}:00" if is_today and hm < "18:00" else f"{last_day or now.date().isoformat()}T18:00:00"
+    out = {"name": None, "price": q["price"], "change": q["change"], "change_pct": q["rate"], "open": q["open"],
+           "high": q["high"], "low": q["low"], "volume": q["volume"],
+           "value_text": f"{q['value'] / 1e8:.2f}억" if q.get("value") else None,
+           "market_cap": q["market_cap_100m"] * 1e8 if q.get("market_cap_100m") else None,
+           "market_status": "OPEN" if open_ else "CLOSE", "traded_at": at, "fetched_at": now.isoformat(timespec="seconds")}
+    set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
+    set_state(f"fund:{code}", json.dumps({"info": {"per": q.get("per"), "pbr": q.get("pbr")},
+                                          "fetched_at": now.isoformat(timespec="minutes")}, ensure_ascii=False))
+    k = kis.index_quote()
+    set_state(f"quote:{KOSDAQ}", json.dumps({"price": k["price"], "change": k["change"], "change_pct": k["rate"],
+                                               "market_status": out["market_status"], "traded_at": at,
+                                               "fetched_at": out["fetched_at"]}, ensure_ascii=False))
+
+
 def update_quotes(code: str):
+    from . import kis
+    if kis.enabled():
+        return _kis_quotes(code)
     q = naver.fetch_quote(code)
     set_state(f"quote:{code}", json.dumps(q, ensure_ascii=False))
     try:                                   # 주가 기록 오른쪽 '주요 숫자' 칸용 네이버 숫자 (10분에 한 번)
@@ -290,7 +338,12 @@ def sync_disclosures(code: str, n: int = 20) -> int:
 
 
 def sync_investor(code: str) -> int:
-    rows = naver.fetch_investor_trend(code, 30)
+    from . import kis
+    if kis.enabled():
+        rows = [{"bizdate": r["date"], "foreign": r["foreign"], "organ": r["organ"], "individual": r["individual"],
+                 "close": None, "volume": None, "foreign_ratio": None} for r in kis.investors(code) if r.get("date")]
+    else:
+        rows = naver.fetch_investor_trend(code, 30)
     with connect() as conn:
         conn.executemany(
             "INSERT OR REPLACE INTO investor_daily(symbol, bizdate, foreign_net, organ_net, individual_net, "

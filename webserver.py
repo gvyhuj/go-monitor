@@ -176,7 +176,7 @@ def api_status(_q):
     dv = data["value"] if data else ""
     return {
         "symbol": sym, "name": s.get("display_name", sym),
-        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"), "naver": state_json(f"naver_snapshot:{sym}"),
+        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"), "fund": state_json(f"fund:{sym}") or state_json(f"naver_snapshot:{sym}"),
         "engine": engine_state(s),
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
@@ -378,11 +378,11 @@ INDUSTRY_NAMES = [name for _, name in feed.WICS_PEERS]
 
 
 def regular_ohlc(conn, sym: str) -> dict:
-    """{날짜: (시가, 고가, 저가)} 거래소 정규장(09:00~15:30) 1분봉으로. 네이버 당일 1분봉(시가·고가·저가가 있는 봉)이 있는 날만
-    (지난 1분봉 보충분은 종가만 있어 쓰지 않음)."""
+    """{날짜: (시가, 고가, 저가)} 거래소 정규장(09:00~15:30) 1분봉으로. 시가·고가·저가가 있는 1분봉(한투, 네이버 당일)이 있는 날만
+    (네이버 지난 1분봉 보충분은 종가만 있어 쓰지 않음)."""
     out = {}
     for d, ts, o, h, lo in conn.execute(
-            "SELECT substr(ts,1,10), ts, open, high, low FROM minute_bars WHERE symbol=? AND source='naver_today' "
+            "SELECT substr(ts,1,10), ts, open, high, low FROM minute_bars WHERE symbol=? AND source IN ('naver_today', 'kis', 'kis_backfill') "
             "AND substr(ts,12,5) BETWEEN '09:00' AND '15:30' ORDER BY ts", (sym,)):
         if not (o and h and lo):
             continue

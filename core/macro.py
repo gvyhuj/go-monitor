@@ -680,6 +680,35 @@ def _fetch_daily_naver(code: str, days: int = 420) -> list[dict]:
 NAVER_BASE_KEY = "daily:naver_base_v1"
 
 
+def _sync_daily_kis(code: str, days: int = 150) -> int:
+    from . import kis
+    end = datetime.now().date()
+    try:
+        rows = kis.daily_range(kis.KOSDAQ_INDEX if code == KOSDAQ else code, (end - timedelta(days=days)).isoformat(),
+                               end.isoformat(), index=code == KOSDAQ)
+    except kis.KisError:
+        return 0
+    return store_daily_kis(code, rows)
+
+
+def store_daily_kis(code: str, rows: list[dict]) -> int:
+    """한투 일봉 저장. 기준가(base) = 전 거래일 종가 (앞 날 줄이 없으면 기록에 있는 전 날 종가)."""
+    if not rows:
+        return 0
+    with connect() as conn:
+        prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
+                            (code, rows[0]["date"])).fetchone()
+        p = prev[0] if prev else None
+        out = []
+        for r in rows:
+            out.append((code, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"] or 0,
+                        None if code == KOSDAQ else p))
+            p = r["close"]
+        conn.executemany("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume, base) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
+    return len(out)
+
+
 def sync_daily_bars(codes: list[str]) -> int:
     """일봉. 감시 종목은 네이버 일별 시세(종가·기준가)로 (처음 한 번은 약 1년치, 그 뒤로는 최근 60거래일)."""
     from .db import get_state, set_state
@@ -688,6 +717,9 @@ def sync_daily_bars(codes: list[str]) -> int:
         main = load_settings().get("symbol")
     except Exception:
         main = None
+    from . import kis
+    if kis.enabled():                      # 한투 일봉: 거래소 정규장 시가·고가·저가·종가, 기준가 = 전 거래일 종가
+        return sum(_sync_daily_kis(c) for c in codes)
     n = 0
     for c in codes:
         pages = (1 if get_state(NAVER_BASE_KEY) else 7) if c == main else 0

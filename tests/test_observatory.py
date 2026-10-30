@@ -402,3 +402,62 @@ def test_kis_token_reused_and_probe_line(tmp_path, monkeypatch):
     assert calls.count('/oauth2/tokenP') == 1, '토큰은 다시 받지 않음'
     assert '현재가 9800 기준가 10170' in line and '일봉 최근 2개 2026-10-29~2026-10-30' in line
     assert '당일 1분봉 1개' in line and '실패: 지난 1분봉(7일 전)' in line and 'SECRETTOK' not in line
+
+
+def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
+    import json as _json
+    from datetime import datetime
+    from core import db, feed, kis, macro
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    now = datetime(2026, 11, 2, 10, 5)
+    monkeypatch.setattr(feed, 'kst_now', lambda: now)
+    monkeypatch.setattr(kis, 'quote', lambda code, market='J': {'price': 9900, 'change': 100, 'rate': 1.02, 'open': 9800, 'high': 9950,
+        'low': 9780, 'base': 9800, 'volume': 1234, 'value': 12_300_000, 'market_cap_100m': 1159, 'per': 47.6, 'pbr': 1.77})
+    monkeypatch.setattr(kis, 'index_quote', lambda no='1001': {'price': 730.1, 'change': 5.7, 'rate': 0.79})
+    def minutes(code, hhmm, market='J'):     # 10:04까지 30개씩: 09:35~10:04, 09:05~09:34, 09:00~09:04
+        end = datetime(2026, 11, 2, int(hhmm[:2]), int(hhmm[2:4]))
+        out = []
+        for i in range(30):
+            t = end.replace(minute=0) if False else end - __import__('datetime').timedelta(minutes=i)
+            if t.strftime('%H%M') < '0900':
+                break
+            out.append({'ts': t.strftime('%Y-%m-%dT%H:%M'), 'open': 9800, 'high': 9800, 'low': 9800, 'close': 9800 + i, 'volume': 1})
+        return sorted(out, key=lambda b: b['ts'])
+    monkeypatch.setattr(kis, 'minutes', minutes)
+    n = feed.sync_today('000001', now=now)
+    with db.connect() as conn:
+        first, last, cnt, src = conn.execute("SELECT MIN(ts), MAX(ts), COUNT(*), MIN(source) FROM minute_bars WHERE symbol='000001'").fetchone()
+    assert (first, last, cnt, src) == ('2026-11-02T09:00', '2026-11-02T10:04', 65, 'kis') and n == 65
+    feed.update_quotes('000001')
+    q = _json.loads(db.get_state('quote:000001')['value'])
+    assert q['market_status'] == 'OPEN' and q['traded_at'] == '2026-11-02T10:05:00' and q['value_text'] == '0.12억' and q['market_cap'] == 1159e8
+    assert _json.loads(db.get_state('fund:000001')['value'])['info'] == {'per': 47.6, 'pbr': 1.77}
+    assert _json.loads(db.get_state('quote:KOSDAQ')['value'])['change_pct'] == 0.79
+    macro.store_daily_kis('000001', [{'date': '2026-10-29', 'open': 1, 'high': 1, 'low': 1, 'close': 10150, 'volume': 1},
+                                     {'date': '2026-10-30', 'open': 1, 'high': 1, 'low': 1, 'close': 9800, 'volume': 1}])
+    with db.connect() as conn:
+        assert conn.execute("SELECT base FROM daily_bars WHERE symbol='000001' AND date='2026-10-30'").fetchone()[0] == 10150
+
+
+def test_kis_backfill_replaces_history_in_steps(tmp_path, monkeypatch):
+    from datetime import datetime
+    from core import db, kis, kis_backfill
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    days = ['2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']
+    monkeypatch.setattr(kis, 'daily_range', lambda code, s, e, index=False: [
+        {'date': d, 'open': 1, 'high': 1, 'low': 1, 'close': 100 + i, 'volume': 1} for i, d in enumerate(days)])
+    monkeypatch.setattr(kis, 'full_day_bars', lambda code, d: [] if d == '2026-10-27' else [
+        {'ts': d + 'T09:00', 'open': 1, 'high': 2, 'low': 1, 'close': 2, 'volume': 5}])
+    with db.connect() as conn:
+        conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES ('000001','2026-10-29T10:00',9,9,9,9,1,'naver_history')")
+        conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES ('000001','2026-10-27T10:00',8,8,8,8,1,'naver_history')")
+    now = datetime(2026, 10, 31, 2, 0)
+    m1 = kis_backfill.run('000001', now, 2)
+    assert '일봉 4일(2026-10-27~2026-10-30)' in m1 and 'KOSDAQ 일봉 4일' in m1 and '1분봉 2일 받음' in m1 and '남은 날 2일' in m1
+    m2 = kis_backfill.run('000001', now, 2)
+    assert '한투에 없음 1일' in m2 and '다시 받기 끝' in m2 and '2026-10-27~2026-10-27' in m2
+    assert kis_backfill.run('000001', now, 2) is None
+    with db.connect() as conn:
+        rows = dict(conn.execute("SELECT ts, source FROM minute_bars WHERE symbol='000001'").fetchall())
+    assert rows['2026-10-29T09:00'] == 'kis_backfill' and '2026-10-29T10:00' not in rows and rows['2026-10-27T10:00'] == 'naver_history'

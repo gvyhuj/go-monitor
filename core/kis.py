@@ -243,3 +243,62 @@ def probe(code: str, now: datetime) -> str:
     if inv is not None:
         parts.append(f"투자자 {len(inv)}일 {inv[-1]['date'] if inv else ''}~{inv[0]['date'] if inv else ''}")
     return "한투 시험: " + (" · ".join(parts) or "받은 값 없음") + (" · 실패: " + " / ".join(errs) if errs else "")
+
+
+# ------------------------------------------------------------------ 수집용 (feed·macro에서 씀)
+def today_bars(code: str, now: datetime, since: str | None = None) -> list[dict]:
+    """오늘(장 밖이면 마지막 거래일) 1분봉. 지금부터 30개씩 거슬러 since(이미 받은 마지막 분)나 09:00까지."""
+    hhmm = now.strftime("%H%M%S") if now.weekday() < 5 and "090000" <= now.strftime("%H%M%S") <= "153000" else "153000"
+    out: dict[str, dict] = {}
+    for _ in range(16):
+        bars = minutes(code, hhmm)
+        if not bars:
+            break
+        for b in bars:
+            out[b["ts"]] = b
+        first = bars[0]["ts"]
+        if first[11:] <= "09:00" or (since and first <= since):
+            break
+        t = datetime.fromisoformat(first) - timedelta(minutes=1)
+        hhmm = t.strftime("%H%M%S")
+    return [out[k] for k in sorted(out)]
+
+
+def index_bars(no: str = KOSDAQ_INDEX) -> list[dict]:
+    """KOSDAQ 지수 당일 1분봉 (최근 약 100분, 정규장 시각만)."""
+    return [b for b in index_minutes(no) if "09:00" <= b["ts"][11:] <= "15:30"]
+
+
+def full_day_bars(code: str, day: str) -> list[dict]:
+    """지난 날짜 하루 1분봉 전부 (120개씩 거슬러 09:00까지)."""
+    out: dict[str, dict] = {}
+    hhmm = "153000"
+    for _ in range(6):
+        bars = day_minutes(code, day, hhmm)
+        bars = [b for b in bars if b["ts"][:10] == day]
+        if not bars:
+            break
+        for b in bars:
+            out[b["ts"]] = b
+        first = bars[0]["ts"]
+        if first[11:] <= "09:00":
+            break
+        hhmm = (datetime.fromisoformat(first) - timedelta(minutes=1)).strftime("%H%M%S")
+    return [out[k] for k in sorted(out) if "09:00" <= k[11:] <= "15:30"]
+
+
+def daily_range(code: str, start: str, end: str, index: bool = False) -> list[dict]:
+    """일봉 start~end 전부 (한 번에 100개·지수 50개씩 거슬러)."""
+    out: dict[str, dict] = {}
+    cur = end
+    for _ in range(40):
+        rows = daily(code, start, cur, index=index)
+        rows = [r for r in rows if start <= r["date"] <= cur and r["date"] not in out]
+        if not rows:
+            break
+        for r in rows:
+            out[r["date"]] = r
+        cur = (datetime.fromisoformat(rows[0]["date"]) - timedelta(days=1)).date().isoformat()
+        if cur < start:
+            break
+    return [out[k] for k in sorted(out)]
