@@ -19,7 +19,7 @@ from .db import connect
 _MACRO_FACTS = {"이 종목 테마", "이날 강한 테마", "전날 밤 해외", "시장 일정"}
 # 창구 단서 중 추정인 줄
 _BUYER_GUESS = {"배경 이슈"}
-_GUESS_TAIL = re.compile(r"\s*(이 종목만 겨냥했다기보다[^.]*\.|업종 전체보다[^.]*\.)")
+_GUESS_TAIL = re.compile(r"\s*(이 종목만 겨냥했다기보다[^.]*\.|(?:업종|테마) 전체보다[^.]*\.)")
 
 
 def _scope(event_type: str) -> str:

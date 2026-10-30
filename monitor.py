@@ -20,7 +20,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from core import board, articles, causes, cloud, feed, macro, newssearch
-from core.db import get_state, init_db, now_iso, set_state
+from core.db import init_db, now_iso, set_state
 from core.detector import detect_symbol, load_settings
 from core import naver
 from core.naver import DataSourceError
@@ -121,25 +121,14 @@ class Collector:
             return bool(conn.execute("SELECT 1 FROM minute_bars WHERE symbol=? AND substr(ts,1,10)=? LIMIT 1",
                                      (self.code, today.isoformat())).fetchone())
 
-    def related_codes(self):
-        return [r["code"] for r in feed.related_list()]
-
     def peer_trader_codes(self):
-        """거래원(창구)을 확인할 종목: 비교 종목 + 네이버 방위산업·우주항공 테마 대형 종목."""
-        codes = self.related_codes()
-        return codes + [x["code"] for x in macro.basket_codes() if x["code"] not in codes]
-
-    def factor_codes(self):
-        return [f["code"] for f in (load_settings().get("factor_etfs") or [])]
+        """거래원(창구)·일봉을 확인할 종목: 네이버 테마(방위산업·우주항공 등) 대형 종목."""
+        return [x["code"] for x in macro.basket_codes() if x["code"] != self.code]
 
     def collect_context(self, now: datetime):
         today = now.date()
-        settings = load_settings()
         if self.daily_synced_on != today:
             self.daily_synced_on = today
-            rel = self._safe("같은 업종 목록", feed.sync_related, self.code, settings.get("extra_peers", []))
-            if rel:
-                self._safe("같은 업종 과거 분봉", feed.sync_related_bars, [r["code"] for r in rel], True, now)
             self._safe("투자자별 순매수", feed.sync_investor, self.code)
             self._safe("뉴스", feed.sync_news, self.code)
             self._safe("공시", feed.sync_disclosures, self.code)
@@ -147,7 +136,7 @@ class Collector:
             first = not self.first_backfill_done
             self.first_backfill_done = True
             n_art = self._safe("이 종목 기사", articles.sync_articles, self.code, 3 if first else 1)
-            self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + [r["code"] for r in (rel or [])] + self.factor_codes())
+            self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.peer_trader_codes())
             self._safe("시장 뉴스", macro.sync_macro_news, 16 if first else 2, ("flashnews",))
             self._safe("시장 주요 뉴스", macro.sync_macro_news, 4 if first else 1, ("mainnews",))
             self._safe("해외 방산주·유가", macro.sync_overseas)
@@ -162,14 +151,9 @@ class Collector:
                     threading.Thread(target=self._scan_themes, args=(today,), daemon=True).start()
             if feed.is_weekday(today) and now.time() >= feed.time(9, 0) and self.traded_today(today):
                 self._safe("테마 등락", macro.snapshot_themes, self.code, now, today.isoformat())
-                self._safe("업종 등락", macro.snapshot_industries, now, today.isoformat())
             self.log.info("기사·거시 자료 수집 (새 이 종목 기사 %s건)", n_art if n_art is not None else "-")
             self.last_news_at = self.last_discl_at = self.last_related_at = self.last_investor_at = now
             self._safe("종목토론방(최근 2주)", board.sync_board, self.code, now - timedelta(days=15), 20)
-            self.log.info("원인 분석용 자료 수집 (같은 업종 %d개)", len(rel or []))
-
-        if not get_state(macro.INDUSTRY_BACKFILL_KEY):            # 기록 전 날 업종 등락 다시 계산 (실행마다 업종 하나씩, 네 업종이면 끝)
-            self._safe("업종 등락 다시 계산", macro.backfill_industries, 7, self.log.info)
 
         if feed.is_market_window(now):
             minute = now.replace(second=0, microsecond=0)
@@ -188,13 +172,9 @@ class Collector:
                     and self.traded_today(today):
                 self.last_theme_at = now
                 self._safe("테마 등락", macro.snapshot_themes, self.code, now, today.isoformat())
-                self._safe("업종 등락", macro.snapshot_industries, now, today.isoformat())
             if now - self.last_discl_at >= timedelta(minutes=10):
                 self.last_discl_at = now
                 self._safe("공시", feed.sync_disclosures, self.code)
-            if now - self.last_related_at >= timedelta(minutes=5):
-                self.last_related_at = now
-                self._safe("같은 업종 분봉", feed.sync_related_bars, self.related_codes(), False, now)
         else:
             if now - self.last_news_at >= timedelta(minutes=30):
                 self.last_news_at = now
@@ -207,10 +187,9 @@ class Collector:
                     and self.traded_today(today):
                 self.eod_theme_on = today
                 self._safe("테마 마감 등락", macro.snapshot_themes, self.code, now, today.isoformat())
-                self._safe("업종 마감 등락", macro.snapshot_industries, now, today.isoformat())
             if feed.is_weekday(today) and now.time() >= feed.time(15, 50) and self.eod_daily_on != today:
                 self.eod_daily_on = today
-                self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.related_codes() + self.factor_codes())
+                self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.peer_trader_codes())
             if now.time() >= feed.time(6, 30) and now.time() < feed.time(8, 59) and self.overseas_on != today:
                 self.overseas_on = today
                 self._safe("해외 방산주·유가", macro.sync_overseas)
@@ -230,16 +209,7 @@ class Collector:
     def fetch(self, kind, arg, day):
         """원인 분석 중 필요한 자료를 그 자리에서 받아옴 (짧은 시간 안 중복 요청은 생략)."""
         now = feed.kst_now()
-        if kind == "related_bars":
-            if day == now.date():
-                key, ttl, hist = ("rb_today",), timedelta(minutes=3), False
-            else:
-                key, ttl, hist = ("rb_hist", now.date()), timedelta(hours=24), True
-            if now - self.fetch_cache.get(key, datetime.min) < ttl:
-                return
-            self.fetch_cache[key] = now
-            feed.sync_related_bars(list(arg), hist, now)
-        elif kind == "news":
+        if kind == "news":
             key = ("news", arg)
             if now - self.fetch_cache.get(key, datetime.min) < timedelta(minutes=10):
                 return
@@ -266,7 +236,7 @@ class Collector:
             since = datetime.combine(day, datetime.min.time()) - timedelta(days=15)
             board.sync_board(arg, since=since, max_pages=40 if day != now.date() else 3)
         elif kind == "peer_traders":
-            # 같은 업종 종목의 거래원은 '오늘' 것만 받을 수 있음 (지난 날짜는 장 마감 기록 사용)
+            # 같은 테마 종목의 거래원은 '오늘' 것만 받을 수 있음 (지난 날짜는 장 마감 기록 사용)
             if day != now.date():
                 return {}
             key = ("peer_traders",)

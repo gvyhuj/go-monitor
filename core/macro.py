@@ -174,7 +174,7 @@ def backfill_macro_news(day: date, max_pages: int = 60, log=None) -> int:
 
 
 def sector_news(t_from: datetime, t_to: datetime, names: list[str]) -> list[dict]:
-    """같은 업종 종목 이름이나 '방산주' 같은 업종 말이 제목에 들어간 시황 기사 (업종이 왜 움직였는지 설명)."""
+    """같은 테마 종목 이름이나 '방산주' 같은 테마 말이 제목에 들어간 시황 기사 (업종이 왜 움직였는지 설명)."""
     words = [n for n in names if n and len(n) >= 2] + list(SECTOR_WORDS)
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(
@@ -298,7 +298,7 @@ def drivers(seg: str, t_from: datetime, t_move: datetime, t_end: datetime, sign:
     move = t_move.isoformat(timespec="minutes")
     lead, explain, seen = {}, [], set()
 
-    def tp(text):                      # '방산주' 같은 업종 이름 자체는 이유가 아니므로 빼고 주제를 찾음
+    def tp(text):                      # '방산주' 같은 테마 이름 자체는 이유가 아니므로 빼고 주제를 찾음
         for w in SEG_WORDS.get(cat, ()):
             text = text.replace(w, " ")
         return [t for t in topics_of(text) if t in want]
@@ -349,112 +349,6 @@ def fetch_theme_groups() -> list[dict]:
     return out
 
 
-def fetch_industries() -> list[dict]:
-    """네이버 업종(WICS 분류) 전체와 지금 등락률. 네이버 증권 '업종별 시세'와 같은 숫자."""
-    out = []
-    for p in range(1, 4):                   # 한 번에 100개까지만 줌 (2026-10 기준 79개)
-        d = naver._json(f"https://m.stock.naver.com/api/stocks/industry?page={p}&pageSize=100")
-        groups = d.get("groups") or []
-        out += groups
-        if len(out) >= int(d.get("totalCount") or 0) or not groups:
-            break
-    return out
-
-
-def snapshot_industries(now: datetime, trading_day: str) -> int:
-    """업종 등락률을 그날 날짜로 기록 (장중 덮어쓰기 → 장 마감 뒤 마지막 값이 확정치)."""
-    groups = fetch_industries()
-    ts = now.isoformat(timespec="minutes")
-    with connect() as conn:
-        conn.executemany(
-            "INSERT OR REPLACE INTO industry_daily(date, industry_no, name, change_rate, rise, fall, total, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [(trading_day, int(g["no"]), g.get("name"), _num(g.get("changeRate")), int(g.get("riseCount") or 0),
-              int(g.get("fallCount") or 0), int(g.get("totalCount") or 0), ts) for g in groups])
-    # 화면의 네 업종: 그날 많이 오른·내린 종목 5개씩 (업종 칸을 누르면 뜨는 창용)
-    from .feed import WICS_PEERS
-    for no, name in WICS_PEERS:
-        try:
-            ms = [m for m in naver.fetch_industry_members(no) if m["change"] is not None]
-        except naver.DataSourceError:
-            continue
-        ms.sort(key=lambda m: -m["change"])
-        pick = lambda xs: [{"code": m["code"], "name": m["name"], "change": m["change"]} for m in xs]
-        movers = {"up": pick([m for m in ms if m["change"] > 0][:5]),
-                  "down": pick([m for m in reversed(ms) if m["change"] < 0][:5])}
-        with connect() as conn:
-            conn.execute("INSERT OR REPLACE INTO industry_movers(date, industry_no, name, movers, updated_at) VALUES (?, ?, ?, ?, ?)",
-                         (trading_day, no, name, json.dumps(movers, ensure_ascii=False), ts))
-    return len(groups)
-
-
-INDUSTRY_BACKFILL_KEY = "industries:backfill_v1"
-INDUSTRY_RECORD_FROM = "2026-10-26"     # 이날부터는 네이버 값을 그대로 기록 (다시 계산한 값은 이 전 날에만)
-
-
-def backfill_industries(pages: int = 7, log=None, per_run: int = 1) -> int:
-    """네이버 업종(WICS) 등락률은 지금 값만 주고 과거 기록이 없어서, 기록 전 날(2026-10-26 전)을 다시 계산해 채움.
-
-    네이버와 같은 방식: 그 업종 구성 종목 등락률(기준가 대비)을 기준가 시가총액으로 가중 평균. pages: 종목마다 60거래일씩.
-    구성 종목은 지금 기준(그 사이 편입·편출은 반영 못 함), 주식 수는 지금과 같다고 봄.
-    INDUSTRY_RECORD_FROM 전 날만 계산하고, 그날부터는 네이버 값(snapshot_industries)만 씀. 기록이 빠진 날도 계산으로 채우지 않음.
-    updated_at = 'calc' 로 다시 계산한 값임을 표시.
-    GitHub 실행 서버에서는 네이버까지 요청마다 느려서, 한 번에 업종 per_run개씩만(종목은 동시에 받음) 하고 진행 상황을 남김.
-    네 업종을 다 하면 INDUSTRY_BACKFILL_KEY를 남겨 다시 하지 않음.
-    """
-    from concurrent.futures import ThreadPoolExecutor
-    from .db import get_state, set_state
-    from .feed import WICS_PEERS
-    st = get_state(INDUSTRY_BACKFILL_KEY + ":done")
-    done = set(json.loads(st["value"])) if st and st.get("value") else set()
-    todo = [(no, name) for no, name in WICS_PEERS if name not in done][:per_run]
-    n = 0
-    for no, name in todo:
-        members = [m for m in naver.fetch_industry_members(no) if m["code"] and m["price"] and m["mcap"]]
-
-        def prices(m):
-            try:            # 네이버 일별 시세: 등락 = 종가(넥스트레이드 포함) ÷ 기준가(전날 거래소 종가) − 1 → 업종 목록 등락과 같은 기준
-                return m, fetch_naver_prices(m["code"], pages)
-            except naver.DataSourceError:
-                return m, None
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            got = list(ex.map(prices, members))
-        if sum(rows is None for _, rows in got) > len(got) // 10:      # 많이 못 받았으면 이번엔 저장하지 않고 다음 실행에 다시
-            raise naver.DataSourceError(f"{name}: 구성 종목 {len(got)}개 중 {sum(r is None for _, r in got)}개 시세를 못 받음")
-        rets: dict[str, list[tuple[float, float, str, str]]] = {}      # 날짜 → [(기준가 시총, 등락률, 코드, 이름)]
-        for m, rows in got:
-            shares = m["mcap"] / m["price"]                    # 억 원 / 원 → 주식 수에 비례 (가중치로만 씀)
-            for r in rows or []:
-                if r["date"] < INDUSTRY_RECORD_FROM and r.get("base") and r["base"] > 0:
-                    rets.setdefault(r["date"], []).append((shares * r["base"], r["close"] / r["base"] - 1, m["code"], m["name"]))
-        out, movers = [], []
-        for d, xs in rets.items():
-            w = sum(x[0] for x in xs)
-            if not w:
-                continue
-            rate = sum(x[0] * x[1] for x in xs) / w
-            out.append((d, no, name, round(rate * 100, 2), sum(x[1] > 0 for x in xs), sum(x[1] < 0 for x in xs), len(xs), "calc"))
-            srt = sorted(xs, key=lambda x: -x[1])
-            pick = lambda ys: [{"code": y[2], "name": y[3], "change": y[1]} for y in ys]
-            movers.append((d, no, name, json.dumps({"up": pick([y for y in srt if y[1] > 0][:5]),
-                                                    "down": pick([y for y in reversed(srt) if y[1] < 0][:5])}, ensure_ascii=False), "calc"))
-        with connect() as conn:
-            for t in ("industry_daily", "industry_movers"):     # 기록 시작일부터는 다시 계산한 값을 두지 않음 (네이버 값만)
-                conn.execute(f"DELETE FROM {t} WHERE updated_at='calc' AND date >= ?", (INDUSTRY_RECORD_FROM,))
-            cur = conn.executemany("INSERT OR IGNORE INTO industry_daily(date, industry_no, name, change_rate, rise, fall, total, "
-                                   "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
-            n += cur.rowcount
-            conn.executemany("INSERT OR IGNORE INTO industry_movers(date, industry_no, name, movers, updated_at) "
-                             "VALUES (?, ?, ?, ?, ?)", movers)
-        done.add(name)
-        set_state(INDUSTRY_BACKFILL_KEY + ":done", json.dumps(sorted(done), ensure_ascii=False))
-        if log:
-            log(f"업종 등락 다시 계산: {name} {len(out)}일 (구성 종목 {len(members)}개)")
-    if all(name in done for _, name in WICS_PEERS):
-        set_state(INDUSTRY_BACKFILL_KEY, datetime.now().isoformat(timespec="minutes"))
-    return n
-
-
 def _num(v) -> float:
     try:
         return float(str(v).replace(",", ""))
@@ -501,7 +395,7 @@ BASKET_THEMES = {"방산": "방위산업", "우주항공": "우주항공"}
 def sync_basket_universe(code: str, per_theme: int = 15, log=None) -> dict:
     """이 종목이 속한 네이버 테마(방위산업, 우주항공)의 대형 종목 목록.
 
-    '같은 창구가 업종을 묶어 샀나'를 내가 고른 종목 몇 개가 아니라 네이버 테마 구성 종목으로 확인하기 위함.
+    '같은 창구가 테마를 묶어 샀나'를 내가 고른 종목 몇 개가 아니라 네이버 테마 구성 종목으로 확인하기 위함.
     시가총액(없으면 거래대금) 큰 순서로 테마마다 최대 per_theme개.
     """
     from .db import set_state
@@ -997,13 +891,13 @@ def _verdict(strong_theme, topic_rows, ov, buyer, sign) -> str | None:
     if buyer:
         kinds = {l["kind"] for l in buyer.get("lines", [])}
         b = buyer["broker"]
-        if "업종 묶음" in kinds:
-            s += f" {b} 창구가 같은 업종 종목도 함께 {side}한 점을 보면, 이 종목 개별 호재보다 이런 업종·테마 흐름에 따라 묶어서 {side}했을 가능성이 큽니다."
-        elif "업종 일부" in kinds:
-            s += f" {b} 창구가 같은 업종 일부 종목에서도 {side}해, 업종·테마 흐름과 이 종목 개별 관심이 섞였을 수 있습니다."
+        if "테마 묶음" in kinds:
+            s += f" {b} 창구가 같은 테마 종목도 함께 {side}한 점을 보면, 이 종목 개별 호재보다 이런 테마 흐름에 따라 묶어서 {side}했을 가능성이 큽니다."
+        elif "테마 일부" in kinds:
+            s += f" {b} 창구가 같은 테마 일부 종목에서도 {side}해, 테마 흐름과 이 종목 개별 관심이 섞였을 수 있습니다."
         elif "개별 관심" in kinds:
-            s += f" 다만 {b} 창구는 같은 업종 종목에선 {side}하지 않아, 업종 흐름보다 이 종목에 대한 개별 관심일 가능성도 있습니다."
+            s += f" 다만 {b} 창구는 같은 테마 종목에선 {side}하지 않아, 테마 흐름보다 이 종목에 대한 개별 관심일 가능성도 있습니다."
         else:
-            s += f" {b} 창구의 같은 업종 거래 기록이 없어 묶음 {side}인지는 확인하지 못했습니다."
+            s += f" {b} 창구의 같은 테마 거래 기록이 없어 묶음 {side}인지는 확인하지 못했습니다."
     s += " (배경 정보이며, 실제 주문 이유는 공개되지 않습니다)"
     return s

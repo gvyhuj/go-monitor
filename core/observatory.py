@@ -381,7 +381,6 @@ def build(conn,symbol,rows):
           'notes':notes,'history':history,'identity_status':'confirmed' if any(h['action']=='news_event_link' for h in history) or (len(members)>1 and all(x=='confirmed_link' for x in member_evidence)) else 'review_required' if len(members)>1 else 'individual', 'same_event_candidates':[dict(x) for x in conn.execute('SELECT * FROM article_candidates WHERE a IN (SELECT member_id FROM news_event_members WHERE event_id=?) OR b IN (SELECT member_id FROM news_event_members WHERE event_id=?)',(eid,eid))],'recomputed_at':saved_at,'snapshot_version':digest,
           'followup_candidate':meta.get('followup_candidate',False), 'classification_sources':[{'member_id':m['id'],'kind':m.get('kind'),'url':m.get('url')} for m in members]+linked_metadata, 'legacy_event_kind':legacy_kind, 'source_note':'기사 공개 시각은 보도자료 배포 시각과 다릅니다. 자동 회사 발표 분류 기사는 기존과 같이 보도자료로 집계합니다. 발표 주체를 확인하여 필요하면 수정하세요.'}
         result[eid]['market_context'] = {
-            'industry':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM industry_daily WHERE date=?',(obs.get('day'),))],
             'themes':[dict(r) for r in conn.execute('SELECT name,change_rate,updated_at FROM theme_daily WHERE date=? AND mine=1',(obs.get('day'),))],
             'basis':'해당 거래일 저장 스냅샷. 기사 공개 순간과 동일한 관측 시각임을 보장하지 않음.'}
         sources=dumps([{k:m.get(k) for k in ('id','ts','original_ts','time_source','title','url')} for m in members])

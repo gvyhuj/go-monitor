@@ -499,19 +499,6 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v4", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명 빈 기사 {n_re}건 다시 읽기 (네이버판에 없으면 언론사 원문에서)")
 
-    # 한 번만: 비교 종목을 네이버 업종(WICS) 묶음으로 바꾸고, 새 종목의 일봉·오늘 분봉을 바로 받음 (내일까지 기다리지 않게)
-    if not get_state("peers:wics_v1"):
-        try:
-            from core import macro
-            rel = feed.sync_related(code)
-            codes = [r["code"] for r in rel]
-            n_d = macro.sync_daily_bars(codes)
-            n_m = feed.sync_related_bars(codes, False, now)      # 오늘 분봉만 (지난 분봉은 내일 첫 실행의 하루 수집에서)
-            set_state("peers:wics_v1", now.isoformat(timespec="minutes"))
-            annotate("notice", f"비교 종목을 네이버 업종(WICS) {len(codes)}개로 바꿈 (일봉 {n_d}건, 분봉 {n_m}건 받음)")
-        except Exception as e:      # noqa: BLE001 - 다음 실행에 다시
-            annotate("warning", f"비교 종목 WICS 전환 실패: {type(e).__name__}: {str(e)[:150]}")
-
     # 매번: 아직 기자명을 안 읽은 기사가 있으면 한 번에 많이 읽어 바로 채움 (평소엔 수집할 때 15건씩)
     try:
         from core import reporters
@@ -608,27 +595,13 @@ def main(argv) -> int:
         if n:
             log.info("신규 이상변동 %d건", n)
         causes.upgrade_reanalysis(code, now, log)
-        # 업종 ETF 일봉·묶음 확인 종목이 비어 있으면 하루 한 번 수집을 기다리지 않고 바로 채움
+        # 묶음 확인 종목(네이버 테마 대형 종목)이 비어 있으면 하루 한 번 수집을 기다리지 않고 바로 채움
         from core import macro as _macro
-        etfs = [f["code"] for f in (settings.get("factor_etfs") or [])]
-        with connect() as conn:
-            empty = [e for e in etfs if not conn.execute("SELECT 1 FROM daily_bars WHERE symbol=? LIMIT 1", (e,)).fetchone()]
-        if empty:
-            log.info("업종 ETF 일봉 %d개 수집: %s", _macro.sync_daily_bars(empty), ", ".join(empty))
         if not _macro.basket_universe() and _macro.my_themes(code):
             try:
                 _macro.sync_basket_universe(code, log=log)
             except Exception as e:  # noqa: BLE001
                 log.warning("묶음 확인 종목 수집 실패: %s", e)
-        # 업종 ETF 일봉이 처음 들어오면 최근 이벤트를 팩터 분해로 다시 분석
-        if etfs and not (get_state("factor_ready") or {}).get("value"):
-            with connect() as conn:
-                have = all(conn.execute("SELECT COUNT(*) FROM daily_bars WHERE symbol=?", (e,)).fetchone()[0] >= 60 for e in etfs)
-                if have:
-                    conn.execute("UPDATE events SET cause_stage=NULL WHERE symbol=?", (code,))
-            if have:
-                set_state("factor_ready", now.isoformat(timespec="minutes"))
-                log.info("업종 ETF 자료가 준비되어 이벤트를 다시 분석합니다")
         causes.refresh_pending(code, feed.kst_now(), fetch=c.fetch, log=log)
         try:                                   # 급등·급락이 없는 날도 하루 분석 (하루 칸을 누르면 같은 분석 창)
             causes.refresh_days(code, feed.kst_now(), fetch=c.fetch, log=log)
@@ -743,16 +716,6 @@ def main(argv) -> int:
         from core import macro, newssearch
         chk = []
         with connect() as conn:
-            for i_f, f in enumerate(settings.get("factor_etfs") or [], 1):
-                rows = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? ORDER BY date DESC LIMIT 30",
-                                    (f["code"],)).fetchall()
-                dup = conn.execute(
-                    "SELECT b.symbol, COUNT(*) FROM daily_bars a JOIN daily_bars b ON a.date=b.date AND a.close=b.close "
-                    "AND b.symbol<>a.symbol WHERE a.symbol=? AND a.date>=? GROUP BY b.symbol ORDER BY 2 DESC LIMIT 1",
-                    (f["code"], rows[-1][0] if rows else "9999")).fetchone()
-                n_all = conn.execute("SELECT COUNT(*) FROM daily_bars WHERE symbol=?", (f["code"],)).fetchone()[0]
-                chk.append(f"업종ETF{i_f} 일봉 {n_all}일(마지막 {rows[0][0] if rows else '-'})"
-                           + (f" ⚠ 다른 종목과 종가 {dup[1]}일 같음" if dup and dup[1] >= 10 else ""))
             since = (feed.kst_now() - timedelta(days=1)).isoformat(timespec="minutes")
             n_issue = conn.execute("SELECT COUNT(*) FROM macro_news WHERE (id LIKE 's%' OR id LIKE 'g%') AND ts>=?", (since,)).fetchone()[0]
             other = {lab: conn.execute("SELECT COUNT(*) FROM daily_bars WHERE symbol=?", (c_,)).fetchone()[0]
@@ -760,13 +723,6 @@ def main(argv) -> int:
             n_theme = conn.execute("SELECT COUNT(*) FROM stock_themes WHERE code=?", (code,)).fetchone()[0]
         chk.append("일봉 " + ", ".join(f"{k} {v}일" for k, v in other.items()) + f" / 종목 테마 {n_theme}개"
                    + " / 회사 설정 " + ("있음" if settings.get("symbol") else "없음"))
-        for i_f, f in enumerate(settings.get("factor_etfs") or [], 1):
-            if any(x.startswith(f"업종ETF{i_f} 일봉 0일") for x in chk):
-                try:
-                    got = macro.fetch_daily(f["code"])
-                    chk.append(f"업종ETF{i_f} 직접 받기 {len(got)}일")
-                except Exception as e:  # noqa: BLE001
-                    chk.append(f"업종ETF{i_f} 직접 받기 실패: {type(e).__name__}")
         try:                               # 직접 등록 기사가 사이트 목록에 들어갔는지 (건수만)
             import webserver as _ws
             with connect() as conn:
@@ -797,22 +753,6 @@ def main(argv) -> int:
                 annotate("notice", msg)
     except Exception as e:  # noqa: BLE001 - 다음 실행에 이어서
         annotate("warning", f"한투 다시 받기 실패(다음 실행에 이어서): {type(e).__name__}: {str(e)[:150]}")
-    # 하루 한 번: 이 종목 일별 등락을 KOSDAQ·네이버 업종(WICS)·네이버 테마 중 어느 묶음이 더 잘 설명하는지 (실행 기록에 한 줄)
-    if (get_state("peerfit:day") or {}).get("value") != now.date().isoformat():
-        try:
-            from core import macro as _m, peerfit
-            with connect() as conn:
-                missing = [x["code"] for x in _m.basket_codes()
-                           if not conn.execute("SELECT 1 FROM daily_bars WHERE symbol=? LIMIT 1", (x["code"],)).fetchone()]
-            if missing:                       # 테마 대형 종목 일봉 (처음 한 번)
-                _m.sync_daily_bars(missing)
-            with connect() as conn:
-                res = peerfit.compare(conn, code)
-            set_state("peerfit", json.dumps(res, ensure_ascii=False))
-            set_state("peerfit:day", now.date().isoformat())
-            annotate("notice", peerfit.summary_line(res))
-        except Exception as e:  # noqa: BLE001 - 참고용 계산이라 실패해도 계속
-            annotate("warning", f"묶음 설명력 계산 실패: {type(e).__name__}: {str(e)[:150]}")
     lap("마무리")
     annotate("notice", f"단계별 시간(초, 합계 {sum(x for _, x in _LAP[1]):.0f}): " + " · ".join(f"{k} {v:.0f}" for k, v in _LAP[1]))
     return 1 if failed else 0

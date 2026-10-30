@@ -142,8 +142,7 @@ def test_T20_encrypted_static_and_inbox(database,tmp_path):
 def test_T22_missing_market_not_zero(database,monkeypatch):
     from core import causes,articles
     monkeypatch.setattr(articles,'decompose',lambda *a:None)
-    assert causes._decompose_window('X',datetime(2026,10,6).date(),.05,None,[{'code':'Y','name':'Y','change':.01}],False) is None
-    assert causes._decompose_window('X',datetime(2026,10,6).date(),.05,.01,[],False) is None
+    assert causes._decompose_window('X',datetime(2026,10,6).date(),.05,None,False) is None
 
 def test_T24_independent_decimal_price_reproduction(database):
     from decimal import Decimal
@@ -204,16 +203,16 @@ def test_earlier_external_article_does_not_reclassify_press_release(database):
     ds,_=ob.build(database,'X',[row('a')])
     assert ds[d['event_id']]['pr_distributed_at']=='2026-10-06T09:50:00'
 
-@pytest.mark.parametrize('own,kq,sec,bm,bs',[(.04,.01,.015,1,1),(.01,.03,.02,2,1),(0,.02,.01,0,0),(-.01,.02,-.02,1,1)])
-def test_unbounded_contributions_and_zero_coefficients(database,monkeypatch,own,kq,sec,bm,bs):
+@pytest.mark.parametrize('own,kq,bm',[(.04,.01,1),(.01,.03,2),(0,.02,0),(-.01,.02,1)])
+def test_unbounded_contributions_and_zero_coefficients(database,monkeypatch,own,kq,bm):
+    # 몫 나누기 = 시장 몫 + 고유 몫 (업종 몫은 계산하지 않음)
     from core import causes,articles
-    monkeypatch.setattr(articles,'decompose',lambda *a:{'beta_market':bm,'beta_sector':bs,'beta_sector_market':0})
-    d=causes._decompose_window('X',datetime(2026,10,6).date(),own,kq,[{'code':x,'name':x,'change':sec} for x in ['A','B']],False)
-    assert d['market']==pytest.approx(bm*kq)
-    assert d['sector']==pytest.approx(bs*sec)
-    assert sum(d[k] for k in ['market','sector','specific'])==pytest.approx(own)
+    monkeypatch.setattr(articles,'decompose',lambda *a:{'beta_market':bm})
+    d=causes._decompose_window('X',datetime(2026,10,6).date(),own,kq,False)
+    assert d['market']==pytest.approx(bm*kq) and 'sector' not in d
+    assert d['market']+d['specific']==pytest.approx(own)
     text=causes._desk(d,None,None,False,[],{"ok":False,"text":"없음"},None,None,None,None,1)[0]['text']
-    assert text.count('%p')==3 and '추정' in text and '원인을 확정하지' in text
+    assert text.count('%p')==2 and '업종' not in text and '추정' in text and '원인을 확정하지' in text
 
 def test_similar_titles_are_grouped_as_before(database):
     # 사용자가 쓰던 묶음 방식 유지: 제목이 비슷한 같은 소식은 한 묶음(story)
@@ -328,32 +327,6 @@ def test_krx_close_not_after_hours_last_price(database):
     assert f['base_own']==12620 and f['base_basis']=='previous_krx_close'
     w = ob.daily_window(database,'X','2026-10-15',1)
     assert w['base_own']==12620 and [p['stock_price'] for p in w['points']]==[12620,11200,11470]
-
-
-def test_peerfit_prefers_group_that_moves_with_stock(tmp_path, monkeypatch):
-    import random
-    from datetime import date, timedelta
-    from core import db, peerfit
-    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
-    rnd = random.Random(3)
-    days, d = [], date(2026, 5, 1)
-    while len(days) < 70:
-        if d.weekday() < 5: days.append(d.isoformat())
-        d += timedelta(days=1)
-    own, kq = 10000.0, 800.0
-    with db.connect() as conn:
-        conn.execute("INSERT INTO stock_themes(code, theme_no, theme_name) VALUES ('000001', 7, '우주항공')")
-        for day in days:
-            m, th, ind = rnd.gauss(0, .01), rnd.gauss(0, .02), rnd.gauss(0, .01)
-            kq *= 1 + m; own *= 1 + .5 * m + th + rnd.gauss(0, .003)
-            for sym, v in (('000001', own), ('KOSDAQ', kq)):
-                conn.execute("INSERT INTO daily_bars(symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,1)", (sym, day, v, v, v, v))
-            conn.execute("INSERT INTO theme_daily(date, theme_no, name, change_rate) VALUES (?, 7, '우주항공', ?)", (day, (th + m) * 100))
-            conn.execute("INSERT INTO industry_daily(date, industry_no, name, change_rate) VALUES (?, 284, '우주항공과국방', ?)", (day, (ind + m) * 100))
-        res = peerfit.compare(conn, '000001')
-    by = {r['name']: r for r in res['rows']}
-    assert by['테마 우주항공']['corr_ex_market'] > .9 > by['WICS 우주항공과국방']['corr_ex_market'] + .5
-    assert '테마 우주항공' in peerfit.summary_line(res)
 
 
 def test_regular_ohlc_ignores_after_hours_and_history_bars(tmp_path, monkeypatch):

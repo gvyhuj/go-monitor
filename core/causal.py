@@ -1,10 +1,9 @@
 """원인 판단에 쓰는 계산 (실무 3단계).
 
-① 몫 나누기 (팩터 모형: 월스트리트 리스크 모델 방식, MSCI Barra·Axioma)
-   실제 등락 = 시장(KOSDAQ) 몫 + 업종 몫(방산 ETF·반도체 ETF) + 이 종목 고유 몫.
-   기울기(민감도)는 이벤트 10거래일 전까지 최대 250거래일 기록으로 추정.
-   고유 몫이 평소 고유 변동의 몇 배인지(z)로 '회사만의 이유가 있는 움직임인지' 판단.
-   업종 ETF 기록이 모자라면 시장만 감안한 사건연구(MacKinlay 1997)로 대신 계산.
+① 몫 나누기
+   실제 등락 = 시장(KOSDAQ) 몫 + 이 종목 고유 몫 (업종 몫은 계산하지 않음).
+   시장 민감도(β)는 반응일 5거래일 전까지 최대 120거래일 기록으로 추정.
+   고유 몫이 평소 고유 움직임 중 얼마나 드문지로 '회사만의 이유가 있는 움직임인지' 판단.
    장중 30분 움직임은 같은 길이의 평소 움직임 분포와 비교(window_rarity).
 
 ② 기사 직후 검증 (고빈도 시간창, narrow-window identification)
@@ -128,20 +127,13 @@ def news_baseline(symbol: str, years: float = 2.0) -> dict | None:
     own = {d: r for d, r in returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar).items()
            if d >= start}
     mkt = returns_from_prices(market_prices, calendar)
-    with connect() as conn:
-        peer_codes = [row[0] for row in conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?)",
-                                                  (symbol, KOSDAQ))]
-    peer_returns = [returns_from_prices({row[0]: row[2] for row in _daily(code, lo, hi)}, calendar)
-                    for code in peer_codes]
-    sector = {day: sum(s[day] for s in peer_returns) / len(peer_returns)
-              for day in mkt if peer_returns and all(day in s for s in peer_returns)}
     n = news_days(symbol)
     days = sorted(own)
     pr = n["pr"]
     disc = n["disc"] - pr
     ext = n["ext"] - pr - disc
     quiet = set(days) - pr - disc - ext
-    return baseline_by_group(own, mkt, days, {"pr": pr, "disc": disc, "ext": ext, "none": quiet}, "none", sector)
+    return baseline_by_group(own, mkt, days, {"pr": pr, "disc": disc, "ext": ext, "none": quiet}, "none")
 
 
 def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict | None:
@@ -153,14 +145,7 @@ def event_study(symbol: str, d0: str, est_len: int = 120, gap: int = 10) -> dict
     calendar = sorted(market_prices)
     own = returns_from_prices({row[0]: row[2] for row in _daily(symbol, lo, hi)}, calendar)
     mkt = returns_from_prices(market_prices, calendar)
-    with connect() as conn:
-        peer_codes = [row[0] for row in conn.execute("SELECT code FROM related_stocks WHERE code NOT IN (?, ?)",
-                                                  (symbol, KOSDAQ))]
-    peer_returns = [returns_from_prices({row[0]: row[2] for row in _daily(code, lo, hi)}, calendar)
-                    for code in peer_codes]
-    sector = {day: sum(series[day] for series in peer_returns) / len(peer_returns)
-              for day in mkt if peer_returns and all(day in series for series in peer_returns)}
-    out = analyze_returns(own, mkt, d0, sector, est_len, gap, calendar[1:], exclude=estimation_exclusions(symbol))
+    out = analyze_returns(own, mkt, d0, None, est_len, gap, calendar[1:], exclude=estimation_exclusions(symbol))
     if not out or not out.get("ok"):
         return out
     vols = {r[0]: r[3] for r in _daily(symbol, lo, hi)}
@@ -318,78 +303,15 @@ def narrow_window(symbol: str, ts: str, minutes: int = 30) -> dict | None:
 
 # ------------------------------------------------------------------ ① 팩터 수익 분해 (Barra 방식)
 
-def factor_attribution(symbol: str, d0: str, etfs: list[dict], est_len: int = 250, gap: int = 10) -> dict | None:
-    lo = (date.fromisoformat(d0) - timedelta(days=420)).isoformat()
-    own, mkt = _rets(symbol, lo, d0), _rets(KOSDAQ, lo, d0)
-    fac = [(f["name"], _rets(f["code"], lo, d0)) for f in etfs]
-    fac = [(n, r) for n, r in fac if d0 in r]
-    dates = sorted(d for d in own if d in mkt and all(d in r for _, r in fac))
-    if d0 not in dates:
-        return None
-    i0 = dates.index(d0)
-    est = dates[max(0, i0 - gap - est_len):max(0, i0 - gap)]
-    if len(est) < 60:
-        return {"ok": False, "reason": f"업종 ETF와 함께 계산할 기록이 부족합니다 ({len(est)}거래일)."}
-    m = np.array([mkt[d] for d in est])
-    Xm = np.column_stack([np.ones_like(m), m])
-    # 업종 ETF는 시장과 겹치는 부분을 빼서 '업종만의 움직임'으로 (Barra 업종 팩터와 같은 생각)
-    resid_f, coefs = [], []
-    for n, r in fac:
-        y = np.array([r[d] for d in est])
-        b = np.linalg.lstsq(Xm, y, rcond=None)[0]
-        coefs.append(b)
-        resid_f.append(y - Xm @ b)
-    X = np.column_stack([np.ones_like(m), m] + resid_f)
-    yo = np.array([own[d] for d in est])
-    beta = np.linalg.lstsq(X, yo, rcond=None)[0]
-    res = yo - X @ beta
-    sig = float(np.sqrt((res ** 2).sum() / (len(est) - X.shape[1])))
-    r2 = float(1 - (res ** 2).sum() / ((yo - yo.mean()) ** 2).sum())
-    m0 = mkt[d0]
-    parts = [{"name": "시장(KOSDAQ)", "factor": m0, "beta": float(beta[1]), "contrib": float(beta[1] * m0)}]
-    for k, (n, r) in enumerate(fac):
-        f0 = r[d0] - (coefs[k][0] + coefs[k][1] * m0)
-        parts.append({"name": n, "factor": r[d0], "factor_resid": float(f0), "beta": float(beta[2 + k]),
-                      "contrib": float(beta[2 + k] * f0)})
-    spec = own[d0] - float(beta[0]) - sum(p["contrib"] for p in parts)
-    return {"ok": True, "n_est": len(est), "actual": own[d0], "alpha": float(beta[0]), "parts": parts,
-            "specific": spec, "sigma": sig, "z": spec / sig if sig else None, "p": _p_norm(spec / sig) if sig else None,
-            "r2": r2}
-
-
 # ------------------------------------------------------------------ ① 하루 몫 나누기 (이벤트 상세·기사 분석 공통)
 
-def _segment_rets(lo: str, hi: str) -> dict[str, dict]:
-    """사업 분야별 비교 종목 평균 등락 {분야: {날짜: 평균}} (그날 시세가 있는 종목만으로 평균)."""
-    with connect() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT code, source FROM related_stocks")]
-    groups: dict[str, list[dict]] = {}
-    for r in rows:
-        groups.setdefault(r["source"] or "비교 종목", []).append(_rets(r["code"], lo, hi))
-    out = {}
-    for name, series in groups.items():
-        days = sorted(set().union(*[s.keys() for s in series])) if series else []
-        avg = {}
-        for d in days:
-            xs = [s[d] for s in series if d in s]
-            if xs:
-                avg[d] = sum(xs) / len(xs)
-        if avg:
-            out[name] = avg
-    return out
-
-
 WINSOR_K = 4.0      # 민감도 추정 때 값을 누르는 범위 (중앙값 ± 4×MAD)
-RIDGE_OBS = 30.0     # 분야 계수 축소 강도 (기록 60일이면 약 2/3, 120일이면 약 4/5로 줄어듦)
 
 
-def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int = 120, gap: int = 5) -> dict | None:
-    """반응일 하루(전일 종가 → 종가) 등락을 시장 몫 + 분야별 몫 + 고유 몫으로 나눔.
+def day_split(symbol: str, d0: str, est_len: int = 120, gap: int = 5) -> dict | None:
+    """반응일 하루(전일 종가 → 종가) 등락을 시장 몫 + 고유 몫으로 나눔 (업종 몫은 계산하지 않음).
 
-    - 분야별 몫: 사업 분야(비교 종목 묶음)마다 평균 등락을 따로 넣고(업종 ETF가 설정돼 있으면 함께),
-      각 분야에서 시장과 겹치는 부분을 뺀 뒤 회귀 → 이 종목과 실제로 같이 움직이는 분야만 크게 반영됨
-    - 평소 추세(α)는 빼지 않음: 몇 달 오른(내린) 추세가 하루 반응을 깎지 않게
-    - 분야 계수는 축소 추정(릿지, RIDGE_OBS): 기록이 짧거나 같이 움직이는 정도가 약한 분야는 작게 반영
+    - 시장 몫 = KOSDAQ 등락 × 이 종목의 평소 시장 민감도(β, 원점 회귀: 평소 추세 α는 빼지 않음)
     - 평소 고유 변동폭(σ)은 중앙값 기반(1.4826 × MAD): 큰 사건 며칠에 부풀지 않게
     - 얼마나 드문지는 정규분포 가정 대신 실제 기록과 비교(rarity): 추정 기간의 고유 움직임 중
       이만큼 이상 컸던 비율 (꼬리가 두꺼운 종목이라 z=2를 '100번 중 5번'으로 읽으면 틀림)
@@ -399,17 +321,12 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
     day0 = date.fromisoformat(d0)
     lo, hi = (day0 - timedelta(days=int(est_len * 2.4) + 40)).isoformat(), (day0 + timedelta(days=10)).isoformat()
     own, mkt = _rets(symbol, lo, hi), _rets(KOSDAQ, lo, hi)
-    facs = [(n, r, "seg") for n, r in _segment_rets(lo, hi).items()]
-    facs += [(f["name"], _rets(f["code"], lo, hi), "etf") for f in (etfs or [])]
     dates = sorted(d for d in own if d in mkt)
     if d0 not in dates:
         return None
     i0 = dates.index(d0)
     from .eventstudy import estimation_days
-    est_all = estimation_days(dates, i0, est_len, gap, estimation_exclusions(symbol))   # 기사·공시 날은 건너뜀
-    # 추정 기간의 80% 이상 시세가 있는 분야만 씀 (최근 상장 종목뿐인 분야는 뺌)
-    facs = [f for f in facs if est_all and sum(d in f[1] for d in est_all) >= 0.8 * len(est_all) and d0 in f[1]]
-    est = [d for d in est_all if all(d in f[1] for f in facs)]
+    est = estimation_days(dates, i0, est_len, gap, estimation_exclusions(symbol))   # 기사·공시 날은 건너뜀
     out = {"n_obs": len(est), "window": [est[0], est[-1]] if est else None}
     if len(est) >= 40:
         # 민감도는 큰 사건 날(±16% 같은 날)에 끌려가지 않게, 추정할 때만 값을 중앙값 ± 4×MAD 안으로 눌러서(윈저화) 구함
@@ -419,36 +336,16 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
             mad = 1.4826 * np.median(np.abs(x - med)) or float(np.std(x)) or 1.0
             return np.clip(x, med - WINSOR_K * mad, med + WINSOR_K * mad)
         m_raw = np.array([mkt[d] for d in est])
-        m = w(m_raw)
-        resid, resid_raw, slopes = [], [], []
-        for _, r, _ in facs:                     # 분야에서 시장과 겹치는 부분을 뺌 (분야만의 움직임)
-            y_raw = np.array([r[d] for d in est])
-            y = w(y_raw)
-            b = float(m @ y / (m @ m)) if m @ m else 0.0
-            slopes.append(b)
-            resid.append(y - b * m)
-            resid_raw.append(y_raw - b * m_raw)
         yo_raw = np.array([own[d] for d in est])
-        yo = w(yo_raw)
-        # 분야는 표준화한 뒤 릿지(시장 계수는 축소하지 않음): 관측 RIDGE_OBS개만큼의 '0일 것'이라는 사전 믿음
-        scale = [float(np.std(r)) or 1.0 for r in resid]
-        Z = np.column_stack([m] + [r / sc for r, sc in zip(resid, scale)])
-        pen = np.diag([0.0] + [RIDGE_OBS] * len(resid))
-        cz = np.linalg.solve(Z.T @ Z + pen, Z.T @ yo)
-        coef = np.array([cz[0]] + [cz[1 + i] / scale[i] for i in range(len(resid))])
-        # 평소 고유 움직임(σ·얼마나 드문가 비교용)은 누르지 않은 실제 값으로
-        res = yo_raw - np.column_stack([m_raw] + resid_raw) @ coef
+        m, yo = w(m_raw), w(yo_raw)
+        beta = float(m @ yo / (m @ m)) if m @ m else 1.0
+        res = yo_raw - beta * m_raw              # 평소 고유 움직임(σ·얼마나 드문가 비교용)은 누르지 않은 실제 값으로
         sigma = float(1.4826 * np.median(np.abs(res - np.median(res))))
-        out.update({"method": "분야별 회귀", "beta_market": float(coef[0]), "sigma": sigma})
-        betas = [float(c) for c in coef[1:]]
-    else:                                        # 기록이 짧으면 시장 1배, 분야 몫 없이
+        out.update({"method": "시장 회귀", "beta_market": beta, "sigma": sigma})
+    else:                                        # 기록이 짧으면 시장 1배
         res = np.array([own[d] - mkt[d] for d in dates[max(0, i0 - 60):i0]])
-        diffs = res
-        sigma = float(1.4826 * np.median(np.abs(diffs - np.median(diffs)))) if len(diffs) >= 10 else None
-        facs, slopes, betas = [], [], []
+        sigma = float(1.4826 * np.median(np.abs(res - np.median(res)))) if len(res) >= 10 else None
         out.update({"method": "단순", "beta_market": 1.0, "sigma": sigma})
-    out["beta_sector"] = None
-    out["parts"] = [{"name": n, "kind": k, "beta": betas[i], "slope": slopes[i]} for i, (n, _, k) in enumerate(facs)]
     resid_hist = [float(x) for x in res]
 
     def window(n_days: int) -> dict | None:
@@ -457,24 +354,15 @@ def day_split(symbol: str, d0: str, etfs: list[dict] | None = None, est_len: int
             return None
         own_r = float(np.prod([1 + own[d] for d in ds]) - 1)
         mk = sum(out["beta_market"] * mkt[d] for d in ds)
-        parts = []
-        for i, (n, r, k) in enumerate(facs):
-            if any(d not in r for d in ds):
-                return None  # Missing sector data cannot be interpreted as zero.
-            fr = sum(r[d] - slopes[i] * mkt[d] for d in ds)
-            parts.append({"name": n, "kind": k, "factor": float(np.prod([1 + r.get(d, 0.0) for d in ds]) - 1),
-                          "factor_resid": float(fr), "beta": betas[i], "contrib": float(betas[i] * fr)})
-        sec = sum(p["contrib"] for p in parts)
-        abn = own_r - mk - sec
+        abn = own_r - mk
         sig = out["sigma"]
         # 평소 같은 길이(n_days일) 고유 움직임 중 이번 이상으로 컸던 비율
         null = [sum(resid_hist[i:i + n_days]) for i in range(len(resid_hist) - n_days + 1)]
         rarity = (1 + sum(1 for v in null if abs(v) >= abs(abn))) / (1 + len(null)) if len(null) >= 20 else None
-        return {"own": own_r, "market": float(mk), "sector": float(sec), "abnormal": float(abn),
+        return {"own": own_r, "market": float(mk), "abnormal": float(abn),
                 "rarity": rarity, "n_null": len(null),
                 "z": float(abn / (sig * len(ds) ** 0.5)) if sig else None,
-                "kosdaq": float(np.prod([1 + mkt[d] for d in ds]) - 1), "sector_avg": None,
-                "parts": parts, "days": len(ds)}
+                "kosdaq": float(np.prod([1 + mkt[d] for d in ds]) - 1), "days": len(ds)}
 
     out["d0"], out["d01"] = window(1), window(2)
     return out

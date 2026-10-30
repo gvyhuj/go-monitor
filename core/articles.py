@@ -12,8 +12,8 @@
   단순 언급    본문에 이름만 나오거나 네이버가 연결만 한 기사
 
 반응 계산
-  분봉(최근 기록이 있을 때): 공개 후 5·15·30·60·120분, KOSDAQ·같은 업종 평균과 비교 → 초과 반응
-  일봉(몇 달 전 기사도 가능): 반응일 당일·다음날·3거래일 누적, KOSDAQ·같은 업종 평균과 비교, 거래량 배수
+  분봉(최근 기록이 있을 때): 공개 후 5·15·30·60·120분, KOSDAQ과 비교 → 초과 반응
+  일봉(몇 달 전 기사도 가능): 반응일 당일·다음날·3거래일 누적, KOSDAQ과 비교, 거래량 배수
 """
 from __future__ import annotations
 
@@ -467,71 +467,14 @@ def _ret_path(symbol: str, d0: str, n_after: int = 3):
     return out
 
 
-def _peer_codes() -> list[dict]:
-    with connect() as conn:
-        return [dict(r) for r in conn.execute("SELECT code, name FROM related_stocks")]
-
-
-def _minute_change(code: str, t0: datetime, t1: datetime):
-    from . import analysis
-    df = analysis.load_range(code, t0 - timedelta(days=4), t1)
-    if df.empty:
-        return None
-    day = df[df["ts"].dt.date == t1.date()]
-    a = day[day["ts"] < t0]
-    b = day[(day["ts"] >= t0) & (day["ts"] <= t1)]
-    if b.empty:
-        return None
-    base = float(a["close"].iloc[-1]) if not a.empty else float(b["open"].iloc[0])
-    return float(b["close"].iloc[-1]) / base - 1 if base else None
-
-
-
 def _close_series(code: str, lo: str, hi: str) -> dict:
     return {r["date"]: r["close"] for r in _daily(code, lo, hi) if r.get("close")}
 
 
-def decompose(symbol: str, d0: str, peers: list[dict] | None = None) -> dict | None:
-    """반응일 주가 변동을 '시장 몫 + 분야별 몫 + 고유(기사) 몫'으로 나눔. 이벤트 상세(하루)와 같은 계산(causal.day_split)."""
+def decompose(symbol: str, d0: str) -> dict | None:
+    """반응일 주가 변동을 '시장 몫 + 고유(기사) 몫'으로 나눔. 이벤트 상세(하루)와 같은 계산(causal.day_split)."""
     from . import causal
-    from .detector import load_settings
-    return causal.day_split(symbol, d0, load_settings().get("factor_etfs") or [])
-
-
-def timing(symbol: str, start: datetime, peers: list[dict], minutes: int = 30) -> dict | None:
-    """기사 직후 이 종목이 업종보다 먼저 움직였는지 (분봉)."""
-    from . import analysis
-    t1 = start + timedelta(minutes=minutes)
-    df = analysis.load_range(symbol, start - timedelta(days=4), t1)
-    if df.empty:
-        return None
-    day = df[df["ts"].dt.date == start.date()]
-    before = day[day["ts"] < start]
-    after = day[(day["ts"] >= start) & (day["ts"] <= t1)]
-    if after.empty:
-        return None
-    base = float(before["close"].iloc[-1]) if not before.empty else float(after["open"].iloc[0])
-    path = [(r.ts, float(r.close) / base - 1) for r in after.itertuples()]
-    peak = max(path, key=lambda x: abs(x[1]))
-    first = next(((t, v) for t, v in path if abs(v) >= 0.01), None)
-    pch = [c for c in (_minute_change(p["code"], start, peak[0].to_pydatetime()) for p in peers) if c is not None]
-    peer_move = sum(pch) / len(pch) if len(pch) >= 2 else None
-    own_move = peak[1]
-    if peer_move is None:
-        label, cls = "같은 업종 분봉 기록이 없어 시간 순서를 확인하지 못했습니다.", "none"
-    elif abs(own_move) < 0.01:
-        label, cls = f"기사 후 {minutes}분 동안 이 종목이 1% 이상 움직이지 않았습니다.", "flat"
-    elif abs(peer_move) < 0.3 * abs(own_move) or peer_move * own_move < 0:
-        mins = int((first[0].to_pydatetime() - start).total_seconds() // 60) if first else None
-        label = (f"기사 후 {mins}분 만에 이 종목이 먼저 움직였고(최대 {own_move*100:+.1f}%), "
-                 f"같은 시각 업종 평균은 {peer_move*100:+.1f}%였습니다 → 기사 영향 쪽") if mins is not None else \
-                f"이 종목 {own_move*100:+.1f}%, 같은 시각 업종 평균 {peer_move*100:+.1f}% → 기사 영향 쪽"
-        cls = "lead"
-    else:
-        label, cls = (f"이 종목({own_move*100:+.1f}%)과 업종 평균({peer_move*100:+.1f}%)이 같은 시각에 함께 움직였습니다 "
-                      "→ 업종 흐름 쪽"), "together"
-    return {"label": label, "cls": cls, "own": own_move, "peers": peer_move,
-            "peak_at": peak[0].isoformat(timespec="minutes") if hasattr(peak[0], "isoformat") else str(peak[0])}
+    return causal.day_split(symbol, d0)
 
 
 # 기사와 같은 내용의 공시: 공시가 먼저 나왔으면 공시 시각부터 잼 (공시 종류 → 기사 제목에 나올 단어)
@@ -589,29 +532,16 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
     out = {"reaction_day": d0, "minute": None, "daily": None, "verdict": None, "verdict_cls": "none",
            "notes": [], "off_session": bool(d0) and off, "late": late, "base_ts": ts.isoformat(timespec="minutes"),
            "disclosure": {"ts": disc["ts"], "title": disc["title"], "kind": disc["kind"]} if disc else None}
-    peers = _peer_codes()
 
     # 분봉 반응 (최근 기록이 있을 때)
     r = analysis.analyze_pr(symbol, ts)
     if r.ok and r.returns and not untimed:
-        bench, bench_name = {}, "KOSDAQ"
-        peer_avg = {}
-        for h in r.returns:
-            t1 = r.reaction_start + timedelta(minutes=h)
-            ch = [c for c in (_minute_change(p["code"], r.reaction_start, t1) for p in peers) if c is not None]
-            if len(ch) >= 2:
-                peer_avg[h] = sum(ch) / len(ch)
-        if peer_avg:
-            bench, bench_name = peer_avg, "같은 업종 평균"
-        else:
-            bench = r.kosdaq_returns
         out["minute"] = {
             "reaction_start": r.reaction_start.isoformat(timespec="minutes"), "base_price": r.base_price,
             "returns": {str(k): v for k, v in r.returns.items()},
             "kosdaq": {str(k): v for k, v in r.kosdaq_returns.items()},
-            "peers": {str(k): v for k, v in peer_avg.items()},
-            "excess": {str(k): r.returns[k] - bench[k] for k in r.returns if k in bench},
-            "bench_name": bench_name,
+            "excess": {str(k): r.returns[k] - r.kosdaq_returns[k] for k in r.returns if k in r.kosdaq_returns},
+            "bench_name": "KOSDAQ",
             "max_up": r.max_up, "max_up_at": r.max_up_at.isoformat(timespec="minutes") if r.max_up_at else None,
             "max_down": r.max_down, "max_down_at": r.max_down_at.isoformat(timespec="minutes") if r.max_down_at else None,
             "vol_after30": r.vol_after30, "vol_usual30": r.vol_usual30,
@@ -623,17 +553,12 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
         own = _ret_path(symbol, d0)
         if own:
             kq = _ret_path(KOSDAQ, d0) or {}
-            pp = [x for x in (_ret_path(p["code"], d0) for p in peers) if x]
-            pavg = {k: sum(x[k] for x in pp if x.get(k) is not None) / max(1, len([x for x in pp if x.get(k) is not None]))
-                    for k in ("d0", "d1", "d3")} if len(pp) >= 2 else {}
-            bench = pavg if pavg else kq
             out["daily"] = {
                 **{k: own.get(k) for k in ("d0", "d1", "d3", "vol_ratio", "vol_rank", "volume", "prev_close", "gap")},
                 "kosdaq": {k: kq.get(k) for k in ("d0", "d1", "d3")},
-                "peers": pavg,
-                "excess": {k: (own[k] - bench[k]) if own.get(k) is not None and bench.get(k) is not None else None
+                "excess": {k: (own[k] - kq[k]) if own.get(k) is not None and kq.get(k) is not None else None
                            for k in ("d0", "d1", "d3")},
-                "bench_name": "같은 업종 평균" if pavg else "KOSDAQ",
+                "bench_name": "KOSDAQ",
             }
         # 15시 넘어 공개(장 마감 전): 발표 직후 반응은 그날 종가 → 다음 거래일로 재므로, 일봉도 그날 종가 대비 다음 거래일부터
         # (반응일 종가를 공개 전 움직임까지 담은 '그날 종가'로 보면 +30분 숫자와 기준이 어긋남)
@@ -657,10 +582,9 @@ def effect(symbol: str, ts: datetime, tone: int = 0, category: str = "", title: 
 
 
 def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rarity: bool = True) -> dict | None:
-    """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 분야 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
+    """t0 → t1 구간(t0가 없으면 전일 종가 → t1)을 시장 몫 + 고유 몫으로 나누고, 평소 같은 구간과 비교."""
     from . import causal, yahoo
     day = t1.date()
-    ret = lambda code: causal.window_return(code, day, t1.time(), t0 - timedelta(minutes=1) if t0 else None)
     with connect() as conn:
         frame = yahoo.reaction_frame(conn, symbol, day.isoformat(), t0 or datetime.combine(day, time(9)),
                                      "session" if t0 else "open", min_minutes=1)
@@ -671,18 +595,8 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rari
     kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
     if own is None or kq is None:
         return None
-    with connect() as conn:
-        rel = [dict(x) for x in conn.execute("SELECT code, source FROM related_stocks")]
-    sector, used = 0.0, 0
-    for part in dc.get("parts") or []:
-        if part.get("kind") != "seg":
-            continue
-        ch = [c for c in (ret(x["code"]) for x in rel if (x["source"] or "비교 종목") == part["name"]) if c is not None]
-        if ch:
-            sector += part["beta"] * (sum(ch) / len(ch) - part["slope"] * kq)
-            used += 1
     market = dc["beta_market"] * kq
-    abn = own - market - sector
+    abn = own - market
     if not rarity:                  # 시간대별 표의 다른 줄: 평소 비교(무거운 계산)는 대표 30분에만
         rr = None
     elif t0 is None:
@@ -690,13 +604,13 @@ def _window_split(symbol: str, dc: dict, t0: datetime | None, t1: datetime, rari
     else:
         rr = causal.abnormal_rarity(symbol, day, abn, dc["beta_market"], minutes=int((t1 - t0).total_seconds() // 60))
     ok = rr and rr.get("ok")
-    return {"own": own, "market": market, "sector": sector, "abnormal": abn, "kosdaq": kq, "segments_used": used,
+    return {"own": own, "market": market, "abnormal": abn, "kosdaq": kq,
             "rarity": rr["p"] if ok else None, "n_null": rr["n"] if ok else None,
             "start": t0.isoformat(timespec="minutes") if t0 else None, "end": t1.isoformat(timespec="minutes"),
             "basis": f"{int((t1 - t0).total_seconds() // 60)}분" if t0 else "개장 후 " + t1.strftime("%H:%M") + "까지"}
 
 INTRADAY_MINUTES = 30
-INTRADAY_STEPS = (5, 15, 30, 60, 120)      # 상세 화면 시간대별 표 (모두 같은 방식: 시장 몫 + 업종 몫 + 고유 움직임)
+INTRADAY_STEPS = (5, 15, 30, 60, 120)      # 상세 화면 시간대별 표 (모두 같은 방식: 시장 몫 + 고유 움직임)
 
 
 def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
@@ -746,17 +660,16 @@ def intraday_reaction(symbol: str, eff: dict, time_ok: bool) -> dict | None:
         x = w if m == INTRADAY_MINUTES else _window_split(symbol, dc, t0, end, rarity=False)
         if x:
             rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"),
-                         **{k: x[k] for k in ("own", "market", "sector", "abnormal", "kosdaq")}})
+                         **{k: x[k] for k in ("own", "market", "abnormal", "kosdaq")}})
         else:
             p, k = yahoo.point_at(frame["own"], end), yahoo.point_at(frame["kq"], end)
             own = p / frame["base_own"] - 1 if p and frame["base_own"] else None
             kq = k / frame["base_kq"] - 1 if k and frame["base_kq"] else None
             if own is not None or kq is not None:
                 rows.append({"minutes": m, "end": end.isoformat(timespec="minutes"), "own": own,
-                             "kosdaq": kq, "market": None, "sector": None, "abnormal": None})
+                             "kosdaq": kq, "market": None, "abnormal": None})
     # start: 그래프의 기준 시각 (장 전·15시 넘어 공개는 반응일 장 시작). 비어 있으면 그래프를 못 그려 '09:30 뒤 나옴'만 보였음
-    return {**w, "start": start.isoformat(timespec="minutes"), "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES, "n_segments": len([p for p in dc.get("parts") or []
-                                                                             if p.get("kind") == "seg"])}
+    return {**w, "start": start.isoformat(timespec="minutes"), "rows": rows, "kind": kind, "day": d0, "minutes": INTRADAY_MINUTES}
 
 
 # 기사마다 도는 사건연구(평소 관계로 추정한 반응일 '예상 대비 차이'·95% 범위). 결과를 화면에 싣지 않게 되어 꺼 둠

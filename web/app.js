@@ -1056,8 +1056,8 @@
         daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
           volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
           kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
-          foreign: null, organ: null, individual: null, foreign_ratio: null, industries: lv.industries || null, themes: lv.themes || null, theme_info: lv.theme_info || null,
-          foreign_est: lv.foreign_est || null, industry_info: lv.industry_info || null, traders: lv.traders_live || null, peers: lv.peers_live || null, live: true });
+          foreign: null, organ: null, individual: null, foreign_ratio: null, themes: lv.themes || null, theme_info: lv.theme_info || null,
+          foreign_est: lv.foreign_est || null, traders: lv.traders_live || null, live: true });
         DAY_ROWS[lv.date] = daily[daily.length - 1];
       } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
         last.foreign_est = lv.foreign_est;       // 장 마감 뒤 일봉은 생겼지만 거래소 개인·외국인·기관 확정치는 아직 → 장중 추정을 이어서 보여 줌
@@ -1629,11 +1629,11 @@
     const L = [];
     if (whole) {
       L.push(`아래는 '${name}' 주가의 ${d.date} 하루 움직임(전일 종가 대비 ${pct(r.fromPrev)})에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-      L.push(`웹 검색으로 ① 전날 장 마감 뒤부터 ${r.endLabel ? `${d.date} ${r.endLabel} 기준시각까지` : "이날 장 마감까지"} 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이날 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.`);
+      L.push(`웹 검색으로 ① 전날 장 마감 뒤부터 ${r.endLabel ? `${d.date} ${r.endLabel} 기준시각까지` : "이날 장 마감까지"} 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 테마의 최근 며칠 흐름과 이날 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.`);
       L.push("그리고 '이날 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 장중에 크게 꺾이거나 튄 시각이 있으면 그 시각도 짚어줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     } else {
       L.push(`아래는 '${name}' 주가가 특정 구간에 갑자기 움직인 것에 대해 내 사이트가 가진 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-      L.push("이 구간의 움직임이 초점이지만, 원인을 이 시간 안에서만 찾지는 말아줘. 웹 검색으로 ① 전날 장 마감 뒤부터 이 시점까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 업종·테마의 최근 며칠 흐름과 이 구간 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
+      L.push("이 구간의 움직임이 초점이지만, 원인을 이 시간 안에서만 찾지는 말아줘. 웹 검색으로 ① 전날 장 마감 뒤부터 이 시점까지 나온 이 종목 공시·기사·리포트 ② 밤사이 미국 증시·환율 등 해외 변수 ③ 이 종목이 속한 테마의 최근 며칠 흐름과 이 구간 흐름 ④ 그날 시장 전체 흐름(지수, 외국인·기관 수급)을 확인해줘.");
       L.push("그리고 '이 구간에 직접 방아쇠가 된 일'과 '그 전부터 쌓여 있던 배경'을 구분해서 설명해줘. 확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     }
     L.push("답의 첫 줄은 '한 줄 요약 (신뢰도 높음/중간/낮음)' 형식으로 써줘. 한국어 존댓말로.", "");
@@ -1642,6 +1642,7 @@
     if (d.prev_close) L.push(`[전일 대비] 전일 종가 ${won(d.prev_close)}원 · ${whole ? r.endLabel || "종가" : "구간 끝"} ${pct(r.fromPrev)} · ${whole ? "장중" : "구간"} 최저 ${pct(r.low.fromPrev)}(${r.low.at}) · ${whole ? "장중" : "구간"} 최고 ${pct(r.high.fromPrev)}(${r.high.at})`);
     L.push(`[KOSDAQ ${whole ? r.endLabel && r.endLabel.includes("시간외") ? "이날 정규장 (전일 대비)" : "이날 (전일 대비)" : "같은 구간"}] ${r.kq == null ? "데이터 없음" : pct(r.kq)}`);
     L.push(`[거래량] ${whole ? "이날" : "구간"} ${int(r.vol)}주${r.volRatio ? ` · 1분당 거래량이 그날 다른 시간의 ${r.volRatio.toFixed(1)}배` : ""}`);
+    L.push(themeLine(d.date));
     const since = `${prevDay || d.date}T15:30`, until = `${d.date}T${r.to}`;
     (arts || []).filter((a) => a.category !== "단순 언급" && !a.hidden && a.ts && a.ts >= since && a.ts <= until).slice(0, 8)
       .forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」${a.office ? ` (${a.office})` : ""}`));
@@ -1660,8 +1661,16 @@
 
   /** 장 마감 뒤 하루 칸을 누르면: 그날 장 전체를 ChatGPT에게 묻는 창 (구간 묻기와 같은 자료·같은 기록 방식) */
   function openDayAsk(d, arts, prevDay, px) {
-    const r = rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t));
-    if (!r) return;
+    const r = d.bars && d.bars.length ? rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t)) : null;
+    if (!r) {                        // 1분 기록이 없는 날: 묻기 창 대신 그날 일봉 자료(테마 등락·순매수·거래원)만
+      const ch = px && px.change;
+      openDrawer(`
+      <h2 class="d-title" id="drawer-title">${dayLabel(d.date)} 하루${ch == null ? "" : ` <span class="${sgnCls(ch)}">${pct(ch)}</span>`}</h2>
+      <p class="d-sub">이날은 1분 기록이 없어 하루 움직임을 묻는 창을 만들지 않습니다.</p>
+      <section class="evidence"><section class="d-block" data-ev-rel></section><section class="d-block"><div data-ev-flow></div></section></section>`);
+      fillDayEvidence($("#drawer-body"), d.date, ch, { rel: true, flow: true });
+      return;
+    }
     const live = liveFor(d.date), now = live && live.open;                        // now: 장중 (지금까지의 하루)
     const fin = live ? live.price : d.close;                                        // 네이버 종가·현재가 (넥스트레이드 포함)
     if (fin) { r.endPx = fin; r.fromPrev = fin / d.prev_close - 1; }
@@ -1976,7 +1985,7 @@
     return `<details class="verify"><summary>이 숫자는 얼마나 정확한가요?</summary><ul>${rows.join("")}</ul></details>`;
   }
 
-  /** 후속 공시 (실제 보유자·보유 목적). 같은 창구의 업종 거래 목록은 화면에서 뺌 (ChatGPT 자료에는 그대로 넣음) */
+  /** 후속 공시 (실제 보유자·보유 목적). 같은 창구의 테마 종목 거래 목록은 화면에서 뺌 (ChatGPT 자료에는 그대로 넣음) */
   function followupBlock(followups) {
     return (followups || []).length ? `<div class="followup"><b>후속 공시</b> ${followups.map((x) => `${esc(x.date)} ${esc(x.title)}`).join(", ")} — 실제 보유자와 보유 목적이 이 공시에 나옵니다.</div>` : "";
   }
@@ -1987,38 +1996,29 @@
     return a >= 0.1 ? `${v < 0 ? "−" : ""}${a.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}억 원` : `${v < 0 ? "−" : ""}${Math.round(Math.abs(v) / 1e4).toLocaleString("ko-KR")}만 원`;
   }
 
-  function relatedBlock(c, own) {
-    const rel = (c && c.related) || [];
-    if (!rel.length) return "";
-    const valid = rel.filter((r) => r.change != null);
-    const max = Math.max(0.005, Math.abs(own || 0), ...valid.map((r) => Math.abs(r.change || 0)));
-    const bar = (v) => `<span class="dbar"><i class="${(v || 0) >= 0 ? "b" : "s"}" style="${(v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / max) * 50}%`};width:${(Math.abs(v || 0) / max) * 50}%"></i></span>`;
-    const groups = {};
-    valid.forEach((r) => { (groups[r.source || "비교 종목"] = groups[r.source || "비교 종목"] || []).push(r); });
-    const segs = (c.segments || []).map((g) => g.name).filter((n) => groups[n]);
-    Object.keys(groups).forEach((n) => { if (!segs.includes(n)) segs.push(n); });
-    const avg = (ms) => ms.reduce((a, m) => a + m.change, 0) / ms.length;
-    return `<h3 class="d-sec">이 종목 사업 분야별 비교 종목</h3>
-      ${valid.length ? `<ul class="rel"><li class="me"><span class="nm">이 종목</span>${bar(own)}<span class="num v ${sgnCls(own)}">${pct(own)}</span></li></ul>
-        ${segs.map((n) => { const ms = groups[n].sort((a, b) => (b.change || 0) - (a.change || 0)); const a = avg(ms);
-          const sg = (c.segments || []).find((g) => g.name === n);
-          const lk = sg && sg.link != null ? `<span class="muted"> · 평소 연동성 ${sg.link.toFixed(2)}${sg.link_lo != null ? ` (95% 범위 ${sg.link_lo.toFixed(2)}~${sg.link_hi.toFixed(2)}, ${esc(sg.link_label)})` : ""}</span>` : "";
-          return `<div class="seg-group"><div class="seg-head"><b>${esc(n)}${lk}</b><span class="num ${sgnCls(a)}">평균 ${pct(a)}</span></div>
-          <ul class="rel">${ms.map((r) => `<li><span class="nm">${esc(r.name)}</span>${bar(r.change)}<span class="num v ${sgnCls(r.change)}">${pct(r.change)}</span></li>`).join("")}</ul></div>`; }).join("")}
-        ${e_isDailyNote(c) ? `<p class="note">${e_isDailyNote(c)}</p>` : ""}`
-        : `<p class="note">이 시간대 비교 종목 시세가 없습니다.</p>`}`;
-  }
-  // 그날 일봉 자료 (비교 종목 등락·투자자별 순매수·장 마감 거래원). 자동 분석이 없는 날의 메인 기록 창에서 씀
-  let PEERS = [], dailyP = null;
+  // 그날 일봉 자료 (네이버 테마 등락·투자자별 순매수·장 마감 거래원). 급등·급락 상세와 하루 창에서 씀
+  let dailyP = null;
   const DAY_ROWS = {};
-  function keepDaily(d) { PEERS = d.peers || PEERS; THEME_NOS = d.theme_nos || THEME_NOS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
+  function keepDaily(d) { THEME_NOS = d.theme_nos || THEME_NOS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
   let THEME_NOS = {};     // 테마 이름 → 네이버 테마 번호
   const ensureDaily = () => (dailyP ||= api("/api/daily").then(keepDaily).catch(() => { dailyP = null; return []; }));
-  function dayRelatedBlock(ds, own) {
-    const ch = (DAY_ROWS[ds] || {}).peers;
-    if (!PEERS.length) return "";
-    const html = relatedBlock({ related: PEERS.map((p, i) => ({ name: p.name, source: p.source, change: ch ? ch[i] : null })), segments: [] }, own);
-    return ch ? `${html}<p class="note">그날 하루 등락(전일 대비)입니다.</p>` : html.replace("이 시간대 비교 종목 시세가 없습니다.", "이날 비교 종목 시세가 아직 없습니다.");
+  const themeUrlOf = (k) => (THEME_NOS[k] ? `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${THEME_NOS[k]}` : "");
+  /** 그날 네이버 테마 등락 (이 종목이 들어 있는 테마 전부, 네이버 테마 화면 값 그대로) */
+  function dayThemeBlock(ds, own) {
+    const th = (DAY_ROWS[ds] || {}).themes || {}, ks = Object.keys(th).sort((a, b) => th[b] - th[a]);
+    if (!ks.length) return `<h3 class="d-sec">그날 테마 등락</h3><p class="note">이날은 네이버 테마 기록이 없습니다.</p>`;
+    const max = Math.max(0.005, Math.abs(own || 0), ...ks.map((k) => Math.abs(th[k])));
+    const bar = (v) => `<span class="dbar"><i class="${(v || 0) >= 0 ? "b" : "s"}" style="${(v || 0) >= 0 ? "left:50%" : `left:${50 - (Math.abs(v) / max) * 50}%`};width:${(Math.abs(v || 0) / max) * 50}%"></i></span>`;
+    const nm = (k) => (themeUrlOf(k) ? `<a href="${esc(themeUrlOf(k))}" target="_blank" rel="noopener" title="${esc(k)} · 네이버에서 보기">${esc(k)}</a>` : esc(k));
+    return `<h3 class="d-sec">그날 테마 등락 <small class="muted">네이버 테마</small></h3>
+      <ul class="rel">${own != null ? `<li class="me"><span class="nm">이 종목</span>${bar(own)}<span class="num v ${sgnCls(own)}">${pct(own)}</span></li>` : ""}
+        ${ks.map((k) => `<li><span class="nm">${nm(k)}</span>${bar(th[k])}<span class="num v ${sgnCls(th[k])}">${pct(th[k])}</span></li>`).join("")}</ul>
+      <p class="note">그날 하루 등락(전일 대비)입니다.</p>`;
+  }
+  /** 원인 질문용 한 줄: 그날 네이버 테마 등락 */
+  function themeLine(ds) {
+    const th = (DAY_ROWS[ds] || {}).themes || {}, ks = Object.keys(th);
+    return ks.length ? `[그날 네이버 테마 등락] ${ks.sort((a, b) => th[b] - th[a]).map((k) => `${k} ${pct(th[k])}`).join(", ")}` : "[그날 네이버 테마 등락] 사이트에 기록 없음";
   }
   function dayFlowBlock(ds) {
     const x = DAY_ROWS[ds] || {}, t = x.traders;
@@ -2041,10 +2041,10 @@
     const rel = $("[data-ev-rel]", box), flow = $("[data-ev-flow]", box);
     const fill = () => {
       if (!box.contains(rel)) return;
-      if (want.rel && rel) rel.innerHTML = dayRelatedBlock(ds, own ?? (DAY_ROWS[ds] || {}).change);
+      if (want.rel && rel) rel.innerHTML = dayThemeBlock(ds, own ?? (DAY_ROWS[ds] || {}).change);
       if (want.flow && flow) flow.innerHTML = dayFlowBlock(ds);
     };
-    if (DAY_ROWS[ds] && PEERS.length) fill(); else ensureDaily().then(fill);
+    if (DAY_ROWS[ds]) fill(); else ensureDaily().then(fill);
   }
   const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
 
@@ -2085,13 +2085,13 @@
       <section class="d-block d-conclusion">${manualBlock(e)}</section>
       ${e.tier === "요청" ? `<p class="editable" style="margin-top:12px"><button class="btn danger small" type="button" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></p>` : ""}
       <section class="evidence">
-        <section class="d-block" data-ev-rel>${relatedBlock(c, e.own_change)}</section>
+        <section class="d-block" data-ev-rel></section>
         ${disclosureBlock(c)}
         <section class="d-block"><div data-ev-flow>${c && (c.flows || c.investor_day) ? flowBlock(c) : ""}</div>${followupBlock(d.followups)}</section>
       </section>`;
-    // 자동 분석에 비교 종목·거래원 자료가 없으면 그날 일봉 자료로 채움
+    // 그날 테마 등락은 일별 자료로, 자동 분석에 거래원 자료가 없으면 그것도 일별 자료로 채움
     fillDayEvidence($("#drawer-body"), e.start_ts.slice(0, 10), daily ? mv : null,
-      { rel: !relatedBlock(c, e.own_change), flow: !(c && (c.flows || c.investor_day)) });
+      { rel: true, flow: !(c && (c.flows || c.investor_day)) });
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     const dDel = $("#drawer-body [data-ev-del]");
     if (dDel) dDel.onclick = () => deleteRecord(dDel);
@@ -2160,8 +2160,8 @@
     const name = ($("#q-name") && $("#q-name").textContent) || "이 종목";
     const L = [];
     L.push(`아래는 '${name}' 주가 움직임에 대해 내 사이트가 자동으로 모은 숫자와 사실 자료야. 원인 판단은 들어 있지 않아.`);
-    L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 업종·테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
-    L.push("시장·업종·종목 고유 추정분은 모형 추정치이며 실제 원인이 아닙니다. 기여 비중이나 주도 판정을 하지 말고, 음수 또는 실제 등락보다 큰 추정치를 그대로 제시하세요.");
+    L.push("웹 검색으로 ① 그날 시장 전체 흐름(지수, 외국인·기관 수급) ② 이 종목이 속한 테마의 최근 며칠 흐름 ③ 이 종목 자체 소식(공시·기사·리포트)을 확인해서 원인을 찾아줘.");
+    L.push("시장·종목 고유 추정분은 모형 추정치이며 실제 원인이 아닙니다. 기여 비중이나 주도 판정을 하지 말고, 음수 또는 실제 등락보다 큰 추정치를 그대로 제시하세요.");
     L.push("확인된 사실과 추정을 구분하고, 근거 기사는 링크를 달아줘. 설명되지 않는 부분은 억지로 연결하지 말고 '미확인'으로 남겨줘.");
     L.push("검색한 자료는 아래 거래일 날짜와 맞는지 꼭 확인하고, 검색으로 확인한 지수·등락률이 아래 숫자와 다르면 다르다고 적어줘.");
     L.push("답의 첫 줄은 '한 줄 요약'으로 써줘. 한국어 존댓말로.", "");
@@ -2176,15 +2176,13 @@
     L.push(isDaily(e)
       ? `[움직임] ${day} 하루 (${prev ? md(prev) : "전일"} 기준가 → ${snapshot.label}${snapshot.price != null ? ` ${won(snapshot.price)}원` : ""}) ${pct(snapshot.change)} · KOSDAQ${snapshot.live && snapshot.live.ext ? " 정규장" : " 같은 날"} ${pct(snapshot.kosdaq)} · 거래대금(저장 당시) ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` (${valX})` : ""}`
       : `[움직임] ${e.start_ts.replace("T", " ")}~${hhmm(e.last_ts)} ${pct(e.peak_return_5m)} · KOSDAQ ${e.kosdaq_change == null ? "-" : pct(e.kosdaq_change)} · 거래대금 ${e.trade_value ? eok(e.trade_value) : "-"}${valX ? ` · 그날 하루 거래대금 ${valX}` : ""}`);
-    if (snapshot) L.push(`[분석 기준] ${dailyEvidenceNote(e)} 아래 몫 나누기·수급·비교 종목은 저장 당시 자료입니다.`);
+    if (snapshot) L.push(`[분석 기준] ${dailyEvidenceNote(e)} 아래 몫 나누기·수급은 저장 당시 자료입니다.`);
     if (recent.length) L.push(`[직전 ${recent.length}거래일] ${recent.map((x) => `${md(x.date)} ${pct(x.own)}(KOSDAQ ${x.kosdaq == null ? "-" : pct(x.kosdaq)})`).join(", ")}`);
     const sp = c.split;
     if (sp && sp.own != null) {
       const kq = sp.kosdaq != null ? sp.kosdaq : e.kosdaq_change;
       const mk = sp.beta_market != null && kq != null ? ` (KOSDAQ ${pct(kq)} × 이 종목의 평소 시장 민감도 ${sp.beta_market.toFixed(2)})` : "";
-      L.push(`[몫 나누기] 그린광학 실제 등락률: ${pct(sp.own)}; 시장 추정 기여분: ${points(sp.market)}${mk}; 업종 추정 기여분: ${points(sp.sector)}; 종목 고유 추정분: ${points(sp.specific)}`);
-      const parts = (sp.factor_parts || []).slice(1).filter((p) => p.contrib != null && Math.abs(p.contrib) >= 0.0005);
-      if (sp.method === "분야별 회귀") L.push(`[업종 몫 계산법] 비교 종목 평균을 그대로 더한 값이 아님. 분야별 등락에서 시장과 같이 움직인 부분을 빼고, 이 종목이 평소 그 분야와 얼마나 같이 움직였는지(직전 약 120거래일)를 곱한 합${parts.length ? ` — ${parts.map((p) => `${p.name} ${points(p.contrib)}(분야 등락 ${pct(p.factor)}${p.factor_resid != null ? `, 시장 몫 뺀 뒤 ${pct(p.factor_resid)}` : ""})`).join(", ")}` : ""}`);
+      L.push(`[몫 나누기] 그린광학 실제 등락률: ${pct(sp.own)}; 시장 추정 기여분: ${points(sp.market)}${mk}; 종목 고유 추정분: ${points(sp.specific)}`);
       if (sp.rarity != null) L.push(`[고유 몫 드문 정도] 평소 ${sp.n_null}거래일의 고유 움직임 중 이만큼 이상 컸던 날 ${(sp.rarity * 100).toFixed(0)}%`);
       else if (sp.z != null) L.push(`[고유 몫 크기] 평소 하루 고유 변동폭의 ${Math.abs(sp.z).toFixed(1)}배`);
     }
@@ -2198,17 +2196,12 @@
     else L.push("[투자자별 확정치] 사이트에 기록 없음 (수집되지 않음, 직접 확인 필요)");
     const b = c.buyer;
     if (b) {
-      (b.lines || []).filter((l) => ["업종 묶음", "개별 관심", "업종 일부", "연속성", "외국인 확정치"].includes(l.kind))
+      (b.lines || []).filter((l) => ["테마 묶음", "개별 관심", "테마 일부", "연속성", "외국인 확정치"].includes(l.kind))
         .forEach((l) => L.push(`[${l.kind}] ${l.text}`));
       const peers = (b.peers || []).filter((p) => p.listed && p.net);
       if (peers.length) L.push(`[같은 날 ${b.broker} 창구의 비교 종목 매매] ${peers.map((p) => `${p.name} ${p.net >= 0 ? "+" : ""}${int(p.net)}주`).join(", ")}`);
     }
-    const rel = (c.related || []).filter((x) => x.change != null);
-    if (rel.length) {
-      const g = {};
-      rel.forEach((x) => { (g[x.source || "비교 종목"] = g[x.source || "비교 종목"] || []).push(x); });
-      Object.entries(g).forEach(([k, ms]) => L.push(`[비교 종목: ${k}] 평균 ${pct(ms.reduce((a, x) => a + x.change, 0) / ms.length)} — ${ms.sort((a, x) => a.change - x.change).slice(0, 6).map((x) => `${x.name} ${pct(x.change)}`).join(", ")}`));
-    }
+    L.push(themeLine(day));
     const ac = c.articles;
     const lead = (ac && ac.lead) || [];
     if (lead.length) lead.slice(0, 5).forEach((a) => L.push(`[이 종목 기사] ${a.ts.replace("T", " ")} 「${a.title}」`));
@@ -2301,8 +2294,7 @@ function observationQuestion(d) {
   const o0=d.observation, o={...o0};
   if(o0.intraday)o.intraday={...o0.intraday,points:(o0.intraday.points||[]).map(p=>p.stock_price==null&&p.kosdaq_price!=null?{time:p.time,offset:p.offset,kosdaq_price:p.kosdaq_price,kq:p.kq,note:'이 1분 체결 없음'}:p)};
   if(o0.windows)o.windows=Object.fromEntries(Object.entries(o0.windows).map(([k,w])=>[k,{...w,points:(w.points||[]).filter(p=>p.stock_price!=null||p.kosdaq_price!=null)}]));
-  const calcAt=x=>x.updated_at==='calc'?{...x,updated_at:`${o0.day||'그날'} 구성 종목 시가총액 가중 등락률로 자체 계산(지금 구성 기준)`}:x;
-  const mc=d.market_context&&{...d.market_context,industry:(d.market_context.industry||[]).map(calcAt),themes:(d.market_context.themes||[]).map(calcAt)};
+  const mc=d.market_context;
   return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
@@ -3243,19 +3235,19 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ? "15시 넘어 공개 → 그날 남은 거래가 짧아 다음 거래일 장 시작 30분 반응으로 잽니다 (다음 거래일 09:30 뒤 그래프가 나옴)"
       : "오후 늦게(14시 이후) 공개");
     if (a.time_quality === "check_time" || e.time_quality === "check_time") notes.push("공개 시각 확인 필요: 구글 뉴스 시각이 16:00 또는 17:00으로 표시됨");
-    // 발표 직후: 시간대별로 같은 방식(시장 몫 + 업종 몫 + 고유 움직임)으로 한 표에, 30분 줄을 대표로 (공개 시각이 확실하고 분봉이 있을 때)
+    // 발표 직후: 시간대별로 같은 방식(시장 몫 + 고유 움직임)으로 한 표에, 30분 줄을 대표로 (공개 시각이 확실하고 분봉이 있을 때)
     const iw = d.intraday;
     const ic = !iw && d.intraday_coarse;
     const span0 = (w) => (w.kind === "open" ? `장 시작 전 공개 → 전날 종가부터 ${esc(e.reaction_day)} 장 시작 뒤`
       : w.kind === "late" ? `15시 넘어 공개 → 그날 종가부터 다음 거래일(${esc(w.day)}) 장 시작 뒤` : `${hhmm(w.start)} 공개부터`);
     let numsHtml = "";
     if (iw) {
-      const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, sector: iw.sector, abnormal: iw.abnormal }];
+      const rows = iw.rows && iw.rows.length ? iw.rows : [{ minutes: iw.minutes, own: iw.own, market: iw.market, abnormal: iw.abnormal }];
       numsHtml = `${simpleSteps(d.observation?.intraday ? Object.entries(d.observation.intraday.steps).map(([m,r])=>({minutes:+m,...r})) : rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), iw.minutes)}
         ${m ? `<div class="vb-note">120분 안 최고 ${pct(m.max_up)}(${hhmm(m.max_up_at)}), 최저 ${pct(m.max_down)}(${hhmm(m.max_down_at)})${m.vol_after30 != null ? ` · 공개 후 30분 거래량 ${int(m.vol_after30)}주${m.vol_usual30 ? `(평소 ${int(m.vol_usual30)}주)` : ""}` : ""}</div>` : ""}
         <details class="stat-more"><summary>통계로 보기 (참고)</summary>
           <div class="rx-steps">${rows.map((r) => `<span><small class="muted">+${r.minutes}분 고유 움직임</small> <b class="${sgnCls(r.abnormal)}">${points(r.abnormal)}</b></span>`).join("")}</div>
-          <div class="vb-note">고유 움직임 = 이 종목 등락 − (시장·업종이 움직인 만큼 평소 관계로 예상한 등락). +${iw.minutes}분 기준으로 평소 같은 길이 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>${iw.segments_used ? "" : " · 업종 분봉 없음(시장 몫만 뺌)"}. 기사 하나만으로 판단하기엔 잡음이 큽니다.</div>
+          <div class="vb-note">고유 움직임 = 이 종목 등락 − (시장이 움직인 만큼 평소 관계로 예상한 등락). +${iw.minutes}분 기준으로 평소 같은 길이 구간 ${iw.n_null}개 중 이보다 크게 움직인 비율 <b>${iw.rarity < 0.01 ? "1% 미만" : `${Math.round(iw.rarity * 100)}%`}</b>. 기사 하나만으로 판단하기엔 잡음이 큽니다.</div>
         </details>`;
     } else if (ic) {
       numsHtml = `${simpleSteps(d.observation?.intraday ? Object.entries(d.observation.intraday.steps).map(([m,r])=>({minutes:+m,...r})) : ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
