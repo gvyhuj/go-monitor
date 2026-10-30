@@ -1215,13 +1215,13 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .kpi small .mk { margin-right: 5px; }
 .dash-bento .panel, .dash-bento .kpi { transition: box-shadow .2s, border-color .2s; }
 .dash-bento .panel:hover, .dash-bento .kpi:hover { box-shadow: 0 4px 16px rgba(16, 32, 64, .07); }
-.dash-board, .dash-feed, .dash-chips-row, #dash-month svg { animation: fade-in .2s ease-out; }
+.dash-board, .dash-feed, .dash-chips-row { animation: fade-in .2s ease-out; }   /* 월별 추이는 펼치기 한 번만 (페이드와 겹치지 않게) */
 @media (max-width: 980px) {
   .dash-bento > .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash-bento > .d-trend, .dash-bento > .d-topic, .dash-bento > .d-half { grid-column: 1 / -1; }
   .dash-bento > .d-topic .dash-chips-row { flex-direction: row; flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) { .dash-board, .dash-feed, .dash-chips-row, #dash-month svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dash-board, .dash-feed, .dash-chips-row { animation: none; } }
 .kpi { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
 .kpi small { color: var(--muted); font-size: 12.5px; }
 .kpi b { font-size: 28px; line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
@@ -1792,8 +1792,7 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .mv-draw .rx-avg, .mv-draw .rx-one { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
 .mv-draw .rx-avg { animation-delay: 120ms; }
 .mv-reveal { animation: mv-reveal var(--dur-draw) var(--ease-draw); }
-.mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
-.mv-draw-dash .dl-line.s-ext { animation-delay: 120ms; }
+.mv-draw-spark .kpi-spark polyline { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mv-draw var(--dur-draw) var(--ease-draw) forwards; }
 @keyframes mv-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .mv-grow .dash-row .bar { transform-origin: left center; animation: mv-grow 700ms var(--ease-draw) both; animation-delay: calc(var(--i, 0) * 30ms); }
 /* 7 살짝 커졌다 돌아옴 (소식 건수 변화), 목록에 마우스 */
@@ -1812,7 +1811,7 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 @media (prefers-reduced-motion: reduce) {
   .mv-in, .mv-page, .mv-pop, .mv-reveal, dialog[open].disc-pop, dialog[open].disc-pop::backdrop, .art-pop, .art-more-menu, .engine .dot { animation: none !important; }
   .mv-grow .dash-row .bar { animation: none !important; }
-  .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-spark .kpi-spark polyline, .mv-draw-dash .dl-line { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-spark .kpi-spark polyline { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }
   .art-list button:hover { transform: none; }
   .mv-confetti { display: none; }
 }
