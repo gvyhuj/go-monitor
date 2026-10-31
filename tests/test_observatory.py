@@ -503,3 +503,27 @@ def test_kis_token_survives_lost_record(tmp_path, monkeypatch):
         conn.execute("DELETE FROM system_state WHERE key='kis:token'")
     cloud_job.kis_token_guard(log)                      # 실행 2: 따로 저장한 토큰을 씀
     assert calls == ['/oauth2/tokenP'] and kis.token() == 'TOK1'
+
+
+def test_kis_timeout_retried_once_and_is_data_source_error(tmp_path, monkeypatch):
+    # 한투 응답이 한 번 끊기면(시간 초과) 1초 뒤 한 번 다시. 두 번 끊기면 네이버 오류와 같은 종류로 올려
+    # 수집 단계가 처리(실행의 나머지 단계는 계속)
+    from core import db, kis, naver
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    monkeypatch.setattr(kis, 'GAP', 0); monkeypatch.setattr(kis.time, 'sleep', lambda s: None)
+    monkeypatch.setattr(kis, 'token', lambda now=None: 'T')
+    n = []
+    def flaky(path, tr_id, params):
+        n.append(1)
+        if len(n) == 1:
+            raise kis.KisError(f"{path}: URLError: <urlopen error timed out>")
+        return {'output': {'stck_prpr': '1'}}
+    monkeypatch.setattr(kis, '_get_once', flaky)
+    assert kis._get('/x', 'T', {}) == {'output': {'stck_prpr': '1'}} and len(n) == 2
+    monkeypatch.setattr(kis, '_get_once', lambda *a: (_ for _ in ()).throw(kis.KisError('/x: URLError: timed out')))
+    try:
+        kis._get('/x', 'T', {})
+        assert False
+    except naver.DataSourceError:
+        pass

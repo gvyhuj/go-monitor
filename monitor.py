@@ -279,14 +279,22 @@ class Collector:
 
         try:
             if feed.is_market_window(now):
-                feed.sync_today(self.code, now=now)
+                own_err = None
+                try:                               # 실패해도 다음 실행이 마지막으로 받은 분 뒤부터 이어 받음 (빠지는 분 없음)
+                    feed.sync_today(self.code, now=now)
+                except DataSourceError as e:
+                    own_err = e
+                    self.log.warning("분봉 수신 실패(다음 실행에 이어서): %s", e)
                 try:
                     feed.sync_today(feed.KOSDAQ, is_index=True, now=now)
                 except DataSourceError as e:
                     self.log.warning("KOSDAQ 분봉 수신 실패(계속 진행): %s", e)
                 feed.update_quotes(self.code)
                 self.last_quote_at = now
-                self._ok("장중 수집")
+                if own_err:
+                    self._err(own_err)
+                else:
+                    self._ok("장중 수집")
             elif feed.is_weekday(today) and now.time() > feed.time(15, 36) and self.eod_done_on != today:
                 feed.sync_today(self.code, now=now + timedelta(days=1))   # 마지막 분봉까지 포함
                 try:
