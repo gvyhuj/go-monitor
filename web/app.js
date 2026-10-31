@@ -744,7 +744,7 @@
 
   // ---------------------------------------------------------------- 실시간 중계 (장중 15초마다: Cloudflare Worker → 한투)
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
-  const RELAY = { date: null, bars: new Map(), quote: null, kosdaq: null, at: null };
+  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null };
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
   function applyRelay() {
@@ -764,8 +764,10 @@
       if (!res.ok) return;
       const d = await res.json();
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
-      if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); }
+      if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); RELAY.kq = new Map(); }
       (d.bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.bars.set(b.t, b); });
+      (d.kosdaq_bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.kq.set(b.t, b); });
+      if (!RELAY.bars.size) return;          // 오늘 체결이 아직 없음(장 시작 직후·휴장일): 정기 자료 그대로
       Object.assign(RELAY, { quote: d.quote, kosdaq: d.kosdaq, at: d.at });
       applyRelay();
       renderQuote();
@@ -777,10 +779,13 @@
   function withRelayBars(d, date) {
     if (!RELAY.date || RELAY.date !== date || !RELAY.bars.size) return d;
     if (!d || d.date !== date) d = { date, bars: [], kosdaq: [], prev_close: RELAY.quote && RELAY.quote.base, events: [] };
-    const m = new Map((d.bars || []).map((b) => [b.t, b]));
-    const last = (d.bars || []).length ? d.bars[d.bars.length - 1].t : "";
-    RELAY.bars.forEach((b, t) => { if (!m.has(t) || t >= last) m.set(t, b); });
-    return { ...d, bars: [...m.values()].sort((a, b) => (a.t < b.t ? -1 : 1)) };
+    const merge = (rows, extra) => {
+      const m = new Map((rows || []).map((b) => [b.t, b]));
+      const last = (rows || []).length ? rows[rows.length - 1].t : "";
+      extra.forEach((b, t) => { if (!m.has(t) || t >= last) m.set(t, b); });
+      return [...m.values()].sort((a, b) => (a.t < b.t ? -1 : 1));
+    };
+    return { ...d, bars: merge(d.bars, RELAY.bars), kosdaq: merge(d.kosdaq, RELAY.kq) };
   }
 
   // 현재 하루 수치와 저장된 분석 근거는 별개다. 장 마감 뒤에도 메인과 상세는 같은 시세를 쓴다.

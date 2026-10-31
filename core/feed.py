@@ -88,8 +88,9 @@ def sync_history(code: str, days: int = 14, now: datetime | None = None) -> int:
 
 
 def _kis_quotes(code: str):
-    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 체결 시각은 장 시각으로:
-    장중 지금 / 15:30~18:00(거래소 시간외) 지금 / 그 뒤·다음 날 장 전에는 마지막 거래일 18:00."""
+    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 한투 현재가(J)는 거래소 정규장 가격이라
+    체결 시각은 장중 지금, 장 마감 뒤·다음 날 장 전에는 마지막 거래일 15:30 (장외 시세는 쓰지 않음 →
+    화면은 '시간외 포함'이 아니라 '정규장 종가')."""
     from . import kis
     now = kst_now().replace(tzinfo=None)
     q = kis.quote(code)
@@ -98,7 +99,7 @@ def _kis_quotes(code: str):
     hm = now.strftime("%H:%M")
     is_today = last_day == now.date().isoformat()
     open_ = is_today and "09:00" <= hm < "15:30"
-    at = f"{now.date().isoformat()}T{hm}:00" if is_today and hm < "18:00" else f"{last_day or now.date().isoformat()}T18:00:00"
+    at = f"{now.date().isoformat()}T{hm}:00" if open_ else f"{last_day or now.date().isoformat()}T15:30:00"
     out = {"name": None, "price": q["price"], "change": q["change"], "change_pct": q["rate"], "open": q["open"],
            "high": q["high"], "low": q["low"], "volume": q["volume"],
            "value_text": f"{q['value'] / 1e8:.2f}억" if q.get("value") else None,

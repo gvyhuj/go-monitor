@@ -10,7 +10,7 @@ const BARS_MS = 60000;
 const GAP_MS = 1000;
 const STALE_MS = 300000;
 let memo = { at: 0, okAt: 0, body: null };
-let barsMemo = { at: 0, bars: [] };
+let barsMemo = { at: 0, bars: [], kq: [] };
 let lastCall = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -50,7 +50,9 @@ async function live(env, now) {
     const until = t.hms < "153000" ? t.hms : "153000";
     const rows = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice", "FHKST03010200",
       { FID_ETC_CLS_CODE: "", FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code, FID_INPUT_HOUR_1: until, FID_PW_DATA_INCU_YN: "N" })).output2 || [];
-    barsMemo = { at: now, bars: parseBars(rows) };
+    const kq = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-time-indexchartprice", "FHKUP03500200",
+      { FID_COND_MRKT_DIV_CODE: "U", FID_ETC_CLS_CODE: "0", FID_INPUT_ISCD: "1001", FID_INPUT_HOUR_1: "60", FID_PW_DATA_INCU_YN: "Y" })).output2 || [];
+    barsMemo = { at: now, bars: parseBars(rows), kq: parseBars(kq, "bstp_nmix_prpr").map((b) => ({ t: b.t, c: b.c })) };
   }
   return { status: 200, body: {
     at: `${t.day}T${t.hm}`,
@@ -58,15 +60,16 @@ async function live(env, now) {
              high: num(q.stck_hgpr), low: num(q.stck_lwpr), base: num(q.stck_sdpr), volume: num(q.acml_vol), value: num(q.acml_tr_pbmn) },
     kosdaq: { price: num(ix.bstp_nmix_prpr), change: num(ix.bstp_nmix_prdy_vrss), rate: num(ix.bstp_nmix_prdy_ctrt) },
     bars: barsMemo.bars,
+    kosdaq_bars: barsMemo.kq,
   } };
 }
 
-function parseBars(rows) {
+function parseBars(rows, px = "stck_prpr") {
   const bars = [];
   for (const r of rows) {
     const d = r.stck_bsop_date || "", h = r.stck_cntg_hour || "";
     if (d.length !== 8 || h.length !== 6) continue;
-    const c = num(r.stck_prpr);
+    const c = num(r[px]);
     bars.push({ t: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}T${h.slice(0, 2)}:${h.slice(2, 4)}`,
                 o: num(r.stck_oprc) ?? c, h: num(r.stck_hgpr) ?? c, l: num(r.stck_lwpr) ?? c, c, v: num(r.cntg_vol) ?? 0 });
   }

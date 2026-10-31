@@ -379,7 +379,8 @@ async function main() {
         if (fail) return route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } });
         return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
           body: JSON.stringify({ at: "2026-10-28T10:05", quote: { price: 12345, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
-            kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }] }) });
+            kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }],
+            kosdaq_bars: [{ t: "2026-10-28T10:05", c: 812.34 }] }) });
       });
       await page.goto(`${base}/#/`);
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
