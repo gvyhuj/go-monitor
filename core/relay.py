@@ -140,3 +140,29 @@ def public_info() -> dict | None:
     """사이트(암호화된 상태 자료)에 실을 것: 주소와 들어가는 값만."""
     info = _state(INFO_KEY)
     return {"url": info["url"], "auth": info["auth"]} if info.get("url") and info.get("auth") else None
+
+
+def check() -> str:
+    """중계를 실제로 한 번 불러 봄 (Cloudflare → 한투). 정상이면 한 줄 요약, 아니면 RuntimeError."""
+    import urllib.error
+    import urllib.request
+    info = _state(INFO_KEY)
+    if not info.get("url"):
+        raise RuntimeError("중계가 아직 올라가지 않음")
+    req = urllib.request.Request(info["url"] + "/live", headers={"x-go-auth": info["auth"], "User-Agent": "go-monitor-check"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8")).get("error")
+        except Exception:  # noqa: BLE001
+            msg = ""
+        raise RuntimeError(f"중계 응답 {e.code} {msg}".strip()) from None
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        raise RuntimeError(f"중계에 접속하지 못함: {type(e).__name__}") from None
+    q = d.get("quote") or {}
+    if q.get("price") is None:
+        raise RuntimeError("중계가 현재가를 주지 않음")
+    return f"현재가 {q['price']:,}원 · KOSDAQ {(d.get('kosdaq') or {}).get('price')} · 1분봉 {len(d.get('bars') or [])}개 ({d.get('at')} 기준)"
+

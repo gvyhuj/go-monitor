@@ -588,3 +588,28 @@ def test_relay_deploy_once_and_token_push(tmp_path, monkeypatch):
     val = put[0][3].decode().split('name="value"\r\n\r\n', 1)[1].split('\r\n', 1)[0]
     assert len(put) == 1 and _json.loads(val) == {'token': 'TOKX', 'exp_ms': 1793577600000}
     assert relay.public_info() == {'url': info['url'], 'auth': info['auth']}      # 사이트에는 이것만
+
+
+def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
+    # 실행이 중계를 실제로 한 번 불러 봄: 정상이면 요약 한 줄, 토큰 없음 등은 이유와 함께 실패
+    import io, json as _json, urllib.error, urllib.request
+    from core import db, relay
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    db.set_state('relay:info', _json.dumps({'url': 'https://go-relay.o.workers.dev', 'auth': 'A', 'ns': 'n', 'fp': 'f'}))
+    seen = []
+    class Resp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def ok(req, timeout=0):
+        seen.append((req.full_url, req.get_header('X-go-auth')))
+        return Resp(_json.dumps({'at': '2026-10-31T12:00', 'quote': {'price': 9800}, 'kosdaq': {'price': 724.38}, 'bars': [{}] * 30}).encode())
+    monkeypatch.setattr(urllib.request, 'urlopen', ok)
+    assert relay.check() == '현재가 9,800원 · KOSDAQ 724.38 · 1분봉 30개 (2026-10-31T12:00 기준)'
+    assert seen == [('https://go-relay.o.workers.dev/live', 'A')]
+    def no_token(req, timeout=0):
+        raise urllib.error.HTTPError(req.full_url, 503, 'x', {}, io.BytesIO(b'{"error":"token"}'))
+    monkeypatch.setattr(urllib.request, 'urlopen', no_token)
+    try:
+        relay.check(); assert False
+    except RuntimeError as e:
+        assert str(e) == '중계 응답 503 token'
