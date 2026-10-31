@@ -107,7 +107,10 @@ def _kis_quotes(code: str):
     set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
     set_state(f"fund:{code}", json.dumps({"info": {"per": q.get("per"), "pbr": q.get("pbr")},
                                           "fetched_at": now.isoformat(timespec="minutes")}, ensure_ascii=False))
-    k = kis.index_quote()
+    try:                                   # KOSDAQ 지수 현재가는 보조 정보: 실패해도 이 종목 현재가는 그대로 (다음 실행에 다시)
+        k = kis.index_quote()
+    except kis.KisError:
+        return
     set_state(f"quote:{KOSDAQ}", json.dumps({"price": k["price"], "change": k["change"], "change_pct": k["rate"],
                                                "market_status": out["market_status"], "traded_at": at,
                                                "fetched_at": out["fetched_at"]}, ensure_ascii=False))

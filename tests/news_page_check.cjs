@@ -367,6 +367,22 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
+    // 휴대폰: 네이버 테마 링크는 모바일 증권 주소 (PC 주소는 휴대폰에서 네이버 모바일 증권 첫 화면으로 넘어감)
+    {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+      await page.clock.setFixedTime(new Date("2026-10-29T12:00:00+09:00"));
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      const seg = page.locator("#rec-bento .b-seg");
+      await seg.locator(".seg-chip").first().waitFor();
+      await seg.getByRole("button", { name: /우주항공산업/ }).click();
+      const pop = page.locator("#ind-modal");
+      await pop.locator("#ind-body .ind-rate").waitFor();
+      assert.equal(await pop.getByRole("link", { name: /네이버에서 보기/ }).getAttribute("href"), "https://m.stock.naver.com/domestic/home/theme/7");
+      await page.close();
+    }
     // 움직임: 기사 열기(떠오르기·제목 옮겨 가기), 겹쳐 보기 선 그리기, 기간 숫자 올라가기 — 끝나면 값은 그대로
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

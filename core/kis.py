@@ -22,6 +22,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 
+from .naver import DataSourceError
+
 BASE = os.environ.get("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
 TOKEN_KEY = "kis:token"
 PERSIST: list = []         # 새로 받은 토큰을 따로 저장하는 함수 (클라우드 실행이 넣음)
@@ -29,8 +31,8 @@ ISSUED: list[str] = []      # 한투는 접속 토큰을 하루 한 번 원칙�
 KOSDAQ_INDEX = "1001"
 
 
-class KisError(Exception):
-    pass
+class KisError(DataSourceError):
+    """한투 오류. 네이버 오류와 같은 종류로 다뤄서, 한 번 끊겨도 실행의 나머지 단계(분석·사이트)는 그대로 진행."""
 
 
 def enabled() -> bool:
@@ -113,7 +115,9 @@ def _get(path: str, tr_id: str, params: dict, _retry: bool = True) -> dict:
     try:
         return _get_once(path, tr_id, params)
     except KisError as e:
-        if _retry and "초당" in str(e):                # 한도에 걸리면 1초 쉬고 한 번만 다시
+        # 한도에 걸리거나 응답이 끊기거나(시간 초과·연결 오류) 한투가 '재 조회 부탁'(500)이라고 하면
+        # 1초 쉬고 한 번만 다시 (토큰 발급은 다시 하지 않음)
+        if _retry and any(w in str(e) for w in ("초당", "timed out", "URLError", "TimeoutError", " 500:", "재 조회")):
             time.sleep(1.0)
             return _get(path, tr_id, params, _retry=False)
         raise

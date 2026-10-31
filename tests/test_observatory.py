@@ -503,3 +503,50 @@ def test_kis_token_survives_lost_record(tmp_path, monkeypatch):
         conn.execute("DELETE FROM system_state WHERE key='kis:token'")
     cloud_job.kis_token_guard(log)                      # 실행 2: 따로 저장한 토큰을 씀
     assert calls == ['/oauth2/tokenP'] and kis.token() == 'TOK1'
+
+
+def test_kis_timeout_retried_once_and_is_data_source_error(tmp_path, monkeypatch):
+    # 한투 응답이 한 번 끊기면(시간 초과) 1초 뒤 한 번 다시. 두 번 끊기면 네이버 오류와 같은 종류로 올려
+    # 수집 단계가 처리(실행의 나머지 단계는 계속)
+    from core import db, kis, naver
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    monkeypatch.setattr(kis, 'GAP', 0); monkeypatch.setattr(kis.time, 'sleep', lambda s: None)
+    monkeypatch.setattr(kis, 'token', lambda now=None: 'T')
+    n = []
+    def flaky(path, tr_id, params):
+        n.append(1)
+        if len(n) == 1:
+            raise kis.KisError(f"{path}: URLError: <urlopen error timed out>")
+        if len(n) == 3:      # 실제로 나온 한투 500 응답
+            raise kis.KisError(f"{path} 500: 조회 처리 중 오류 발생하였습니다. 재 조회 수행 부탁드립니다.")
+        return {'output': {'stck_prpr': '1'}}
+    monkeypatch.setattr(kis, '_get_once', flaky)
+    assert kis._get('/x', 'T', {}) == {'output': {'stck_prpr': '1'}} and len(n) == 2
+    assert kis._get('/x', 'T', {}) == {'output': {'stck_prpr': '1'}} and len(n) == 4
+    monkeypatch.setattr(kis, '_get_once', lambda *a: (_ for _ in ()).throw(kis.KisError('/x: URLError: timed out')))
+    try:
+        kis._get('/x', 'T', {})
+        assert False
+    except naver.DataSourceError:
+        pass
+
+
+def test_kis_backfill_pauses_on_session_full(tmp_path, monkeypatch):
+    # 한투 'OPSQ1002 SESSION FULL'(접속 자리 꽉 참)이면 다시 받기를 6시간 쉼 (시세 수집 몫을 남김)
+    from datetime import datetime
+    from core import db, kis, kis_backfill
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    kis_backfill._save({'daily': {'n': 1}, 'kosdaq_daily': {'n': 1}})
+    with db.connect() as conn:
+        conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES ('X','2026-10-29',1,1,1,1,1)")
+    calls = []
+    def full(code, d):
+        calls.append(d)
+        raise kis.KisError('FHKST03010230: OPSQ1002 SESSION FULL')
+    monkeypatch.setattr(kis, 'full_day_bars', full)
+    msg = kis_backfill.run('X', datetime(2026, 10, 31, 9, 54), 40)
+    assert 'SESSION FULL' in msg and '10-31 15:54까지 쉼' in msg and calls == ['2026-10-29']
+    assert kis_backfill.run('X', datetime(2026, 10, 31, 12, 0), 40) is None and len(calls) == 1     # 쉬는 중엔 부르지 않음
+    kis_backfill.run('X', datetime(2026, 10, 31, 16, 0), 40)
+    assert len(calls) == 2                                                                         # 6시간 뒤 다시
