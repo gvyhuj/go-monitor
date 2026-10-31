@@ -1189,7 +1189,7 @@
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
-    // 오른쪽 '주요 숫자'. 고른 날의 기록 + '지금' 숫자(현재 기준: 시총·PER·PBR)
+    // 오른쪽 '주요 숫자'. 고른 날의 기록 + '지금' 숫자(현재 기준: PER·PBR)
     // ⓘ에 마우스를 올리거나(폰은 누르면) 설명
     const TIPS = {
       PER: ["주가가 1주당 순이익의 몇 배인지 나타내는 지표입니다.", "· PER = 현재가 ÷ 1주당 순이익"],
@@ -1212,10 +1212,7 @@
       const base = px.base || (lq && lq.change != null ? lq.price - lq.change : null);
       const colored = (v) => `<span class="${base && v ? sgnCls(v - base) : ""}">${v ? won(v) : "-"}</span>`;
       // 시가·고가·저가: 거래소 정규장(09:00~15:30) 1분봉 기준 (네이버 현재가는 장 마감 뒤 넥스트레이드 장외 값으로 바뀌어 섞이지 않게)
-      // 거래량·대금: 오늘은 네이버 현재가 값 (넥스트레이드 포함 통합)
-      const vol = lq && lq.volume != null ? lq.volume : px.volume;
       const op = px.open, hi = px.high, lo = px.low;
-      const value = lq && lq.value_text ? lq.value_text : info.accumulatedTradingValue || "-";
       const kv = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
       const signed = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : v < 0 ? "−" : ""}${int(Math.abs(v))}</span>`);
       // 수익률: 네이버와 같은 방식 (고른 날 종가 ÷ N개월 전 날짜 이후 첫 거래일 종가, 기록이 짧으면 첫 거래일)
@@ -1234,25 +1231,20 @@
       const inv = px.individual != null || px.foreign != null || px.organ != null;
       // 장중: 거래소 개인·외국인·기관은 장 마감 뒤에만 나오므로, 외국인 자리에 증권사 외국계 창구 추정(매수 − 매도)
       const fe = !inv && px.foreign_est && px.foreign_est.date === ds && px.foreign_est.buy != null ? px.foreign_est : null;
-      const now = (k) => info[k] || "-";
-      // 시총·PER·PBR은 가격과 같은 순간 값 (현재가를 받을 때 함께 받음)
+      // PER·PBR은 가격과 같은 순간 값 (현재가를 받을 때 함께 받음)
       const numOf = (s) => { const v = parseFloat(String(s || "").replace(/[^0-9.\-]/g, "")); return isFinite(v) ? v : null; };
-      const capTxt = (v) => { const e = Math.round(v / 1e8), jo = Math.floor(e / 1e4), r = e % 1e4;
-        return jo ? `${jo}조${r ? ` ${r.toLocaleString("ko-KR")}억` : ""}` : `${r.toLocaleString("ko-KR")}억`; };
       const ratio = (k) => { const v = numOf(info[k]); return v != null && v > 0 ? `${v.toFixed(2)}배` : "-"; };
-      const cap = lq && lq.market_cap ? capTxt(lq.market_cap) : now("marketValue");
       const asOf = lq ? hhmm(lq.traded_at.slice(0, 16)) : nv.fetched_at ? hhmm(nv.fetched_at) : "";
       return `<h4>${mdOf(ds)} 주요 숫자 ${tip("", ["시가·고가·저가는 거래소 정규장(09:00~15:30) 기준입니다."])}</h4>
         <div class="rs-52"><div class="rs-bar"><i style="left:${(pos * 100).toFixed(1)}%"></i></div>
           <div class="rs-52l"><span>${full ? "52주" : "기록 중"} 최저 <b>${won(lo52)}</b></span><span>최고 <b>${won(hi52)}</b></span></div></div>
-        <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}
-          ${kv("거래량", `${int(vol)}주`)}${isLatest ? kv("대금", value) : ""}</dl>
+        <dl class="rs-kv">${kv("기준가", base ? won(base) : "-")}${kv("시가", colored(op))}${kv("고가", colored(hi))}${kv("저가", colored(lo))}</dl>
         <div class="rs-inv">${inv ? `<div><small>개인</small><b>${signed(px.individual)}</b></div><div><small>외국인</small><b>${signed(px.foreign)}</b></div><div><small>기관</small><b>${signed(px.organ)}</b></div>`
           : fe ? `<div><small>개인</small><b class="muted">-</b></div><div><small>외국인 <em class="muted">추정</em> ${tip("", [`${fe.ts ? `${hhmm(fe.ts)} 기준 ` : ""}외국계 창구 추정입니다.`, "개인·기관과 거래소 확정치는 장 마감 뒤에 나옵니다."])}</small><b>${signed(fe.buy - fe.sell)}</b></div><div><small>기관</small><b class="muted">-</b></div>`
           : `<p class="muted">개인·외국인·기관은 장 마감 뒤 집계</p>`}</div>
         <div class="rs-ret">${ret(1, "1개월")}${ret(3, "3개월")}${ret(12, "1년")}</div>
         ${nv.info ? `<div class="rs-now"><span class="rs-now-h">현재 기준 <small>${asOf}</small></span>
-          <dl class="rs-kv">${kv("시총", cap)}${kv(tipK("PER"), ratio("per"))}${kv(tipK("PBR"), ratio("pbr"))}</dl></div>` : ""}`;
+          <dl class="rs-kv">${kv(tipK("PER"), ratio("per"))}${kv(tipK("PBR"), ratio("pbr"))}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
       const h = $("#rec-head"), s = $("#rec-side");
