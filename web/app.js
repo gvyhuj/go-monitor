@@ -1731,11 +1731,13 @@
   }
 
   /** ChatGPT 새 창에 자료를 채워 엶 (보내기는 사용자가 직접). 따로 묻고 싶은 것은 그 창에서 덧붙임 */
-  function openAsk(text, msg) {
+  function openAsk(text, msg, paste = false) {
     try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
-    window.open(`https://chatgpt.com/?q=${encodeURIComponent(text)}`, "_blank", "noopener");
+    // paste: 질문이 아주 긴 경우(뉴스 관측 자료 전체, 수만 자) 주소에 넣으면 잘림 → 빈 창 + 복사해 둔 질문을 붙여넣기
+    window.open(paste ? "https://chatgpt.com/" : `https://chatgpt.com/?q=${encodeURIComponent(text)}`, "_blank", "noopener");
     msg.className = "form-msg";
-    msg.textContent = "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
+    msg.textContent = paste ? "질문 전체를 복사했습니다. ChatGPT 새 창의 입력칸에 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 한 뒤 보내세요."
+      : "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
   }
 
 
@@ -2289,7 +2291,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>`)}
 `;
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    $('#obs-question').onclick=()=>openAsk(observationQuestion(d),$('#art-fix-msg'));
+    $('#obs-question').onclick=()=>openAsk(observationQuestion(d),$('#art-fix-msg'),true);
     // 유사 사건: 이 사건과 분야 태그나 고객·파트너가 겹치는 사건만. '기술·개발'은 제목에 흔한 말이라 그것만 겹치면 넣지 않음
     const similar=()=>{
       const WEAK=new Set(['기술·개발']),myTags=d.business_tags||[],partner=(d.partner||'').trim();
