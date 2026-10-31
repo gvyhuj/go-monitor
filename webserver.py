@@ -173,7 +173,7 @@ def api_status(_q):
     dv = data["value"] if data else ""
     return {
         "symbol": sym, "name": s.get("display_name", sym),
-        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"), "fund": state_json(f"fund:{sym}") or state_json(f"naver_snapshot:{sym}"),
+        "quote": state_json(f"quote:{sym}"), "kosdaq": state_json(f"quote:{KOSDAQ}"), "fund": state_json(f"fund:{sym}") or state_json(f"naver_snapshot:{sym}"), "relay": _relay_info(),
         "engine": engine_state(s),
         "data": {"ok": not dv.startswith("error"), "message": dv[7:] if dv.startswith("error") else dv[4:],
                  "last_ok": data_ok["value"] if data_ok else None},
@@ -289,6 +289,12 @@ def api_intraday(q):
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False),
             "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl}
+
+
+def _relay_info():
+    """실시간 중계 주소·들어가는 값 (클라우드 실행이 중계를 올렸을 때만 있음. 정적 사이트는 이 상태 자료가 비밀번호로 암호화됨)."""
+    from core import relay
+    return relay.public_info()
 
 
 def api_events(q):
