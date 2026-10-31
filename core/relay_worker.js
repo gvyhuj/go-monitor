@@ -2,11 +2,15 @@
 // - 한투 열쇠(KIS_APP_KEY·KIS_APP_SECRET)는 이 Worker의 비밀값에만 있음 (사이트·브라우저에는 없음)
 // - 접속 토큰은 여기서 받지 않음: GitHub 실행이 하루 한 번 받아 KV('kis_token')에 넣어 둔 것을 씀 (토큰 발급은 한 곳에서만)
 // - 사이트 비밀번호를 아는 사람만: 암호화된 사이트 자료 안의 AUTH 값을 x-go-auth 머리말로 보내야 답함
-// - 한투는 3초에 한 번까지만 부름 (그 사이 요청은 직전 답을 그대로)
+// - 계정 보호가 먼저: 한투는 15초에 한 번까지만(현재가·KOSDAQ), 1분봉은 1분에 한 번, 요청 사이 1초.
+//   한투가 거절하면 다시 묻지 않고 직전 답을 그대로 (5분 넘게 묵은 답은 버림)
 const BASE = "https://openapi.koreainvestment.com:9443";
-const MEMO_MS = 3000;
-const GAP_MS = 600;            // 한투 요청 사이 간격 ('초당 거래건수 초과' 방지, GitHub 실행과 같은 값)
-let memo = { at: 0, body: null };
+const MEMO_MS = 15000;
+const BARS_MS = 60000;
+const GAP_MS = 1000;
+const STALE_MS = 300000;
+let memo = { at: 0, okAt: 0, body: null };
+let barsMemo = { at: 0, bars: [] };
 let lastCall = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -20,7 +24,7 @@ function kstNow(ms) {
   return { day: k.slice(0, 10), hm: k.slice(11, 16), hms: k.slice(11, 19).replace(/:/g, "") };
 }
 
-async function kis(env, tok, path, trId, params, retry = true) {
+async function kis(env, tok, path, trId, params) {
   const wait = lastCall + GAP_MS - Date.now();
   if (wait > 0) await sleep(wait);
   lastCall = Date.now();
@@ -30,11 +34,7 @@ async function kis(env, tok, path, trId, params, retry = true) {
   });
   let j = null;
   try { j = await r.json(); } catch (_) { /* 아래에서 처리 */ }
-  if (!r.ok || !j || String(j.rt_cd ?? "0") !== "0") {
-    const msg = `${trId} ${r.status} ${(j && (j.msg1 || j.msg_cd)) || ""}`.trim();
-    if (retry && /초당/.test(msg)) { await sleep(1000); return kis(env, tok, path, trId, params, false); }   // 한도에 걸리면 1초 뒤 한 번만
-    throw new Error(msg);
-  }
+  if (!r.ok || !j || String(j.rt_cd ?? "0") !== "0") throw new Error(`${trId} ${r.status} ${(j && (j.msg1 || j.msg_cd)) || ""}`.trim());
   return j;
 }
 
@@ -46,9 +46,22 @@ async function live(env, now) {
     { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code })).output || {};
   const ix = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-index-price", "FHPUP02100000",
     { FID_COND_MRKT_DIV_CODE: "U", FID_INPUT_ISCD: "1001" })).output || {};
-  const until = t.hms < "153000" ? t.hms : "153000";
-  const rows = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice", "FHKST03010200",
-    { FID_ETC_CLS_CODE: "", FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code, FID_INPUT_HOUR_1: until, FID_PW_DATA_INCU_YN: "N" })).output2 || [];
+  if (now - barsMemo.at >= BARS_MS) {           // 1분봉은 1분에 한 번만
+    const until = t.hms < "153000" ? t.hms : "153000";
+    const rows = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice", "FHKST03010200",
+      { FID_ETC_CLS_CODE: "", FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code, FID_INPUT_HOUR_1: until, FID_PW_DATA_INCU_YN: "N" })).output2 || [];
+    barsMemo = { at: now, bars: parseBars(rows) };
+  }
+  return { status: 200, body: {
+    at: `${t.day}T${t.hm}`,
+    quote: { price: num(q.stck_prpr), change: num(q.prdy_vrss), rate: num(q.prdy_ctrt), open: num(q.stck_oprc),
+             high: num(q.stck_hgpr), low: num(q.stck_lwpr), base: num(q.stck_sdpr), volume: num(q.acml_vol), value: num(q.acml_tr_pbmn) },
+    kosdaq: { price: num(ix.bstp_nmix_prpr), change: num(ix.bstp_nmix_prdy_vrss), rate: num(ix.bstp_nmix_prdy_ctrt) },
+    bars: barsMemo.bars,
+  } };
+}
+
+function parseBars(rows) {
   const bars = [];
   for (const r of rows) {
     const d = r.stck_bsop_date || "", h = r.stck_cntg_hour || "";
@@ -57,14 +70,7 @@ async function live(env, now) {
     bars.push({ t: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}T${h.slice(0, 2)}:${h.slice(2, 4)}`,
                 o: num(r.stck_oprc) ?? c, h: num(r.stck_hgpr) ?? c, l: num(r.stck_lwpr) ?? c, c, v: num(r.cntg_vol) ?? 0 });
   }
-  bars.sort((a, b) => (a.t < b.t ? -1 : 1));
-  return { status: 200, body: {
-    at: `${t.day}T${t.hm}`,
-    quote: { price: num(q.stck_prpr), change: num(q.prdy_vrss), rate: num(q.prdy_ctrt), open: num(q.stck_oprc),
-             high: num(q.stck_hgpr), low: num(q.stck_lwpr), base: num(q.stck_sdpr), volume: num(q.acml_vol), value: num(q.acml_tr_pbmn) },
-    kosdaq: { price: num(ix.bstp_nmix_prpr), change: num(ix.bstp_nmix_prdy_vrss), rate: num(ix.bstp_nmix_prdy_ctrt) },
-    bars,
-  } };
+  return bars.sort((a, b) => (a.t < b.t ? -1 : 1));
 }
 
 export default {
@@ -76,12 +82,16 @@ export default {
     if (!env.AUTH || req.headers.get("x-go-auth") !== env.AUTH) return json({ error: "auth" }, 401);
     if (new URL(req.url).pathname !== "/live") return json({ error: "path" }, 404);
     const now = Date.now();
-    if (memo.body && now - memo.at < MEMO_MS) return json(memo.body);
+    if (now - memo.at < MEMO_MS) {      // 15초 안에는 한투를 다시 부르지 않음 (실패했을 때도)
+      return memo.body && now - memo.okAt < STALE_MS ? json(memo.body) : json({ error: "wait" }, 503);
+    }
+    memo.at = now;
     try {
       const r = await live(env, now);
-      if (r.status === 200) memo = { at: now, body: r.body };
+      if (r.status === 200) memo = { at: now, okAt: now, body: r.body };
       return json(r.body, r.status);
-    } catch (e) {
+    } catch (e) {                        // 거절되면 다시 묻지 않고 직전 답(5분 안이면) 그대로
+      if (memo.body && now - memo.okAt < STALE_MS) return json({ ...memo.body, stale: true });
       return json({ error: String(e.message || e).slice(0, 160) }, 502);
     }
   },

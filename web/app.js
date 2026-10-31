@@ -742,7 +742,7 @@
     return { price: q.price, chg: q.change_pct / 100, at, open, closed: !open && at >= "15:30", ext: at > "15:30" };
   }
 
-  // ---------------------------------------------------------------- 실시간 중계 (장중 5초마다: Cloudflare Worker → 한투)
+  // ---------------------------------------------------------------- 실시간 중계 (장중 15초마다: Cloudflare Worker → 한투)
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
   const RELAY = { date: null, bars: new Map(), quote: null, kosdaq: null, at: null };
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
@@ -3892,7 +3892,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
     refreshStatus().then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
-    setInterval(relayTick, 5000);         // 장중에만 실제로 물음
+    setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
   });
 })();
