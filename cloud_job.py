@@ -250,6 +250,36 @@ def restore_state(log) -> str:
     return "새로 시작"
 
 
+KIS_TOKEN_FILE = "kis_token.enc"   # 한투 접속 토큰 (암호화). 기록과 따로 state 폴더에 둬서 실행이 실패해도 다음 실행에 넘어감
+
+
+def kis_token_guard(log):
+    """한투는 접속 토큰을 하루 한 번 원칙으로 발급(잦으면 이용 제한). 실행마다 새로 받지 않도록
+    ① 따로 저장해 둔 토큰을 먼저 가져오고 ② 새로 받으면 바로 따로 저장하고 ③ 실행 시작 때 토큰을 확보해
+    어느 단계가 처음 한투를 부르든 '다음 실행으로 넘길 기록'에 들어가게 함."""
+    from core import kis, sitebuild
+    if not kis.enabled():
+        return
+    key = _data_key()
+    f = STATE_DIR / KIS_TOKEN_FILE
+    try:
+        if f.exists():
+            raw = f.read_bytes()
+            kis.adopt(json.loads(sitebuild.decrypt(sitebuild.derive_key(key, raw[:16]), raw[16:])))
+    except Exception as e:  # noqa: BLE001 - 못 풀면 기록에 있는 토큰으로
+        log.warning("따로 저장한 한투 토큰을 읽지 못함: %s", type(e).__name__)
+
+    def persist(v: dict):
+        salt = secrets.token_bytes(16)
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(salt + sitebuild.encrypt(sitebuild.derive_key(key, salt), json.dumps(v).encode()))
+    kis.PERSIST[:] = [persist]
+    try:
+        kis.token()
+    except Exception as e:  # noqa: BLE001 - 시세 단계에서 다시 시도
+        log.warning("한투 접속 토큰 확보 실패: %s", type(e).__name__)
+
+
 def site_salt(password: str, state_key: str = "site:salt") -> bytes:
     fp = hashlib.sha256(("go-fp:" + password).encode("utf-8")).hexdigest()
     st = get_state(state_key)
@@ -412,6 +442,7 @@ def main(argv) -> int:
     code = settings["symbol"]
     now = feed.kst_now()
     log.info("클라우드 감시 실행 (%s, %s)", task, now.isoformat(timespec="minutes"))
+    kis_token_guard(log)
     lap("준비")
 
     site_ok = False
