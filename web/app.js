@@ -1161,6 +1161,13 @@
       }
     }
 
+    // 시간외 단일가 (거래소 16:00~18:00): 큰 가격(정규장 종가) 바로 아래 한 줄, 그날 체결이 있을 때만. 등락은 정규장 종가 대비
+    function afterHtml(ds) {
+      const a = STATUS && STATUS.quote && STATUS.quote.after;
+      if (!a || a.date !== ds || a.price == null) return "";
+      const arrow = a.rate > 0 ? "▲" : a.rate < 0 ? "▼" : "";
+      return `<span class="rh-after" title="거래소 시간외 단일가 (16:00~18:00, 정규장 종가 대비)">시간외 <b class="${sgnCls(a.rate)}">${won(a.price)}원 ${arrow}${(Math.abs(a.rate) * 100).toFixed(2)}%</b> ${esc(a.at)}</span>`;
+    }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
       const ds = calState.sel, px = price[ds];
@@ -1178,7 +1185,7 @@
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span></span>
+          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span>${afterHtml(ds)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }

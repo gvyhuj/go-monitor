@@ -196,6 +196,8 @@ button.tcard:hover::after { border-color: var(--brand-blue); opacity: 1; transfo
 .rh-nm b { color: var(--ink-2); font-size: 13.5px; margin-right: 6px; }
 .rh-p { display: block; font-size: 28px; font-weight: 800; letter-spacing: -.5px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rh-p small { font-size: 14px; font-weight: 600; margin: 0 10px 0 2px; }
+.rh-after { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rh-after b { font-weight: 700; }
 .rh-box:has(.rh-kq) { grid-template-columns: minmax(0, 1fr) auto auto; }
 .rh-kq { display: flex; flex-direction: column; align-items: flex-end; padding-left: 24px; border-left: 1px solid var(--line); white-space: nowrap; }
 .rh-kq small { font-size: 12.5px; color: var(--muted); }
@@ -304,6 +306,7 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
   .rh-kq { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding-left: 0; border-left: 0; white-space: normal; }
   .rh-kq b { font-size: 15px; }
   .rh-p { font-size: 24px; }
+  .rh-after { text-align: left; }
   .bento > #q-events-card { border-radius: var(--r-md) 0 0 var(--r-md); }
   .bento > #q-kosdaq-card { border-radius: 0 var(--r-md) var(--r-md) 0; border-left: 0; margin-left: calc(-1 * var(--bento-gap)); box-shadow: inset 1px 0 0 var(--line); }
   .today-strip { grid-template-columns: 1fr 1fr 1fr; }

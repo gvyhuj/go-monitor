@@ -105,6 +105,9 @@ def _kis_quotes(code: str):
            "value_text": f"{q['value'] / 1e8:.2f}억" if q.get("value") else None,
            "market_cap": q["market_cap_100m"] * 1e8 if q.get("market_cap_100m") else None,
            "market_status": "OPEN" if open_ else "CLOSE", "traded_at": at, "fetched_at": now.isoformat(timespec="seconds")}
+    after = _kis_after(code, now, is_today, q["price"])
+    if after and after["date"] == (last_day or "")[:10]:
+        out["after"] = after
     set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
     set_state(f"fund:{code}", json.dumps({"info": {"per": q.get("per"), "pbr": q.get("pbr")},
                                           "fetched_at": now.isoformat(timespec="minutes")}, ensure_ascii=False))
@@ -115,6 +118,28 @@ def _kis_quotes(code: str):
     set_state(f"quote:{KOSDAQ}", json.dumps({"price": k["price"], "change": k["change"], "change_pct": k["rate"],
                                                "market_status": out["market_status"], "traded_at": at,
                                                "fetched_at": out["fetched_at"]}, ensure_ascii=False))
+
+
+def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
+    """그날 시간외 단일가(거래소 16:00~18:00): 그 시간대 실행마다 한 번 받고, 체결이 있으면 남김 (18시 뒤엔 마지막 값).
+    등락은 그날 정규장 종가 대비. 화면은 큰 가격(정규장 종가) 바로 아래 한 줄로만 보여 줌."""
+    from . import kis
+    st = get_state(f"after:{code}")
+    try:
+        saved = json.loads(st["value"]) if st and st.get("value") else None
+    except ValueError:
+        saved = None
+    hm = now.strftime("%H:%M")
+    if is_today and "16:00" <= hm <= "18:30" and close:
+        try:
+            o = kis.overtime(code)
+        except kis.KisError:
+            o = None                         # 보조 정보: 다음 실행에 다시
+        if o and o.get("price") and o.get("volume"):
+            saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
+                     "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00")}
+            set_state(f"after:{code}", json.dumps(saved))
+    return saved
 
 
 def update_quotes(code: str):
