@@ -7,7 +7,7 @@ KOSDAQ 지수의 지난 1분봉은 한투가 주지 않아 기록에 있는 것�
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import kis
 from .db import connect, get_state, set_state
@@ -34,6 +34,8 @@ def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
     s = _state()
     if s.get("done"):
         return None
+    if s.get("pause_until") and now.isoformat(timespec="minutes") < s["pause_until"]:
+        return None                       # 한투가 '접속 자리 꽉 참'이라고 해서 쉬는 중 (시세 수집은 그대로)
     say = []
     end = now.date().isoformat()
     if not s.get("daily"):
@@ -63,6 +65,10 @@ def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
             bars = kis.full_day_bars(code, d)
         except kis.KisError as e:            # 한투 응답 지연 등: 받은 날까지 저장하고 다음 실행에 이어서
             err = str(e)[:120]
+            if "SESSION FULL" in err.upper():   # 접속 자리가 꽉 참: 6시간 쉬어 시세 수집 몫을 남김
+                s["pause_until"] = (now + timedelta(hours=6)).isoformat(timespec="minutes")
+                err += f" → {s['pause_until'][5:16].replace('T', ' ')}까지 쉼"
+                _save(s)
             break
         if bars:
             with connect() as conn:

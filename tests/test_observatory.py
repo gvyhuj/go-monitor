@@ -530,3 +530,23 @@ def test_kis_timeout_retried_once_and_is_data_source_error(tmp_path, monkeypatch
         assert False
     except naver.DataSourceError:
         pass
+
+
+def test_kis_backfill_pauses_on_session_full(tmp_path, monkeypatch):
+    # 한투 'OPSQ1002 SESSION FULL'(접속 자리 꽉 참)이면 다시 받기를 6시간 쉼 (시세 수집 몫을 남김)
+    from datetime import datetime
+    from core import db, kis, kis_backfill
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    kis_backfill._save({'daily': {'n': 1}, 'kosdaq_daily': {'n': 1}})
+    with db.connect() as conn:
+        conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES ('X','2026-10-29',1,1,1,1,1)")
+    calls = []
+    def full(code, d):
+        calls.append(d)
+        raise kis.KisError('FHKST03010230: OPSQ1002 SESSION FULL')
+    monkeypatch.setattr(kis, 'full_day_bars', full)
+    msg = kis_backfill.run('X', datetime(2026, 10, 31, 9, 54), 40)
+    assert 'SESSION FULL' in msg and '10-31 15:54까지 쉼' in msg and calls == ['2026-10-29']
+    assert kis_backfill.run('X', datetime(2026, 10, 31, 12, 0), 40) is None and len(calls) == 1     # 쉬는 중엔 부르지 않음
+    kis_backfill.run('X', datetime(2026, 10, 31, 16, 0), 40)
+    assert len(calls) == 2                                                                         # 6시간 뒤 다시
