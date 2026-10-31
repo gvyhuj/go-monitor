@@ -600,6 +600,19 @@ def main(argv) -> int:
                 annotate("notice", f"{d} 이슈 기사 {added}건 보충 → 그날 이상변동 다시 분석")
 
         lap("이슈 기사")
+        # 한투 열쇠가 있으면: 지난 기록(일봉·KOSDAQ 일봉·지난 1분봉)을 한투로 다시 받기 (장중엔 조금씩, 장 밖엔 많이).
+        # 다음 실행으로 넘길 기록을 저장(사이트 만들기)하기 전에 해야 이어짐 (예전엔 저장 뒤라 실행마다 처음부터 다시 했음)
+        try:
+            from core import kis, kis_backfill
+            if kis.enabled():
+                n_now = feed.kst_now().replace(tzinfo=None)
+                busy = n_now.weekday() < 5 and "08:50" <= n_now.strftime("%H:%M") <= "15:40"
+                msg = kis_backfill.run(code, n_now, 4 if busy else 40, log=log)
+                if msg:
+                    annotate("notice", msg)
+        except Exception as e:  # noqa: BLE001 - 다음 실행에 이어서
+            annotate("warning", f"한투 다시 받기 실패(다음 실행에 이어서): {type(e).__name__}: {str(e)[:150]}")
+        lap("한투 다시 받기")
         n = detect_symbol(code)
         if n:
             log.info("신규 이상변동 %d건", n)
@@ -751,17 +764,6 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
-    # 한투 열쇠가 있으면: 지난 기록(일봉·KOSDAQ 일봉·지난 1분봉)을 한투로 다시 받기 (장중엔 조금씩, 장 밖엔 많이)
-    try:
-        from core import kis, kis_backfill
-        if kis.enabled():
-            n_now = feed.kst_now().replace(tzinfo=None)
-            busy = n_now.weekday() < 5 and "08:50" <= n_now.strftime("%H:%M") <= "15:40"
-            msg = kis_backfill.run(code, n_now, 4 if busy else 40, log=log)
-            if msg:
-                annotate("notice", msg)
-    except Exception as e:  # noqa: BLE001 - 다음 실행에 이어서
-        annotate("warning", f"한투 다시 받기 실패(다음 실행에 이어서): {type(e).__name__}: {str(e)[:150]}")
     lap("마무리")
     annotate("notice", f"단계별 시간(초, 합계 {sum(x for _, x in _LAP[1]):.0f}): " + " · ".join(f"{k} {v:.0f}" for k, v in _LAP[1]))
     return 1 if failed else 0
