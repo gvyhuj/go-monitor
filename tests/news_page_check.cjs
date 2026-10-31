@@ -160,9 +160,14 @@ async function main() {
 
       // ChatGPT에게 묻기: 차트와 같이 ChatGPT 새 창이 질문을 담고 바로 열림 (결과 붙여넣기 없음)
       assert.equal(await page.locator("#obs-note-open").count(), 0);
-      await page.locator("#obs-question:not([disabled])").click();
-      await page.waitForFunction(() => window.__opened.length > 0);
-      assert.match(await page.evaluate(() => window.__opened[0]), /^https:\/\/chatgpt\.com\/\?q=/);
+      await page.locator("#obs-question:not([disabled])").waitFor();
+      // 질문이 길면(관측 자료 전체) 주소에 넣으면 잘리므로: 빈 ChatGPT 창 + 질문 전체를 복사 (붙여넣기)
+      await page.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; window.__opened.length = 0; });
+      await page.locator("#obs-question").click();
+      await page.waitForFunction(() => window.__opened.length > 0 && window.__copied);
+      const [askUrl, copied] = await page.evaluate(() => [window.__opened[0], window.__copied]);
+      assert.ok(copied.length > 8000 && copied.includes('"event_id"'), `질문 전체 복사 (${copied.length}자)`);
+      assert.equal(askUrl, "https://chatgpt.com/", "긴 질문은 주소에 넣지 않음 (잘림 방지)");
 
       // The event ID is visible for linking, and old 뉴스 반응 links open the same article in the list.
       const eid = await page.locator("#obs-extras").getAttribute("data-eid");
