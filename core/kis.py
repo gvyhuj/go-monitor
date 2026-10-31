@@ -165,6 +165,13 @@ def minutes(code: str, until_hhmmss: str, market: str = "J") -> list[dict]:
     return sorted(out, key=lambda x: x["ts"])
 
 
+def overtime(code: str) -> dict:
+    """시간외 단일가(16:00~18:00) 현재가·거래량 (국내주식 시간외현재가, FHPST02300000)."""
+    o = _get("/uapi/domestic-stock/v1/quotations/inquire-overtime-price", "FHPST02300000",
+             {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}).get("output") or {}
+    return {"price": _num(o.get("ovtm_untp_prpr")), "volume": _num(o.get("ovtm_untp_vol"))}
+
+
 def index_quote(no: str = KOSDAQ_INDEX) -> dict:
     o = _get("/uapi/domestic-stock/v1/quotations/inquire-index-price", "FHPUP02100000",
              {"FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": no}).get("output") or {}

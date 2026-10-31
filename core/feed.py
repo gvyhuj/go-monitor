@@ -88,8 +88,9 @@ def sync_history(code: str, days: int = 14, now: datetime | None = None) -> int:
 
 
 def _kis_quotes(code: str):
-    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 체결 시각은 장 시각으로:
-    장중 지금 / 15:30~18:00(거래소 시간외) 지금 / 그 뒤·다음 날 장 전에는 마지막 거래일 18:00."""
+    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 한투 현재가(J)는 거래소 정규장 가격이라
+    체결 시각은 장중 지금, 장 마감 뒤·다음 날 장 전에는 마지막 거래일 15:30 (장외 시세는 쓰지 않음 →
+    화면은 '시간외 포함'이 아니라 '정규장 종가')."""
     from . import kis
     now = kst_now().replace(tzinfo=None)
     q = kis.quote(code)
@@ -98,12 +99,15 @@ def _kis_quotes(code: str):
     hm = now.strftime("%H:%M")
     is_today = last_day == now.date().isoformat()
     open_ = is_today and "09:00" <= hm < "15:30"
-    at = f"{now.date().isoformat()}T{hm}:00" if is_today and hm < "18:00" else f"{last_day or now.date().isoformat()}T18:00:00"
+    at = f"{now.date().isoformat()}T{hm}:00" if open_ else f"{last_day or now.date().isoformat()}T15:30:00"
     out = {"name": None, "price": q["price"], "change": q["change"], "change_pct": q["rate"], "open": q["open"],
            "high": q["high"], "low": q["low"], "volume": q["volume"],
            "value_text": f"{q['value'] / 1e8:.2f}억" if q.get("value") else None,
            "market_cap": q["market_cap_100m"] * 1e8 if q.get("market_cap_100m") else None,
            "market_status": "OPEN" if open_ else "CLOSE", "traded_at": at, "fetched_at": now.isoformat(timespec="seconds")}
+    after = _kis_after(code, now, is_today, q["price"])
+    if after and after["date"] == (last_day or "")[:10]:
+        out["after"] = after
     set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
     set_state(f"fund:{code}", json.dumps({"info": {"per": q.get("per"), "pbr": q.get("pbr")},
                                           "fetched_at": now.isoformat(timespec="minutes")}, ensure_ascii=False))
@@ -114,6 +118,28 @@ def _kis_quotes(code: str):
     set_state(f"quote:{KOSDAQ}", json.dumps({"price": k["price"], "change": k["change"], "change_pct": k["rate"],
                                                "market_status": out["market_status"], "traded_at": at,
                                                "fetched_at": out["fetched_at"]}, ensure_ascii=False))
+
+
+def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
+    """그날 시간외 단일가(거래소 16:00~18:00): 그 시간대 실행마다 한 번 받고, 체결이 있으면 남김 (18시 뒤엔 마지막 값).
+    등락은 그날 정규장 종가 대비. 화면은 큰 가격(정규장 종가) 바로 아래 한 줄로만 보여 줌."""
+    from . import kis
+    st = get_state(f"after:{code}")
+    try:
+        saved = json.loads(st["value"]) if st and st.get("value") else None
+    except ValueError:
+        saved = None
+    hm = now.strftime("%H:%M")
+    if is_today and "16:00" <= hm <= "18:30" and close:
+        try:
+            o = kis.overtime(code)
+        except kis.KisError:
+            o = None                         # 보조 정보: 다음 실행에 다시
+        if o and o.get("price") and o.get("volume"):
+            saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
+                     "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00")}
+            set_state(f"after:{code}", json.dumps(saved))
+    return saved
 
 
 def update_quotes(code: str):

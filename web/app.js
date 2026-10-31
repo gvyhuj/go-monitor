@@ -742,9 +742,9 @@
     return { price: q.price, chg: q.change_pct / 100, at, open, closed: !open && at >= "15:30", ext: at > "15:30" };
   }
 
-  // ---------------------------------------------------------------- 실시간 중계 (장중 5초마다: Cloudflare Worker → 한투)
+  // ---------------------------------------------------------------- 실시간 중계 (장중 15초마다: Cloudflare Worker → 한투)
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
-  const RELAY = { date: null, bars: new Map(), quote: null, kosdaq: null, at: null };
+  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null };
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
   function applyRelay() {
@@ -764,8 +764,10 @@
       if (!res.ok) return;
       const d = await res.json();
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
-      if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); }
+      if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); RELAY.kq = new Map(); }
       (d.bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.bars.set(b.t, b); });
+      (d.kosdaq_bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.kq.set(b.t, b); });
+      if (!RELAY.bars.size) return;          // 오늘 체결이 아직 없음(장 시작 직후·휴장일): 정기 자료 그대로
       Object.assign(RELAY, { quote: d.quote, kosdaq: d.kosdaq, at: d.at });
       applyRelay();
       renderQuote();
@@ -777,10 +779,13 @@
   function withRelayBars(d, date) {
     if (!RELAY.date || RELAY.date !== date || !RELAY.bars.size) return d;
     if (!d || d.date !== date) d = { date, bars: [], kosdaq: [], prev_close: RELAY.quote && RELAY.quote.base, events: [] };
-    const m = new Map((d.bars || []).map((b) => [b.t, b]));
-    const last = (d.bars || []).length ? d.bars[d.bars.length - 1].t : "";
-    RELAY.bars.forEach((b, t) => { if (!m.has(t) || t >= last) m.set(t, b); });
-    return { ...d, bars: [...m.values()].sort((a, b) => (a.t < b.t ? -1 : 1)) };
+    const merge = (rows, extra) => {
+      const m = new Map((rows || []).map((b) => [b.t, b]));
+      const last = (rows || []).length ? rows[rows.length - 1].t : "";
+      extra.forEach((b, t) => { if (!m.has(t) || t >= last) m.set(t, b); });
+      return [...m.values()].sort((a, b) => (a.t < b.t ? -1 : 1));
+    };
+    return { ...d, bars: merge(d.bars, RELAY.bars), kosdaq: merge(d.kosdaq, RELAY.kq) };
   }
 
   // 현재 하루 수치와 저장된 분석 근거는 별개다. 장 마감 뒤에도 메인과 상세는 같은 시세를 쓴다.
@@ -1156,6 +1161,13 @@
       }
     }
 
+    // 시간외 단일가 (거래소 16:00~18:00): 큰 가격(정규장 종가) 바로 아래 한 줄, 그날 체결이 있을 때만. 등락은 정규장 종가 대비
+    function afterHtml(ds) {
+      const a = STATUS && STATUS.quote && STATUS.quote.after;
+      if (!a || a.date !== ds || a.price == null) return "";
+      const arrow = a.rate > 0 ? "▲" : a.rate < 0 ? "▼" : "";
+      return `<span class="rh-after" title="거래소 시간외 단일가 (16:00~18:00, 정규장 종가 대비)">시간외 <b class="${sgnCls(a.rate)}">${won(a.price)}원 ${arrow}${(Math.abs(a.rate) * 100).toFixed(2)}%</b> ${esc(a.at)}</span>`;
+    }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
       const ds = calState.sel, px = price[ds];
@@ -1173,7 +1185,7 @@
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span></span>
+          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span>${afterHtml(ds)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
@@ -3892,7 +3904,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
     refreshStatus().then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
-    setInterval(relayTick, 5000);         // 장중에만 실제로 물음
+    setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
   });
 })();

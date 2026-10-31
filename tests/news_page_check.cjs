@@ -367,7 +367,7 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
-    // 실시간 중계: 장중이면 5초마다 중계에 묻고(들어가는 값 머리말), 머리 가격·'실시간' 표시가 바뀜. 중계가 안 되면 정기 자료 그대로
+    // 실시간 중계: 장중이면 15초마다 중계에 묻고(들어가는 값 머리말), 머리 가격·'실시간' 표시가 바뀜. 중계가 안 되면 정기 자료 그대로
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       await page.clock.install({ time: new Date("2026-10-28T10:05:10+09:00") });
@@ -379,19 +379,20 @@ async function main() {
         if (fail) return route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } });
         return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
           body: JSON.stringify({ at: "2026-10-28T10:05", quote: { price: 12345, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
-            kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }] }) });
+            kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }],
+            kosdaq_bars: [{ t: "2026-10-28T10:05", c: 812.34 }] }) });
       });
       await page.goto(`${base}/#/`);
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#q-price").waitFor({ state: "attached" });
-      await page.clock.runFor(6000);
+      await page.clock.runFor(16000);
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"));
       assert.match(await page.locator("#q-change").textContent(), /345[\s\S]*2\.88%[\s\S]*10:05 기준/);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.ok(seen.length >= 1 && seen.every((x) => x === "RELAY-AUTH"), "들어가는 값 머리말");
       fail = true;                                     // 중계가 안 되면: 화면은 마지막 값 그대로, 오류 없음
-      await page.clock.runFor(6000);
+      await page.clock.runFor(16000);
       assert.match(await page.locator("#q-price").textContent(), /12,345/);
       assert.deepEqual(errors, []);
       await page.close();

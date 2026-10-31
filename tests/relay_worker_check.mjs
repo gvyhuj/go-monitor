@@ -19,6 +19,7 @@ function kisFake(calls, fail) {
       FHKST03010200: { output2: [
         { stck_bsop_date: "20261102", stck_cntg_hour: "100500", stck_oprc: "9890", stck_hgpr: "9900", stck_lwpr: "9880", stck_prpr: "9900", cntg_vol: "10" },
         { stck_bsop_date: "20261102", stck_cntg_hour: "100400", stck_oprc: "9880", stck_hgpr: "9890", stck_lwpr: "9870", stck_prpr: "9885", cntg_vol: "7" }] },
+      FHKUP03500200: { output2: [{ stck_bsop_date: "20261102", stck_cntg_hour: "100500", bstp_nmix_prpr: "730.10", bstp_nmix_oprc: "730", bstp_nmix_hgpr: "731", bstp_nmix_lwpr: "729", cntg_vol: "1" }] },
     }[tr];
     return new Response(JSON.stringify({ rt_cd: "0", ...out }), { status: 200 });
   };
@@ -40,18 +41,20 @@ test("no shared token (or about to expire) → 503 and KIS is not called (the Wo
   assert.equal(calls.length, 0);
 });
 
-test("live: quote + KOSDAQ + today's minute bars on port 9443 with the shared token; same answer within 3 seconds", async () => {
+test("live: quote + KOSDAQ + today's minute bars on port 9443 with the shared token; same answer within 15 seconds", async () => {
   const w = await load(), calls = [];
   globalThis.fetch = kisFake(calls);
   const res = await w.fetch(req("SECRET-AUTH"), env({ token: "TOK", exp_ms: Date.now() + 3600e3 }));
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("access-control-allow-origin"), "https://owner.github.io");
   const d = await res.json();
-  assert.deepEqual(calls.map((c) => [c.port, c.tr, c.auth]), [["9443", "FHKST01010100", "Bearer TOK"], ["9443", "FHPUP02100000", "Bearer TOK"], ["9443", "FHKST03010200", "Bearer TOK"]]);
+  assert.deepEqual(calls.map((c) => [c.port, c.tr, c.auth]), [["9443", "FHKST01010100", "Bearer TOK"], ["9443", "FHPUP02100000", "Bearer TOK"],
+    ["9443", "FHKST03010200", "Bearer TOK"], ["9443", "FHKUP03500200", "Bearer TOK"]]);
   assert.equal(d.quote.price, 9900); assert.equal(d.quote.rate, 1.02); assert.equal(d.kosdaq.price, 730.1);
   assert.deepEqual(d.bars.map((b) => [b.t, b.c]), [["2026-11-02T10:04", 9885], ["2026-11-02T10:05", 9900]]);
+  assert.deepEqual(d.kosdaq_bars, [{ t: "2026-11-02T10:05", c: 730.1 }]);
   await w.fetch(req("SECRET-AUTH"), env({ token: "TOK", exp_ms: Date.now() + 3600e3 }));
-  assert.equal(calls.length, 3, "3초 안에는 한투를 다시 부르지 않음");
+  assert.equal(calls.length, 4, "15초 안에는 한투를 다시 부르지 않음");
 });
 
 test("KIS error → 502 with the message (site keeps using the regular data)", async () => {
@@ -60,4 +63,21 @@ test("KIS error → 502 with the message (site keeps using the regular data)", a
   const res = await w.fetch(req("SECRET-AUTH"), env({ token: "TOK", exp_ms: Date.now() + 3600e3 }));
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /조회 처리 중 오류/);
+});
+
+test("account safety: 1s between KIS calls, no retry when KIS refuses, nothing for 15s after a refusal", async () => {
+  const w = await load(), calls = [], at = [];
+  const ok = kisFake(calls);
+  globalThis.fetch = async (url, init) => {
+    at.push(Date.now());
+    if (init.headers.tr_id === "FHKST03010200") return new Response(JSON.stringify({ rt_cd: "1", msg1: "초당 거래건수를 초과하였습니다." }), { status: 500 });
+    return ok(url, init);
+  };
+  const e = env({ token: "TOK", exp_ms: Date.now() + 3600e3 });
+  const res = await w.fetch(req("SECRET-AUTH"), e);
+  assert.equal(res.status, 502);
+  assert.equal(at.length, 3, "거절돼도 다시 묻지 않음");
+  for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 990, `간격 ${at[i] - at[i - 1]}ms`);
+  assert.equal((await w.fetch(req("SECRET-AUTH"), e)).status, 503);
+  assert.equal(at.length, 3, "거절 뒤 15초 동안은 한투를 부르지 않음");
 });

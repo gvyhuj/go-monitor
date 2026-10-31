@@ -406,6 +406,23 @@ def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
     feed.update_quotes('000001')
     q = _json.loads(db.get_state('quote:000001')['value'])
     assert q['market_status'] == 'OPEN' and q['traded_at'] == '2026-11-02T10:05:00' and q['value_text'] == '0.12억' and q['market_cap'] == 1159e8
+    # 장 마감 뒤: 한투 현재가는 정규장 가격 → 시각은 15:30 (화면이 '시간외 포함'으로 쓰지 않게)
+    monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 2, 16, 30))
+    feed.update_quotes('000001')
+    q = _json.loads(db.get_state('quote:000001')['value'])
+    assert q['market_status'] == 'CLOSE' and q['traded_at'] == '2026-11-02T15:30:00'
+    assert 'after' not in q                                   # 시간외 체결 없음(거래량 0) → 표시 안 함
+    # 시간외 단일가: 16:00~18:00 실행에서 받고 정규장 종가 대비로, 18시 뒤엔 마지막 값 유지
+    monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 9950, 'volume': 120})
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 2, 17, 40))
+    feed.update_quotes('000001')
+    a = _json.loads(db.get_state('quote:000001')['value'])['after']
+    assert (a['date'], a['price'], a['change'], a['at']) == ('2026-11-02', 9950, 50, '17:40') and abs(a['rate'] - 50 / 9900) < 1e-12
+    monkeypatch.setattr(kis, 'overtime', lambda code: (_ for _ in ()).throw(AssertionError('18:30 뒤엔 부르지 않음')))
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 2, 20, 0))
+    feed.update_quotes('000001')
+    assert _json.loads(db.get_state('quote:000001')['value'])['after']['price'] == 9950
     assert _json.loads(db.get_state('fund:000001')['value'])['info'] == {'per': 47.6, 'pbr': 1.77}
     assert _json.loads(db.get_state('quote:KOSDAQ')['value'])['change_pct'] == 0.79
     macro.store_daily_kis('000001', [{'date': '2026-10-29', 'open': 1, 'high': 1, 'low': 1, 'close': 10150, 'volume': 1},
