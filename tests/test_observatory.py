@@ -351,7 +351,7 @@ def test_kis_token_reused_and_probe_line(tmp_path, monkeypatch):
     def fake(method, path, *, headers, params=None, body=None, timeout=10):
         calls.append(path)
         if path == '/oauth2/tokenP':
-            return {'access_token': 'SECRETTOK', 'access_token_token_expired': '2026-10-31 09:00:00'}
+            return {'access_token': 'SECRETTOK', 'access_token_token_expired': '2099-10-31 09:00:00'}
         assert headers['authorization'] == 'Bearer SECRETTOK'
         if path.endswith('inquire-price'):
             return {'rt_cd': '0', 'output': {'stck_prpr': '9800', 'stck_sdpr': '10170', 'acml_vol': '39255', 'hts_avls': '1147', 'per': '47.12'}}
@@ -373,7 +373,7 @@ def test_kis_token_reused_and_probe_line(tmp_path, monkeypatch):
     line = kis.probe('000001', datetime(2026, 10, 31, 1, 0))
     kis.probe('000001', datetime(2026, 10, 31, 2, 0))
     assert calls.count('/oauth2/tokenP') == 1, '토큰은 다시 받지 않음'
-    assert kis.ISSUED[-1:] == ['2026-10-31T09:00'] and not any('SECRETTOK' in x for x in kis.ISSUED)   # 실행 기록용: 만료 시각만
+    assert kis.ISSUED[-1:] == ['2099-10-31T09:00'] and not any('SECRETTOK' in x for x in kis.ISSUED)   # 실행 기록용: 만료 시각만
     assert '현재가 9800 기준가 10170' in line and '일봉 최근 2개 2026-10-29~2026-10-30' in line
     assert '당일 1분봉 1개' in line and '실패: 지난 1분봉(7일 전)' in line and 'SECRETTOK' not in line
 
@@ -605,6 +605,11 @@ def test_relay_deploy_once_and_token_push(tmp_path, monkeypatch):
     val = put[0][3].decode().split('name="value"\r\n\r\n', 1)[1].split('\r\n', 1)[0]
     assert len(put) == 1 and _json.loads(val) == {'token': 'TOKX', 'exp_ms': 1793577600000}
     assert relay.public_info() == {'url': info['url'], 'auth': info['auth']}      # 사이트에는 이것만
+    # 다시 올리면(코드가 바뀜) 바로 다음 실행에서 새 중계를 점검해야 함 (6시간을 기다리지 않음)
+    db.set_state('relay:checked_at', '2026-10-31T13:33')
+    monkeypatch.setattr(relay.WORKER_JS.__class__, 'read_text', lambda self, enc='utf-8': 'changed worker')
+    relay.ensure('000001')
+    assert not (db.get_state('relay:checked_at') or {}).get('value')
 
 
 def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
