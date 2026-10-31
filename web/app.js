@@ -1649,31 +1649,11 @@
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
-      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button>
-        <button class="btn small editable" type="button" data-range-rec>이 구간 기록하고 원인 넣기</button></div>
-      <form class="mc-form editable" data-range-form hidden>
-        <label><span>받은 답 붙여넣기 <small class="muted">(비워 두면 구간만 기록하고 원인은 나중에)</small></span><textarea rows="5" data-rf-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
-        <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-rf-head></label>
-        <p class="note" style="margin:0">${r.from}~${r.to} 구간이 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
-        <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
-      </form>
+      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button></div>
       <span class="form-msg" data-range-msg></span></div>`;
     const msg = $("[data-range-msg]", panel);
     $("[data-range-clear]", panel).onclick = clear;
     $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."), msg);
-    // 고른 구간을 기록(요청)으로 남기고 원인을 함께 붙임 → 다음 실행 뒤 이 날짜 아래 줄로 보임
-    const form = $("[data-range-form]", panel), body = $("[data-rf-body]", panel), head = $("[data-rf-head]", panel);
-    $("[data-range-rec]", panel).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
-    head.oninput = () => { head.dataset.touched = "1"; };
-    body.oninput = () => { if (!head.dataset.touched) head.value = guessSummary(body.value).head; };
-    form.onsubmit = async (ev) => {
-      ev.preventDefault();
-      const h = head.value.replace(CONF_RE, "").trim(), b = body.value.trim();
-      const item = { type: "analyze", date: d.date, from: r.from, to: r.to };
-      if (b) Object.assign(item, { cause_body: b, cause_headline: h });
-      try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); form.hidden = true; }
-      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
-    };
   }
 
   /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음). whole: 그날 장 전체(하루 움직임)를 묻는 경우 */
@@ -1742,31 +1722,12 @@
         <div><dt>장중 최고 · 최저</dt><dd class="num"><span class="${sgnCls(r.high.fromPrev)}">${pct(r.high.fromPrev)}</span> · <span class="${sgnCls(r.low.fromPrev)}">${pct(r.low.fromPrev)}</span></dd></div>
         <div><dt>거래량</dt><dd class="num">${int(vol)}주</dd></div>
       </dl>
-      <div class="ask-row"><button class="btn primary" type="button" data-day-gpt title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">ChatGPT에게 묻기</button>
-        <button class="btn editable" type="button" data-day-rec>받은 답 기록하기</button></div>
-      <form class="mc-form editable" data-day-form hidden>
-        <label><span>받은 답 붙여넣기</span><textarea rows="6" data-df-body placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
-        <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐)</small><input type="text" maxlength="200" data-df-head></label>
-        <p class="note" style="margin:0">${now ? "장 시작부터 지금까지" : "이날 장 전체"}(${r.from}~${r.to})가 이 날짜 아래 줄로 기록되고, 붙여넣은 원인이 그 줄에 붙습니다. 저장을 누르면 GitHub 창이 열리고, [Create]를 누르면 다음 자동 실행 때 반영됩니다.</p>
-        <div class="ask-row"><button class="btn primary small" type="submit">기록하기</button></div>
-      </form>
+      <div class="ask-row"><button class="btn primary" type="button" data-day-gpt title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">ChatGPT에게 묻기</button></div>
       <span class="form-msg" data-day-msg></span>
       <section class="evidence"><section class="d-block" data-ev-rel></section><section class="d-block"><div data-ev-flow></div></section></section>`);
     const box = $("#drawer-body"), msg = $("[data-day-msg]", box);
     fillDayEvidence(box, d.date, r.fromPrev, { rel: true, flow: true });
     $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, now ? "오늘 장 시작부터 지금까지 주가 움직임의 원인을 찾아 줘." : "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
-    const form = $("[data-day-form]", box), body = $("[data-df-body]", box), head = $("[data-df-head]", box);
-    $("[data-day-rec]", box).onclick = () => { form.hidden = !form.hidden; if (!form.hidden) body.focus(); };
-    head.oninput = () => { head.dataset.touched = "1"; };
-    body.oninput = () => { if (!head.dataset.touched) head.value = guessSummary(body.value).head; };
-    form.onsubmit = async (ev) => {
-      ev.preventDefault();
-      const b = body.value.trim();
-      if (!b) { msg.className = "form-msg err"; msg.textContent = "ChatGPT 답을 붙여넣어 주세요."; return; }
-      const item = { type: "analyze", date: d.date, from: r.from, to: r.to, cause_body: b, cause_headline: head.value.replace(CONF_RE, "").trim() };
-      try { msg.className = "form-msg"; msg.textContent = await sendInbox(item); form.hidden = true; }
-      catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
-    };
   }
 
   /** ChatGPT 새 창에 자료를 채워 엶 (보내기는 사용자가 직접). 따로 묻고 싶은 것은 그 창에서 덧붙임 */
@@ -1774,7 +1735,7 @@
     try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
     window.open(`https://chatgpt.com/?q=${encodeURIComponent(text)}`, "_blank", "noopener");
     msg.className = "form-msg";
-    msg.textContent = "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내고, 받은 답을 복사해 여기에 붙여넣으세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
+    msg.textContent = "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
   }
 
 
@@ -1946,7 +1907,6 @@
     const h0 = m && m.headline ? m.headline.replace(/\*\*/g, "").replace(CONF_RE, "").trim() : "";
     return (m && m.headline ? h0.replace(SUM_LABEL, "").trim() || h0 : guessSummary(m && m.body).head) || "원인 요약 없음";
   }
-  const kstNow = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16);
 
   // 왜 움직였나: 넣은 원인을 위에 (하루 기록은 장중에 여러 번 넣을 수 있어 넣은 시각·그때 등락과 함께 최신부터).
   // 원인이 없으면 ① 묻기 → ② 붙여넣기 → ③ 저장 순서로 바로 보이게
@@ -1963,24 +1923,15 @@
     const view = entries.length ? entries.map((x, i) => `<div class="manual-cause">
         <div class="mc-head">${when(x)}${esc(causeHead(x))}</div>
         <div class="mc-body">${mdRender(x.body || "")}</div>
-        <div class="ask-row editable mc-actions"><button class="btn-link" type="button" data-mc-edit="${i}">고치기</button><button class="btn-link" type="button" data-mc-del="${i}">삭제</button></div>
+        <div class="ask-row editable mc-actions"><button class="btn-link" type="button" data-mc-del="${i}">삭제</button></div>
         </div>`).join("")
-      : `<div class="manual-cause is-empty"><div class="mc-head">원인 미입력</div>
-        <p class="note editable" style="margin:0">아래 순서대로 하면 이 칸과 목록에 원인이 표시됩니다.</p></div>`;
-    const step = (n, t) => `<span class="step-n">${n}</span>${t}`;
+      : `<div class="manual-cause is-empty"><div class="mc-head">원인 미입력</div></div>`;
     const has = entries.length > 0;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3>${daily && entries.length > 1 ? `<span class="stage">원인 기록 ${entries.length}개</span>` : ""}</div>
       ${view}
       <div class="ask-block">
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">${has ? "ChatGPT에게 다시 묻기" : `${step(1, "ChatGPT에게 묻기")}`}</button>
-          ${has ? `<button class="btn editable" type="button" id="mc-open">${daily ? "지금 원인 하나 더 넣기" : "원인 고치기"}</button>` : ""}</div>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">${has ? "ChatGPT에게 다시 묻기" : "ChatGPT에게 묻기"}</button></div>
         <span class="form-msg" id="ask-claude-msg"></span>
-        <form class="mc-form editable" id="mc-form"${has ? " hidden" : ""}>
-          <label><span>${has ? "원인 본문" : step(2, "받은 답 붙여넣기")}</span><textarea id="mc-body" rows="${has ? 10 : 5}" placeholder="ChatGPT 답을 그대로 붙여넣으세요 (Ctrl+V)."></textarea></label>
-          <label>한 줄 요약 <small class="muted">(붙여넣으면 자동으로 채워짐, 고쳐도 됨)</small><input id="mc-head" type="text" maxlength="200" placeholder="예: 외국계 차익실현 + 시장 전반 위험회피"></label>
-          <p class="note" style="margin:0" id="mc-note">${daily ? "지금 시각과 지금 등락이 함께 기록되고, 앞서 넣은 원인도 그대로 남습니다." : `${hhmm(e.start_ts)}~${hhmm(e.last_ts)} 순간의 원인으로 저장됩니다.`} 저장을 누르면 GitHub 창이 열립니다. 거기서 초록색 [Create]를 누르면 다음 자동 실행(장중 약 5분) 때 반영됩니다.</p>
-          <div class="ask-row"><button class="btn primary" type="submit">${has ? "저장" : step(3, "저장")}</button>${has ? '<button class="btn" type="button" id="mc-cancel">취소</button>' : ""}</div>
-        </form>
       </div>`;
   }
 
@@ -2155,26 +2106,13 @@
     $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
     const dDel = $("#drawer-body [data-ev-del]");
     if (dDel) dDel.onclick = () => deleteRecord(dDel);
-    // 원인 붙여넣기·고치기·삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
-    const form = $("#mc-form"), msg = $("#ask-claude-msg");
+    // 원인 삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
+    const msg = $("#ask-claude-msg");
     const entries = e.manual ? (e.manual.entries && e.manual.entries.length ? e.manual.entries : [e.manual]) : [];
-    const day = e.start_ts.slice(0, 10);
-    let editing = null;                       // 고치는 중인 원인 (없으면 새로 넣기)
     const sendReq = async (item) => {
       msg.className = "form-msg";
       try { msg.textContent = await sendInbox(item); } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
-    const headIn = $("#mc-head"), bodyIn = $("#mc-body");
-    const openForm = (x) => {
-      editing = x;
-      bodyIn.value = x ? x.body || "" : "";
-      headIn.value = x ? causeHead(x) : "";
-      headIn.dataset.touched = x ? "1" : "";
-      form.hidden = false; bodyIn.focus();
-    };
-    if ($("#mc-open")) $("#mc-open").onclick = () => openForm(daily ? null : entries[0] || null);
-    if ($("#mc-cancel")) $("#mc-cancel").onclick = () => { form.hidden = true; editing = null; };
-    $("#drawer-body").querySelectorAll("[data-mc-edit]").forEach((b) => { b.onclick = () => openForm(entries[+b.dataset.mcEdit]); });
     $("#drawer-body").querySelectorAll("[data-mc-del]").forEach((b) => {
       b.onclick = () => {
         if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "한 번 더 누르면 삭제"; return; }
@@ -2183,25 +2121,6 @@
         sendReq({ type: "cause_delete", date: x.date, direction: x.direction, scope: x.scope, start_ts: x.start_ts, last_ts: x.last_ts, at_ts: x.start_ts });
       };
     });
-    // 붙여넣으면 한 줄 요약을 자동으로 채움 (직접 고친 칸은 건드리지 않음)
-    headIn.oninput = () => { headIn.dataset.touched = "1"; };
-    bodyIn.oninput = () => { if (!headIn.dataset.touched) headIn.value = guessSummary(bodyIn.value).head; };
-    form.onsubmit = (ev) => {
-      ev.preventDefault();
-      const body = bodyIn.value.trim();
-      if (!body) { msg.className = "form-msg err"; msg.textContent = "ChatGPT 답을 붙여넣어 주세요."; return; }
-      const headline = headIn.value.replace(CONF_RE, "").trim();
-      if (!daily) {
-        sendReq({ type: "cause", date: day, direction: e.direction, scope: "intraday", start_ts: e.start_ts, last_ts: e.last_ts, headline, body });
-        return;
-      }
-      // 하루 기록: 새로 넣으면 지금 시각·지금 등락으로 하나 더, 고치면 그 시각의 기록을 덮어씀
-      const live = liveFor(day);
-      const item = editing
-        ? { type: "cause", date: day, direction: editing.direction, scope: "day", at_ts: editing.start_ts, move: editing.move, headline, body }
-        : { type: "cause", date: day, direction: e.direction, scope: "day", at_ts: kstNow(), move: live ? live.chg : e.peak_return_5m, headline, body };
-      sendReq(item);
-    };
     const btn = $("#re-analyze");
     if (btn) btn.onclick = async () => {
       btn.disabled = true; btn.textContent = "분석하는 중…";
@@ -2355,44 +2274,22 @@ function observationQuestion(d) {
 }
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
 // 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문·결과 저장, 관련 소식, 검토 기록, 유사 사건, 분류·연결 수정.
-// 그래프와 숫자는 기사 상세가 그림. host: 접는 항목을 넣을 곳. 버튼(#obs-question, #obs-note-open)은 기사 상세에 이미 있음
+// 그래프와 숫자는 기사 상세가 그림. host: 접는 항목을 넣을 곳. 버튼(#obs-question)은 기사 상세에 이미 있음
 async function observationExtras(host, eid, { openEvent = null, topicOf = null } = {}) {
   if(!host)return;
   let d,index;
   try { index=await api('/api/observatory'); eid=index.aliases?.[eid]||eid;d=await api('/api/observatory/'+encodeURIComponent(eid)); }
   catch(e){host.innerHTML=`<p class="obs-muted" role="alert">사건 관찰 기록을 불러오지 못했습니다: ${esc(e.message)}</p>`;return;}
   if(!host.isConnected)return;
-  const range='day';
-  let revision=null,noteDraft=null,noteTab='ai_analysis',noteOpen=false,openFolds=new Set();
-  const NOTE_TABS=[['manual_observation','확인 사실'],['ai_analysis','AI 분석'],['retrospective_review','사후 검토']];
+  let openFolds=new Set();
   const render=()=>{
-    if (host.querySelector('#obs-note')) noteDraft=Object.fromEntries(new FormData(host.querySelector('#obs-note')));
     if (host.querySelector('[data-fold]')) openFolds=new Set([...host.querySelectorAll('details[data-fold][open]')].map(x=>x.dataset.fold));
-    const o=d.observation,f=o.intraday||{};
-    const lead=d.members[0]||{};
-    const kindLabel=k=>({pr:'보도자료',company:'보도자료',disc:'공시'})[k]||'기사';
-    const notesOf=k=>d.notes.filter(n=>n.kind===k);
-    const factLine=`공개 ${obsStamp(d.first_public_at)} · 그린광학 +30분 ${pct(f.steps?.['30']?.own)} / KOSDAQ +30분 ${pct(f.steps?.['30']?.kq)} (관측값, 기사 효과로 단정하지 않음)`;
     const fold=(key,title,meta,body)=>`<details class="obs-fold" data-fold="${key}"${openFolds.has(key)?' open':''}><summary><span>${title}</span><small>${meta}</small></summary><div class="obs-fold-body">${body}</div></details>`;
-    const nNotes=NOTE_TABS.map(([k,t])=>`${t} ${notesOf(k).length}`).join(' · ');
-    host.innerHTML=`<textarea id="obs-question-text" aria-label="AI 질문과 실제 관측 자료" readonly hidden></textarea>
-    <dialog class="disc-pop note-pop" id="obs-note-pop" aria-label="결과 붙여넣기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>결과 붙여넣기 <small class="muted">AI 답이나 확인한 내용을 이 사건 기록으로 저장</small></strong><button type="button" class="btn-link" id="obs-note-x" aria-label="닫기">✕</button></div>
-    <form id="obs-note" class="obs-form"><label class="wide">분석 결과<textarea name="body" required rows="10" placeholder="AI 답이나 확인한 내용을 붙여넣으세요"></textarea></label>
-      <div class="obs-form-actions"><button class="btn primary">기록 암호화 저장 요청</button><button type="button" class="btn" id="obs-note-cancel">닫기</button><span id="obs-save-status" role="status"></span></div></form></div></dialog>
+    host.innerHTML=`
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>`)}
 `;
-    host.querySelectorAll('[data-note-tab]').forEach(b=>b.onclick=()=>{noteTab=b.dataset.noteTab;render();});
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    $('#obs-question').onclick=async()=>{const q=observationQuestion(d);$('#obs-question-text').value=q;$('#obs-question-text').hidden=false;try{await navigator.clipboard.writeText(q);toast('실제 자료를 포함한 질문을 복사했습니다. AI 답을 받은 뒤 [결과 붙여넣기]로 저장하세요.');}catch(e){toast('아래 질문을 선택해서 복사해 주세요.','err');}};
-    const notePop=$('#obs-note-pop');
-    notePop.addEventListener('close',()=>{noteOpen=false;});
-    if(noteOpen&&!notePop.open)notePop.showModal();
-    const openNote=(kind)=>{noteOpen=true;const form=$('#obs-note');if(!notePop.open)notePop.showModal();form.elements.body.focus();};
-    $('#obs-note-open').onclick=()=>{revision=null;openNote(noteTab);};
-    $('#obs-note-cancel').onclick=$('#obs-note-x').onclick=()=>{noteOpen=false;revision=null;notePop.close();};
-    if(noteDraft)for(const [key,value] of Object.entries(noteDraft)){const input=$('#obs-note').elements[key];if(input)input.value=value;}
-    // 관측값 사본은 반영할 때 기록에서 붙임 (요청이 짧아야 GitHub 창이 바로 열림)
-    $('#obs-note').onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(e.target));try{const msg=await sendInbox({type:'news_event_note',request_id:crypto.randomUUID(),event_id:eid,body:v.body,kind:'ai_analysis',author_type:'AI',analysis_at:new Date(Date.now()+9*36e5).toISOString().slice(0,16),review_status:'검토 대기',sources:[],snapshot:{version:d.snapshot_version},revision_parent_id:revision});$('#obs-save-status').textContent=msg;}catch(err){$('#obs-save-status').textContent=err.message;}};
+    $('#obs-question').onclick=()=>openAsk(observationQuestion(d),$('#art-fix-msg'));
     // 유사 사건: 이 사건과 분야 태그나 고객·파트너가 겹치는 사건만. '기술·개발'은 제목에 흔한 말이라 그것만 겹치면 넣지 않음
     const similar=()=>{
       const WEAK=new Set(['기술·개발']),myTags=d.business_tags||[],partner=(d.partner||'').trim();
@@ -3318,9 +3215,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 한 줄 동작: AI 질문 · 결과 붙여넣기(사건 관찰 기록) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    // 한 줄 동작: ChatGPT에게 묻기 · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>✦ AI 질문</button><button type="button" class="btn" id="obs-note-open" disabled>결과 붙여넣기</button>` : ""}
+    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>ChatGPT에게 묻기</button>` : ""}
         ${toKinds.map((k) => `<button class="btn editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}<span class="form-msg" id="art-fix-msg"></span></div>`;
     html += `<div class="obs-folds">`;
 
@@ -3401,7 +3298,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       drawTab("day");
     }
     if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id, { openEvent: (eid) => prHooks && prHooks.openEvent(eid), topicOf: prHooks && prHooks.topicOf })
-      .then(() => { box.querySelectorAll("#obs-question, #obs-note-open").forEach((b) => { b.disabled = false; }); });
+      .then(() => { box.querySelectorAll("#obs-question").forEach((b) => { b.disabled = false; }); });
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));
     box.querySelectorAll(".dup-del").forEach((b) => b.addEventListener("click", async () => {

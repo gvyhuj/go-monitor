@@ -112,7 +112,7 @@ async function main() {
       assert.match(await page.locator("#rx-cmp").innerText(), /다른 그린광학 보도자료 2건/);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
       assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
-      assert.equal(await page.locator("#obs-question").innerText(), "✦ AI 질문");
+      assert.equal(await page.locator("#obs-question").innerText(), "ChatGPT에게 묻기");
       assert.equal(await page.locator("#rx-tab-note").innerText(), "", "공개 직후 탭 아래 안내 문장 없음");
       // 왼쪽 목록의 다른 기사에 마우스를 올리면 오른쪽 그래프에서 그 기사 선이 진해짐 (그래프 위 마우스로는 제목을 띄우지 않음)
       if (width > 700) {
@@ -158,21 +158,11 @@ async function main() {
         assert.ok(right < 2, `수정 메뉴가 오른쪽 끝 (${right}px)`);
       }
 
-      // Result paste form opens and accepts typing.
-      await page.locator("#obs-note-open:not([disabled])").click();
-      assert.equal(await page.locator("#obs-note-pop").evaluate((x) => x.open), true, "결과 붙여넣기는 팝업으로 열림");
-      assert.deepEqual(await page.locator("#obs-note").evaluate((f) => [...f.elements].filter((x) => x.name).map((x) => x.name)), ["body"], "입력 칸은 분석 결과 하나");
-      const body = page.locator('#obs-note textarea[name="body"]');
-      await body.pressSequentially("메모 공백 입력");
-      assert.equal(await body.inputValue(), "메모 공백 입력");
-      // 저장 요청: 짧은 요청이라 GitHub 새 이슈 창이 바로 열림 (복사·붙여넣기 단계 없음)
-      await page.locator('#obs-note button.btn.primary').click();
+      // ChatGPT에게 묻기: 차트와 같이 ChatGPT 새 창이 질문을 담고 바로 열림 (결과 붙여넣기 없음)
+      assert.equal(await page.locator("#obs-note-open").count(), 0);
+      await page.locator("#obs-question:not([disabled])").click();
       await page.waitForFunction(() => window.__opened.length > 0);
-      const opened = await page.evaluate(() => window.__opened[0]);
-      assert.match(opened, /\/issues\/new\?title=.*&body=/);
-      assert.ok(opened.length < 7000, `요청 주소 ${opened.length}자`);
-      await page.locator("#obs-note-cancel").click();
-      assert.equal(await page.locator("#obs-note-pop").evaluate((x) => x.open), false);
+      assert.match(await page.evaluate(() => window.__opened[0]), /^https:\/\/chatgpt\.com\/\?q=/);
 
       // The event ID is visible for linking, and old 뉴스 반응 links open the same article in the list.
       const eid = await page.locator("#obs-extras").getAttribute("data-eid");

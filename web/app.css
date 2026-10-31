@@ -836,10 +836,6 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 .manual-cause .mc-body li { margin: 3px 0; }
 .manual-cause .mc-body li.sub { margin-left: 18px; }
 .manual-cause .mc-body hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
-.mc-form { display: grid; gap: 10px; margin-top: 12px; }
-.mc-form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
-.mc-form input { width: 100%; box-sizing: border-box; font: inherit; font-weight: 400; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); }
-.mc-form[hidden] { display: none; }
 
 /* ------------------------------------------------------------ 결론 먼저 (이벤트 상세) */
 .facts.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -848,9 +844,6 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 .manual-cause.is-empty { border-left-color: var(--vol); background: var(--vol-bg); }
 .manual-cause.is-empty .mc-head { color: var(--vol); margin-bottom: 2px; }
 .manual-cause:not(.is-empty) { border-left-color: var(--brand-blue); }
-.step-n { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%;
-  font-size: 11.5px; font-weight: 800; background: color-mix(in srgb, currentColor 20%, transparent); }
-.mc-form select { font: inherit; font-weight: 400; padding: 9px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); }
 details.evidence { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; }
 details.evidence > summary { cursor: pointer; font-size: 16px; font-weight: 720; list-style-position: outside; }
 details.evidence > summary .muted { font-size: 13px; font-weight: 500; margin-left: 8px; }
@@ -1405,7 +1398,7 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .art-right { margin-left: auto; }
 .pr-close-row.pr-back-row { justify-content: flex-start; gap: 10px; margin-bottom: 8px; }
 .pr-back-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.outlets-pop, .note-pop { width: min(720px, calc(100vw - 32px)); }
+.outlets-pop { width: min(720px, calc(100vw - 32px)); }
 .outlets-pop .outlet-list { max-height: 65vh; overflow: auto; margin-top: 8px; }
 .art-more > summary::-webkit-details-marker { display: none; }
 .art-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: 0 10px 28px rgba(16, 32, 64, .16); padding: 6px; display: flex; flex-direction: column; min-width: 150px; width: max-content; }
@@ -1479,18 +1472,11 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .obs-cta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .obs-similar td, .obs-similar th { font-size: 12.5px; }
 .obs-similar tr.on td { background: var(--canvas); }
-.obs-form { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; align-items: end; }
-.obs-form label { display: flex; flex-direction: column; gap: 5px; flex: 1 1 220px; font-size: 13px; color: var(--ink-2); }
-.obs-form label.wide { flex-basis: 100%; }
-.obs-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; }
-.obs-form input, .obs-form select, .obs-form textarea { min-height: 40px; width: 100%; max-width: 100%; }
-.obs-form input[type=checkbox] { width: 20px; min-height: 20px; }
 .rx-gap { fill:none; stroke:#9aa5b6; stroke-width:2; stroke-dasharray:1 5; cursor:help; pointer-events:stroke; }
 .rx-gap.on { stroke:var(--up); }.rx-gap.average { stroke:var(--brand-blue); }
 .rx-avg { pointer-events:stroke; }.rx-leg { flex-wrap:wrap; }
-#obs-question-text { width:100%; min-height:200px; margin-top: 10px; }
 
-@media(max-width:720px){.obs-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#pr-cards{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.obs-form label{flex-basis:100%}.obs-cta .btn{flex:1 1 100%}}
+@media(max-width:720px){.obs-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#pr-cards{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.obs-cta .btn{flex:1 1 100%}}
 .rx-gap-hit { fill:none; stroke:transparent; stroke-width:16; pointer-events:stroke; cursor:help; }
 
 /* ---------------------------------------------------------------- 움직임
