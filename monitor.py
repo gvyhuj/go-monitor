@@ -22,7 +22,6 @@ from pathlib import Path
 from core import board, articles, causes, cloud, feed, macro, newssearch
 from core.db import init_db, now_iso, set_state
 from core.detector import detect_symbol, load_settings
-from core import naver
 from core.naver import DataSourceError
 
 ROOT = Path(__file__).resolve().parent
@@ -246,7 +245,7 @@ class Collector:
             out = {}
             for c in arg:
                 try:
-                    out[c] = naver.fetch_trader_info(c)
+                    out[c] = feed.fetch_traders(c)
                 except Exception:
                     continue
             self.fetch_cache[key] = (now, out)

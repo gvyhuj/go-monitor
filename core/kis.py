@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 
 BASE = os.environ.get("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
 TOKEN_KEY = "kis:token"
+ISSUED: list[str] = []      # 한투는 접속 토큰을 하루 한 번 원칙으로 발급 (잦으면 이용 제한) → 새로 받으면 실행 기록에 남김
 KOSDAQ_INDEX = "1001"
 
 
@@ -77,6 +78,7 @@ def token(now: datetime | None = None) -> str:
     except ValueError:
         expires = now + timedelta(seconds=int(r.get("expires_in") or 86400))
     set_state(TOKEN_KEY, json.dumps({"token": tok, "expires": expires.isoformat(timespec="seconds")}))
+    ISSUED.append(expires.isoformat(timespec="minutes"))      # 이번 실행에 새로 받은 토큰의 만료 시각 (실행 기록용, 값은 남기지 않음)
     return tok
 
 
@@ -152,6 +154,32 @@ def investors(code: str) -> list[dict]:
                 {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}).get("output") or []
     return [{"date": r.get("stck_bsop_date"), "individual": _num(r.get("prsn_ntby_qty")),
              "foreign": _num(r.get("frgn_ntby_qty")), "organ": _num(r.get("orgn_ntby_qty"))} for r in rows]
+
+
+def members(code: str, market: str = "J") -> dict:
+    """거래원(회원사) 그날 누적: 거래소가 공개하는 매수 상위 5곳·매도 상위 5곳 (주식현재가 회원사, FHKST01010600)."""
+    o = _get("/uapi/domestic-stock/v1/quotations/inquire-member", "FHKST01010600",
+             {"FID_COND_MRKT_DIV_CODE": market, "FID_INPUT_ISCD": code}).get("output") or {}
+    return parse_members(o)
+
+
+def parse_members(o: dict) -> dict:
+    """네이버 거래원과 같은 모양 {source, foreign_buy, foreign_sell, traders: [...]}.
+    한투는 매수 상위 5곳의 매수 수량, 매도 상위 5곳의 매도 수량만 줌 → 상위 5위에 없는 쪽은 None(모름, 0이 아님)."""
+    by: dict = {}
+    for side, key in (("buy", "shnu"), ("sell", "seln")):
+        for i in range(1, 6):
+            no = str(o.get(f"{key}_mbcr_no{i}") or "").strip()
+            name = str(o.get(f"{key}_mbcr_name{i}") or "").strip()
+            if not (no or name):
+                continue
+            r = by.setdefault(no or name, {"trader_no": no or name, "name": name, "name_full": name, "buy": None, "sell": None,
+                                            "foreign": False, "bizdate": None, "buy_top5": False, "sell_top5": False})
+            r[side] = int(_num(o.get(f"total_{key}_qty{i}")) or 0)
+            r[f"{side}_top5"] = True
+            r["foreign"] = r["foreign"] or str(o.get(f"{key}_mbcr_glob_yn_{i}") or "").upper() == "Y"
+    return {"source": "한투", "foreign_buy": _num(o.get("glob_total_shnu_qty")), "foreign_sell": _num(o.get("glob_total_seln_qty")),
+            "traders": list(by.values())}
 
 
 def _bar(r, d_key="stck_bsop_date", t_key="stck_cntg_hour", px=("stck_oprc", "stck_hgpr", "stck_lwpr", "stck_prpr"), vol="cntg_vol"):

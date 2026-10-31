@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
-from core import analysis, articles, causes, cloud, feed, manual, naver, share
+from core import analysis, articles, causes, cloud, feed, manual, share
 from core.db import connect, get_state, init_db
 from core.detector import load_settings
 
@@ -366,11 +366,12 @@ def _tops(rows) -> dict:
 
 
 def trader_tops(conn, sym: str) -> dict:
-    """순매수 칸을 누르면 뜨는 창용 {날짜: 장 마감 거래원 매수·매도 상위 5} (네이버, 장 마감 기록이 있는 날만)."""
-    by_day = {}
-    for d, *r in conn.execute("SELECT date, name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
-                              "WHERE symbol=? AND source='네이버'", (sym,)):
-        by_day.setdefault(d, []).append(r)
+    """순매수 칸을 누르면 뜨는 창용 {날짜: 장 마감 거래원 매수·매도 상위 5} (한투, 그 전 날은 네이버 기록. 장 마감 기록이 있는 날만)."""
+    by_src: dict = {}
+    for d, src, *r in conn.execute("SELECT date, source, name, buy, sell, is_foreign, buy_top5, sell_top5 FROM trader_daily "
+                                   "WHERE symbol=? AND source IN ('한투', '네이버')", (sym,)):
+        by_src.setdefault(d, {}).setdefault(src, []).append(r)
+    by_day = {d: x.get("한투") or x["네이버"] for d, x in by_src.items()}
     return {d: _tops(rows) for d, rows in by_day.items()}
 
 
@@ -465,7 +466,7 @@ def _live_fetch(kind, arg, day):
         out = {}
         for c in arg:
             try:
-                out[c] = naver.fetch_trader_info(c)
+                out[c] = feed.fetch_traders(c)
             except Exception:
                 continue
         return out
