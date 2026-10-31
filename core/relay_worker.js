@@ -5,7 +5,10 @@
 // - 한투는 3초에 한 번까지만 부름 (그 사이 요청은 직전 답을 그대로)
 const BASE = "https://openapi.koreainvestment.com:9443";
 const MEMO_MS = 3000;
+const GAP_MS = 600;            // 한투 요청 사이 간격 ('초당 거래건수 초과' 방지, GitHub 실행과 같은 값)
 let memo = { at: 0, body: null };
+let lastCall = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const num = (v) => {
   const f = Number(String(v ?? "").replace(/,/g, ""));
@@ -17,14 +20,21 @@ function kstNow(ms) {
   return { day: k.slice(0, 10), hm: k.slice(11, 16), hms: k.slice(11, 19).replace(/:/g, "") };
 }
 
-async function kis(env, tok, path, trId, params) {
+async function kis(env, tok, path, trId, params, retry = true) {
+  const wait = lastCall + GAP_MS - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastCall = Date.now();
   const r = await fetch(`${BASE}${path}?${new URLSearchParams(params)}`, {
     headers: { "content-type": "application/json; charset=utf-8", authorization: `Bearer ${tok}`,
                appkey: env.KIS_APP_KEY, appsecret: env.KIS_APP_SECRET, tr_id: trId, custtype: "P" },
   });
   let j = null;
   try { j = await r.json(); } catch (_) { /* 아래에서 처리 */ }
-  if (!r.ok || !j || String(j.rt_cd ?? "0") !== "0") throw new Error(`${trId} ${r.status} ${(j && (j.msg1 || j.msg_cd)) || ""}`.trim());
+  if (!r.ok || !j || String(j.rt_cd ?? "0") !== "0") {
+    const msg = `${trId} ${r.status} ${(j && (j.msg1 || j.msg_cd)) || ""}`.trim();
+    if (retry && /초당/.test(msg)) { await sleep(1000); return kis(env, tok, path, trId, params, false); }   // 한도에 걸리면 1초 뒤 한 번만
+    throw new Error(msg);
+  }
   return j;
 }
 

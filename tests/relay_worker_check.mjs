@@ -61,3 +61,18 @@ test("KIS error → 502 with the message (site keeps using the regular data)", a
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /조회 처리 중 오류/);
 });
+
+test("KIS calls are spaced (no '초당 거래건수 초과') and a per-second limit answer is retried once", async () => {
+  const w = await load(), calls = [], at = [];
+  let limited = true;
+  const ok = kisFake(calls);
+  globalThis.fetch = async (url, init) => {
+    at.push(Date.now());
+    if (init.headers.tr_id === "FHKST03010200" && limited) { limited = false; return new Response(JSON.stringify({ rt_cd: "1", msg1: "초당 거래건수를 초과하였습니다." }), { status: 500 }); }
+    return ok(url, init);
+  };
+  const res = await w.fetch(req("SECRET-AUTH"), env({ token: "TOK", exp_ms: Date.now() + 3600e3 }));
+  assert.equal(res.status, 200);
+  assert.equal(at.length, 4);                                      // 현재가·KOSDAQ·1분봉(한도) → 1분봉 다시
+  for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 590, `간격 ${at[i] - at[i - 1]}ms`);
+});
