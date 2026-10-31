@@ -115,8 +115,9 @@ def _get(path: str, tr_id: str, params: dict, _retry: bool = True) -> dict:
     try:
         return _get_once(path, tr_id, params)
     except KisError as e:
-        # 한도에 걸리거나 응답이 끊기면(시간 초과·연결 오류) 1초 쉬고 한 번만 다시 (토큰 발급은 다시 하지 않음)
-        if _retry and any(w in str(e) for w in ("초당", "timed out", "URLError", "TimeoutError")):
+        # 한도에 걸리거나 응답이 끊기거나(시간 초과·연결 오류) 한투가 '재 조회 부탁'(500)이라고 하면
+        # 1초 쉬고 한 번만 다시 (토큰 발급은 다시 하지 않음)
+        if _retry and any(w in str(e) for w in ("초당", "timed out", "URLError", "TimeoutError", " 500:", "재 조회")):
             time.sleep(1.0)
             return _get(path, tr_id, params, _retry=False)
         raise

@@ -518,9 +518,12 @@ def test_kis_timeout_retried_once_and_is_data_source_error(tmp_path, monkeypatch
         n.append(1)
         if len(n) == 1:
             raise kis.KisError(f"{path}: URLError: <urlopen error timed out>")
+        if len(n) == 3:      # 실제로 나온 한투 500 응답
+            raise kis.KisError(f"{path} 500: 조회 처리 중 오류 발생하였습니다. 재 조회 수행 부탁드립니다.")
         return {'output': {'stck_prpr': '1'}}
     monkeypatch.setattr(kis, '_get_once', flaky)
     assert kis._get('/x', 'T', {}) == {'output': {'stck_prpr': '1'}} and len(n) == 2
+    assert kis._get('/x', 'T', {}) == {'output': {'stck_prpr': '1'}} and len(n) == 4
     monkeypatch.setattr(kis, '_get_once', lambda *a: (_ for _ in ()).throw(kis.KisError('/x: URLError: timed out')))
     try:
         kis._get('/x', 'T', {})
