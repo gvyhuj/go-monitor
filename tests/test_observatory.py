@@ -550,3 +550,66 @@ def test_kis_backfill_pauses_on_session_full(tmp_path, monkeypatch):
     assert kis_backfill.run('X', datetime(2026, 10, 31, 12, 0), 40) is None and len(calls) == 1     # 쉬는 중엔 부르지 않음
     kis_backfill.run('X', datetime(2026, 10, 31, 16, 0), 40)
     assert len(calls) == 2                                                                         # 6시간 뒤 다시
+
+
+def test_relay_deploy_once_and_token_push(tmp_path, monkeypatch):
+    # 실시간 중계: 처음 한 번 올리고(9443 포트 설정·한투 열쇠는 비밀값), 바뀐 게 없으면 Cloudflare를 부르지 않음.
+    # 토큰은 GitHub 실행이 받은 것을 KV에 넣기만 (바뀌었을 때만), 사이트에는 주소와 들어가는 값만
+    import json as _json
+    from core import db, relay
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    for k, v in (('CLOUDFLARE_API_TOKEN', 'cf'), ('CLOUDFLARE_ACCOUNT_ID', 'acc'), ('KIS_APP_KEY', 'APPKEY1'),
+                 ('KIS_APP_SECRET', 'APPSECRET1'), ('GITHUB_REPOSITORY', 'Owner/go-monitor')):
+        monkeypatch.setenv(k, v)
+    calls = []
+    def fake(method, path, token, body=None, raw=None, ctype=None, timeout=60):
+        calls.append((method, path, body, raw))
+        if path.endswith('/storage/kv/namespaces?per_page=100'):
+            return []
+        if method == 'POST' and path.endswith('/storage/kv/namespaces'):
+            return {'id': 'ns1'}
+        if path.endswith('/workers/subdomain') and method == 'GET':
+            return {'subdomain': 'owner'}
+        return None
+    monkeypatch.setattr(relay, '_call', fake)
+    info = relay.ensure('000001')
+    assert info['url'] == 'https://go-relay.owner.workers.dev' and len(info['auth']) > 30
+    up = next(c for c in calls if c[0] == 'PUT' and c[1].endswith('/workers/scripts/go-relay'))
+    meta = _json.loads(up[3].split(b'\r\n\r\n', 1)[1].split(b'\r\n--', 1)[0])
+    assert meta['compatibility_flags'] == ['allow_custom_ports']
+    sec = {b['name']: b for b in meta['bindings']}
+    assert sec['KIS_APP_KEY']['type'] == 'secret_text' and sec['AUTH']['text'] == info['auth']
+    assert sec['ORIGIN']['text'] == 'https://owner.github.io' and sec['KV']['namespace_id'] == 'ns1'
+    n = len(calls)
+    assert relay.ensure('000001')['url'] == info['url'] and len(calls) == n        # 바뀐 게 없으면 다시 올리지 않음
+    tok = {'token': 'TOKX', 'expires': '2026-11-02T09:00:00'}
+    assert relay.push_token(tok) and not relay.push_token(tok)                     # 같은 토큰은 한 번만
+    put = [c for c in calls if c[1].endswith('/values/kis_token')]
+    val = put[0][3].decode().split('name="value"\r\n\r\n', 1)[1].split('\r\n', 1)[0]
+    assert len(put) == 1 and _json.loads(val) == {'token': 'TOKX', 'exp_ms': 1793577600000}
+    assert relay.public_info() == {'url': info['url'], 'auth': info['auth']}      # 사이트에는 이것만
+
+
+def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
+    # 실행이 중계를 실제로 한 번 불러 봄: 정상이면 요약 한 줄, 토큰 없음 등은 이유와 함께 실패
+    import io, json as _json, urllib.error, urllib.request
+    from core import db, relay
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    db.set_state('relay:info', _json.dumps({'url': 'https://go-relay.o.workers.dev', 'auth': 'A', 'ns': 'n', 'fp': 'f'}))
+    seen = []
+    class Resp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def ok(req, timeout=0):
+        seen.append((req.full_url, req.get_header('X-go-auth')))
+        return Resp(_json.dumps({'at': '2026-10-31T12:00', 'quote': {'price': 9800}, 'kosdaq': {'price': 724.38}, 'bars': [{}] * 30}).encode())
+    monkeypatch.setattr(urllib.request, 'urlopen', ok)
+    assert relay.check() == '현재가 9,800원 · KOSDAQ 724.38 · 1분봉 30개 (2026-10-31T12:00 기준)'
+    assert seen == [('https://go-relay.o.workers.dev/live', 'A')]
+    def no_token(req, timeout=0):
+        raise urllib.error.HTTPError(req.full_url, 503, 'x', {}, io.BytesIO(b'{"error":"token"}'))
+    monkeypatch.setattr(urllib.request, 'urlopen', no_token)
+    try:
+        relay.check(); assert False
+    except RuntimeError as e:
+        assert str(e) == '중계 응답 503 token'

@@ -280,6 +280,30 @@ def kis_token_guard(log):
         log.warning("한투 접속 토큰 확보 실패: %s", type(e).__name__)
 
 
+def relay_guard(code: str, log):
+    """실시간 중계(Cloudflare)를 올리고(바뀐 게 있을 때만) 이번 토큰을 넘겨 줌. 실패해도 실행은 계속 (사이트는 예전처럼 정기 갱신)."""
+    from core import relay
+    if not relay.enabled():
+        return
+    try:
+        relay.ensure(code, log=log.info)
+        st = get_state("kis:token")
+        if st and st.get("value") and relay.push_token(json.loads(st["value"])):
+            log.info("실시간 중계에 오늘 한투 토큰을 넘겼습니다")
+        # 실제로 한 번 불러 봄 (처음 올렸을 때, 그 뒤엔 6시간마다): 사이트를 열지 않아도 실행 기록으로 확인
+        last = get_state("relay:checked_at")
+        due = not last or not last.get("value") or last["value"] < (feed.kst_now().replace(tzinfo=None)
+                                                                    - timedelta(hours=6)).isoformat(timespec="minutes")
+        if due:
+            try:
+                annotate("notice", "실시간 중계 점검 정상: " + relay.check())
+                set_state("relay:checked_at", feed.kst_now().replace(tzinfo=None).isoformat(timespec="minutes"))
+            except RuntimeError as e:
+                annotate("warning", f"실시간 중계 점검 실패(다음 실행에 다시): {e}")
+    except Exception as e:  # noqa: BLE001
+        annotate("warning", f"실시간 중계 준비 실패(사이트는 정기 갱신으로 계속): {type(e).__name__}: {str(e)[:150]}")
+
+
 def site_salt(password: str, state_key: str = "site:salt") -> bytes:
     fp = hashlib.sha256(("go-fp:" + password).encode("utf-8")).hexdigest()
     st = get_state(state_key)
@@ -443,6 +467,7 @@ def main(argv) -> int:
     now = feed.kst_now()
     log.info("클라우드 감시 실행 (%s, %s)", task, now.isoformat(timespec="minutes"))
     kis_token_guard(log)
+    relay_guard(code, log)
     lap("준비")
 
     site_ok = False

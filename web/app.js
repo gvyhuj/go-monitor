@@ -293,7 +293,11 @@
     const u = new URL(path, location.origin), p = u.pathname, q = Object.fromEntries(u.searchParams);
     const L = await cloudLive();
     if (p === "/api/status") return { ...L.status, viewer: "cloud", published_at: L.published_at };
-    if (p === "/api/intraday") return (!q.date || q.date === L.intraday.date) ? L.intraday : kv(`intraday:${q.date}`);
+    if (p === "/api/intraday") {
+      const date = q.date || L.intraday.date;
+      const d = date === L.intraday.date ? L.intraday : await kv(`intraday:${date}`).catch((e) => { if (date === RELAY.date) return null; throw e; });
+      return withRelayBars(d, date);
+    }
     if (p === "/api/events") {
       const kind = q.kind && q.kind !== "all" ? q.kind : null;
       const events = L.events.events.filter((e) => (!q.from || e.start_ts >= q.from) && (!q.to || e.start_ts <= `${q.to}T23:59`) && (!kind || e.direction === kind));
@@ -373,6 +377,7 @@
     charts = [];
     timers.forEach(clearInterval);
     timers = [];
+    onRelay = null;
   }
 
   // ---------------------------------------------------------------- charts
@@ -638,6 +643,7 @@
   async function refreshStatus() {
     try {
       STATUS = await api("/api/status");
+      applyRelay();
     } catch (e) {
       STATUS = null;
       setEngine("stopped", "화면 서버 연결 끊김");
@@ -734,6 +740,47 @@
     if (!q || q.price == null || q.change_pct == null || !q.traded_at || q.traded_at.slice(0, 10) !== date) return null;
     const at = q.traded_at.slice(11, 16), open = q.market_status === "OPEN";
     return { price: q.price, chg: q.change_pct / 100, at, open, closed: !open && at >= "15:30", ext: at > "15:30" };
+  }
+
+  // ---------------------------------------------------------------- 실시간 중계 (장중 5초마다: Cloudflare Worker → 한투)
+  // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
+  const RELAY = { date: null, bars: new Map(), quote: null, kosdaq: null, at: null };
+  let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
+  const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
+  function applyRelay() {
+    if (!STATUS || !RELAY.quote || RELAY.quote.price == null || !RELAY.at) return;
+    const q = STATUS.quote || {}, at = `${RELAY.at}:00`, r = RELAY.quote;
+    if (q.traded_at && q.traded_at.slice(0, 10) === at.slice(0, 10) && q.traded_at > at) return;   // 정기 자료가 더 새로우면 그대로
+    STATUS.quote = { ...q, price: r.price, change: r.change, change_pct: r.rate, open: r.open, high: r.high, low: r.low, volume: r.volume,
+      value_text: r.value != null ? `${(r.value / 1e8).toFixed(2)}억` : q.value_text, market_status: "OPEN", traded_at: at, relay: true };
+    const k = RELAY.kosdaq;
+    if (k && k.price != null) STATUS.kosdaq = { ...(STATUS.kosdaq || {}), price: k.price, change: k.change, change_pct: k.rate, market_status: "OPEN", traded_at: at };
+  }
+  async function relayTick() {
+    const r = STATUS && STATUS.relay, t = kstParts();
+    if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || t.hm < 900 || t.hm > 1531) return;
+    try {
+      const res = await fetch(`${r.url}/live`, { headers: { "x-go-auth": r.auth }, cache: "no-store" });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
+      if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); }
+      (d.bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.bars.set(b.t, b); });
+      Object.assign(RELAY, { quote: d.quote, kosdaq: d.kosdaq, at: d.at });
+      applyRelay();
+      renderQuote();
+      if (!$("#alert") || $("#alert").hidden) setEngine("ok", `실시간 ${d.at.slice(11, 16)}`);
+      if (onRelay) onRelay();
+    } catch (_) { /* 중계가 안 되면 정기 갱신 자료로 */ }
+  }
+  /** 그날 1분봉에 중계로 받은 1분봉을 더함 (정기 실행이 아직 저장하지 않은 최근 분, 진행 중인 분은 새 값) */
+  function withRelayBars(d, date) {
+    if (!RELAY.date || RELAY.date !== date || !RELAY.bars.size) return d;
+    if (!d || d.date !== date) d = { date, bars: [], kosdaq: [], prev_close: RELAY.quote && RELAY.quote.base, events: [] };
+    const m = new Map((d.bars || []).map((b) => [b.t, b]));
+    const last = (d.bars || []).length ? d.bars[d.bars.length - 1].t : "";
+    RELAY.bars.forEach((b, t) => { if (!m.has(t) || t >= last) m.set(t, b); });
+    return { ...d, bars: [...m.values()].sort((a, b) => (a.t < b.t ? -1 : 1)) };
   }
 
   // 현재 하루 수치와 저장된 분석 근거는 별개다. 장 마감 뒤에도 메인과 상세는 같은 시세를 쓴다.
@@ -1463,11 +1510,13 @@
     let rz = null;
     recResize = () => { clearTimeout(rz); rz = setTimeout(() => { if ($("#rec-chart")) lineChart(); }, 200); };
     window.addEventListener("resize", recResize);
-    timers.push(setInterval(() => {          // 1일 탭에서 최근 거래일을 보고 있으면 30초마다 새로 (구간 원인 입력 중이면 그대로)
+    const redrawToday = () => {      // 1일 탭에서 최근 거래일을 보고 있으면 새로 (구간 원인 입력 중이면 그대로)
       const host = calState.range === "1d" ? "#rec-chart" : "#rec-daychart";
       if (calState.sel !== latest || !$(host) || $(`${host} [data-range-form]:not([hidden])`)) return;
       dayChart(true);
-    }, 30000));
+    };
+    timers.push(setInterval(redrawToday, 30000));
+    onRelay = redrawToday;                  // 실시간 중계로 새 1분봉이 오면 바로
   }
   let recResize = null;
 
@@ -3843,5 +3892,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
     refreshStatus().then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
+    setInterval(relayTick, 5000);         // 장중에만 실제로 물음
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
   });
 })();
