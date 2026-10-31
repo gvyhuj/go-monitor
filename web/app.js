@@ -1220,7 +1220,7 @@
     const themeLabel = (n) => String(n).replace(/\s*\(.*\)\s*$/, "");      // '우주항공산업(누리호/인공위성 등)' → '우주항공산업'
     const themeNames = () => { for (let i = daily.length - 1; i >= 0; i--) if (daily[i].themes && Object.keys(daily[i].themes).length) return Object.keys(daily[i].themes).sort(); return Object.keys(THEME_NOS).sort(); };
     const themeFrom = () => { const r = daily.find((x) => x.themes && Object.keys(x.themes).length); return r ? r.date : null; };   // 테마 기록 첫날
-    const themeUrl = (k) => THEME_NOS[k] != null ? `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${encodeURIComponent(THEME_NOS[k])}` : null;
+    const themeUrl = (k) => naverThemeUrl(THEME_NOS[k]) || null;
     // 기록 전 날: 다른 분류(WICS)로 채우지 않고 '-' + 이유 (칸 이름 옆 '기록 전', 마우스를 올리면 설명)
     const noThemeTip = () => `네이버는 테마 등락률의 지난 기록을 주지 않아${themeFrom() ? ` ${mdOf(themeFrom())}부터` : ""} 직접 기록합니다. 그 전 날은 비어 있습니다.`;
     function segHtml() {
@@ -2002,7 +2002,14 @@
   function keepDaily(d) { THEME_NOS = d.theme_nos || THEME_NOS; (d.days || []).forEach((x) => { DAY_ROWS[x.date] = x; }); return d.days || []; }
   let THEME_NOS = {};     // 테마 이름 → 네이버 테마 번호
   const ensureDaily = () => (dailyP ||= api("/api/daily").then(keepDaily).catch(() => { dailyP = null; return []; }));
-  const themeUrlOf = (k) => (THEME_NOS[k] ? `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${THEME_NOS[k]}` : "");
+  const themeUrlOf = (k) => naverThemeUrl(THEME_NOS[k]);
+  /** 네이버 테마 화면 주소: 휴대폰은 모바일 증권 주소 (PC 주소를 열면 네이버 모바일 증권 첫 화면으로 넘어가 버림) */
+  function naverThemeUrl(no) {
+    if (no == null || no === "") return "";
+    const ua = navigator.userAgent || "", mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+    return mobile ? `https://m.stock.naver.com/domestic/home/theme/${encodeURIComponent(no)}`
+      : `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${encodeURIComponent(no)}`;
+  }
   /** 그날 네이버 테마 등락 (이 종목이 들어 있는 테마 전부, 네이버 테마 화면 값 그대로) */
   function dayThemeBlock(ds, own) {
     const th = (DAY_ROWS[ds] || {}).themes || {}, ks = Object.keys(th).sort((a, b) => th[b] - th[a]);
