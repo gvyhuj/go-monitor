@@ -108,6 +108,7 @@ def ensure(code: str, log=None) -> dict | None:
     info = {"url": f"https://{SCRIPT}.{sub}.workers.dev", "auth": auth, "ns": ns_id, "fp": fp}
     set_state(INFO_KEY, json.dumps(info))
     set_state("relay:token_pushed", "")          # 새 저장소일 수 있으니 토큰을 다시 넣음
+    set_state("relay:checked_at", "")            # 새로 올린 중계는 이번 실행에서 바로 점검
     if log:
         log(f"실시간 중계를 올렸습니다: {info['url']}")
     return info
