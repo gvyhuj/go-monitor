@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 
 BASE = os.environ.get("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
 TOKEN_KEY = "kis:token"
+ISSUED: list[str] = []      # 한투는 접속 토큰을 하루 한 번 원칙으로 발급 (잦으면 이용 제한) → 새로 받으면 실행 기록에 남김
 KOSDAQ_INDEX = "1001"
 
 
@@ -77,6 +78,7 @@ def token(now: datetime | None = None) -> str:
     except ValueError:
         expires = now + timedelta(seconds=int(r.get("expires_in") or 86400))
     set_state(TOKEN_KEY, json.dumps({"token": tok, "expires": expires.isoformat(timespec="seconds")}))
+    ISSUED.append(expires.isoformat(timespec="minutes"))      # 이번 실행에 새로 받은 토큰의 만료 시각 (실행 기록용, 값은 남기지 않음)
     return tok
 
 

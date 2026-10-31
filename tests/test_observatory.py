@@ -373,6 +373,7 @@ def test_kis_token_reused_and_probe_line(tmp_path, monkeypatch):
     line = kis.probe('000001', datetime(2026, 10, 31, 1, 0))
     kis.probe('000001', datetime(2026, 10, 31, 2, 0))
     assert calls.count('/oauth2/tokenP') == 1, '토큰은 다시 받지 않음'
+    assert kis.ISSUED[-1:] == ['2026-10-31T09:00'] and not any('SECRETTOK' in x for x in kis.ISSUED)   # 실행 기록용: 만료 시각만
     assert '현재가 9800 기준가 10170' in line and '일봉 최근 2개 2026-10-29~2026-10-30' in line
     assert '당일 1분봉 1개' in line and '실패: 지난 1분봉(7일 전)' in line and 'SECRETTOK' not in line
 

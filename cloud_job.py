@@ -764,6 +764,12 @@ def main(argv) -> int:
         annotate("notice", "자료 점검: " + " / ".join(chk))
     except Exception as e:  # noqa: BLE001
         annotate("warning", f"자료 점검 실패: {e}")
+    try:
+        from core import kis as _kis
+        if _kis.ISSUED:
+            annotate("notice", f"한투 접속 토큰 새로 받음 {len(_kis.ISSUED)}번 (만료 {_kis.ISSUED[-1]}) — 하루 한 번쯤이 정상")
+    except Exception:  # noqa: BLE001
+        pass
     lap("마무리")
     annotate("notice", f"단계별 시간(초, 합계 {sum(x for _, x in _LAP[1]):.0f}): " + " · ".join(f"{k} {v:.0f}" for k, v in _LAP[1]))
     return 1 if failed else 0
