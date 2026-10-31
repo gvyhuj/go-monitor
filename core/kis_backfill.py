@@ -56,9 +56,14 @@ def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
                                            (code, end))]
     done = set(s.get("minute_days") or [])
     todo = [d for d in days if d not in done]
-    got, empty = 0, []
+    got, empty, err = 0, [], None
+    s.setdefault("minute_empty", [])
     for d in todo[:max_days]:
-        bars = kis.full_day_bars(code, d)
+        try:
+            bars = kis.full_day_bars(code, d)
+        except kis.KisError as e:            # 한투 응답 지연 등: 받은 날까지 저장하고 다음 실행에 이어서
+            err = str(e)[:120]
+            break
         if bars:
             with connect() as conn:
                 conn.execute("DELETE FROM minute_bars WHERE symbol=? AND ts >= ? AND ts < ? || 'z'", (code, d, d))
@@ -70,12 +75,13 @@ def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
         else:
             empty.append(d)                 # 한투가 주지 않는 날 (너무 오래됨 등): 기록에 있는 것을 그대로 둠
         done.add(d)
-    s["minute_days"] = sorted(done)
-    s.setdefault("minute_empty", [])
-    s["minute_empty"] = sorted(set(s["minute_empty"]) | set(empty))
-    left = len(todo) - min(len(todo), max_days)
+        s["minute_days"] = sorted(done)       # 하루마다 진행 상황 저장 (중간에 끊겨도 받은 날은 다시 받지 않음)
+        s["minute_empty"] = sorted(set(s["minute_empty"]) | set(empty))
+        _save(s)
+    left = len([d for d in days if d not in done])
     if todo:
-        say.append(f"1분봉 {got}일 받음" + (f", 한투에 없음 {len(empty)}일" if empty else "") + f", 남은 날 {left}일")
+        say.append(f"1분봉 {got}일 받음" + (f", 한투에 없음 {len(empty)}일" if empty else "") + f", 남은 날 {left}일"
+                   + (f" (중간에 멈춤: {err}, 다음 실행에 이어서)" if err else ""))
     if not left:
         s["done"] = now.isoformat(timespec="minutes")
         e = s["minute_empty"]

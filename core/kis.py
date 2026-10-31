@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 
 BASE = os.environ.get("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
 TOKEN_KEY = "kis:token"
+PERSIST: list = []         # 새로 받은 토큰을 따로 저장하는 함수 (클라우드 실행이 넣음)
 ISSUED: list[str] = []      # 한투는 접속 토큰을 하루 한 번 원칙으로 발급 (잦으면 이용 제한) → 새로 받으면 실행 기록에 남김
 KOSDAQ_INDEX = "1001"
 
@@ -79,7 +80,25 @@ def token(now: datetime | None = None) -> str:
         expires = now + timedelta(seconds=int(r.get("expires_in") or 86400))
     set_state(TOKEN_KEY, json.dumps({"token": tok, "expires": expires.isoformat(timespec="seconds")}))
     ISSUED.append(expires.isoformat(timespec="minutes"))      # 이번 실행에 새로 받은 토큰의 만료 시각 (실행 기록용, 값은 남기지 않음)
+    if PERSIST:                 # 받자마자 기록과 따로 저장 (실행이 중간에 실패해도 다음 실행이 같은 토큰을 씀)
+        PERSIST[0]({"token": tok, "expires": expires.isoformat(timespec="seconds")})
     return tok
+
+
+def adopt(saved: dict | None) -> bool:
+    """따로 저장해 둔 토큰이 기록에 있는 것보다 늦게 끝나면 그것을 씀 (실행 시작 때)."""
+    from .db import get_state, set_state
+    if not saved or not saved.get("token") or not saved.get("expires"):
+        return False
+    st = get_state(TOKEN_KEY)
+    try:
+        cur = json.loads(st["value"]) if st and st.get("value") else {}
+    except ValueError:
+        cur = {}
+    if cur.get("expires", "") >= saved["expires"]:
+        return False
+    set_state(TOKEN_KEY, json.dumps({"token": saved["token"], "expires": saved["expires"]}))
+    return True
 
 
 _LAST = [0.0]

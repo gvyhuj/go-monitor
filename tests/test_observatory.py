@@ -481,3 +481,25 @@ def test_kis_brokers_unknown_side_is_not_zero(tmp_path, monkeypatch):
     g = causes._flows('000001', datetime(2026, 11, 2, 10, 30), datetime(2026, 11, 2, 10, 40), 20000)
     assert g['basis'] == '구간' and g['foreign_net'] == 1500
     assert [(r['name'], r['net']) for r in g['top_buyers']] == [('키움증권', 8000)]     # 11000 − 매도 5위 밖(3000 미만)
+
+
+def test_kis_token_survives_lost_record(tmp_path, monkeypatch):
+    # 기록(DB)이 다음 실행에 못 넘어가도(실행 실패 등) 따로 저장한 토큰을 써서 새로 받지 않음
+    import cloud_job
+    from core import db, kis
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's'); monkeypatch.setenv('GO_DATA_KEY', 'dk')
+    monkeypatch.setattr(cloud_job, 'STATE_DIR', tmp_path / 'state')
+    calls = []
+    def fake(method, path, **kw):
+        calls.append(path)
+        return {'access_token': 'TOK1', 'access_token_token_expired': '2099-01-01 09:00:00'}
+    monkeypatch.setattr(kis, '_http', fake); monkeypatch.setattr(kis, 'PERSIST', []); monkeypatch.setattr(kis, 'ISSUED', [])
+    log = __import__('logging').getLogger('t')
+    cloud_job.kis_token_guard(log)                      # 실행 1: 시작하자마자 받고 따로 저장
+    assert calls == ['/oauth2/tokenP'] and (tmp_path / 'state' / 'kis_token.enc').exists()
+    assert b'TOK1' not in (tmp_path / 'state' / 'kis_token.enc').read_bytes()      # 암호화
+    with db.connect() as conn:                            # 실행 1의 기록이 넘어가지 못함
+        conn.execute("DELETE FROM system_state WHERE key='kis:token'")
+    cloud_job.kis_token_guard(log)                      # 실행 2: 따로 저장한 토큰을 씀
+    assert calls == ['/oauth2/tokenP'] and kis.token() == 'TOK1'
