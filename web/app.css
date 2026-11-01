@@ -632,12 +632,6 @@ b.cl { font-weight: 650; color: var(--ink); margin-right: 8px; }
 /* ------------------------------------------------------------ broker accuracy & buyer clues */
 .st { font-style: normal; font-size: 11px; margin-left: 6px; color: var(--muted); }
 .v small { font-size: 11px; font-weight: 500; color: var(--muted); }
-details.verify { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 14px; background: var(--surface); }
-details.verify summary { cursor: pointer; font-size: 14px; font-weight: 650; color: var(--navy-2); }
-@media (prefers-color-scheme: dark) { details.verify summary { color: var(--lens); } }
-details.verify ul { margin: 10px 0 2px; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
-details.verify li + li { margin-top: 6px; }
-details.verify b { color: var(--ink); margin-right: 4px; }
 .followup { background: #E6EEF9; color: var(--navy); border-radius: var(--r-sm); padding: 10px 14px; font-size: 14px; margin-bottom: 10px; }
 @media (prefers-color-scheme: dark) { .followup { background: rgba(95,168,232,.16); color: #CFE3F7; } }
 
@@ -841,9 +835,7 @@ ul.causal p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--i
 .facts.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .d-conclusion { margin-top: 22px; }
 .manual-cause .mc-head .conf { vertical-align: 3px; }
-.manual-cause.is-empty { border-left-color: var(--vol); background: var(--vol-bg); }
-.manual-cause.is-empty .mc-head { color: var(--vol); margin-bottom: 2px; }
-.manual-cause:not(.is-empty) { border-left-color: var(--brand-blue); }
+.manual-cause { border-left-color: var(--brand-blue); }
 details.evidence { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; }
 details.evidence > summary { cursor: pointer; font-size: 16px; font-weight: 720; list-style-position: outside; }
 details.evidence > summary .muted { font-size: 13px; font-weight: 500; margin-left: 8px; }
