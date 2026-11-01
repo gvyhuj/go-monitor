@@ -112,7 +112,7 @@ async function main() {
       assert.match(await page.locator("#rx-cmp").innerText(), /다른 그린광학 보도자료 2건/);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
       assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
-      assert.equal(await page.locator("#obs-question").innerText(), "ChatGPT에게 묻기");
+      assert.equal(await page.locator("#obs-question").innerText(), "AI에게 묻기");
       assert.equal(await page.locator("#rx-tab-note").innerText(), "", "공개 직후 탭 아래 안내 문장 없음");
       // 왼쪽 목록의 다른 기사에 마우스를 올리면 오른쪽 그래프에서 그 기사 선이 진해짐 (그래프 위 마우스로는 제목을 띄우지 않음)
       if (width > 700) {
@@ -158,16 +158,16 @@ async function main() {
         assert.ok(right < 2, `수정 메뉴가 오른쪽 끝 (${right}px)`);
       }
 
-      // ChatGPT에게 묻기: 차트와 같이 ChatGPT 새 창이 질문을 담고 바로 열림 (결과 붙여넣기 없음)
+      // AI에게 묻기: 질문 전체를 복사만 하고(새 창 없음) '질문이 복사되었습니다.' 알림이 잠깐 뜸
       assert.equal(await page.locator("#obs-note-open").count(), 0);
       await page.locator("#obs-question:not([disabled])").waitFor();
-      // 질문이 길면(관측 자료 전체) 주소에 넣으면 잘리므로: 빈 ChatGPT 창 + 질문 전체를 복사 (붙여넣기)
       await page.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; window.__opened.length = 0; });
       await page.locator("#obs-question").click();
-      await page.waitForFunction(() => window.__opened.length > 0 && window.__copied);
-      const [askUrl, copied] = await page.evaluate(() => [window.__opened[0], window.__copied]);
+      await page.waitForFunction(() => window.__copied);
+      const copied = await page.evaluate(() => window.__copied);
       assert.ok(copied.length > 8000 && copied.includes('"event_id"'), `질문 전체 복사 (${copied.length}자)`);
-      assert.equal(askUrl, "https://chatgpt.com/", "긴 질문은 주소에 넣지 않음 (잘림 방지)");
+      assert.equal(await page.locator("#toast").innerText(), "질문이 복사되었습니다.");
+      assert.equal(await page.evaluate(() => window.__opened.length), 0, "새 창을 열지 않음");
 
       // The event ID is visible for linking, and old 뉴스 반응 links open the same article in the list.
       const eid = await page.locator("#obs-extras").getAttribute("data-eid");
@@ -339,7 +339,7 @@ async function main() {
       await pop.locator("#ind-body .ind-rate").waitFor();
       assert.match(await pop.innerText(), /10\/28 우주항공산업[\s\S]*−2\.40%[\s\S]*네이버 테마 '우주항공산업\(누리호\/인공위성 등\)'[\s\S]*오른 종목 3 · 내린 종목 15 · 전체 20[\s\S]*검증위성\s*\+3\.10%[\s\S]*검증방산\s*−4\.20%/);
       assert.doesNotMatch(await pop.innerText(), /넣은 이유/);
-      assert.equal(await pop.getByRole("link", { name: /네이버에서 보기/ }).getAttribute("href"), "https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=7");
+      assert.equal(await pop.getByRole("link", { name: /네이버에서 보기/ }).getAttribute("href"), "https://stock.naver.com/market/stock/kr/theme/1?no=7");
       await page.keyboard.press("Escape");
       // 하루 창: 업종(WICS) 비교 종목 대신 그날 네이버 테마 등락 (업종 몫 계산은 하지 않음)
       await page.locator("[data-head].is-click").first().click();
@@ -347,7 +347,7 @@ async function main() {
       await rel.locator(".rel").waitFor();
       assert.match(await rel.innerText(), /그날 테마 등락[\s\S]*방위산업\/전쟁 및 테러[\s\S]*\+0\.80%[\s\S]*우주항공산업[\s\S]*−2\.40%/);
       assert.doesNotMatch(await page.locator("#drawer-body").innerText(), /사업 분야별 비교 종목|업종/);
-      assert.equal(await rel.getByRole("link", { name: /우주항공산업/ }).getAttribute("href"), "https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=7");
+      assert.equal(await rel.getByRole("link", { name: /우주항공산업/ }).getAttribute("href"), "https://stock.naver.com/market/stock/kr/theme/1?no=7");
       if (process.env.SHOT_DIR) { await page.waitForTimeout(800); await page.screenshot({ path: path.join(process.env.SHOT_DIR, "day-theme-drawer.png") }); }
       await page.keyboard.press("Escape");
       // 테마 기록 전 날: WICS로 채우지 않고 '-' + '기록 전' (마우스를 올리면 이유), 눌러도 링크는 있음

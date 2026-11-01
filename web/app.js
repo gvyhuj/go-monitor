@@ -1253,7 +1253,7 @@
       // 가장 최근 거래일이 +10% 이상: 하루에 한 번 축하 종이 조각
       if (calState.sel === latest && price[latest]) { const lv = liveFor(latest); confettiOnce(latest, lv ? lv.chg : price[latest].change); }
     }
-    // 머리 칸을 누르면: 하루 급등·급락 기록이 있으면 그 기록, 없으면 장 마감 뒤 자동 하루 분석 (없으면 ChatGPT 묻기)
+    // 머리 칸을 누르면: 하루 급등·급락 기록이 있으면 그 기록, 없으면 장 마감 뒤 자동 하루 분석 (없으면 AI에게 묻기)
     async function openHead() {
       const ds = calState.sel, i = daily.findIndex((x) => x.date === ds);
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0];
@@ -1649,11 +1649,9 @@
         <span>KOSDAQ <b class="num">${r.kq == null ? "-" : pct(r.kq)}</b></span>
         <span>거래량 <b class="num">${int(r.vol)}주</b>${r.volRatio ? ` <span class="muted">(그날 다른 시간의 ${r.volRatio.toFixed(1)}배)</span>` : ""}</span>
         <button type="button" class="btn-link" data-range-clear>선택 해제</button></div>
-      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 ChatGPT에게 묻기</button></div>
-      <span class="form-msg" data-range-msg></span></div>`;
-    const msg = $("[data-range-msg]", panel);
+      <div class="ask-row"><button class="btn primary small" type="button" data-range-ask>이 구간 AI에게 묻기</button></div></div>`;
     $("[data-range-clear]", panel).onclick = clear;
-    $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."), msg);
+    $("[data-range-ask]", panel).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, "이 구간 움직임의 원인을 찾아 줘."));
   }
 
   /** 구간 질문용 자료: 숫자·사실만 (원인 판단은 넣지 않음). whole: 그날 장 전체(하루 움직임)를 묻는 경우 */
@@ -1683,7 +1681,7 @@
   }
 
   /** 장 마감 뒤 하루 칸(급등·급락 기록이 없는 날)을 누르면: 장 마감 뒤 자동으로 해 둔 하루 분석을 급등·급락 상세와 같은 창으로.
-   *  아직 분석이 없으면(분석 전·오래된 날) ChatGPT에게 묻는 창 */
+   *  아직 분석이 없으면(분석 전·오래된 날) AI에게 묻는 창 */
   async function openDay(d, arts, prevDay, px) {
     openDrawer(`<p class="loading">불러오는 중…</p>`);
     let r = null;
@@ -1692,7 +1690,7 @@
     else openDayAsk(d, arts, prevDay, px);
   }
 
-  /** 장 마감 뒤 하루 칸을 누르면: 그날 장 전체를 ChatGPT에게 묻는 창 (구간 묻기와 같은 자료·같은 기록 방식) */
+  /** 장 마감 뒤 하루 칸을 누르면: 그날 장 전체를 AI에게 묻는 창 (구간 묻기와 같은 자료·같은 기록 방식) */
   function openDayAsk(d, arts, prevDay, px) {
     const r = d.bars && d.bars.length ? rangeStats(d, toTime(d.bars[0].t), toTime(d.bars[d.bars.length - 1].t)) : null;
     if (!r) {                        // 1분 기록이 없는 날: 묻기 창 대신 그날 일봉 자료(테마 등락·순매수·거래원)만
@@ -1715,29 +1713,24 @@
     const vol = r.vol;
     openDrawer(`
       <h2 class="d-title" id="drawer-title">${dayLabel(d.date)} ${now ? `${live.at} 현재` : "하루"} <span class="${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</span></h2>
-      <p class="d-sub">기준가 ${won(d.prev_close)}원 → ${r.endLabel || "일봉 종가"} ${won(r.endPx)}원. 분봉 구간 ${r.from}~${r.to}의 숫자와 그날 기사를 ChatGPT에 넘겨 원인을 묻습니다.${live && live.ext ? " KOSDAQ은 정규장 기준입니다." : ""}</p>
+      <p class="d-sub">기준가 ${won(d.prev_close)}원 → ${r.endLabel || "일봉 종가"} ${won(r.endPx)}원. 분봉 구간 ${r.from}~${r.to}의 숫자와 그날 기사를 AI에게 물을 질문으로 복사합니다.${live && live.ext ? " KOSDAQ은 정규장 기준입니다." : ""}</p>
       <dl class="facts four">
         <div><dt>${now ? "지금 등락" : live && live.ext ? "시간외 포함 등락" : "종가 등락"}</dt><dd class="num ${sgnCls(r.fromPrev)}">${pct(r.fromPrev)}</dd></div>
         <div><dt>KOSDAQ</dt><dd class="num ${sgnCls(r.kq)}">${r.kq == null ? "-" : pct(r.kq)}</dd></div>
         <div><dt>장중 최고 · 최저</dt><dd class="num"><span class="${sgnCls(r.high.fromPrev)}">${pct(r.high.fromPrev)}</span> · <span class="${sgnCls(r.low.fromPrev)}">${pct(r.low.fromPrev)}</span></dd></div>
         <div><dt>거래량</dt><dd class="num">${int(vol)}주</dd></div>
       </dl>
-      <div class="ask-row"><button class="btn primary" type="button" data-day-gpt title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">ChatGPT에게 묻기</button></div>
-      <span class="form-msg" data-day-msg></span>
+      <div class="ask-row"><button class="btn primary" type="button" data-day-gpt title="숫자·사실 자료를 질문으로 복사합니다">AI에게 묻기</button></div>
       <section class="evidence"><section class="d-block" data-ev-rel></section><section class="d-block"><div data-ev-flow></div></section></section>`);
-    const box = $("#drawer-body"), msg = $("[data-day-msg]", box);
+    const box = $("#drawer-body");
     fillDayEvidence(box, d.date, r.fromPrev, { rel: true, flow: true });
-    $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, now ? "오늘 장 시작부터 지금까지 주가 움직임의 원인을 찾아 줘." : "이날 하루 주가 움직임의 원인을 찾아 줘.", true), msg);
+    $("[data-day-gpt]", box).onclick = () => openAsk(rangeContext(d, r, arts, prevDay, now ? "오늘 장 시작부터 지금까지 주가 움직임의 원인을 찾아 줘." : "이날 하루 주가 움직임의 원인을 찾아 줘.", true));
   }
 
-  /** ChatGPT 새 창에 자료를 채워 엶 (보내기는 사용자가 직접). 따로 묻고 싶은 것은 그 창에서 덧붙임 */
-  function openAsk(text, msg, paste = false) {
-    try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
-    // paste: 질문이 아주 긴 경우(뉴스 관측 자료 전체, 수만 자) 주소에 넣으면 잘림 → 빈 창 + 복사해 둔 질문을 붙여넣기
-    window.open(paste ? "https://chatgpt.com/" : `https://chatgpt.com/?q=${encodeURIComponent(text)}`, "_blank", "noopener");
-    msg.className = "form-msg";
-    msg.textContent = paste ? "질문 전체를 복사했습니다. ChatGPT 새 창의 입력칸에 붙여넣기(Ctrl+V / 길게 눌러 붙여넣기) 한 뒤 보내세요."
-      : "ChatGPT 새 창을 열었습니다. 모델을 고른 뒤 보내세요. (새 창 입력칸이 비어 있으면 Ctrl+V — 자료를 복사해 두었습니다)";
+  /** AI에게 묻기: 질문(숫자·사실 자료)을 복사만 함. 붙여넣을 곳(ChatGPT 등)은 사용자가 고름 */
+  async function openAsk(text) {
+    try { await navigator.clipboard.writeText(text); toast("질문이 복사되었습니다."); }
+    catch (_) { toast("질문을 복사하지 못했습니다. 다시 눌러 주세요.", "err"); }
   }
 
 
@@ -1777,7 +1770,7 @@
       dayTotal = dailyEv
         ? `<button type="button" class="day-total is-event" data-id="${dailyEv.id}">${inner}</button>`
         : closed && !(live && live.open)
-          ? `<button type="button" class="day-total is-event" data-day-ask title="이날 하루 움직임을 ChatGPT에게 묻기">${inner}</button>`
+          ? `<button type="button" class="day-total is-event" data-day-ask title="이날 하루 움직임을 AI에게 묻기">${inner}</button>`
           : `<div class="day-total">${inner}</div>`;
     }
     const row = (e) => `
@@ -1927,12 +1920,12 @@
         <div class="mc-body">${mdRender(x.body || "")}</div>
         <div class="ask-row editable mc-actions"><button class="btn-link" type="button" data-mc-del="${i}">삭제</button></div>
         </div>`).join("")
-      : `<div class="manual-cause is-empty"><div class="mc-head">원인 미입력</div></div>`;
+      : "";
     const has = entries.length > 0;
     return `<div class="sec-head"><h3 class="d-sec">왜 움직였나</h3>${daily && entries.length > 1 ? `<span class="stage">원인 기록 ${entries.length}개</span>` : ""}</div>
       ${view}
       <div class="ask-block">
-        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 복사하고 ChatGPT 새 창을 엽니다">${has ? "ChatGPT에게 다시 묻기" : "ChatGPT에게 묻기"}</button></div>
+        <div class="ask-row"><button class="btn primary" type="button" id="ask-gpt" title="숫자·사실 자료를 질문으로 복사합니다">${has ? "AI에게 다시 묻기" : "AI에게 묻기"}</button></div>
         <span class="form-msg" id="ask-claude-msg"></span>
       </div>`;
   }
@@ -1959,8 +1952,7 @@
       const basis = f.basis === "구간" ? `${hhmm(f.from_ts)}~${hhmm(f.to_ts)} 사이 증감` : f.basis === "장 마감 기록" ? "그날 장 마감 기록" : "그날 누적";
       html += `<p class="flow-sum">증권사 창구 기준(${basis}). 외국계 창구 합계 <b class="${f.foreign_net >= 0 ? "up-t" : "down-t"}">${f.foreign_net >= 0 ? "+" : "−"}${int(Math.abs(f.foreign_net))}주</b>${f.window_volume ? `, 같은 구간 전체 거래량 ${int(f.window_volume)}주` : ""}</p>
         <div class="flows"><div><h4>순매수 상위</h4><ul>${f.top_buyers.map(row).join("") || '<li class="muted">없음</li>'}</ul></div>
-        <div><h4>순매도 상위</h4><ul>${f.top_sellers.map(row).join("") || '<li class="muted">없음</li>'}</ul></div></div>
-        ${verifyBlock(f)}`;
+        <div><h4>순매도 상위</h4><ul>${f.top_sellers.map(row).join("") || '<li class="muted">없음</li>'}</ul></div></div>`;
     }
     if (inv) {
       const parts = [["외국인", inv.foreign_net], ["기관", inv.organ_net], ["개인", inv.individual_net]];
@@ -1972,23 +1964,6 @@
       html += `<p class="note">그날 투자자별(외국인·기관·개인) 확정 순매수는 장 마감 후 자동으로 추가됩니다.</p>`;
     }
     return html;
-  }
-
-  function verifyBlock(f) {
-    const cc = f.crosscheck, eod = f.eod || {};
-    let rows = [`<li><b>출처</b> ${esc(f.source || "")}</li>`,
-];
-    if (cc) {
-      const ok = cc.compared && cc.matched === cc.compared && cc.foreign_sum.same;
-      rows.push(`<li><b>교차 검증</b> ${esc(cc.ts.slice(11))}에 다음 금융과 대조: 두 곳 모두 상위 5위 안인 값 ${cc.compared}개 중 ${cc.matched}개 일치, 외국계 합계 ${cc.foreign_sum.same ? "일치" : `불일치(네이버 ${int(cc.foreign_sum.naver[0])} / 다음 ${int(cc.foreign_sum.daum[0])})`}${(cc.diffs || []).length ? `. 차이: ${cc.diffs.map((d) => `${esc(d.name)} ${d.side} 네이버 ${int(d.naver)} / 다음 ${int(d.daum)}`).join(", ")} (두 곳을 받은 몇 초 사이 체결로 생길 수 있음)` : ""}${(cc.missing_in_naver || []).length ? `<br>네이버 목록에 빠진 상위 창구를 다음 금융 값으로 보충했습니다: ${cc.missing_in_naver.map((m) => `${esc(m.name)} 매수 ${int(m.buy)} / 매도 ${int(m.sell)}`).join(", ")}` : ""}${(cc.frozen_diffs || []).length ? `<br><span class="muted">참고: 5위 밖에서 멈춘 값은 멈춘 시점에 따라 두 곳이 다를 수 있어 판정에서 뺐습니다 (${cc.frozen_diffs.map((d) => `${esc(d.name)} ${d.side} ${int(d.naver)}/${int(d.daum)}`).join(", ")}).</span>` : ""}</li>`);
-    }
-    const srcs = Object.keys(eod);
-    if (srcs.length) {
-      const names = [...new Set([...(f.top_buyers || []), ...(f.top_sellers || [])].slice(0, 3).map((r) => r.name))];
-      const pick = (src, nm) => (eod[src] || []).find((x) => x.name.replace(/\s|증권|투자/g, "") === nm.replace(/\s|증권|투자/g, ""));
-      rows.push(`<li><b>장 마감 기록</b> <span class="muted">(장 마감 직후 기준)</span><br>${names.map((nm) => `${esc(nm)} ${srcs.map((src) => { const x = pick(src, nm); return `${src} ${x ? `매수 ${int(x.buy)}/매도 ${x.sell || x.sell_top5 ? int(x.sell) : "미집계"}` : "목록에 없음"}`; }).join(" · ")}`).join("<br>")}</li>`);
-    }
-    return `<details class="verify"><summary>이 숫자는 얼마나 정확한가요?</summary><ul>${rows.join("")}</ul></details>`;
   }
 
   /** 후속 공시 (실제 보유자·보유 목적). 같은 창구의 테마 종목 거래 목록은 화면에서 뺌 (ChatGPT 자료에는 그대로 넣음) */
@@ -2009,12 +1984,14 @@
   let THEME_NOS = {};     // 테마 이름 → 네이버 테마 번호
   const ensureDaily = () => (dailyP ||= api("/api/daily").then(keepDaily).catch(() => { dailyP = null; return []; }));
   const themeUrlOf = (k) => naverThemeUrl(THEME_NOS[k]);
-  /** 네이버 테마 화면 주소: 휴대폰은 모바일 증권 주소 (PC 주소를 열면 네이버 모바일 증권 첫 화면으로 넘어가 버림) */
+  /** 네이버 테마 화면 주소: 휴대폰은 모바일 증권 주소 (PC 주소를 열면 네이버 모바일 증권 첫 화면으로 넘어가 버림).
+   *  PC는 새 네이버 증권 주소: 테마는 ?no=로 고름 (경로의 숫자는 그날 순위 자리라 1을 넣으면 네이버가 맞게 고침.
+   *  예전 sise_group_detail?no=N 주소는 새 주소의 순위 N으로 넘어가 다른 테마가 열림) */
   function naverThemeUrl(no) {
     if (no == null || no === "") return "";
     const ua = navigator.userAgent || "", mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
     return mobile ? `https://m.stock.naver.com/domestic/home/theme/${encodeURIComponent(no)}`
-      : `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${encodeURIComponent(no)}`;
+      : `https://stock.naver.com/market/stock/kr/theme/1?no=${encodeURIComponent(no)}`;
   }
   /** 그날 네이버 테마 등락 (이 종목이 들어 있는 테마 전부, 네이버 테마 화면 값 그대로) */
   function dayThemeBlock(ds, own) {
@@ -2105,7 +2082,7 @@
     // 그날 테마 등락은 일별 자료로, 자동 분석에 거래원 자료가 없으면 그것도 일별 자료로 채움
     fillDayEvidence($("#drawer-body"), e.start_ts.slice(0, 10), daily ? mv : null,
       { rel: true, flow: !(c && (c.flows || c.investor_day)) });
-    $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."), $("#ask-claude-msg"));
+    $("#ask-gpt").onclick = () => openAsk(eventContext(d, "이 움직임의 원인을 찾아 줘."));
     const dDel = $("#drawer-body [data-ev-del]");
     if (dDel) dDel.onclick = () => deleteRecord(dDel);
     // 원인 삭제 → 암호화된 요청(GitHub 이슈)으로 보냄
@@ -2291,7 +2268,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>`)}
 `;
     host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    $('#obs-question').onclick=()=>openAsk(observationQuestion(d),$('#art-fix-msg'),true);
+    $('#obs-question').onclick=()=>openAsk(observationQuestion(d));
     // 유사 사건: 이 사건과 분야 태그나 고객·파트너가 겹치는 사건만. '기술·개발'은 제목에 흔한 말이라 그것만 겹치면 넣지 않음
     const similar=()=>{
       const WEAK=new Set(['기술·개발']),myTags=d.business_tags||[],partner=(d.partner||'').trim();
@@ -3217,9 +3194,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 한 줄 동작: ChatGPT에게 묻기 · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    // 한 줄 동작: AI에게 묻기(질문 복사) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>ChatGPT에게 묻기</button>` : ""}
+    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button>` : ""}
         ${toKinds.map((k) => `<button class="btn editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}<span class="form-msg" id="art-fix-msg"></span></div>`;
     html += `<div class="obs-folds">`;
 
