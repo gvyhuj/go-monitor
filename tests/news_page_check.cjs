@@ -151,6 +151,11 @@ async function main() {
       }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
       assert.equal(await related.locator("li").count(), 8);
       assert.equal(await page.locator("#related-articles-title").innerText(), "관련 기사 8개");
+      assert.deepEqual(await related.locator(".related-date-heading").allInnerTexts(), ["10월 22일 (목) 6개", "10월 23일 (금) 2개"]);
+      const cards = related.locator(".related-card");
+      const firstCards = await cards.evaluateAll((xs) => xs.slice(0, 2).map((x) => ({ x: x.getBoundingClientRect().x, y: x.getBoundingClientRect().y })));
+      assert.equal(width > 700 ? firstCards[0].y === firstCards[1].y : firstCards[0].x === firstCards[1].x, true, "PC는 두 열, 모바일은 한 열");
+      assert.equal(await related.locator(".related-article-title").first().evaluate((el) => getComputedStyle(el).textDecorationLine), "none");
       assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /회사 관련 보도|같은 내용 기사/);
       assert.match(await page.locator('#art-list button[data-id="2001"]').innerText(), /같은 내용 기사 8개/);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
