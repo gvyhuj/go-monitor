@@ -722,10 +722,13 @@
 
   /** 위 표시 한 칸: 실시간 값이 3분 안이면 '실시간 HH:MM', 아니면 base(정기 갱신 시각). 오래 실패 중인 수집이 있으면 뒤에 경고.
    *  (정기 갱신과 실시간이 서로 덮어써 시각이 왔다 갔다 하지 않게 한 곳에서만 정함) */
+  let relayTried = false, engineBase = "";     // 첫 실시간 요청 전에는 '갱신 (정기 시각)'을 잠깐 보이지 않게 '확인 중' 그대로
   function engineLabel(base) {
+    if (base) engineBase = base;
+    if (!relayTried && STATUS && STATUS.relay && STATUS.relay.url) return;
     const stuck = ((STATUS && STATUS.collect && STATUS.collect.sources) || []).some((r) => r.stale);
     const fresh = RELAY.at && Date.now() - new Date(`${RELAY.at}:00+09:00`).getTime() < 180000;
-    const label = fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : base;
+    const label = fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
     setEngine(stuck ? "stale" : "ok", stuck ? `${label} · 수집 확인 필요` : label);
   }
   function setEngine(state, label) {
@@ -763,6 +766,11 @@
     if (k && k.price != null) STATUS.kosdaq = { ...(STATUS.kosdaq || {}), price: k.price, change: k.change, change_pct: k.rate, market_status: "OPEN", traded_at: at };
   }
   async function relayTick() {
+    try { await relayAsk(); } finally {
+      if (!relayTried) { relayTried = true; if (STATUS && engineBase && (!$("#alert") || $("#alert").hidden)) engineLabel(""); }
+    }
+  }
+  async function relayAsk() {
     const r = STATUS && STATUS.relay, t = kstParts();
     if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || t.hm < 900 || t.hm > 1531) return;
     try {

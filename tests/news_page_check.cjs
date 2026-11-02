@@ -366,6 +366,8 @@ async function main() {
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       await page.clock.install({ time: new Date("2026-10-28T10:05:10+09:00") });
+      // 위 '갱신' 표시가 바뀔 때마다 기록 (새로고침 직후 '갱신 (정기 시각)'이 잠깐 보였다 '실시간'으로 바뀌는지 보려고)
+      await page.addInitScript(() => { window.__engine = []; new MutationObserver(() => { const e = document.querySelector("#engine"); if (e && window.__engine[window.__engine.length - 1] !== e.textContent.trim()) window.__engine.push(e.textContent.trim()); }).observe(document, { subtree: true, childList: true, characterData: true }); });
       const errors = [], seen = [];
       page.on("pageerror", (error) => errors.push(error.message));
       let fail = false;
@@ -385,6 +387,8 @@ async function main() {
       await page.locator("#rec-head .rh-p").waitFor();
       assert.match(await page.locator("#rec-head .rh-p").textContent(), /12,345/, "처음 그린 큰 가격이 이미 실시간 값");
       assert.equal(await page.locator("#rec-chart .day-legend").count(), 0, "1분 차트 위 줄(시각·가격·1분 거래량) 없음");
+      const eng = await page.evaluate(() => window.__engine.filter(Boolean));
+      assert.ok(!eng.some((x) => /갱신/.test(x)), `실시간 전에 '갱신 …'이 잠깐 보이지 않음: ${JSON.stringify(eng)}`);
       // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값 (예전엔 첫 15초 동안 정기 실행 시각의 값이 보였음)
       await page.clock.runFor(1000);
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"), null, { timeout: 3000 });
