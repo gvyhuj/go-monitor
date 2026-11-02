@@ -1437,7 +1437,7 @@
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
-      chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
+      chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
         news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
@@ -1787,7 +1787,7 @@
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${moveBasis(e)}</small></span>
         </button>${e.tier === "요청" ? `<div class="tl-actions editable"><button type="button" class="btn-link" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></div>` : ""}</li>`;
     const chart = d.bars.length
-      ? `<div class="day-legend"></div><div class="day-chart"></div><div class="range-panel"></div>`
+      ? `<div class="day-chart"></div><div class="range-panel"></div>`
       : `<p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`;
     const list = rest.length
       ? `<ul class="timeline">${rest.map(row).join("")}</ul>`
