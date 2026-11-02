@@ -18,6 +18,7 @@
   let STATUS = null;          // 마지막 /api/status
   let charts = [];            // 페이지 전환 시 정리할 차트
   let timers = [];            // 페이지 전용 타이머
+  let resumePage = null;      // 탭·창으로 돌아오면 현재 화면의 자료 확인
 
   // ---------------------------------------------------------------- format
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -377,6 +378,7 @@
     charts = [];
     timers.forEach(clearInterval);
     timers = [];
+    resumePage = null;
     onRelay = null;
   }
 
@@ -3063,7 +3065,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (CLOUD) {
       const displayedPublication = LIVE && LIVE.published_at;
       let checking = false;
-      timers.push(setInterval(async () => {
+      const checkPublication = async () => {
         if (checking || document.hidden) return;
         checking = true;
         const activeRoute = location.hash;
@@ -3082,7 +3084,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           requestAnimationFrame(() => { main.style.minHeight = ""; });
         } catch (_) {
         } finally { checking = false; }
-      }, 30000));
+      };
+      resumePage = checkPublication;
+      timers.push(setInterval(checkPublication, 30000));
     }
     if (!items.length && !discs.length) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
     if (!current) { showOverview(); return; }
@@ -3791,6 +3795,16 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     refreshStatus().then(() => Promise.race([relayTick(), new Promise((ok) => setTimeout(ok, 1500))])).then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
+    let resuming = false;
+    const resume = async () => {
+      if (document.hidden || resuming) return;
+      resuming = true;
+      try {
+        await Promise.allSettled([refreshStatus(), relayTick(), resumePage && resumePage()]);
+      } finally { resuming = false; }
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", (ev) => { if (ev.persisted) resume(); });
   });
 })();

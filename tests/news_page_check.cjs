@@ -145,6 +145,10 @@ async function main() {
       // 관련 기사는 그래프 아래·유사 사건 위에 항상 펼쳐지고 제목은 원문으로 연결.
       const related = page.locator("#related-articles");
       assert.equal(await related.isVisible(), true);
+      assert.deepEqual(await page.locator("#pr-detail").evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.maxHeight, s.overflowY, s.position];
+      }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
       assert.equal(await related.locator("li").count(), 9);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
@@ -457,8 +461,13 @@ async function main() {
       assert.equal(await page.locator("#pr-detail.mv-in").count(), 1, "기사 상세 떠오르기");
       assert.equal(await page.locator("#pr-detail .pr-title").evaluate((el) => el.getAnimations().length), 0, "제목 옮겨 가기 효과는 뺌");
       await page.locator("#pr-detail .rx-chart.mv-reveal").waitFor();
-      assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "sticky", "오른쪽 상세는 화면에 고정");
-      // 오른쪽 상세 위에서 휠을 돌려도 화면이 내려감 (안에서 끝까지 내리면 화면으로 이어짐)
+      assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "static", "오른쪽 상세도 페이지와 함께 스크롤");
+      // 오른쪽 상세 위에서 휠을 돌리면 바로 페이지가 내려감.
+      await page.locator("#pr-detail .rx-chart").hover();
+      const scrollBefore = await page.evaluate(() => window.scrollY);
+      await page.mouse.wheel(0, 400);
+      await page.waitForFunction((before) => window.scrollY > before, scrollBefore);
+      assert.equal(await page.locator("#pr-detail").evaluate((el) => el.scrollTop), 0);
       assert.notEqual(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain");
       // 주가 기록: 기간·1일 차트는 선 그리기 없이 바로 (메인 차트), 날짜를 바꾸면 머리 박스 숫자 올라가기
       await page.goto(`${base}/#/`);
