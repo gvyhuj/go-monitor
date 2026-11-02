@@ -1408,6 +1408,23 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .art-more-menu .art-act { display: flex; flex-direction: column; align-items: stretch; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
 .art-more-menu .art-act:empty { display: none; }
 .art-more-menu .art-act::before, .art-more-menu #art-multi::after { content: none; }
+/* PC 배치는 유지하고, 뉴스 조작 요소의 높이와 모바일 세 줄 정렬만 통일. */
+.news-controls > #art-cat, .news-controls > #art-q, .news-controls #art-cond, .news-controls > .art-dd, .news-controls > .art-more > summary { height: 38px; min-height: 38px; }
+@media (max-width: 720px) {
+  .news-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content; grid-template-areas: "categories categories categories" "search search search" "condition sort edit"; gap: 10px; align-items: stretch; }
+  .news-controls #art-cat { grid-area: categories; width: 100%; min-width: 0; }
+  .news-controls #art-cat button { flex: 1 1 auto; padding: 0 8px; font-size: 13px; }
+  .news-controls #art-q { grid-area: search; width: 100%; min-width: 0; }
+  .news-controls .art-cond-wrap { grid-area: condition; min-width: 0; }
+  .news-controls #art-cond { width: 100%; }
+  .news-controls #art-cond b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .news-controls > .art-dd { grid-area: sort; min-width: 0; }
+  .news-controls #art-cond, .news-controls > .art-dd { padding: 6px 8px; font-size: 12px; gap: 4px; }
+  .news-controls > .art-dd select { min-width: 0; max-width: 100%; }
+  .news-controls .art-more { grid-area: edit; margin-left: 0; }
+  .news-controls #art-day { grid-column: 1 / -1; grid-row: 4; }
+  .news-controls #art-day:empty { display: none; }
+}
 .art-list button[data-id] { position: relative; padding-right: 108px; }
 .al-rx { position: absolute; right: 34px; top: 12px; text-align: right; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
 .al-rx small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
