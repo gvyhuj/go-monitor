@@ -3227,10 +3227,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 한 줄 동작: AI에게 묻기(질문 복사) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    // AI에게 묻기는 상세에, 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button>` : ""}
-        ${toKinds.map((k) => `<button class="btn editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}<span class="form-msg" id="art-fix-msg"></span></div>`;
+    if (d.observation_event_id) html += `<div class="obs-cta art-fix"><button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button></div>`;
     html += `<div class="obs-folds">`;
 
     // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)
@@ -3273,7 +3272,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const act = $("#art-act");
     if (act) act.innerHTML = isDisc ? "" : `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
       + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
-      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`);
+      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`)
+      + toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
+      + (toKinds.length ? `<span class="form-msg" id="art-fix-msg"></span>` : "");
     const outPop = $("#outlets-pop", box), outOpen = $("#art-outlets");
     if (outPop && outOpen) {
       outOpen.onclick = () => { const m = outOpen.closest("details"); if (m) m.open = false; outPop.showModal(); };
@@ -3370,7 +3371,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     }));
     const queued = (btn, text) => { btn.disabled = true; btn.textContent = STATIC ? "GitHub 창에서 [Create]를 누르면 반영됩니다" : "요청을 보냈습니다 (다음 자동 수집 때 반영)"; btn.title = text || ""; };
-    box.querySelectorAll(".art-fix [data-kind], .art-fix [data-tone]").forEach((b) => b.addEventListener("click", async () => {
+    main.querySelectorAll("#art-act [data-kind], .art-fix [data-tone]").forEach((b) => b.addEventListener("click", async () => {
       const msg = $("#art-fix-msg");
       const item = b.dataset.kind ? { type: "article_kind", id: a.id, kind: b.dataset.kind, title: a.title }
         : { type: "article_tone", id: a.id, tone: +b.dataset.tone, title: a.title };

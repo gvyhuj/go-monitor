@@ -307,6 +307,20 @@ async function main() {
       await page.keyboard.type("20261001");
       assert.equal(await jump.inputValue(), before, "숫자 입력 막힘");
 
+      // 분류 변경은 수정 메뉴에만 표시하고, 기존 요청 동작을 유지한다.
+      for (const [id, kind, label] of [["2001", "ext", "외부 기사로 바꾸기"], ["2004", "pr", "그린광학 보도자료로 바꾸기"]]) {
+        await page.goto(`${base}/#/pr/${id}`);
+        const change = page.locator(`.art-more-menu [data-kind="${kind}"]`);
+        await change.waitFor({ state: "attached" });
+        assert.equal(await page.locator("#pr-detail [data-kind]").count(), 0);
+        assert.equal(await change.textContent(), label);
+        await page.locator(".art-more > summary").click();
+        await change.click();
+        await page.waitForFunction(() => document.querySelector("#art-fix-msg")?.textContent.length > 0);
+        assert.equal(await change.isDisabled(), true);
+        assert.doesNotMatch(await page.locator("#art-fix-msg").getAttribute("class"), /err/);
+      }
+
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       assert.deepEqual(errors, []);
       await page.close();
