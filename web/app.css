@@ -1503,10 +1503,7 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 .ps-card, .tcard, .btn, .art-dd, .rx-g .rx-one { transition: box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 /* 8 갱신 중 표시: 초록 점이 천천히 퍼짐 */
 .engine[data-state="ok"] .dot { animation: mv-pulse 2.4s var(--ease) infinite; }
-/* 9 뉴스 오른쪽 그래프·상세를 화면에 고정 (목록과 따로 스크롤) */
-@media (min-width: 901px) {
-  .art-detail { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }   /* 끝까지 내리면 화면 스크롤로 이어짐 */
-}
+/* 뉴스 상세는 높이 제한 없이 페이지 스크롤로 읽음. 왼쪽 기사 목록만 고정. */
 /* 축하 종이 조각 (10% 이상 오른 날 하루 한 번) */
 .mv-confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
 @media (prefers-reduced-motion: reduce) {
