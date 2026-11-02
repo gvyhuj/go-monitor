@@ -681,9 +681,7 @@
             : "자동 실행이 멈췄거나 실패하고 있습니다. GitHub 저장소의 Actions 탭에서 최근 실행을 확인해 주세요."));
         });
       } else {
-        const stuck = ((s.collect && s.collect.sources) || []).filter((r) => r.stale);
-        if (stuck.length) setEngine("stale", `갱신 ${when} · 수집 확인 필요`);
-        else setEngine("ok", `갱신 ${when}`);
+        engineLabel(`갱신 ${when}`);
         showAlert(null);
       }
       renderQuote();
@@ -722,6 +720,14 @@
     return RUN_HEALTH;
   }
 
+  /** 위 표시 한 칸: 실시간 값이 3분 안이면 '실시간 HH:MM', 아니면 base(정기 갱신 시각). 오래 실패 중인 수집이 있으면 뒤에 경고.
+   *  (정기 갱신과 실시간이 서로 덮어써 시각이 왔다 갔다 하지 않게 한 곳에서만 정함) */
+  function engineLabel(base) {
+    const stuck = ((STATUS && STATUS.collect && STATUS.collect.sources) || []).some((r) => r.stale);
+    const fresh = RELAY.at && Date.now() - new Date(`${RELAY.at}:00+09:00`).getTime() < 180000;
+    const label = fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : base;
+    setEngine(stuck ? "stale" : "ok", stuck ? `${label} · 수집 확인 필요` : label);
+  }
   function setEngine(state, label) {
     const el = $("#engine");
     el.dataset.state = state;
@@ -771,7 +777,7 @@
       Object.assign(RELAY, { quote: d.quote, kosdaq: d.kosdaq, at: d.at });
       applyRelay();
       renderQuote();
-      if (!$("#alert") || $("#alert").hidden) setEngine("ok", `실시간 ${d.at.slice(11, 16)}`);
+      if (!$("#alert") || $("#alert").hidden) engineLabel("");
       if (onRelay) onRelay();
     } catch (_) { /* 중계가 안 되면 정기 갱신 자료로 */ }
   }
