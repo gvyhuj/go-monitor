@@ -84,7 +84,7 @@ async function main() {
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 11개/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 10개/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       assert.match(await page.locator("#pr-score").innerText(), /15시 이후[\s\S]*전체\s*0건/);
@@ -149,7 +149,9 @@ async function main() {
         const s = getComputedStyle(el);
         return [s.maxHeight, s.overflowY, s.position];
       }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
-      assert.equal(await related.locator("li").count(), 9);
+      assert.equal(await related.locator("li").count(), 10);
+      assert.match(await page.locator("#related-articles-title").innerText(), /기사 링크 10개 · 8개 매체/);
+      assert.match(await page.locator("#pr-detail .pr-meta").innerText(), /같은 내용 기사 링크 10개 · 8개 매체/);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
       assert.deepEqual(await related.locator("li a").evaluateAll((xs) => xs.map((a) => [a.getAttribute("href"), a.target])),
