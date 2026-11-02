@@ -899,10 +899,11 @@ details.evidence > .d-block:first-of-type { margin-top: 18px; }
 .outlet-list ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13.5px; }
 .outlet-list li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .outlet-list li a { color: var(--brand-blue); }
-#related-articles li { padding: 5px 0; line-height: 1.5; }
+#related-articles li { padding: 0; line-height: 1.5; }
+#related-articles .related-article-row { display: block; padding: 5px 0; color: var(--muted); text-decoration: none; }
 #related-articles .related-article-meta { margin-right: 8px; color: var(--muted); font-size: 12px; }
 #related-articles .related-article-title { color: var(--muted); font-size: 13px; font-weight: 400; text-decoration: none; }
-#related-articles a.related-article-title:visited { color: var(--muted); }
+#related-articles a.related-article-row:visited { color: var(--muted); }
 .mc-when { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
   color: var(--ink-2); background: color-mix(in srgb, var(--muted) 12%, transparent); vertical-align: 2px; }
 .manual-cause .mc-actions { margin-top: 6px; gap: 14px; }
