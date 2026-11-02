@@ -507,6 +507,9 @@ table.data tbody tr.day-head:hover td { background: var(--canvas); }
 .form-msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
 .form-msg.err { color: var(--up); }
 .pr-title { font-size: 24px; font-weight: 760; letter-spacing: -.02em; margin: 0; }
+.pr-article-title { margin-bottom: 18px; }
+.pr-article-title a { color: inherit; text-decoration: none; }
+.pr-article-title a:hover, .pr-article-title a:focus-visible { color: var(--brand-blue); }
 .pr-meta { color: var(--muted); margin: 4px 0 18px; font-size: 14px; }
 .pr-meta a { color: var(--brand-blue); }
 .summary { font-size: 19px; font-weight: 600; line-height: 1.5; letter-spacing: -.01em; margin: 0 0 22px; max-width: 62ch; }
@@ -1410,6 +1413,8 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .al-rx small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
 .art-list.is-multi .al-rx { display: none; }
 .pr-close-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; }
+.pr-detail-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.pr-detail-actions .pr-daychart { margin-left: 0; }
 #pr-close { white-space: nowrap; }
 .rx-tabs { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 6px; }
 .rx-cmp { font-size: 12px; color: var(--ink-2); background: var(--canvas); border-radius: var(--r-sm); padding: 4px 9px; }
