@@ -899,10 +899,21 @@ details.evidence > .d-block:first-of-type { margin-top: 18px; }
 .outlet-list ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13.5px; }
 .outlet-list li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .outlet-list li a { color: var(--brand-blue); }
-#related-articles li { padding: 12px 0; }
-#related-articles .related-article-meta { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
-#related-articles .related-article-title { display: block; font-size: 15px; font-weight: 600; line-height: 1.6; }
-#related-articles a.related-article-title:visited { color: #79658b; }
+#related-articles { container-type: inline-size; }
+#related-articles .related-count { display: inline-block; padding: 2px 8px; border-radius: 8px; background: #eaf1ff; color: var(--navy); font-size: 12px; vertical-align: middle; }
+#related-articles .related-date-heading { margin: 14px 0 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+#related-articles .related-date-heading small { margin-left: 5px; font-size: 11px; }
+#related-articles .related-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; }
+#related-articles .related-card { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+#related-articles .related-article-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+#related-articles .related-article-office { padding: 2px 6px; border-radius: 6px; background: var(--canvas); color: var(--ink-2); }
+#related-articles time { flex-shrink: 0; padding-top: 2px; font-variant-numeric: tabular-nums; }
+#related-articles .related-article-title { display: block; color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.45; text-decoration: none; overflow-wrap: anywhere; }
+#related-articles .related-card:has(a:hover), #related-articles .related-card:focus-within { border-color: #bfd2f5; background: #eef4ff; }
+#related-articles a.related-article-title:hover, #related-articles a.related-article-title:focus-visible { color: var(--brand-blue); }
+@container (min-width: 560px) {
+  #related-articles .related-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .mc-when { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
   color: var(--ink-2); background: color-mix(in srgb, var(--muted) 12%, transparent); vertical-align: 2px; }
 .manual-cause .mc-actions { margin-top: 6px; gap: 14px; }
