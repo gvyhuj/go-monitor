@@ -151,7 +151,7 @@ async function main() {
       }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
       assert.equal(await related.locator("li").count(), 8);
       assert.equal(await page.locator("#related-articles-title").innerText(), "관련 기사 8개");
-      assert.match(await page.locator("#pr-detail .pr-meta").innerText(), /같은 내용 기사 8개/);
+      assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /회사 관련 보도|같은 내용 기사/);
       assert.match(await page.locator('#art-list button[data-id="2001"]').innerText(), /같은 내용 기사 8개/);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
