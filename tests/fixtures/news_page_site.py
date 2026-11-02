@@ -71,6 +71,11 @@ def main(out: Path) -> None:
             conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) "
                          "VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (aid, SYMBOL, ts, office, title, f"https://example.org/{aid}", category, "제목", aid, ts))
+        # 같은 사건의 기사 9건이 상세 화면에 빠짐없이 펼쳐지는지 검증.
+        for i in range(8):
+            aid, ts = f"210{i}", f"2026-10-22T10:{6 + i:02d}"
+            conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (aid, SYMBOL, ts, f"검증매체{i}", "광학미러 공급 계약 체결", f"https://example.org/{aid}", "회사 발표", "제목", "2001", ts))
         # 2003 기사보다 8분 먼저 접수된 같은 내용의 공시 → 기사 화면에 '선행 공시'
         conn.execute("INSERT INTO disclosures(no,symbol,date,ts,title,kind,pblntf,filer) VALUES (?,?,?,?,?,?,?,?)",
                      ("20261015000901", SYMBOL, "2026-10-15", "2026-10-15T13:02", "단일판매ㆍ공급계약체결", "공급계약", "I", "검증 종목"))
