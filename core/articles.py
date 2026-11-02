@@ -786,14 +786,16 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     from . import topics
     table = topics.rules()
     out = []
+    manual_stories = set()
     for sid, group in by_story.items():
-        # 대표: 사이트에서 직접 고른 기사 → 직접 등록한 기사 → 가장 먼저 나온 기사
-        group.sort(key=lambda a: (a["id"] not in picks, not a.get("manual"), a["ts"]))
+        # 모든 묶음의 대표는 가장 이른 공개 시각. 직접 선택·등록은 같은 시각일 때만 우선.
+        group.sort(key=lambda a: (a["ts"] or "9999", a["id"] not in picks, not a.get("manual"), a["id"]))
         lead = dict(group[0])
-        first_ts = min(g["ts"] for g in group)
+        # 대표가 자동 수집 기사로 바뀌어도 직접 등록한 보도자료 묶음의 분류는 유지.
+        if any(g.get("manual") for g in group):
+            manual_stories.add(lead["id"])
         if lead["id"] in picks and len(group) > 1:
-            # 고른 기사의 제목·언론사로 보여 주되, 반응 계산의 기준 시각은 묶음에서 가장 먼저 나온 때 그대로
-            lead["picked"], lead["own_ts"], lead["ts"] = True, lead["ts"], first_ts
+            lead["picked"] = True
         # 묶음의 성격은 가장 '원천'에 가까운 기사 기준 (회사 발표 > 리서치 > 언론 분석 > …)
         best = min(group, key=lambda g: CATEGORIES.index(g["category"]) if g["category"] in CATEGORIES else 9)
         lead["category"] = best["category"]
@@ -815,7 +817,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     from .article_integrity import time_quality
     for a in out:
         a["kind_auto"] = "company" if a["category"] == "회사 발표" else "ext"
-        a["kind"] = a.get("kind_override") or ("pr" if a.get("manual") else a["kind_auto"])
+        a["kind"] = a.get("kind_override") or ("pr" if a["id"] in manual_stories else a["kind_auto"])
         a["time_quality"] = time_quality(a)
         a["time_source"] = time_source(a)
         a["topic"], a["topics"] = topics.classify(a["title"], a.get("body") or "", table)

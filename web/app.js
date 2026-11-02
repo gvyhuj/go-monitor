@@ -3247,10 +3247,10 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const outlets = entries.map((r) => r.lead ? { ...r, merged: !!a.story_with } : r);
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    // 대표(목록에 보이는 제목·언론사): 다른 매체 줄의 '대표로'를 누르면 그 기사로 바꿈 (반응 계산 시각은 가장 먼저 나온 때 그대로)
+    // 가장 이른 공개 시각이 같은 기사들 사이에서만 대표를 직접 고를 수 있음.
     const leadBtn = (r) => (outlets.length < 2 ? ""
-      : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
-        : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
+      : r.lead ? ` <span class="tier watch" title="가장 먼저 공개된 대표 기사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="가장 이른 공개 시각의 기사 중 자동으로 선택합니다">자동으로</button>` : ""}`
+        : r.id && r.ts === a.ts ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="가장 이른 공개 시각이 같은 이 기사를 대표로 보여 줍니다">대표로</button>` : "");
     const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
     if (!isDisc) html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="muted">${articleCountLabel}</small></h3>
       <ul>${outlets.map((r) => {

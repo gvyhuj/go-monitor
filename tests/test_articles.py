@@ -258,7 +258,7 @@ def test_false_negative_words_are_not_bad_news():
     assert any(w in a.neg_text("그린광학, 3분기 영업적자 확대") for w in a.STRONG_NEG)
 
 
-def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
+def test_earliest_article_stays_lead_even_when_later_article_was_picked(tmpdb):
     import logging
     import cloud_job
     with db.connect() as conn:
@@ -271,11 +271,49 @@ def test_lead_pick_changes_title_and_office_but_keeps_first_time(tmpdb):
     assert [a["id"] for a in auto] == ["a"] and not auto[0].get("picked")
     cloud_job.apply_inbox({"type": "article_lead", "id": "b", "ids": ["a", "b"]}, logging.getLogger())
     lead = articles.article_rows("X")[0]
-    assert (lead["id"], lead["office"], lead["picked"]) == ("b", "톱스타뉴스", True)
-    assert lead["ts"] == "2026-04-22T09:10" and lead["own_ts"] == "2026-04-22T14:14"   # 반응 기준 시각은 처음 나온 때
-    assert [r["id"] for r in lead["related_titles"]] == ["a"]
+    assert (lead["id"], lead["office"]) == ("a", "뉴스핌")
+    assert lead["ts"] == "2026-04-22T09:10" and not lead.get("picked")
+    assert [r["id"] for r in lead["related_titles"]] == ["b"]
     cloud_job.apply_inbox({"type": "article_lead", "id": None, "ids": ["a", "b"]}, logging.getLogger())  # 자동으로
     assert articles.article_rows("X")[0]["id"] == "a"
+
+
+@pytest.mark.parametrize("kind", ["pr", "ext"])
+def test_newly_collected_earlier_article_becomes_lead(tmpdb, kind):
+    title = f"{NAME}, 82억 공급계약 체결"
+    with db.connect() as conn:
+        _art(conn, "later", "2026-05-18T09:42", title)
+        conn.execute("UPDATE articles SET kind_override=? WHERE id='later'", (kind,))
+    assert articles.article_rows("X")[0]["id"] == "later"
+    with db.connect() as conn:
+        _art(conn, "earlier", "2026-05-18T09:05", title)
+        conn.execute("UPDATE articles SET office='최초매체' WHERE id='earlier'")
+        conn.execute("INSERT INTO article_links(a,b) VALUES('later','earlier')")
+    lead = articles.article_rows("X")[0]
+    assert (lead["id"], lead["office"], lead["ts"], lead["kind"]) == ("earlier", "최초매체", "2026-05-18T09:05", kind)
+    assert [r["id"] for r in lead["related_titles"]] == ["later"]
+
+
+def test_earliest_lead_preserves_manually_registered_story_classification(tmpdb):
+    title = f"{NAME}, 카메라 공동 개발"
+    with db.connect() as conn:
+        _art(conn, "early", "2026-05-18T09:05", title)
+        conn.execute("INSERT INTO pr_events(title,published_ts,url,pr_type) VALUES (?,?,?,?)",
+                     (title, "2026-05-18T10:00", "https://example.org/manual", "release"))
+    lead = articles.article_rows("X")[0]
+    assert lead["id"] == "early" and lead["ts"] == "2026-05-18T09:05"
+    assert lead["kind"] == "pr" and not lead.get("manual")
+    assert any(r["manual"] for r in lead["related_titles"])
+
+
+def test_tied_earliest_articles_can_still_be_picked(tmpdb):
+    with db.connect() as conn:
+        _art(conn, "a", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
+        _art(conn, "b", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
+        conn.execute("INSERT INTO article_links(a,b) VALUES('a','b')")
+        conn.execute("INSERT INTO system_state(key,value) VALUES (?,?)", (articles.LEAD_PICKS, '["b"]'))
+    lead = articles.article_rows("X")[0]
+    assert lead["id"] == "b" and lead["picked"]
 
 
 def test_time_fix_overrides_and_restores(tmpdb):
