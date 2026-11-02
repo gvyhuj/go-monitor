@@ -389,6 +389,9 @@ async function main() {
       fail = true;                                     // 중계가 안 되면: 화면은 마지막 값 그대로, 오류 없음
       await page.clock.runFor(16000);
       assert.match(await page.locator("#q-price").textContent(), /12,345/);
+      // 30초마다 도는 정기 자료 갱신이 '실시간 10:05'를 '갱신 (정기 실행 시각)'으로 덮어 시각이 왔다 갔다 하지 않음 (실시간 값이 2분 안이면)
+      await page.clock.runFor(15000);
+      assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.deepEqual(errors, []);
       await page.close();
     }
