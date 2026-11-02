@@ -2693,7 +2693,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <div class="page-head"><div><h1 class="page-title">뉴스</h1>
         <p class="page-sub" id="art-sub"></p></div>${artViewSeg(false)}</div>
       <div id="pr-score"></div>
-      <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
+      <div class="controls news-controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span>
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
         <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
