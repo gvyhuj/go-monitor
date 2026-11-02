@@ -3252,18 +3252,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
         : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
     const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
-    if (!isDisc) {
-      const byDate = new Map();
-      for (const r of [...outlets].sort((p, q) => (p.ts || "9999").localeCompare(q.ts || "9999"))) {
-        const date = (r.ts || "").slice(0, 10);
-        if (!byDate.has(date)) byDate.set(date, []);
-        byDate.get(date).push(r);
-      }
-      html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="related-count">${articleCountLabel}</small></h3>
-        ${[...byDate].map(([date, rows]) => `<div class="related-date-group"><h4 class="related-date-heading">${date ? dayLabel(date) : "날짜 미상"} <small>${rows.length}개</small></h4>
-          <ul class="related-card-grid">${rows.map((r) => `<li class="related-card"><div class="related-article-meta"><span class="related-article-office">${esc(r.office || "-")}</span><time datetime="${esc(r.ts || "")}">${hhmm(r.ts)}</time></div>${r.url ? `<a class="related-article-title" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : `<span class="related-article-title">${esc(r.title)}</span>`}</li>`).join("")}</ul></div>`).join("")}
-        ${missing ? `<p class="note">개별 링크가 제공되지 않은 매체 ${missing}곳은 <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a>로 확인할 수 있습니다.</p>` : ""}</section>`;
-    }
+    if (!isDisc) html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="muted">${articleCountLabel}</small></h3>
+      <ul>${outlets.map((r) => `<li><span class="related-article-meta">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${r.url ? `<a class="related-article-title" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : `<span class="related-article-title">${esc(r.title)}</span>`}</li>`).join("")}</ul>
+      ${missing ? `<p class="note">개별 링크가 제공되지 않은 매체 ${missing}곳은 <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a>로 확인할 수 있습니다.</p>` : ""}</section>`;
     if (!isDisc) html += `<dialog class="disc-pop outlets-pop" id="outlets-pop" aria-label="이 기사를 실은 매체 · 같은 내용 합치기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>이 기사를 실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></strong><button type="button" class="btn-link" data-pop-close aria-label="닫기">✕</button></div><section class="outlet-list"><p class="muted">기사 링크 ${outlets.filter((r) => r.url).length}개</p>
       <p class="note">같은 매체의 자사 사이트·포털 링크가 함께 있을 수 있습니다. 매체 수는 중복을 제외합니다.</p>
       <ul>${outlets.map(link).join("")}</ul>

@@ -73,7 +73,7 @@ def main(out: Path) -> None:
                          (aid, SYMBOL, ts, office, title, f"https://example.org/{aid}", category, "제목", aid, ts))
         # 8개 기사에 동일 URL 두 건이 중복 수집되어도 8개만 표시·집계.
         for i in range(9):
-            aid, ts = f"210{i}", f"2026-10-{23 if i >= 5 else 22}T10:{6 + i:02d}"
+            aid, ts = f"210{i}", f"2026-10-22T10:{6 + i:02d}"
             conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (aid, SYMBOL, ts, f"검증매체{i % 7}", "광학미러 공급 계약 체결", f"https://example.org/210{i % 7}", "회사 발표", "제목", "2001", ts))
         # 2003 기사보다 8분 먼저 접수된 같은 내용의 공시 → 기사 화면에 '선행 공시'
