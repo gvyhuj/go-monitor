@@ -2698,8 +2698,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
         <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
         <details class="art-more art-right editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
-          <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
+          <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <span class="art-act" id="art-act"></span></div></details></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
@@ -3270,10 +3270,10 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
     if (!isDisc) bindTimeForm(box, a);
     const act = $("#art-act");
-    if (act) act.innerHTML = isDisc ? "" : `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
+    if (act) act.innerHTML = isDisc ? "" : toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
+      + `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
       + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
       : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`)
-      + toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
       + (toKinds.length ? `<span class="form-msg" id="art-fix-msg"></span>` : "");
     const outPop = $("#outlets-pop", box), outOpen = $("#art-outlets");
     if (outPop && outOpen) {
