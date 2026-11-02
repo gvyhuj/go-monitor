@@ -3118,7 +3118,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <tr><th>이 종목</th>${rows.map((r) => `<td class="${sgnCls(r.own)}${r.minutes === main ? " main" : ""}">${pct(r.own)}</td>`).join("")}</tr>
       <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
       <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? (Object.hasOwn(r,"diff") ? r.diff : r.own - r.kq) : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
-  // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
+  // 수정 메뉴의 공개 시각 확인·수정 동작.
   const timeSrc = (a) => (a.time_quality === "check_time" ? ` <span class="time-src warn" title="구글 뉴스 시각이 16:00·17:00으로 반복됨">시각 확인 필요</span>` : "")
     + (a.manual ? "" : ` <button type="button" class="btn-link time-fix editable" data-time-open title="공개 시각을 어디서 읽었는지: ${esc(a.time_source || "-")}">시각 고치기</button>`);
   // 선행 공시 팝업: 기사 화면을 떠나지 않고 공시 제목·접수 시각·원문을 봄
@@ -3145,14 +3145,19 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <span class="form-msg" data-time-msg></span></form>`;
   }
   function bindTimeForm(box, a) {
-    const open = $("[data-time-open]", box), form = $("[data-time-form]", box);
+    const open = $("#art-act [data-time-open]"), form = $("[data-time-form]", box);
     if (!open || !form) return;
     const msg = $("[data-time-msg]", form);
     const send = async (ts) => {
       try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_time", id: a.id, ts, title: a.title }); }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
-    open.onclick = () => { form.hidden = !form.hidden; };
+    open.onclick = () => {
+      form.hidden = !form.hidden;
+      const menu = open.closest("details");
+      if (menu) menu.open = false;
+      if (!form.hidden) { form.scrollIntoView({ block: "nearest" }); $("[data-time-v]", form).focus({ preventScroll: true }); }
+    };
     form.onsubmit = (ev) => { ev.preventDefault(); const v = $("[data-time-v]", form).value; if (v) send(v); };
     const rs = $("[data-time-reset]", form);
     if (rs) rs.onclick = () => send(null);
@@ -3171,16 +3176,15 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const entries = articleEntries(a);
     const articleLinks = entries.length;
     const articleCountLabel = `${articleLinks}개`;
-    // 결론 먼저: 판정 · 실린 매체 · 장 외/공시 먼저
-    let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
-      <h2 class="pr-title">${esc(a.title)}</h2>
-      <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
-        : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
-        ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
+    const dayChartButton = a.ts ? (() => { // 장 마감 뒤·휴장일 공개는 반응일 날짜 표시를 유지.
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
           const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
-        })() : ""}</p>`;
+        })() : "";
+    const closeButton = `<button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button>`;
+    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc ? closeButton : `<div class="pr-detail-actions">${dayChartButton}${closeButton}</div>`}</div>
+      <h2 class="pr-title${isDisc ? "" : " pr-article-title"}">${!isDisc && a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</h2>`;
+    if (isDisc) html += `<p class="pr-meta">${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}${dayChartButton}</p>`;
     if (!isDisc) html += timeForm(a);
     const leadDisc = e.disclosure ? [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title) || e.disclosure : null;
     if (leadDisc) {
@@ -3271,13 +3275,14 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     enter(box);
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
-    if (!isDisc) bindTimeForm(box, a);
     const act = $("#art-act");
     if (act) act.innerHTML = isDisc ? "" : toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
+      + timeSrc(a)
       + `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
       + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
       : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`)
       + (toKinds.length ? `<span class="form-msg" id="art-fix-msg"></span>` : "");
+    if (!isDisc) bindTimeForm(box, a);
     const outPop = $("#outlets-pop", box), outOpen = $("#art-outlets");
     if (outPop && outOpen) {
       outOpen.onclick = () => { const m = outOpen.closest("details"); if (m) m.open = false; outPop.showModal(); };

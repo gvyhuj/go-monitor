@@ -151,7 +151,9 @@ async function main() {
       }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
       assert.equal(await related.locator("li").count(), 8);
       assert.equal(await page.locator("#related-articles-title").innerText(), "관련 기사 8개");
-      assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /회사 관련 보도|같은 내용 기사/);
+      assert.equal(await page.locator("#pr-detail .pr-meta").count(), 0, "기사의 언론사·공개 시각·기사 열기 줄 제거");
+      assert.equal(await page.locator(".pr-detail-actions .pr-daychart").count(), 1);
+      assert.equal(await page.locator(".pr-detail-actions #pr-close").count(), 1);
       assert.match(await page.locator('#art-list button[data-id="2001"]').innerText(), /같은 내용 기사 8개/);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
@@ -162,12 +164,14 @@ async function main() {
       assert.equal(await firstRow.locator("a .related-article-meta").count(), 1);
       assert.equal(await firstRow.evaluate((li) => Math.round(li.clientWidth - li.querySelector("a").getBoundingClientRect().width)), 0);
       await page.context().route("https://example.org/**", (route) => route.fulfill({ status: 200, body: "test article" }));
-      const popupPromise = page.waitForEvent("popup");
-      await firstRow.locator(".related-article-meta").click();
-      const articlePopup = await popupPromise;
-      await articlePopup.waitForLoadState();
-      assert.equal(articlePopup.url(), "https://example.org/2001");
-      await articlePopup.close();
+      for (const link of [firstRow.locator(".related-article-meta"), page.locator("#pr-detail .pr-title a")]) {
+        const popupPromise = page.waitForEvent("popup");
+        await link.click();
+        const articlePopup = await popupPromise;
+        await articlePopup.waitForLoadState();
+        assert.equal(articlePopup.url(), "https://example.org/2001");
+        await articlePopup.close();
+      }
       assert.equal(await related.evaluate((el) => !!(el.compareDocumentPosition(document.querySelector("#obs-extras")) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
       // '수정' 메뉴 → 실은 매체 · 같은 내용 합치기 팝업
       if (width > 700) {
@@ -225,12 +229,21 @@ async function main() {
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
 
-      // 시각 출처 글자는 없고 '시각 고치기'만(회색), 카드 3개가 줄을 꽉 채움
+      // 시각 고치기는 수정 메뉴에서 동작하고, 카드 3개는 줄을 꽉 채움.
       await page.goto(`${base}/#/pr/2003`);
       await page.locator("#pr-detail .pr-title").filter({ hasText: "반도체 장비용 렌즈 수주" }).waitFor();
-      assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /시각 출처/);
+      assert.equal(await page.locator("#pr-detail .pr-meta").count(), 0);
       assert.match(await page.locator("#pr-detail .intraday-box .vb-head").innerText(), /13:10 공개부터/, "머리 글과 그래프 기준 시각이 같음");
-      assert.equal(await page.locator("#pr-detail .pr-meta [data-time-open]").innerText(), "시각 고치기");
+      assert.equal(await page.locator(".art-more-menu [data-time-open]").textContent(), "시각 고치기");
+      await page.locator(".art-more > summary").click();
+      await page.locator(".art-more-menu [data-time-open]").click();
+      assert.equal(await page.locator("#pr-detail [data-time-form]").isVisible(), true);
+      assert.equal(await page.locator(".art-more").evaluate((el) => el.open), false);
+      await page.locator("#pr-detail [data-time-form]").evaluate((el) => el.hidden = true);
+      await page.locator(".pr-detail-actions .pr-daychart").click();
+      await page.waitForFunction(() => !document.querySelector("#day-modal").hidden);
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator("#day-modal").isVisible(), false);
       await page.locator("#pr-cards > div").first().waitFor();
       const cardGap = await page.evaluate(() => { const g = document.querySelector("#pr-cards"), c = [...g.children];
         return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
