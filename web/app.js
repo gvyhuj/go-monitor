@@ -3172,7 +3172,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const articleLinks = entries.length;
     const articleCountLabel = `${articleLinks}개`;
     // 결론 먼저: 판정 · 실린 매체 · 장 외/공시 먼저
-    let html = `      <div class="pr-close-row${isDisc ? "" : " pr-selected-bar"}"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc ? "" : `<span class="pr-selected-title" title="${esc(a.title)}">${esc(a.title)}</span>`}<button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
+    let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
       <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
         : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)} · ${kindTag(a)}${articleLinks > 1 ? ` · 같은 내용 기사 ${articleCountLabel}` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
