@@ -3156,11 +3156,13 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
     if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
+    const articleLinks = 1 + (a.related_titles || []).length;
+    const articleCountLabel = `기사 링크 ${articleLinks}개 · ${a.outlets_total || 1}개 매체`;
     // 결론 먼저: 판정 · 실린 매체 · 장 외/공시 먼저
     let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
       <h2 class="pr-title">${esc(a.title)}</h2>
       <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
-        : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
+        : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${articleLinks > 1 || a.outlets_total > 1 ? ` · 같은 내용 ${articleCountLabel}` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
         ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
           const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
@@ -3238,7 +3240,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
         : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
     const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
-    if (!isDisc) html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="muted">${outlets.length}건</small></h3>
+    if (!isDisc) html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="muted">${articleCountLabel}</small></h3>
+      ${outlets.length > (a.outlets_total || 1) ? `<p class="note">같은 매체의 원문·포털 링크가 함께 포함되어 기사 링크 수와 매체 수가 다를 수 있습니다.</p>` : ""}
       <ul>${outlets.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}</li>`).join("")}</ul>
       ${missing ? `<p class="note">개별 링크가 제공되지 않은 매체 ${missing}곳은 <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a>로 확인할 수 있습니다.</p>` : ""}</section>`;
     if (!isDisc) html += `<dialog class="disc-pop outlets-pop" id="outlets-pop" aria-label="이 기사를 실은 매체 · 같은 내용 합치기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>이 기사를 실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></strong><button type="button" class="btn-link" data-pop-close aria-label="닫기">✕</button></div><section class="outlet-list"><p class="muted">기사 링크 ${outlets.filter((r) => r.url).length}개</p>
