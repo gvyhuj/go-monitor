@@ -3776,7 +3776,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     location.hash = `#/search/${encodeURIComponent(q)}`;
   });
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
-    refreshStatus().then(route).then(relayTick);      // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값
+    // 처음 그리기 전에 실시간 값을 먼저 받아 둠 (정기 실행 때의 지난 값이 잠깐 보였다 바뀌지 않게). 장중이 아니거나 1.5초 안에 안 오면 그냥 그림
+    refreshStatus().then(() => Promise.race([relayTick(), new Promise((ok) => setTimeout(ok, 1500))])).then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
