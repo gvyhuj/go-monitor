@@ -1526,7 +1526,7 @@
       dayChart(true);
     };
     timers.push(setInterval(redrawToday, 30000));
-    onRelay = redrawToday;                  // 실시간 중계로 새 1분봉이 오면 바로
+    onRelay = () => { if (calState.sel === latest) drawHeadSide(); redrawToday(); };   // 실시간 값이 오면 큰 가격·주요 숫자·1분 차트를 바로
   }
   let recResize = null;
 
@@ -3776,7 +3776,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     location.hash = `#/search/${encodeURIComponent(q)}`;
   });
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
-    refreshStatus().then(route);
+    refreshStatus().then(route).then(relayTick);      // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });

@@ -381,8 +381,12 @@ async function main() {
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#q-price").waitFor({ state: "attached" });
-      await page.clock.runFor(16000);
-      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"));
+      // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값 (예전엔 첫 15초 동안 정기 실행 시각의 값이 보였음)
+      await page.clock.runFor(1000);
+      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"), null, { timeout: 3000 });
+      // 메인 화면 큰 가격도 실시간 값으로 (예전엔 새로고침해야 바뀌었음)
+      await page.waitForFunction(() => (document.querySelector("#rec-head .rh-p") || {}).textContent?.includes("12,345"), null, { timeout: 3000 });
+      await page.clock.runFor(15000);
       assert.match(await page.locator("#q-change").textContent(), /345[\s\S]*2\.88%[\s\S]*10:05 기준/);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.ok(seen.length >= 1 && seen.every((x) => x === "RELAY-AUTH"), "들어가는 값 머리말");
