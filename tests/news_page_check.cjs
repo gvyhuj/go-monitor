@@ -157,6 +157,17 @@ async function main() {
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
       assert.deepEqual(await related.locator("li a").evaluateAll((xs) => xs.map((a) => [a.getAttribute("href"), a.target])),
         await page.locator("#outlets-pop .outlet-list li a").evaluateAll((xs) => xs.map((a) => [a.getAttribute("href"), a.target])));
+      // 날짜·언론사와 행의 여백까지 하나의 원문 링크로 동작.
+      const firstRow = related.locator("li").first();
+      assert.equal(await firstRow.locator("a .related-article-meta").count(), 1);
+      assert.equal(await firstRow.evaluate((li) => Math.round(li.clientWidth - li.querySelector("a").getBoundingClientRect().width)), 0);
+      await page.context().route("https://example.org/**", (route) => route.fulfill({ status: 200, body: "test article" }));
+      const popupPromise = page.waitForEvent("popup");
+      await firstRow.locator(".related-article-meta").click();
+      const articlePopup = await popupPromise;
+      await articlePopup.waitForLoadState();
+      assert.equal(articlePopup.url(), "https://example.org/2001");
+      await articlePopup.close();
       assert.equal(await related.evaluate((el) => !!(el.compareDocumentPosition(document.querySelector("#obs-extras")) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
       // '수정' 메뉴 → 실은 매체 · 같은 내용 합치기 팝업
       if (width > 700) {
