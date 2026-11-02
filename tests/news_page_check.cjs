@@ -407,6 +407,26 @@ async function main() {
       assert.deepEqual(errors, []);
       await page.close();
     }
+    // 실시간이 안 될 때: 정기 자료(1분마다 다시 읽음)가 새로 올라오면 메인 큰 가격도 따라감 (예전엔 실시간 값이 올 때만 다시 그려 멈춰 있었음)
+    {
+      const dirB = await fs.mkdtemp(path.join(os.tmpdir(), "go-news-page-b-"));
+      execFileSync(python(), [path.join(__dirname, "fixtures", "news_page_site.py"), path.join(dirB, "site")], { stdio: "ignore", env: { ...process.env, FIXTURE_QUOTE: "1" } });
+      const liveB = await fs.readFile(path.join(dirB, "site", "d", "live.bin"));
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.install({ time: new Date("2026-10-28T10:05:10+09:00") });
+      await page.route("https://go-relay.test.workers.dev/live", (route) => route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } }));
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#rec-head .rh-p").waitFor();
+      assert.doesNotMatch(await page.locator("#rec-head .rh-p").textContent(), /13,000/);
+      await page.route("**/d/live.bin*", (route) => route.fulfill({ status: 200, body: liveB }));
+      await page.clock.runFor(95000);
+      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("13,000"), null, { timeout: 5000 });   // 정기 자료는 들어옴 (위쪽 작은 가격)
+      await page.waitForFunction(() => document.querySelector("#rec-head .rh-p").textContent.includes("13,000"), null, { timeout: 5000 });
+      await page.close();
+      await fs.rm(dirB, { recursive: true, force: true });
+    }
     // 휴대폰: 네이버 테마 링크는 모바일 증권 주소 (PC 주소는 휴대폰에서 네이버 모바일 증권 첫 화면으로 넘어감)
     {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,

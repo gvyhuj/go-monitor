@@ -97,6 +97,9 @@ def main(out: Path) -> None:
             "members": [{"id": "2099", "title": "충북TP 우주항공 기업 지원사업 선정", "kind": "ext"}]}, ensure_ascii=False)))
     # 실시간 중계 (주소·들어가는 값은 암호화된 상태 자료에만)
     db.set_state("relay:info", json.dumps({"url": "https://go-relay.test.workers.dev", "auth": "RELAY-AUTH", "ns": "ns", "fp": "x"}))
+    if os.environ.get("FIXTURE_QUOTE"):     # 정기 자료가 새로 올라온 판 (실시간이 안 될 때 큰 가격이 정기 자료를 따라가는지 검사용)
+        db.set_state(f"quote:{SYMBOL}", json.dumps({"price": 13000, "change": 3000, "change_pct": 30.0, "high": 13000, "low": 12000,
+                                                     "traded_at": "2026-10-28T10:20:00", "market_status": "OPEN"}))
     items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))
     sitebuild.build(out, PASSWORD, SALT, items)
 
