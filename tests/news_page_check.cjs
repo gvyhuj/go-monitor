@@ -381,6 +381,10 @@ async function main() {
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#q-price").waitFor({ state: "attached" });
+      // 새로고침 직후 정기 실행 때의 지난 값(예: 10:18)이 1초 보였다가 바뀌지 않게: 처음 그릴 때부터 실시간 값
+      await page.locator("#rec-head .rh-p").waitFor();
+      assert.match(await page.locator("#rec-head .rh-p").textContent(), /12,345/, "처음 그린 큰 가격이 이미 실시간 값");
+      assert.equal(await page.locator("#rec-chart .day-legend").count(), 0, "1분 차트 위 줄(시각·가격·1분 거래량) 없음");
       // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값 (예전엔 첫 15초 동안 정기 실행 시각의 값이 보였음)
       await page.clock.runFor(1000);
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"), null, { timeout: 3000 });

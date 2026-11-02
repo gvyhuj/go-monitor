@@ -1437,7 +1437,7 @@
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
-      chart = priceVolumeChart($(".day-chart", art), $(".day-legend", art), d.bars, {
+      chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
         news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
@@ -1787,7 +1787,7 @@
           <span class="tl-val num ${sgnCls(e.peak_return_5m)}">${pct(e.peak_return_5m)}<small>${moveBasis(e)}</small></span>
         </button>${e.tier === "요청" ? `<div class="tl-actions editable"><button type="button" class="btn-link" data-ev-del="${e.id}">이 기록 삭제</button><span class="form-msg"></span></div>` : ""}</li>`;
     const chart = d.bars.length
-      ? `<div class="day-legend"></div><div class="day-chart"></div><div class="range-panel"></div>`
+      ? `<div class="day-chart"></div><div class="range-panel"></div>`
       : `<p class="muted day-nochart">이날 1분봉 기록이 없습니다.</p>`;
     const list = rest.length
       ? `<ul class="timeline">${rest.map(row).join("")}</ul>`
@@ -3776,7 +3776,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     location.hash = `#/search/${encodeURIComponent(q)}`;
   });
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
-    refreshStatus().then(route).then(relayTick);      // 새로고침 직후 15초를 기다리지 않고 바로 실시간 값
+    // 처음 그리기 전에 실시간 값을 먼저 받아 둠 (정기 실행 때의 지난 값이 잠깐 보였다 바뀌지 않게). 장중이 아니거나 1.5초 안에 안 오면 그냥 그림
+    refreshStatus().then(() => Promise.race([relayTick(), new Promise((ok) => setTimeout(ok, 1500))])).then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
