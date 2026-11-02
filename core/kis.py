@@ -190,6 +190,8 @@ def members(code: str, market: str = "J") -> dict:
     """거래원(회원사) 그날 누적: 거래소가 공개하는 매수 상위 5곳·매도 상위 5곳 (주식현재가 회원사, FHKST01010600)."""
     o = _get("/uapi/domestic-stock/v1/quotations/inquire-member", "FHKST01010600",
              {"FID_COND_MRKT_DIV_CODE": market, "FID_INPUT_ISCD": code}).get("output") or {}
+    if isinstance(o, list):                 # 장중에는 output이 목록([{...}])으로 옴
+        o = o[0] if o else {}
     return parse_members(o)
 
 
