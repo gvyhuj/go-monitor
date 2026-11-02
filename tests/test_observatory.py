@@ -635,3 +635,13 @@ def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
         relay.check(); assert False
     except RuntimeError as e:
         assert str(e) == '중계 응답 503 token'
+
+
+def test_kis_members_output_as_list(monkeypatch):
+    # 장중 한투가 회원사 응답의 output을 목록([{...}])으로 줌 → 'list' object has no attribute 'get'로 거래원 수집이 실패하던 문제
+    from core import kis
+    buys = [('1', '키움증권', 9000, False)]
+    sells = [('3', '미래에셋', 8000, False)]
+    monkeypatch.setattr(kis, '_get', lambda *a, **k: {'rt_cd': '0', 'output': [_member_out(buys, sells)]})
+    info = kis.members('000001')
+    assert {t['name'] for t in info['traders']} == {'키움증권', '미래에셋'} and info['foreign_buy'] == 5000
