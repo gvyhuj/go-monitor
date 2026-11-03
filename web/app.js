@@ -2688,7 +2688,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     $("#piv-csv-all").onclick = () => csv("기사_원본전체", pivotRows(items, "outlet").sort((x, y) => (x.ts < y.ts ? 1 : -1)));
   }
 
-  async function pagePR(selId) {
+  async function pagePR(selId, { selectLatest = false } = {}) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">뉴스</h1>
         <p class="page-sub" id="art-sub"></p></div>${artViewSeg(false)}</div>
@@ -3016,6 +3016,15 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
     drawBulk();
+    // 뉴스 기본 주소로 들어올 때만 최신 보도자료를 선택. 전체 보기와 자동 갱신은 선택 상태를 유지.
+    if (!selId && selectLatest) {
+      const latest = shown("pr").reduce((best, e) => !best || byId.get(e.lead).ts > byId.get(best.lead).ts ? e : best, null);
+      if (latest) {
+        selId = latest.lead;
+        artState.cat = "pr";
+        history.replaceState(null, "", `#/pr/${selId}`);
+      }
+    }
     let current = selId;
     // 목록에서 기사·공시를 누르면: 페이지를 다시 그리지 않고(스크롤 그대로) 오른쪽 상세만 바꿈. 주소는 바꿔 두어 뒤로 가기·공유 가능
     const openInPlace = (id) => {
@@ -3798,7 +3807,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     else if (page === "calendar") { document.title = "주가 모니터"; await pageDashboard(); }
     else if (page === "days") { document.title = "일별 표 | 주가 모니터"; await pageDashboard("days"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
-    else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null, { selectLatest: !parts[1] }); }
     else if (page === "pivot") { document.title = "기사 대시보드 | 주가 모니터"; await pagePivot(); }
     else if (page === "react") { history.replaceState(null, "", parts[1] === "event" && parts[2] ? `#/pr/${parts[2]}` : "#/pr"); return route(); }   // 예전 뉴스 반응 주소 → 뉴스 목록
     else if (page === "method") { history.replaceState(null, "", "#/"); return route(); }      // README 탭은 없앰: 예전 주소는 주가 기록으로
