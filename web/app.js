@@ -1510,6 +1510,7 @@
       if (rb) {
         stopChartEntry();
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
+        chartEntryPending = calState.range !== "1d";
         box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
         $(".rec-period", box).hidden = calState.range !== "custom";
         if (calState.range === "custom") startPeriod(daily, calState, prev, box, "data-period");
@@ -1537,7 +1538,8 @@
     box.onchange = (ev) => {
       const j = ev.target.closest("[data-jump]");
       if (j) { jumpTo(j.value); return; }
-      const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
+      const p = ev.target.closest("[data-period]");
+      if (p && setPeriod(calState, p, "data-period")) { stopChartEntry(); chartEntryPending = true; lineChart(); } };
     // 날짜로 가기: 장이 열린 날이면 그날, 아니면 그 전 거래일 (기록 첫날보다 앞이면 첫날)
     function jumpTo(v) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v || "") || v === calState.sel) return;
