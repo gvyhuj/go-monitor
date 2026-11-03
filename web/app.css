@@ -1528,14 +1528,21 @@ dialog[open].disc-pop::backdrop { animation: mv-fade var(--dur) var(--ease); }
 /* 7 살짝 커졌다 돌아옴 (소식 건수 변화), 목록에 마우스 */
 .mv-pop { display: inline-block; animation: mv-pop 360ms var(--ease); }
 .art-list button { transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
-.art-list button:hover { transform: translateX(2px); }
+.art-list button:hover, .art-list button:focus-visible { transform: none; border-color: transparent; box-shadow: none; background: #f2f5fa; }
+.art-list button[aria-current="true"]:hover, .art-list button[aria-current="true"]:focus-visible { background: #edf3ff; box-shadow: inset 4px 0 0 var(--navy); }
+.art-list button:hover::after { transform: rotate(45deg); }
+.art-list button:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: -2px; }
 .ps-card, .tcard, .btn, .art-dd, .rx-g .rx-one { transition: box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-/* 8 갱신 중 표시: 초록 점이 천천히 퍼짐 */
-.engine[data-state="ok"] .dot { animation: mv-pulse 2.4s var(--ease) infinite; }
+/* 실제 시세 응답과 가격 변화를 구분. 크기·숫자·상승/하락 색은 그대로. */
+@keyframes quote-received { from { box-shadow: 0 0 0 4px rgba(39, 202, 139, .28); } to { box-shadow: 0 0 0 0 rgba(39, 202, 139, 0); } }
+@keyframes quote-changed { from { background-color: rgba(100, 143, 197, .18); } to { background-color: transparent; } }
+.engine.quote-received .dot { animation: quote-received 650ms ease-out; }
+.quote-changed { animation: quote-changed 650ms ease-out; }
 /* 뉴스 상세는 높이 제한 없이 페이지 스크롤로 읽음. 왼쪽 기사 목록만 고정. */
 /* 축하 종이 조각 (10% 이상 오른 날 하루 한 번) */
 .mv-confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
 @media (prefers-reduced-motion: reduce) {
+  .engine.quote-received .dot, .quote-changed { animation: none; }
   .mv-in, .mv-page, .mv-pop, .mv-reveal, dialog[open].disc-pop, dialog[open].disc-pop::backdrop, .art-pop, .art-more-menu, .engine .dot { animation: none !important; }
   .mv-grow .dash-row .bar { animation: none !important; }
   .mv-draw .rx-avg, .mv-draw .rx-one, .mv-draw-spark .kpi-spark polyline { animation: none !important; stroke-dasharray: none; stroke-dashoffset: 0; }

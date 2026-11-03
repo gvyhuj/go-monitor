@@ -780,6 +780,7 @@
       if (!res.ok) return;
       const d = await res.json();
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
+      const previousPrice = RELAY.date === t.day && RELAY.quote ? RELAY.quote.price : null;
       if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); RELAY.kq = new Map(); }
       (d.bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.bars.set(b.t, b); });
       (d.kosdaq_bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.kq.set(b.t, b); });
@@ -789,6 +790,13 @@
       renderQuote();
       if (!$("#alert") || $("#alert").hidden) engineLabel("");
       if (onRelay) onRelay();
+      // 받은 시세가 신선할 때만 반응. 가격이 같으면 갱신 점만, 달라지면 현재가도 짧게 강조.
+      if (!d.stale && d.quote.price != null && Date.now() - new Date(`${d.at}:00+09:00`).getTime() < 180000) {
+        if ((!$("#alert") || $("#alert").hidden) && $("#engine").dataset.state === "ok") drawOnce($("#engine"), "quote-received", 700);
+        if (!PAST_DAY && previousPrice != null && previousPrice !== d.quote.price && STATUS.quote.price === d.quote.price) {
+          [$("#q-price"), $("#rec-head .rh-p > span")].forEach((el) => drawOnce(el, "quote-changed", 700));
+        }
+      }
     } catch (_) { /* 중계가 안 되면 정기 갱신 자료로 */ }
   }
   /** 그날 1분봉에 중계로 받은 1분봉을 더함 (정기 실행이 아직 저장하지 않은 최근 분, 진행 중인 분은 새 값) */

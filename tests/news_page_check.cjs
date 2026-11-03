@@ -60,6 +60,15 @@ async function main() {
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
       assert.equal(await page.locator('#art-list button[aria-current="true"]').getAttribute("data-id"), "2001");
       assert.match(await page.locator("#pr-detail").innerText(), /광학미러 공급 계약 체결/);
+      if (width > 700) {
+        const row = page.locator('#art-list button[data-id="2002"]');
+        const before = await row.boundingBox();
+        await row.hover();
+        assert.deepEqual(await row.boundingBox(), before, "기사 hover로 위치·크기가 바뀌지 않음");
+        assert.equal(await row.evaluate((el) => getComputedStyle(el).boxShadow), "none");
+        assert.equal(await page.locator('#art-list button[data-id="2001"]').getAttribute("aria-current"), "true");
+        await page.mouse.move(0, 0);
+      }
       await page.locator("#pr-close").click();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
 
@@ -432,12 +441,20 @@ async function main() {
       await page.addInitScript(() => { window.__engine = []; new MutationObserver(() => { const e = document.querySelector("#engine"); if (e && window.__engine[window.__engine.length - 1] !== e.textContent.trim()) window.__engine.push(e.textContent.trim()); }).observe(document, { subtree: true, childList: true, characterData: true }); });
       const errors = [], seen = [];
       page.on("pageerror", (error) => errors.push(error.message));
-      let fail = false;
+      let fail = false, livePrice = 12345, stale = false;
+      await page.addInitScript(() => {
+        window.__feedback = [];
+        new MutationObserver((records) => records.forEach((r) => {
+          for (const cls of ["quote-received", "quote-changed"]) {
+            if (r.target.classList.contains(cls) && !(r.oldValue || "").split(" ").includes(cls)) window.__feedback.push(cls);
+          }
+        })).observe(document, { subtree: true, attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+      });
       await page.route("https://go-relay.test.workers.dev/live", (route) => {
         seen.push(route.request().headers()["x-go-auth"]);
         if (fail) return route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } });
         return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
-          body: JSON.stringify({ at: "2026-10-28T10:05", quote: { price: 12345, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
+          body: JSON.stringify({ at: "2026-10-28T10:05", stale, quote: { price: livePrice, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
             kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }],
             kosdaq_bars: [{ t: "2026-10-28T10:05", c: 812.34 }] }) });
       });
@@ -456,13 +473,28 @@ async function main() {
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"), null, { timeout: 3000 });
       // 메인 화면 큰 가격도 실시간 값으로 (예전엔 새로고침해야 바뀌었음)
       await page.waitForFunction(() => (document.querySelector("#rec-head .rh-p") || {}).textContent?.includes("12,345"), null, { timeout: 3000 });
+      await page.evaluate(() => { window.__feedback = []; });
       await page.clock.runFor(15000);
+      await page.waitForFunction(() => window.__feedback.includes("quote-received"));
+      assert.ok(!(await page.evaluate(() => window.__feedback)).includes("quote-changed"), "같은 가격이면 갱신 점만 반응");
       assert.match(await page.locator("#q-change").textContent(), /345[\s\S]*2\.88%[\s\S]*10:05 기준/);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.ok(seen.length >= 1 && seen.every((x) => x === "RELAY-AUTH"), "들어가는 값 머리말");
+      livePrice = 12346;
+      await page.evaluate(() => { window.__feedback = []; });
+      await page.clock.runFor(15000);
+      await page.waitForFunction(() => window.__feedback.includes("quote-changed"));
+      await page.clock.runFor(700);
+      assert.match(await page.locator("#rec-head .rh-p").textContent(), /12,346/);
+      stale = true; livePrice = 12345;
+      await page.evaluate(() => { window.__feedback = []; });
+      await page.clock.runFor(15000);
+      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"));
+      assert.deepEqual(await page.evaluate(() => window.__feedback), [], "오래된 응답이면 성공·변동 효과 없음");
       fail = true;                                     // 중계가 안 되면: 화면은 마지막 값 그대로, 오류 없음
       await page.clock.runFor(16000);
       assert.match(await page.locator("#q-price").textContent(), /12,345/);
+      assert.deepEqual(await page.evaluate(() => window.__feedback), [], "실패하면 성공 효과 없음");
       // 30초마다 도는 정기 자료 갱신이 '실시간 10:05'를 '갱신 (정기 실행 시각)'으로 덮어 시각이 왔다 갔다 하지 않음 (실시간 값이 2분 안이면)
       await page.clock.runFor(15000);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
