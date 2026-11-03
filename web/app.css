@@ -339,6 +339,10 @@ button.seg-chip:hover, button.seg-chip:focus-visible { border-color: var(--brand
 /* 부드러운 전환: 탭·날짜를 바꿀 때 차트·고른 날 칸이 0.2초 동안 서서히 나타남, 버튼·카드 색 변화도 0.2초 */
 @keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .rc-svg, .rec-daycard, .rc-day, .tcard .tv, .t-news-row { animation: fade-in .2s ease-out; }
+/* 주가 기록: 차트 진입 효과는 한 번만. 날짜·기간 전환과 자동 갱신에는 Fade도 반복하지 않음. */
+#rec-chart .rc-svg, #rec-chart .rc-day, #rec-daychart .rc-day, #rec-day .rec-daycard { animation: none; }
+@keyframes record-chart-entry { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+#rec-chart .record-chart-entry { animation: record-chart-entry 500ms ease-out; }
 .btn, .rec-tabs button, .seg a, .rules-btn, button.tcard, .tabs a { transition: background-color .2s, border-color .2s, color .2s, box-shadow .2s; }
 
 /* ------------------------------------------------------------ main */
@@ -563,6 +567,7 @@ table.data tbody tr.day-head:hover td { background: var(--canvas); }
 @media (prefers-reduced-motion: reduce) {
   .drawer-scrim, .drawer-panel { transition: none; }
   .rc-svg, .rec-daycard, .rc-day, .tcard .tv, .t-news-row, .toast, .is-done::before { animation: none; }
+  #rec-chart .record-chart-entry { animation: none; }
   .is-busy::after { animation-duration: 2s; }
 }
 

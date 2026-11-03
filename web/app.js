@@ -1157,6 +1157,16 @@
     const inRange = () => spanRows(daily, calState);
 
     let chart = null, loadSeq = 0, coarseAll = null, daySig = "";
+    let chartEntryPending = true;
+    const revealRecordChart = (el) => {
+      if (!chartEntryPending || !el) return;
+      chartEntryPending = false;
+      drawOnce(el, "record-chart-entry", 550);
+    };
+    const stopChartEntry = () => {
+      chartEntryPending = false;
+      box.querySelectorAll(".record-chart-entry").forEach((el) => el.classList.remove("record-chart-entry"));
+    };
     const st = {};
     function shell() {
       box.innerHTML = `<div class="bento" id="rec-bento"><section class="panel rec-card">
@@ -1384,6 +1394,7 @@
         if (spare > 8) return lineChart(Math.min(560, H + spare));
       }
       const svg = $(".rc-svg", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
+      revealRecordChart(svg);
       const hline = $(".rc-hline", el), halo = $(".rc-halo", el), xchip = $(".rc-xchip", el), ychip = $(".rc-ychip", el);
       const chip = (g, x, y, text, w) => { const t = $("text", g), r = $("rect", g); t.textContent = text; r.setAttribute("width", w); if (g === xchip) { r.setAttribute("x", -w / 2); } g.setAttribute("transform", `translate(${x},${y})`); g.setAttribute("visibility", "visible"); };
       let hot = null;
@@ -1467,6 +1478,7 @@
       const dayAsk = $("[data-day-ask]", art);
       if (dayAsk) dayAsk.onclick = () => openDay(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
       requestAnimationFrame(fitDayChart);
+      revealRecordChart($(".day-chart", art));
     }
 
     function dayPanel() {
@@ -1483,6 +1495,7 @@
     function render() { shell(); fillDay(); lineChart(); dayPanel(); dayChart(); }
     function pick(ds) {
       if (!price[ds]) return;
+      stopChartEntry();
       calState.sel = ds;
       fillDay(); lineChart(); dayPanel(); dayChart();
     }
@@ -1495,6 +1508,7 @@
       if (ib) { openTheme(ib.dataset.theme); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
+        stopChartEntry();
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
         box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
         $(".rec-period", box).hidden = calState.range !== "custom";

@@ -476,6 +476,7 @@ async function main() {
       await page.evaluate(() => { window.__feedback = []; });
       await page.clock.runFor(15000);
       await page.waitForFunction(() => window.__feedback.includes("quote-received"));
+      assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0, "실시간 갱신에는 차트 진입 효과 없음");
       assert.ok(!(await page.evaluate(() => window.__feedback)).includes("quote-changed"), "같은 가격이면 갱신 점만 반응");
       assert.match(await page.locator("#q-change").textContent(), /345[\s\S]*2\.88%[\s\S]*10:05 기준/);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
@@ -551,20 +552,36 @@ async function main() {
       await page.waitForFunction((before) => window.scrollY > before, scrollBefore);
       assert.equal(await page.locator("#pr-detail").evaluate((el) => el.scrollTop), 0);
       assert.notEqual(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain");
-      // 주가 기록: 기간·1일 차트는 선 그리기 없이 바로 (메인 차트), 날짜를 바꾸면 머리 박스 숫자 올라가기
-      await page.goto(`${base}/#/`);
+      // 주가 기록: 최초 진입만 짧게 나타남. 기간·날짜 이동에는 반복하지 않고 숫자 효과는 유지.
+      await page.evaluate(() => {
+        window.__recordEntries = [];
+        document.addEventListener("animationstart", (ev) => {
+          if (ev.animationName === "record-chart-entry") window.__recordEntries.push(ev.animationName);
+        });
+      });
+      await page.goto(`${base}/#/day/2026-10-22`);
       await page.locator("#rec-head .rh-box").waitFor();
-      for (const n of [1, 2]) {
-        await page.locator(".rec-tabs button").nth(n).click();
+      await page.waitForFunction(() => window.__recordEntries.length > 0);
+      assert.deepEqual(await page.evaluate(() => window.__recordEntries), ["record-chart-entry"]);
+      for (const range of ["1w", "1m", "3m", "1y", "all", "custom"]) {
+        await page.locator(`.rec-tabs button[data-range="${range}"]`).click();
         await page.locator("#rec-chart .rc-line").waitFor();
-        assert.equal(await page.locator("#rec-chart").evaluate((el) => el.classList.contains("mv-reveal") || el.getAnimations().length > 0), false, "기간 차트 선 그리기 없음");
+        assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0, "기간 변경에는 진입 효과 없음");
+        assert.equal(await page.locator("#rec-chart .rc-svg").evaluate((el) => getComputedStyle(el).animationName), "none", "기간 변경에는 Fade도 없음");
       }
       await page.locator('.rec-tabs button[data-range="1d"]').click();
       await page.locator("#rec-chart .rc-head").waitFor();
       assert.equal(await page.locator("#rec-chart .mv-reveal").count(), 0, "1일 차트 나타나기 없음");
-      await page.locator('[data-step="-1"]').first().click();
+      await page.locator('[data-jump]').evaluate((el) => { el.value = "2026-10-22"; el.dispatchEvent(new Event("change", { bubbles: true })); });
       await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));
       assert.ok(await page.locator("#rec-head [data-key='rh-price']").evaluate((el) => el.closest(".rh-box") !== null));
+      const prices = new Set();
+      for (let i = 0; i < 8; i++) { prices.add(await page.locator("#rec-head [data-key='rh-price']").textContent()); await page.waitForTimeout(40); }
+      assert.ok(prices.size > 1, "날짜 이동 시 가격 Count-up 유지");
+      await page.locator("#rec-chart .rc-day").waitFor();
+      assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0);
+      assert.equal(await page.locator("#rec-chart .rc-day").evaluate((el) => getComputedStyle(el).animationName), "none", "날짜 이동에는 Fade 없음");
+      assert.equal(await page.evaluate(() => window.__recordEntries.length), 1, "최초 진입 효과는 한 번만");
       // 뉴스 대시보드: 위 숫자 올라가기, 작은 추이선·월별 추이 선 그리기
       await page.goto(`${base}/#/pivot`);
       await page.locator("#dash-kpi [data-count]").first().waitFor();
