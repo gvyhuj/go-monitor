@@ -55,6 +55,14 @@ async function main() {
       const list = page.locator("#art-list button[data-id]");
       await list.first().waitFor();
 
+      // 뉴스 기본 진입: 가장 최근 보도자료가 선택되고 상세가 열림 (PC·모바일).
+      await page.locator("#pr-close").waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
+      assert.equal(await page.locator('#art-list button[aria-current="true"]').getAttribute("data-id"), "2001");
+      assert.match(await page.locator("#pr-detail").innerText(), /광학미러 공급 계약 체결/);
+      await page.locator("#pr-close").click();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr");
+
       // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 그린광학 보도자료.
       assert.deepEqual(await page.locator(".view-seg a").allInnerTexts(), ["목록", "대시보드"]);
       // README 탭 없음, 맨 아래 출처 문구·로그아웃 없음
@@ -226,8 +234,8 @@ async function main() {
       await page.locator("#pr-detail .pr-title").filter({ hasText: "광학미러 공급 계약 체결" }).waitFor();
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
       await page.goto(`${base}/#/react`);
-      await page.locator("#pr-detail .rx-ov").waitFor();
-      assert.equal(await page.evaluate(() => location.hash), "#/pr");
+      await page.locator("#pr-close").waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
 
       // 시각 고치기는 수정 메뉴에서 동작하고, 카드 3개는 줄을 꽉 채움.
       await page.goto(`${base}/#/pr/2003`);
@@ -297,7 +305,7 @@ async function main() {
       await page.locator("#days-body tr.is-flash").waitFor();
       // 기간 소식 → 같은 기간 뉴스 목록
       await page.locator("[data-news]").click();
-      await page.waitForFunction(() => location.hash === "#/pr");
+      await page.waitForFunction(() => location.hash.startsWith("#/pr/"));
       await page.locator("#art-cond-txt").waitFor();
       assert.match(await page.locator("#art-cond-txt").innerText(), /2026-09-21|9\/21|09-21/);
 
@@ -486,6 +494,7 @@ async function main() {
       await page.goto(`${base}/#/pr`);
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#pr-close").click();
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.equal(await page.locator("#rx-plot.mv-draw").count(), 1, "겹쳐 보기 선 그리기");
       // 조건을 바꿀 때마다 위 요약 숫자가 올라감 (처음 한 번만이 아니라)
