@@ -406,7 +406,11 @@ def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
     feed.update_quotes('000001')
     q = _json.loads(db.get_state('quote:000001')['value'])
     assert q['market_status'] == 'OPEN' and q['traded_at'] == '2026-11-02T10:05:00' and q['value_text'] == '0.12억' and q['market_cap'] == 1159e8
-    # 장 마감 뒤: 한투 현재가는 정규장 가격 → 시각은 15:30 (화면이 '시간외 포함'으로 쓰지 않게)
+    # 장 마감 뒤: 확인된 일봉 종가로 15:30 마감값을 표시.
+    db.set_state('regular_close:000001:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_daily',
+        'confirmed_at': '2026-11-02T16:00:00', 'open': 9800, 'high': 9950, 'low': 9780, 'close': 9900, 'volume': 1234, 'base': 9800}))
+    db.set_state('regular_close:KOSDAQ:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_daily',
+        'confirmed_at': '2026-11-02T16:00:00', 'open': 730, 'high': 731, 'low': 729, 'close': 730.1, 'volume': 10, 'base': 730.1 / 1.0079}))
     monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})
     monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 2, 16, 30))
     feed.update_quotes('000001')
@@ -424,7 +428,7 @@ def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
     feed.update_quotes('000001')
     assert _json.loads(db.get_state('quote:000001')['value'])['after']['price'] == 9950
     assert _json.loads(db.get_state('fund:000001')['value'])['info'] == {'per': 47.6, 'pbr': 1.77}
-    assert _json.loads(db.get_state('quote:KOSDAQ')['value'])['change_pct'] == 0.79
+    assert abs(_json.loads(db.get_state('quote:KOSDAQ')['value'])['change_pct'] - 0.79) < 1e-10
     macro.store_daily_kis('000001', [{'date': '2026-10-29', 'open': 1, 'high': 1, 'low': 1, 'close': 10150, 'volume': 1},
                                      {'date': '2026-10-30', 'open': 1, 'high': 1, 'low': 1, 'close': 9800, 'volume': 1}])
     with db.connect() as conn:

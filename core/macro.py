@@ -576,13 +576,30 @@ NAVER_BASE_KEY = "daily:naver_base_v1"
 
 def _sync_daily_kis(code: str, days: int = 150) -> int:
     from . import kis
-    end = datetime.now().date()
+    from .feed import kst_now
+    from .db import set_state
+    now = kst_now()
+    end = now.date()
     try:
         rows = kis.daily_range(kis.KOSDAQ_INDEX if code == KOSDAQ else code, (end - timedelta(days=days)).isoformat(),
                                end.isoformat(), index=code == KOSDAQ)
     except kis.KisError:
         return 0
-    return store_daily_kis(code, rows)
+    count = store_daily_kis(code, rows)
+    # 기존 일봉 조회를 재사용. 장 마감 뒤에 실제로 받은 날짜별 종가만 확인된 마감값으로 보관.
+    closed = [r for r in rows if r["date"] < end.isoformat() or
+              (r["date"] == end.isoformat() and now.strftime("%H:%M") >= "15:30")]
+    if closed:
+        day = closed[-1]["date"]
+        with connect() as conn:
+            row = conn.execute("SELECT date,open,high,low,close,volume,base FROM daily_bars WHERE symbol=? AND date=?", (code, day)).fetchone()
+            prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (code, day)).fetchone()
+        if row:
+            final = dict(row)
+            final["base"] = final["base"] or (prev[0] if prev else None)
+            final.update(source="kis_daily", confirmed_at=now.isoformat(timespec="seconds"))
+            set_state(f"regular_close:{code}:{day}", json.dumps(final))
+    return count
 
 
 def store_daily_kis(code: str, rows: list[dict]) -> int:

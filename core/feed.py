@@ -87,10 +87,34 @@ def sync_history(code: str, days: int = 14, now: datetime | None = None) -> int:
     return _upsert(code, completed_only(bars, now), "naver_history", replace=False)
 
 
+def verified_regular_close(code: str, day: str) -> dict | None:
+    st = get_state(f"regular_close:{code}:{day}")
+    try:
+        data = json.loads(st["value"]) if st else None
+        if data and data.get("source") == "kis_daily" and data.get("date") == day and data.get("close", 0) > 0 \
+                and data.get("confirmed_at", "") >= day + "T15:30:00":
+            return data
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _apply_regular_close(out: dict, code: str, day: str):
+    final = verified_regular_close(code, day)
+    if not final:
+        out["regular_close_pending"] = True
+        return
+    base = final.get("base") or (out["price"] - out["change"] if out.get("change") is not None else None)
+    out.update(price=final["close"], open=final["open"], high=final["high"], low=final["low"], volume=final["volume"],
+               regular_close=final, traded_at=day + "T15:30:00")
+    out["change"] = final["close"] - base if base else None
+    out["change_pct"] = (final["close"] / base - 1) * 100 if base else None
+
+
 def _kis_quotes(code: str):
-    """한투 현재가 → 화면이 쓰는 형식 (네이버 현재가와 같은 키). 한투 현재가(J)는 거래소 정규장 가격이라
-    체결 시각은 장중 지금, 장 마감 뒤·다음 날 장 전에는 마지막 거래일 15:30 (장외 시세는 쓰지 않음 →
-    화면은 '시간외 포함'이 아니라 '정규장 종가')."""
+    """장중은 한투 현재가, 마감 후는 별도로 확인한 한투 일봉 종가.
+    현재가 조회 시각을 15:30 확정 종가의 근거로 사용하지 않는다.
+    """
     from . import kis
     now = kst_now().replace(tzinfo=None)
     q = kis.quote(code)
@@ -105,7 +129,9 @@ def _kis_quotes(code: str):
            "value_text": f"{q['value'] / 1e8:.2f}억" if q.get("value") else None,
            "market_cap": q["market_cap_100m"] * 1e8 if q.get("market_cap_100m") else None,
            "market_status": "OPEN" if open_ else "CLOSE", "traded_at": at, "fetched_at": now.isoformat(timespec="seconds")}
-    after = _kis_after(code, now, is_today, q["price"])
+    if not open_:
+        _apply_regular_close(out, code, at[:10])
+    after = _kis_after(code, now, is_today, out["price"]) if out.get("regular_close") else None
     if after and after["date"] == (last_day or "")[:10]:
         out["after"] = after
     set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
@@ -115,9 +141,11 @@ def _kis_quotes(code: str):
         k = kis.index_quote()
     except kis.KisError:
         return
-    set_state(f"quote:{KOSDAQ}", json.dumps({"price": k["price"], "change": k["change"], "change_pct": k["rate"],
-                                               "market_status": out["market_status"], "traded_at": at,
-                                               "fetched_at": out["fetched_at"]}, ensure_ascii=False))
+    index = {"price": k["price"], "change": k["change"], "change_pct": k["rate"],
+             "market_status": out["market_status"], "traded_at": at, "fetched_at": out["fetched_at"]}
+    if not open_:
+        _apply_regular_close(index, KOSDAQ, at[:10])
+    set_state(f"quote:{KOSDAQ}", json.dumps(index, ensure_ascii=False))
 
 
 def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
@@ -139,6 +167,8 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
             saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
                      "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00")}
             set_state(f"after:{code}", json.dumps(saved))
+    if saved and saved.get("date") == now.date().isoformat() and close:
+        saved = {**saved, "change": saved["price"] - close, "rate": saved["price"] / close - 1}
     return saved
 
 
