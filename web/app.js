@@ -380,6 +380,7 @@
     timers = [];
     resumePage = null;
     onRelay = null;
+    onStatusQuote = null;
   }
 
   // ---------------------------------------------------------------- charts
@@ -687,6 +688,7 @@
         showAlert(null);
       }
       renderQuote();
+      if (onStatusQuote) onStatusQuote();
       renderFoot();
       return;
     }
@@ -703,6 +705,7 @@
       showAlert(null);
     }
     renderQuote();
+    if (onStatusQuote) onStatusQuote();
     renderFoot();
   }
 
@@ -757,6 +760,7 @@
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
   const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null };
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
+  let onStatusQuote = null;      // 중계가 실패해도 정기 수집으로 받은 새 시세를 주가 기록 머리에 반영
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
   function applyRelay() {
     if (!STATUS || !RELAY.quote || RELAY.quote.price == null || !RELAY.at) return;
@@ -1157,6 +1161,8 @@
     const inRange = () => spanRows(daily, calState);
 
     let chart = null, loadSeq = 0, coarseAll = null, daySig = "";
+    const quoteSig = () => JSON.stringify([STATUS && STATUS.quote, STATUS && STATUS.kosdaq]);
+    let displayedQuoteSig = "";
     let chartEntryPending = true;
     const revealRecordChart = (el) => {
       if (!chartEntryPending || !el) return;
@@ -1281,6 +1287,7 @@
           <dl class="rs-kv">${kv(tipK("PER"), ratio("per"))}${kv(tipK("PBR"), ratio("pbr"))}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
+      displayedQuoteSig = quoteSig();
       const h = $("#rec-head"), s = $("#rec-side");
       if (h) { h.innerHTML = headHtml(); countUp(h); }      // 날짜를 바꾸면 가격·등락·KOSDAQ 숫자가 이전 값에서 새 값으로
       if (s) s.innerHTML = sideHtml();
@@ -1561,6 +1568,9 @@
     };
     timers.push(setInterval(redrawToday, 30000));
     onRelay = () => { if (calState.sel === latest) drawHeadSide(); redrawToday(); };   // 실시간 값이 오면 큰 가격·주요 숫자·1분 차트를 바로
+    onStatusQuote = () => {
+      if (calState.sel === latest && quoteSig() !== displayedQuoteSig) drawHeadSide();
+    };
   }
   let recResize = null;
 
