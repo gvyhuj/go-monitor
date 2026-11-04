@@ -111,6 +111,32 @@ def _apply_regular_close(out: dict, code: str, day: str):
     out["change_pct"] = (final["close"] / base - 1) * 100 if base else None
 
 
+def _ensure_regular_closes(code: str, now: datetime):
+    """보관된 수집 완료 플래그와 무관하게 누락된 마감 확인만 보완. 실패 시 10분 쉬고 재확인."""
+    from . import macro
+    day = now.date().isoformat()
+    missing = [c for c in (code, KOSDAQ) if not verified_regular_close(c, day)]
+    key = f"regular_close_check:{code}:{day}"
+    old = get_state(key)
+    if missing and (not old or now - datetime.fromisoformat(old["value"]) >= timedelta(minutes=10)):
+        set_state(key, now.isoformat(timespec="seconds"))
+        for c in missing:
+            macro._sync_daily_kis(c)
+    # 현재가 재조회 간격이 아직 안 되었더라도 기존 화면용 값은 확인된 마감값으로 즉시 정규화.
+    for c in (code, KOSDAQ):
+        saved = get_state(f"quote:{c}")
+        quote = json.loads(saved["value"]) if saved else None
+        final = verified_regular_close(c, day)
+        if quote and not final and str(quote.get("traded_at", ""))[:10] == day and not quote.get("regular_close_pending"):
+            quote.update(regular_close_pending=True, market_status="CLOSE")
+            set_state(f"quote:{c}", json.dumps(quote))
+        if quote and final and str(quote.get("traded_at", ""))[:10] == day and quote.get("regular_close") != final:
+            _apply_regular_close(quote, c, day)
+            quote.pop("regular_close_pending", None)
+            quote["market_status"] = "CLOSE"
+            set_state(f"quote:{c}", json.dumps(quote))
+
+
 def _kis_quotes(code: str):
     """장중은 한투 현재가, 마감 후는 별도로 확인한 한투 일봉 종가.
     현재가 조회 시각을 15:30 확정 종가의 근거로 사용하지 않는다.
@@ -122,6 +148,8 @@ def _kis_quotes(code: str):
         last_day = conn.execute("SELECT MAX(substr(ts,1,10)) FROM minute_bars WHERE symbol=?", (code,)).fetchone()[0]
     hm = now.strftime("%H:%M")
     is_today = last_day == now.date().isoformat()
+    if is_today and hm >= "15:30":
+        _ensure_regular_closes(code, now)
     open_ = is_today and "09:00" <= hm < "15:30"
     at = f"{now.date().isoformat()}T{hm}:00" if open_ else f"{last_day or now.date().isoformat()}T15:30:00"
     out = {"name": None, "price": q["price"], "change": q["change"], "change_pct": q["rate"], "open": q["open"],

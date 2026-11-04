@@ -29,6 +29,8 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
     monkeypatch.setattr(kis, 'quote', quote)
     monkeypatch.setattr(kis, 'index_quote', lambda: {'price': 715, 'change': 10, 'rate': 1.5})
     monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})
+    db.set_state('regular_close:KOSDAQ:2026-11-04', json.dumps({'date': '2026-11-04', 'source': 'kis_daily',
+        'confirmed_at': '2026-11-04T16:55:00', 'open': 715, 'high': 715, 'low': 715, 'close': 715, 'volume': 100, 'base': 705}))
     feed.update_quotes('000001')
     out = json.loads(db.get_state('quote:000001')['value'])
     assert out['price'] == 9870 and out['change'] == 120 and out['high'] == 10010
@@ -58,3 +60,23 @@ def test_intraday_daily_is_not_a_confirmed_close(tmp_path, monkeypatch):
     quote = {'price': 10070, 'change': 320}
     feed._apply_regular_close(quote, '000001', '2026-11-04')
     assert quote['regular_close_pending'] and quote['price'] == 10070
+
+
+def test_missing_close_check_is_throttled_and_stops_after_confirmation(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
+    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'test.db')
+    db.init_db()
+    calls = []
+    monkeypatch.setattr(macro, '_sync_daily_kis', lambda c: calls.append(c))
+    now = datetime(2026, 11, 4, 17, 0)
+    feed._ensure_regular_closes('000001', now)
+    feed._ensure_regular_closes('000001', now)
+    assert calls == ['000001', 'KOSDAQ']
+    for c in ('000001', 'KOSDAQ'):
+        db.set_state(f'regular_close:{c}:2026-11-04', json.dumps({'date': '2026-11-04', 'source': 'kis_daily',
+            'confirmed_at': '2026-11-04T17:00:00', 'close': 9870, 'base': 9750, 'open': 9820, 'high': 10010, 'low': 9350, 'volume': 100}))
+    db.set_state('quote:000001', json.dumps({'price': 10070, 'change': 320, 'traded_at': '2026-11-04T15:30:00', 'regular_close_pending': True}))
+    feed._ensure_regular_closes('000001', datetime(2026, 11, 4, 18, 0))
+    assert calls == ['000001', 'KOSDAQ']
+    quote = json.loads(db.get_state('quote:000001')['value'])
+    assert quote['price'] == 9870 and not quote.get('regular_close_pending')
