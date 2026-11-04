@@ -188,7 +188,11 @@ class Collector:
                 self._safe("테마 마감 등락", macro.snapshot_themes, self.code, now, today.isoformat())
             if feed.is_weekday(today) and now.time() >= feed.time(15, 50) and self.eod_daily_on != today:
                 self.eod_daily_on = today
-                self._safe("일봉", macro.sync_daily_bars, [self.code, feed.KOSDAQ] + self.peer_trader_codes())
+                # 마감 직후 이미 확인한 종목·지수 일봉은 중복 조회하지 않음.
+                from core import kis
+                codes = [c for c in (self.code, feed.KOSDAQ)
+                         if not kis.enabled() or not feed.verified_regular_close(c, today.isoformat())]
+                self._safe("일봉", macro.sync_daily_bars, codes + self.peer_trader_codes())
             if now.time() >= feed.time(6, 30) and now.time() < feed.time(8, 59) and self.overseas_on != today:
                 self.overseas_on = today
                 self._safe("해외 방산주·유가", macro.sync_overseas)
@@ -278,6 +282,9 @@ class Collector:
         self.collect_context(now)
 
         try:
+            from core import kis
+            if kis.enabled() and now.time() >= feed.time(15, 30) and self.traded_today(today):
+                feed._ensure_regular_closes(self.code, now)
             if feed.is_market_window(now):
                 own_err = None
                 try:                               # 실패해도 다음 실행이 마지막으로 받은 분 뒤부터 이어 받음 (빠지는 분 없음)
