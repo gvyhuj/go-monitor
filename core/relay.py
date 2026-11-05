@@ -166,11 +166,9 @@ def check() -> str:
         a = d.get("after") or {}
         if d.get("stale"):
             raise RuntimeError("시간외 중계가 이전 응답을 반환함")
-        fallback = a.get("source") == "naver" and a.get("session") == "afterMarket"
-        if not a.get("price") or not (a.get("volume") or fallback):
+        if not a.get("price") or not a.get("volume") or a.get("source") == "naver":
             return f"시간외 시세 미확인 ({d.get('at')} 조회)"
-        label = "시간외 시세 · 네이버" if fallback else "시간외 단일가"
-        return f"{label} {a['price']:,}원 ({d.get('at')} 조회)"
+        return f"시간외 단일가 {a['price']:,}원 ({d.get('at')} 조회)"
     q = d.get("quote") or {}
     if q.get("price") is None:
         raise RuntimeError("중계가 현재가를 주지 않음")

@@ -411,7 +411,6 @@ def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
         'confirmed_at': '2026-11-02T16:30:00', 'open': 9800, 'high': 9950, 'low': 9780, 'close': 9900, 'volume': 1234, 'base': 9800}))
     db.set_state('regular_close:KOSDAQ:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_regular_minute', 'asof': '2026-11-02T15:30',
         'confirmed_at': '2026-11-02T16:30:00', 'open': 730, 'high': 731, 'low': 729, 'close': 730.1, 'volume': 10, 'base': 730.1 / 1.0079}))
-    monkeypatch.setattr(feed.naver, 'fetch_overtime_quote', lambda *a: None)
     monkeypatch.setattr(feed, '_confirm_closing_minute', lambda *a: None)
     monkeypatch.setattr(macro, '_sync_daily_kis', lambda *a, **kw: 0)
     monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})

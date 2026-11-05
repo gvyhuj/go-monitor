@@ -28,7 +28,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -195,28 +195,6 @@ def fetch_quote(code: str, is_index: bool = False) -> dict:
     kind = "index" if is_index else "stock"
     url = f"https://polling.finance.naver.com/api/realtime/domestic/{kind}/{code}"
     return parse_quote(http_get(url))
-
-
-def overtime_from_quote(q: dict, day: str) -> dict | None:
-    """장외 세션·날짜·시각이 명시된 응답만 사용. 일반 현재가를 시간외 가격으로 추정하지 않는다."""
-    if q.get("market_session") != "afterMarket" or not q.get("price") or q["price"] <= 0:
-        return None
-    try:
-        traded = datetime.fromisoformat(q["traded_at"])
-        if traded.tzinfo is None:
-            return None
-        traded = traded.astimezone(timezone(timedelta(hours=9)))
-        if traded.date().isoformat() != day or not "16:00" <= traded.strftime("%H:%M") <= "18:30":
-            return None
-    except (KeyError, ValueError, TypeError):
-        return None
-    return {"date": day, "price": q["price"], "volume": None, "source": "naver", "session": "afterMarket",
-            "traded_at": traded.isoformat(), "at": traded.strftime("%H:%M")}
-
-
-def fetch_overtime_quote(code: str, day: str) -> dict | None:
-    raw = http_get(f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code}", timeout=5, retries=0)
-    return overtime_from_quote(parse_quote(raw), day)
 
 
 # ------------------------------------------------------------------ 원인 분석용
