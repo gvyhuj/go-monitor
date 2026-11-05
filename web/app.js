@@ -18,6 +18,7 @@
   let STATUS = null;          // 마지막 /api/status
   let charts = [];            // 페이지 전환 시 정리할 차트
   let timers = [];            // 페이지 전용 타이머
+  let resumePage = null;      // 탭·창으로 돌아오면 현재 화면의 자료 확인
 
   // ---------------------------------------------------------------- format
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -377,7 +378,9 @@
     charts = [];
     timers.forEach(clearInterval);
     timers = [];
-    onRelay = null; onQuote = null;
+    resumePage = null;
+    onRelay = null;
+    onStatusQuote = null;
   }
 
   // ---------------------------------------------------------------- charts
@@ -685,7 +688,7 @@
         showAlert(null);
       }
       renderQuote();
-      if (onQuote) onQuote();
+      if (onStatusQuote) onStatusQuote();
       renderFoot();
       return;
     }
@@ -702,6 +705,7 @@
       showAlert(null);
     }
     renderQuote();
+    if (onStatusQuote) onStatusQuote();
     renderFoot();
   }
 
@@ -729,7 +733,8 @@
     if (!relayTried && STATUS && STATUS.relay && STATUS.relay.url) return;
     const stuck = ((STATUS && STATUS.collect && STATUS.collect.sources) || []).some((r) => r.stale);
     const fresh = RELAY.at && Date.now() - new Date(`${RELAY.at}:00+09:00`).getTime() < 180000;
-    const label = fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
+    const afterFresh = RELAY.afterAt && RELAY.after && Date.now() - new Date(`${RELAY.afterAt}:00+09:00`).getTime() < 180000;
+    const label = afterFresh ? `시간외 조회 ${RELAY.afterAt.slice(11, 16)}` : fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
     setEngine(stuck ? "stale" : "ok", stuck ? `${label} · 수집 확인 필요` : label);
   }
   function setEngine(state, label) {
@@ -749,20 +754,29 @@
     const q = STATUS && STATUS.quote;
     if (!q || q.price == null || q.change_pct == null || !q.traded_at || q.traded_at.slice(0, 10) !== date) return null;
     const at = q.traded_at.slice(11, 16), open = q.market_status === "OPEN";
-    return { price: q.price, chg: q.change_pct / 100, at, open, closed: !open && at >= "15:30", ext: at > "15:30" };
+    return { price: q.price, chg: q.change_pct / 100, at, open, pending: !!q.regular_close_pending, closed: !open && !q.regular_close_pending && at >= "15:30", ext: at > "15:30" };
   }
 
   // ---------------------------------------------------------------- 실시간 중계 (장중 15초마다: Cloudflare Worker → 한투)
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
-  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null };
-  let onRelay = null, onQuote = null;       // onQuote: 정기 자료가 새로 오면 메인 큰 가격·주요 숫자를 다시 그림            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
+  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null, after: null, afterAt: null };
+  let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
+  let onStatusQuote = null;      // 중계가 실패해도 정기 수집으로 받은 새 시세를 주가 기록 머리에 반영
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
+  const validOvertime = (a) => a && a.source === "kis" && Number.isFinite(a.price) && a.price > 0
+    && Number.isFinite(a.volume) && a.volume > 0;
   function applyRelay() {
+    if (STATUS && STATUS.quote && RELAY.after && STATUS.quote.traded_at?.slice(0, 10) === RELAY.after.date) {
+      const previous = STATUS.quote.after;
+      if (!previous || (previous.queried_at || `${previous.date}T${previous.at}`) <= RELAY.after.queried_at) STATUS.quote.after = RELAY.after;
+    }
     if (!STATUS || !RELAY.quote || RELAY.quote.price == null || !RELAY.at) return;
     const q = STATUS.quote || {}, at = `${RELAY.at}:00`, r = RELAY.quote;
+    if (q.regular_close && q.regular_close.date === at.slice(0, 10)) return;   // 같은 날 확인된 종가는 일반 현재가 중계가 덮지 않음
     if (q.traded_at && q.traded_at.slice(0, 10) === at.slice(0, 10) && q.traded_at > at) return;   // 정기 자료가 더 새로우면 그대로
     STATUS.quote = { ...q, price: r.price, change: r.change, change_pct: r.rate, open: r.open, high: r.high, low: r.low, volume: r.volume,
-      value_text: r.value != null ? `${(r.value / 1e8).toFixed(2)}억` : q.value_text, market_status: "OPEN", traded_at: at, relay: true };
+      value_text: r.value != null ? `${(r.value / 1e8).toFixed(2)}억` : q.value_text, market_status: "OPEN", traded_at: at, relay: true,
+      regular_close: null, regular_close_pending: false };
     const k = RELAY.kosdaq;
     if (k && k.price != null) STATUS.kosdaq = { ...(STATUS.kosdaq || {}), price: k.price, change: k.change, change_pct: k.rate, market_status: "OPEN", traded_at: at };
   }
@@ -773,12 +787,28 @@
   }
   async function relayAsk() {
     const r = STATUS && STATUS.relay, t = kstParts();
-    if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || t.hm < 900 || t.hm > 1531) return;
+    const overtime = t.hm >= 1600 && t.hm <= 1800;
+    if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || (!overtime && (t.hm < 900 || t.hm > 1531))) return;
+    if (overtime && STATUS.quote?.traded_at?.slice(0, 10) !== t.day) return;
     try {
       const res = await fetch(`${r.url}/live`, { headers: { "x-go-auth": r.auth }, cache: "no-store" });
       if (!res.ok) return;
       const d = await res.json();
+      if (overtime && d.session !== "overtime") return;  // 이전 버전 중계의 일반 현재가를 장외 값으로 합치지 않음
+      if (d.session === "overtime") {
+        if (!overtime || !d.at || d.at.slice(0, 10) !== t.day || d.stale) return;
+        const a = d.after, previous = RELAY.after;
+        if (validOvertime(a) && a.date === t.day) {
+          RELAY.after = a; RELAY.afterAt = d.at;
+          applyRelay();
+          if (onStatusQuote) onStatusQuote();
+          if (!$("#alert") || $("#alert").hidden) { engineLabel(""); if ($("#engine").dataset.state === "ok") drawOnce($("#engine"), "quote-received", 700); }
+          if (!PAST_DAY && previous && previous.date === a.date && previous.price !== a.price) drawOnce($("#rec-head .rh-p > span"), "quote-changed", 700);
+        }
+        return;  // 시간외 값은 정규장 시세·분봉·분석에 합치지 않음
+      }
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
+      const previousPrice = RELAY.date === t.day && RELAY.quote ? RELAY.quote.price : null;
       if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); RELAY.kq = new Map(); }
       (d.bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.bars.set(b.t, b); });
       (d.kosdaq_bars || []).forEach((b) => { if (b.t && b.t.slice(0, 10) === t.day && b.c != null) RELAY.kq.set(b.t, b); });
@@ -788,6 +818,13 @@
       renderQuote();
       if (!$("#alert") || $("#alert").hidden) engineLabel("");
       if (onRelay) onRelay();
+      // 받은 시세가 신선할 때만 반응. 가격이 같으면 갱신 점만, 달라지면 현재가도 짧게 강조.
+      if (!d.stale && d.quote.price != null && Date.now() - new Date(`${d.at}:00+09:00`).getTime() < 180000) {
+        if ((!$("#alert") || $("#alert").hidden) && $("#engine").dataset.state === "ok") drawOnce($("#engine"), "quote-received", 700);
+        if (!PAST_DAY && previousPrice != null && previousPrice !== d.quote.price && STATUS.quote.price === d.quote.price) {
+          [$("#q-price"), $("#rec-head .rh-p > span")].forEach((el) => drawOnce(el, "quote-changed", 700));
+        }
+      }
     } catch (_) { /* 중계가 안 되면 정기 갱신 자료로 */ }
   }
   /** 그날 1분봉에 중계로 받은 1분봉을 더함 (정기 실행이 아직 저장하지 않은 최근 분, 진행 중인 분은 새 값) */
@@ -809,7 +846,7 @@
     const change = live ? live.chg : row.change ?? e.peak_return_5m;
     return { change, price: live ? live.price : row.close,
       kosdaq: row.kosdaq ?? e.kosdaq_change,
-      label: live ? `${live.at} ${live.ext ? "시간외 포함 최종가" : live.open ? "현재가" : "정규장 종가"}`
+      label: live ? live.pending ? "종가 확인 중 · 최근 조회가" : `${live.at} ${live.ext ? "시간외 포함 최종가" : live.open ? "현재가" : "정규장 종가"}`
         : row.close != null ? "일봉 종가" : `${hhmm(e.last_ts || e.peak_ts)} 저장된 하루 기록`,
       live };
   }
@@ -834,7 +871,7 @@
       $("#q-price").textContent = won(price);
       const cls = change > 0 ? "up" : change < 0 ? "down" : "";
       const arrow = change > 0 ? "▲" : change < 0 ? "▼" : "";
-      const asof = q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준`
+      const asof = q.regular_close_pending ? "종가 확인 중" : q.market_status === "OPEN" ? `${(q.traded_at || "").slice(11, 16)} 기준`
         : lv && lv.ext ? `장 마감 · 시간외 포함 ${lv.at}` : "장 마감";
       $("#q-change").innerHTML = `<span class="chg ${cls}">${arrow} ${won(Math.abs(change))} (${pctRaw(cp)})</span><span class="asof">${asof}</span>`;
       $("#q-volume").innerHTML = `${int(q.volume)}<small>주</small>`;
@@ -1148,6 +1185,18 @@
     const inRange = () => spanRows(daily, calState);
 
     let chart = null, loadSeq = 0, coarseAll = null, daySig = "";
+    const quoteSig = () => JSON.stringify([STATUS && STATUS.quote, STATUS && STATUS.kosdaq]);
+    let displayedQuoteSig = "";
+    let chartEntryPending = true;
+    const revealRecordChart = (el) => {
+      if (!chartEntryPending || !el) return;
+      chartEntryPending = false;
+      drawOnce(el, "record-chart-entry", 550);
+    };
+    const stopChartEntry = () => {
+      chartEntryPending = false;
+      box.querySelectorAll(".record-chart-entry").forEach((el) => el.classList.remove("record-chart-entry"));
+    };
     const st = {};
     function shell() {
       box.innerHTML = `<div class="bento" id="rec-bento"><section class="panel rec-card">
@@ -1176,12 +1225,16 @@
       }
     }
 
-    // 시간외 단일가 (거래소 16:00~18:00): 큰 가격(정규장 종가) 바로 아래 한 줄, 그날 체결이 있을 때만. 등락은 정규장 종가 대비
-    function afterHtml(ds) {
-      const a = STATUS && STATUS.quote && STATUS.quote.after;
-      if (!a || a.date !== ds || a.price == null) return "";
-      const arrow = a.rate > 0 ? "▲" : a.rate < 0 ? "▼" : "";
-      return `<span class="rh-after" title="거래소 시간외 단일가 (16:00~18:00, 정규장 종가 대비)">시간외 <b class="${sgnCls(a.rate)}">${won(a.price)}원 ${arrow}${(Math.abs(a.rate) * 100).toFixed(2)}%</b> ${esc(a.at)}</span>`;
+    // 큰 가격만 시간외 단일가를 사용. 정규장 종가·차트·분석은 별도 유지.
+    function overtimeFor(ds) {
+      const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts();
+      if (ds !== latest || ds !== t.day || t.hm < 1600 || !q || q.market_status === "OPEN" || q.regular_close_pending
+        || !validOvertime(a) || a.date !== ds) return null;
+      return a;
+    }
+    function afterHtml(ds, close, after) {
+      if (after) return `<span class="rh-after">정규장 종가 ${won(close)}원 · 15:30</span>`;
+      return "";
     }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
@@ -1189,18 +1242,22 @@
       if (!px) return "";
       const live = ds === latest ? liveFor(ds) : null;
       const close = live ? live.price : px.close, chg = live ? live.chg : px.change, kq = px.kosdaq;
-      const base = px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
+      const base = (live && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
+      const after = overtimeFor(ds), afterBase = (STATUS && STATUS.quote && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || base;
+      const shownPrice = after ? after.price : close, shownChg = after ? afterBase ? after.price / afterBase - 1 : null : chg;
+      const afterChange = after && afterBase ? after.price - afterBase : null;
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;
       const done = !(live && live.open);
-      const tag = ds === latest ? `<span class="day-now">${live ? `${live.at} ${live.open ? "현재" : live.ext ? "시간외 포함" : "정규장 마감"}` : "장 마감"}</span>` : "";
+      const tag = ds === latest ? `<span class="day-now">${live ? live.pending ? "종가 확인 중" : `${live.at} ${live.open ? "현재" : live.ext ? "시간외 포함" : "정규장 마감"}` : "장 마감"}</span>` : "";
       const r = (v) => (base && v ? pct(v / base - 1) : "-");
       const ext = live ? live.ext : false;
       const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
-          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
-        <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span>${afterHtml(ds)}</span>
+          <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${live && live.pending ? "최근 조회가 " : done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
+        <span class="rh-r${after ? " rh-overtime" : ""}"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
+          ${after ? `<span class="rh-session"><span>시간외 단일가</span> ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")} 조회</span>` : ""}
+          <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small>${after ? '<span class="rh-move">' : ""}<b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b>${after ? `<small class="${sgnCls(afterChange)}">${afterChange == null ? "-" : `${afterChange > 0 ? "+" : afterChange < 0 ? "−" : ""}${won(Math.abs(afterChange))}원`} · 전일 대비</small></span>` : ""}</span>${afterHtml(ds, close, after)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
@@ -1262,6 +1319,7 @@
           <dl class="rs-kv">${kv(tipK("PER"), ratio("per"))}${kv(tipK("PBR"), ratio("pbr"))}</dl></div>` : ""}`;
     }
     function drawHeadSide() {
+      displayedQuoteSig = quoteSig();
       const h = $("#rec-head"), s = $("#rec-side");
       if (h) { h.innerHTML = headHtml(); countUp(h); }      // 날짜를 바꾸면 가격·등락·KOSDAQ 숫자가 이전 값에서 새 값으로
       if (s) s.innerHTML = sideHtml();
@@ -1375,6 +1433,7 @@
         if (spare > 8) return lineChart(Math.min(560, H + spare));
       }
       const svg = $(".rc-svg", el), cross = $(".dl-cross", el), dot = $(".rc-dot", el);
+      revealRecordChart(svg);
       const hline = $(".rc-hline", el), halo = $(".rc-halo", el), xchip = $(".rc-xchip", el), ychip = $(".rc-ychip", el);
       const chip = (g, x, y, text, w) => { const t = $("text", g), r = $("rect", g); t.textContent = text; r.setAttribute("width", w); if (g === xchip) { r.setAttribute("x", -w / 2); } g.setAttribute("transform", `translate(${x},${y})`); g.setAttribute("visibility", "visible"); };
       let hot = null;
@@ -1458,6 +1517,7 @@
       const dayAsk = $("[data-day-ask]", art);
       if (dayAsk) dayAsk.onclick = () => openDay(d, arts, i > 0 ? daily[i - 1].date : null, price[ds]);
       requestAnimationFrame(fitDayChart);
+      revealRecordChart($(".day-chart", art));
     }
 
     function dayPanel() {
@@ -1474,6 +1534,7 @@
     function render() { shell(); fillDay(); lineChart(); dayPanel(); dayChart(); }
     function pick(ds) {
       if (!price[ds]) return;
+      stopChartEntry();
       calState.sel = ds;
       fillDay(); lineChart(); dayPanel(); dayChart();
     }
@@ -1486,7 +1547,9 @@
       if (ib) { openTheme(ib.dataset.theme); return; }
       const rb = ev.target.closest("[data-range]");
       if (rb) {
+        stopChartEntry();
         const was = calState.range, prev = was === "1d" ? [] : inRange(); calState.range = rb.dataset.range;
+        chartEntryPending = calState.range !== "1d";
         box.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b === rb)));
         $(".rec-period", box).hidden = calState.range !== "custom";
         if (calState.range === "custom") startPeriod(daily, calState, prev, box, "data-period");
@@ -1514,7 +1577,8 @@
     box.onchange = (ev) => {
       const j = ev.target.closest("[data-jump]");
       if (j) { jumpTo(j.value); return; }
-      const p = ev.target.closest("[data-period]"); if (p && setPeriod(calState, p, "data-period")) lineChart(); };
+      const p = ev.target.closest("[data-period]");
+      if (p && setPeriod(calState, p, "data-period")) { stopChartEntry(); chartEntryPending = true; lineChart(); } };
     // 날짜로 가기: 장이 열린 날이면 그날, 아니면 그 전 거래일 (기록 첫날보다 앞이면 첫날)
     function jumpTo(v) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v || "") || v === calState.sel) return;
@@ -1535,8 +1599,10 @@
       dayChart(true);
     };
     timers.push(setInterval(redrawToday, 30000));
-    onQuote = () => { if (calState.sel === latest) drawHeadSide(); };
-    onRelay = () => { onQuote(); redrawToday(); };   // 실시간 값이 오면 큰 가격·주요 숫자·1분 차트를 바로
+    onRelay = () => { if (calState.sel === latest) drawHeadSide(); redrawToday(); };   // 실시간 값이 오면 큰 가격·주요 숫자·1분 차트를 바로
+    onStatusQuote = () => {
+      if (calState.sel === latest && quoteSig() !== displayedQuoteSig) drawHeadSide();
+    };
   }
   let recResize = null;
 
@@ -2688,18 +2754,18 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     $("#piv-csv-all").onclick = () => csv("기사_원본전체", pivotRows(items, "outlet").sort((x, y) => (x.ts < y.ts ? 1 : -1)));
   }
 
-  async function pagePR(selId) {
+  async function pagePR(selId, { selectLatest = false } = {}) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><div><h1 class="page-title">뉴스</h1>
         <p class="page-sub" id="art-sub"></p></div>${artViewSeg(false)}</div>
       <div id="pr-score"></div>
-      <div class="controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
+      <div class="controls news-controls"><div class="seg" id="art-cat" aria-label="기사 구분"></div>
         <input type="search" class="art-search" id="art-q" placeholder="제목·매체·제출인 검색" aria-label="기사·공시 검색" autocomplete="off"><span id="art-day"></span>
         <div class="art-cond-wrap"><button type="button" class="art-dd" id="art-cond" aria-expanded="false" aria-controls="art-pop">조건 ▾ <b id="art-cond-txt"></b></button><div class="art-pop" id="art-pop" role="dialog" aria-label="목록 조건" hidden></div></div>
         <label class="art-dd">정렬 <select id="art-sort" aria-label="정렬"><option value="time">최신순</option><option value="up">많이 오른 순</option><option value="down">많이 내린 순</option></select></label>
         <details class="art-more art-right editable"><summary aria-label="수정">수정 ▾</summary><div class="art-more-menu">
-          <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <button class="btn-link" type="button" id="pr-toggle" title="자동으로 모이지 않은 보도자료나 정확한 배포 시각을 아는 기사를 직접 넣습니다">기사 등록</button>
+          <button class="btn-link" type="button" id="art-multi" title="기사 여러 개를 골라 한 번에 삭제하거나 구분을 바꿉니다">여러 개 고르기</button>
           <span class="art-act" id="art-act"></span></div></details></div>
       <form class="panel form pr-form editable" id="pr-form" autocomplete="off" hidden>
         <p class="hint">네이버·구글 뉴스에서 자동으로 모이지 않은 보도자료나, 정확한 배포 시각을 아는 기사를 등록합니다.</p>
@@ -2965,11 +3031,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       }
       ul.innerHTML = list.map((e) => {
         const a = byId.get(e.lead), ef = a.effect || {};
+        const articleCount = articleEntries(a).length;
         const pickable = multi.on && !a.manual;
         return `<li><button type="button" data-id="${esc(a.id)}" aria-current="${a.id === current}"${multi.on ? ` aria-pressed="${multi.ids.has(a.id)}"${a.manual ? ' data-nopick="1" title="직접 등록한 기사는 하나씩 삭제합니다"' : ""}` : ""}>
           ${multi.on ? `<span class="pick-box${pickable ? "" : " off"}" aria-hidden="true"></span>` : ""}<span class="al-meta"><span class="ktag k-office">${esc(a.office || "-")}</span>${toneTag(a.tone)}<span class="muted">${dayLabel(a.ts)} ${hhmm(a.ts)}</span>${artFlags(ef, a, e)}</span>
           <span class="t">${esc(a.title)}</span>
-          ${verdictTag(ef) || e.outlets > 1 ? `<span class="al-foot">${verdictTag(ef)}${e.outlets > 1 ? `<span class="muted">${e.outlets}개 매체</span>` : ""}</span>` : ""}${rxCell(e)}</button></li>`;
+          ${verdictTag(ef) || articleCount > 1 ? `<span class="al-foot">${verdictTag(ef)}${articleCount > 1 ? `<span class="muted">같은 내용 기사 ${articleCount}개</span>` : ""}</span>` : ""}${rxCell(e)}</button></li>`;
       }).join("");
       ul.onclick = (ev) => {
         const b = ev.target.closest("button[data-id]"); if (!b) return;
@@ -3015,6 +3082,15 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
     drawBulk();
+    // 뉴스 기본 주소로 들어올 때만 최신 보도자료를 선택. 전체 보기와 자동 갱신은 선택 상태를 유지.
+    if (!selId && selectLatest) {
+      const latest = shown("pr").reduce((best, e) => !best || byId.get(e.lead).ts > byId.get(best.lead).ts ? e : best, null);
+      if (latest) {
+        selId = latest.lead;
+        artState.cat = "pr";
+        history.replaceState(null, "", `#/pr/${selId}`);
+      }
+    }
     let current = selId;
     // 목록에서 기사·공시를 누르면: 페이지를 다시 그리지 않고(스크롤 그대로) 오른쪽 상세만 바꿈. 주소는 바꿔 두어 뒤로 가기·공유 가능
     const openInPlace = (id) => {
@@ -3065,7 +3141,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     if (CLOUD) {
       const displayedPublication = LIVE && LIVE.published_at;
       let checking = false;
-      timers.push(setInterval(async () => {
+      const checkPublication = async () => {
         if (checking || document.hidden) return;
         checking = true;
         const activeRoute = location.hash;
@@ -3084,7 +3160,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           requestAnimationFrame(() => { main.style.minHeight = ""; });
         } catch (_) {
         } finally { checking = false; }
-      }, 30000));
+      };
+      resumePage = checkPublication;
+      timers.push(setInterval(checkPublication, 30000));
     }
     if (!items.length && !discs.length) { $("#pr-detail").innerHTML = `<div class="empty"><strong>아직 기사가 없습니다.</strong>자동 수집이 돌면 몇 분 안에 모입니다.</div>`; return; }
     if (!current) { showOverview(); return; }
@@ -3092,6 +3170,17 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   }
 
   let discById = new Map();     // 기사·공시 모음 화면이 받아 둔 공시 (기사의 '공시 먼저'를 그 공시로 잇는 데 씀)
+  // 수집 원본·기사 ID는 유지하고, 동일 URL만 표시·집계할 때 한 번 사용.
+  function articleEntries(a) {
+    const seen = new Set();
+    return [{ ...a, ts: a.own_ts || a.ts, lead: true }, ...(a.related_titles || a.related || [])].filter((r) => {
+      const url = String(r.url || "").trim();
+      if (!url) return true;
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+  }
   const kindTag = (a) => `<span class="ktag ${a.kind === "pr" ? "k-pr" : a.kind === "disc" ? "k-disc" : "k-ext"}">${a.kind === "pr" ? "확인된 자체 보도자료" : a.kind === "company" ? "회사 관련 보도" : a.kind === "disc" ? "공시" : "외부 기사"}</span>${a.vol_rank != null && a.vol_rank <= 0.05 ? '<span class="tier watch" title="반응일 거래량이 직전 60거래일 중 상위 5% 안">거래량 급증</span>' : ""}`;
   const artFlags = (ef, row = null, event = null) => `${row && row.time_quality === "check_time" || event && event.time_check ? '<span class="tier watch" title="구글 뉴스 게시 시각이 반복되는 시간대입니다. 오류가 확정된 것은 아니며, 원문 시각 확인이 필요합니다">공개 시각 확인 필요</span>' : ""}${event && event.followup_of ? '<span class="tier watch">기존 정보 재보도</span>' : ""}${event && event.followup_candidate_of ? '<span class="tier watch">후속 보도 검토</span>' : ""}`;
 
@@ -3104,7 +3193,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <tr><th>이 종목</th>${rows.map((r) => `<td class="${sgnCls(r.own)}${r.minutes === main ? " main" : ""}">${pct(r.own)}</td>`).join("")}</tr>
       <tr><th>KOSDAQ</th>${rows.map((r) => `<td class="${sgnCls(r.kq)}">${pct(r.kq)}</td>`).join("")}</tr>
       <tr><th>차이</th>${rows.map((r) => { const v = r.own != null && r.kq != null ? (Object.hasOwn(r,"diff") ? r.diff : r.own - r.kq) : null; return `<td class="${sgnCls(v)}">${points(v)}</td>`; }).join("")}</tr></tbody></table>`;
-  // 공개 시각 출처 (모든 분석의 기준이라 늘 보여 줌). 구글 뉴스 16·17시처럼 의심스러우면 표시
+  // 수정 메뉴의 공개 시각 확인·수정 동작.
   const timeSrc = (a) => (a.time_quality === "check_time" ? ` <span class="time-src warn" title="구글 뉴스 시각이 16:00·17:00으로 반복됨">시각 확인 필요</span>` : "")
     + (a.manual ? "" : ` <button type="button" class="btn-link time-fix editable" data-time-open title="공개 시각을 어디서 읽었는지: ${esc(a.time_source || "-")}">시각 고치기</button>`);
   // 선행 공시 팝업: 기사 화면을 떠나지 않고 공시 제목·접수 시각·원문을 봄
@@ -3131,14 +3220,19 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <span class="form-msg" data-time-msg></span></form>`;
   }
   function bindTimeForm(box, a) {
-    const open = $("[data-time-open]", box), form = $("[data-time-form]", box);
+    const open = $("#art-act [data-time-open]"), form = $("[data-time-form]", box);
     if (!open || !form) return;
     const msg = $("[data-time-msg]", form);
     const send = async (ts) => {
       try { msg.className = "form-msg"; msg.textContent = await sendInbox({ type: "article_time", id: a.id, ts, title: a.title }); }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     };
-    open.onclick = () => { form.hidden = !form.hidden; };
+    open.onclick = () => {
+      form.hidden = !form.hidden;
+      const menu = open.closest("details");
+      if (menu) menu.open = false;
+      if (!form.hidden) { form.scrollIntoView({ block: "nearest" }); $("[data-time-v]", form).focus({ preventScroll: true }); }
+    };
     form.onsubmit = (ev) => { ev.preventDefault(); const v = $("[data-time-v]", form).value; if (v) send(v); };
     const rs = $("[data-time-reset]", form);
     if (rs) rs.onclick = () => send(null);
@@ -3154,16 +3248,18 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const a = d.article, e = d.effect, m = e.minute, dl = e.daily;
     if (!a.kind) a.kind = a.manual ? "pr" : a.category === "회사 발표" ? "company" : "ext";
     const noun = isDisc ? "공시" : "기사";
-    // 결론 먼저: 판정 · 실린 매체 · 장 외/공시 먼저
-    let html = `      <div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span><button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button></div>
-      <h2 class="pr-title">${esc(a.title)}</h2>
-      <p class="pr-meta">${isDisc ? `${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}`
-        : `${esc(a.office)} · ${dayLabel(a.own_ts || a.ts)} ${hhmm(a.own_ts || a.ts)} 공개${timeSrc(a)}${a.outlets_total > 1 ? ` · 같은 내용 ${a.outlets_total}개 매체` : ""}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">기사 열기</a>` : ""}`}
-        ${a.ts ? (() => {      // 장 마감 뒤·휴장일 공개는 반응일(다음 거래일) 차트 → 날짜를 버튼에 적음
+    const entries = articleEntries(a);
+    const articleLinks = entries.length;
+    const articleCountLabel = `${articleLinks}개`;
+    const dayChartButton = a.ts ? (() => { // 장 마감 뒤·휴장일 공개는 반응일 날짜 표시를 유지.
           const rd = e.reaction_day || a.ts.slice(0, 10), other = rd !== a.ts.slice(0, 10);
           const ck = isDisc ? "disc" : a.kind === "pr" || a.kind === "company" ? "pr" : "ext";
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
-        })() : ""}</p>`;
+        })() : "";
+    const closeButton = `<button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button>`;
+    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc ? closeButton : `<div class="pr-detail-actions">${dayChartButton}${closeButton}</div>`}</div>
+      <h2 class="pr-title${isDisc ? "" : " pr-article-title"}">${!isDisc && a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</h2>`;
+    if (isDisc) html += `<p class="pr-meta">${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}${dayChartButton}</p>`;
     if (!isDisc) html += timeForm(a);
     const leadDisc = e.disclosure ? [...discById.values()].find((x) => x.ts === e.disclosure.ts && x.title === e.disclosure.title) || e.disclosure : null;
     if (leadDisc) {
@@ -3210,10 +3306,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 한 줄 동작: AI에게 묻기(질문 복사) · 구분 바꾸기 (직접 등록한 기사는 늘 그린광학 보도자료)
+    // AI에게 묻기는 상세에, 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id || toKinds.length) html += `<div class="obs-cta art-fix">${d.observation_event_id ? `<button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button>` : ""}
-        ${toKinds.map((k) => `<button class="btn editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")}<span class="form-msg" id="art-fix-msg"></span></div>`;
+    if (d.observation_event_id) html += `<div class="obs-cta art-fix"><button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button></div>`;
     html += `<div class="obs-folds">`;
 
     // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)
@@ -3228,14 +3323,20 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       html += ev ? `<section class="evidence">${ev}</section>` : "";
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
-    const outlets = [{ id: a.id, manual: a.manual, merged: !!a.story_with, ts: a.own_ts || a.ts, office: a.office, title: a.title, url: a.url, lead: true }, ...(a.related_titles || [])];
+    const outlets = entries.map((r) => r.lead ? { ...r, merged: !!a.story_with } : r);
     const missing = Math.max(0, (a.outlets_total || 1) - outlets.length);
     // 같은 기사가 두 번 들어온 경우(직접 등록 + 자동 수집 등) 한쪽을 지울 수 있게: 직접 등록은 삭제, 자동 수집은 이 줄만 숨김
-    // 대표(목록에 보이는 제목·언론사): 다른 매체 줄의 '대표로'를 누르면 그 기사로 바꿈 (반응 계산 시각은 가장 먼저 나온 때 그대로)
+    // 가장 이른 공개 시각이 같은 기사들 사이에서만 대표를 직접 고를 수 있음.
     const leadBtn = (r) => (outlets.length < 2 ? ""
-      : r.lead ? ` <span class="tier watch" title="목록에 보이는 제목·언론사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="자동(직접 등록 → 가장 먼저 나온 기사)으로 되돌립니다">자동으로</button>` : ""}`
-        : r.id ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="이 기사의 제목·언론사를 목록에 대표로 보여 줍니다">대표로</button>` : "");
+      : r.lead ? ` <span class="tier watch" title="가장 먼저 공개된 대표 기사">대표</span>${a.picked ? ` <button type="button" class="btn-link editable lead-pick" data-lead="" title="가장 이른 공개 시각의 기사 중 자동으로 선택합니다">자동으로</button>` : ""}`
+        : r.id && r.ts === a.ts ? ` <button type="button" class="btn-link editable lead-pick" data-lead="${esc(r.id)}" title="가장 이른 공개 시각이 같은 이 기사를 대표로 보여 줍니다">대표로</button>` : "");
     const link = (r) => `<li><span class="muted" title="시각 출처: ${esc(r.time_source || (r.lead ? a.time_source : "") || "-")}">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span>${leadBtn(r)} ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}${outlets.length > 1 && r.id ? ` <button type="button" class="btn-link editable dup-del" data-dup="${esc(r.id)}" data-manual="${r.manual ? 1 : 0}">삭제</button>` : ""}${r.merged ? ` <button type="button" class="btn-link editable unmerge" data-unmerge="${esc(r.id)}" title="직접 합친 기사(와 같이 들어온 기사)를 이 묶음에서 뺍니다">묶음에서 빼기</button>` : ""}</li>`;
+    if (!isDisc) html += `<section class="outlet-list" id="related-articles" aria-labelledby="related-articles-title"><h3 id="related-articles-title">관련 기사 <small class="muted">${articleCountLabel}</small></h3>
+      <ul>${outlets.map((r) => {
+        const row = `<span class="related-article-meta">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span><span class="related-article-title">${esc(r.title)}</span>`;
+        return `<li>${r.url ? `<a class="related-article-row" href="${esc(r.url)}" target="_blank" rel="noopener">${row}</a>` : `<span class="related-article-row">${row}</span>`}</li>`;
+      }).join("")}</ul>
+      ${missing ? `<p class="note">개별 링크가 제공되지 않은 매체 ${missing}곳은 <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a>로 확인할 수 있습니다.</p>` : ""}</section>`;
     if (!isDisc) html += `<dialog class="disc-pop outlets-pop" id="outlets-pop" aria-label="이 기사를 실은 매체 · 같은 내용 합치기"><div class="disc-pop-body"><div class="disc-pop-head"><strong>이 기사를 실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></strong><button type="button" class="btn-link" data-pop-close aria-label="닫기">✕</button></div><section class="outlet-list"><p class="muted">기사 링크 ${outlets.filter((r) => r.url).length}개</p>
       <p class="note">같은 매체의 자사 사이트·포털 링크가 함께 있을 수 있습니다. 매체 수는 중복을 제외합니다.</p>
       <ul>${outlets.map(link).join("")}</ul>
@@ -3249,11 +3350,14 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     enter(box);
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
-    if (!isDisc) bindTimeForm(box, a);
     const act = $("#art-act");
-    if (act) act.innerHTML = isDisc ? "" : `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
+    if (act) act.innerHTML = isDisc ? "" : toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
+      + timeSrc(a)
+      + `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
       + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
-      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`);
+      : `<button class="btn-link" type="button" id="art-hide" title="관계없는 기사를 목록에서 뺍니다 (다시 표시할 수 있음)">${a.hidden ? "목록에 다시 표시" : "목록에서 삭제"}</button>`)
+      + (toKinds.length ? `<span class="form-msg" id="art-fix-msg"></span>` : "");
+    if (!isDisc) bindTimeForm(box, a);
     const outPop = $("#outlets-pop", box), outOpen = $("#art-outlets");
     if (outPop && outOpen) {
       outOpen.onclick = () => { const m = outOpen.closest("details"); if (m) m.open = false; outPop.showModal(); };
@@ -3312,7 +3416,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       lst.hidden = false; lst.innerHTML = `<p class="loading">불러오는 중…</p>`;
       let items = [];
       try { items = (await api("/api/articles")).items || []; } catch (err) { lst.innerHTML = `<p class="form-msg err">${esc(err.message)}</p>`; return; }
-      const t0 = new Date(a.ts).getTime(), mine = new Set(outlets.map((r) => r.id));
+      const t0 = new Date(a.ts).getTime(), mine = new Set([a, ...(a.related_titles || [])].map((r) => r.id));
       const near = items.filter((x) => !x.manual && !mine.has(x.id) && x.ts && Math.abs(new Date(x.ts).getTime() - t0) <= 3 * 864e5)
         .sort((p, q) => Math.abs(new Date(p.ts).getTime() - t0) - Math.abs(new Date(q.ts).getTime() - t0)).slice(0, 15);
       lst.innerHTML = near.length ? `<p class="note">이 기사와 같은 내용인 기사를 모두 고른 뒤 아래 버튼을 누르면 한 번에 이 묶음으로 합쳐집니다 (고른 기사와 이미 묶여 있던 기사도 함께). 앞뒤 3일, 가까운 순.</p>
@@ -3350,7 +3454,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
     }));
     const queued = (btn, text) => { btn.disabled = true; btn.textContent = STATIC ? "GitHub 창에서 [Create]를 누르면 반영됩니다" : "요청을 보냈습니다 (다음 자동 수집 때 반영)"; btn.title = text || ""; };
-    box.querySelectorAll(".art-fix [data-kind], .art-fix [data-tone]").forEach((b) => b.addEventListener("click", async () => {
+    main.querySelectorAll("#art-act [data-kind], .art-fix [data-tone]").forEach((b) => b.addEventListener("click", async () => {
       const msg = $("#art-fix-msg");
       const item = b.dataset.kind ? { type: "article_kind", id: a.id, kind: b.dataset.kind, title: a.title }
         : { type: "article_tone", id: a.id, tone: +b.dataset.tone, title: a.title };
@@ -3769,7 +3873,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     else if (page === "calendar") { document.title = "주가 모니터"; await pageDashboard(); }
     else if (page === "days") { document.title = "일별 표 | 주가 모니터"; await pageDashboard("days"); }
     else if (page === "cloud" && !CLOUD) { document.title = "어디서나 보기 | 주가 모니터"; await pageCloud(); }
-    else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null); }
+    else if (page === "pr") { document.title = "뉴스 | 주가 모니터"; await pagePR(parts[1] || null, { selectLatest: !parts[1] }); }
     else if (page === "pivot") { document.title = "기사 대시보드 | 주가 모니터"; await pagePivot(); }
     else if (page === "react") { history.replaceState(null, "", parts[1] === "event" && parts[2] ? `#/pr/${parts[2]}` : "#/pr"); return route(); }   // 예전 뉴스 반응 주소 → 뉴스 목록
     else if (page === "method") { history.replaceState(null, "", "#/"); return route(); }      // README 탭은 없앰: 예전 주소는 주가 기록으로
@@ -3790,6 +3894,16 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     refreshStatus().then(() => Promise.race([relayTick(), new Promise((ok) => setTimeout(ok, 1500))])).then(route);
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") relayTick(); });
+    let resuming = false;
+    const resume = async () => {
+      if (document.hidden || resuming) return;
+      resuming = true;
+      try {
+        await Promise.allSettled([refreshStatus(), relayTick(), resumePage && resumePage()]);
+      } finally { resuming = false; }
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", (ev) => { if (ev.persisted) resume(); });
   });
 })();

@@ -71,6 +71,11 @@ def main(out: Path) -> None:
             conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) "
                          "VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (aid, SYMBOL, ts, office, title, f"https://example.org/{aid}", category, "제목", aid, ts))
+        # 8개 기사에 동일 URL 두 건이 중복 수집되어도 8개만 표시·집계.
+        for i in range(9):
+            aid, ts = f"210{i}", f"2026-10-22T10:{6 + i:02d}"
+            conn.execute("INSERT INTO articles(id,symbol,ts,office,title,url,category,mention,story,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (aid, SYMBOL, ts, f"검증매체{i % 7}", "광학미러 공급 계약 체결", f"https://example.org/210{i % 7}", "회사 발표", "제목", "2001", ts))
         # 2003 기사보다 8분 먼저 접수된 같은 내용의 공시 → 기사 화면에 '선행 공시'
         conn.execute("INSERT INTO disclosures(no,symbol,date,ts,title,kind,pblntf,filer) VALUES (?,?,?,?,?,?,?,?)",
                      ("20261015000901", SYMBOL, "2026-10-15", "2026-10-15T13:02", "단일판매ㆍ공급계약체결", "공급계약", "I", "검증 종목"))
@@ -97,9 +102,6 @@ def main(out: Path) -> None:
             "members": [{"id": "2099", "title": "충북TP 우주항공 기업 지원사업 선정", "kind": "ext"}]}, ensure_ascii=False)))
     # 실시간 중계 (주소·들어가는 값은 암호화된 상태 자료에만)
     db.set_state("relay:info", json.dumps({"url": "https://go-relay.test.workers.dev", "auth": "RELAY-AUTH", "ns": "ns", "fp": "x"}))
-    if os.environ.get("FIXTURE_QUOTE"):     # 정기 자료가 새로 올라온 판 (실시간이 안 될 때 큰 가격이 정기 자료를 따라가는지 검사용)
-        db.set_state(f"quote:{SYMBOL}", json.dumps({"price": 13000, "change": 3000, "change_pct": 30.0, "high": 13000, "low": 12000,
-                                                     "traded_at": "2026-10-28T10:20:00", "market_status": "OPEN"}))
     items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))
     sitebuild.build(out, PASSWORD, SALT, items)
 

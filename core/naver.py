@@ -185,6 +185,7 @@ def parse_quote(raw: bytes) -> dict:
         "value_text": d.get("accumulatedTradingValue"),          # 네이버 화면 그대로 ('0.58억')
         "market_cap": _num(d.get("marketValueFullRaw")),         # 원 단위 (가격과 같은 순간의 시총)
         "market_status": d.get("marketStatus"),          # OPEN / CLOSE ...
+        "market_session": d.get("marketSessionType"),   # 장외 여부는 OPEN/CLOSE가 아니라 명시된 세션으로 확인
         "traded_at": d.get("localTradedAt"),
         "fetched_at": datetime.now().isoformat(timespec="seconds"),
     }

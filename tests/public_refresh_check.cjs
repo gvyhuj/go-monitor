@@ -140,6 +140,18 @@ async function main() {
     await tick();
     assert.equal(await detail.getAttribute("data-marker"), "kept");
 
+    // Returning to the window checks immediately, without waiting for the 30-second timer.
+    revision = 3;
+    const beforeResume = liveRequests;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await detail.getByText("배포 3").first().waitFor();
+    assert.ok(liveRequests > beforeResume);
+    assert.equal(await selected(), SECOND);
+    revision = 4;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await detail.getByText("배포 4").first().waitFor();
+    assert.equal(await selected(), SECOND);
+
     assert.deepEqual(errors, []);
     console.log("기사 화면 자동 갱신 검증 통과: 새 배포 반영 · 입력 중 보류 · 선택 유지 · 변경 없을 때 유지");
   } finally {

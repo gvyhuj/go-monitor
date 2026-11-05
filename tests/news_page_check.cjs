@@ -55,6 +55,23 @@ async function main() {
       const list = page.locator("#art-list button[data-id]");
       await list.first().waitFor();
 
+      // 뉴스 기본 진입: 가장 최근 보도자료가 선택되고 상세가 열림 (PC·모바일).
+      await page.locator("#pr-close").waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
+      assert.equal(await page.locator('#art-list button[aria-current="true"]').getAttribute("data-id"), "2001");
+      assert.match(await page.locator("#pr-detail").innerText(), /광학미러 공급 계약 체결/);
+      if (width > 700) {
+        const row = page.locator('#art-list button[data-id="2002"]');
+        const before = await row.boundingBox();
+        await row.hover();
+        assert.deepEqual(await row.boundingBox(), before, "기사 hover로 위치·크기가 바뀌지 않음");
+        assert.equal(await row.evaluate((el) => getComputedStyle(el).boxShadow), "none");
+        assert.equal(await page.locator('#art-list button[data-id="2001"]').getAttribute("aria-current"), "true");
+        await page.mouse.move(0, 0);
+      }
+      await page.locator("#pr-close").click();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr");
+
       // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 그린광학 보도자료.
       assert.deepEqual(await page.locator(".view-seg a").allInnerTexts(), ["목록", "대시보드"]);
       // README 탭 없음, 맨 아래 출처 문구·로그아웃 없음
@@ -84,7 +101,7 @@ async function main() {
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 3개/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 10개/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       assert.match(await page.locator("#pr-score").innerText(), /15시 이후[\s\S]*전체\s*0건/);
@@ -142,6 +159,37 @@ async function main() {
       // 접는 항목은 유사 사건 하나: 실은 매체는 '수정' 메뉴로, 관련 소식·검토 기록·분류·연결 수정·분석 기준은 없앰
       assert.deepEqual((await page.locator("#pr-detail .obs-folds > .obs-fold > summary, #obs-extras > .obs-fold > summary").allInnerTexts()).map((t) => t.split("\n")[0]),
         ["유사 사건"]);
+      // 관련 기사는 그래프 아래·유사 사건 위에 항상 펼쳐지고 제목은 원문으로 연결.
+      const related = page.locator("#related-articles");
+      assert.equal(await related.isVisible(), true);
+      assert.deepEqual(await page.locator("#pr-detail").evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.maxHeight, s.overflowY, s.position];
+      }), ["none", "visible", "static"], "상세 내부 스크롤 없이 페이지 전체로 읽음");
+      assert.equal(await related.locator("li").count(), 8);
+      assert.equal(await page.locator("#related-articles-title").innerText(), "관련 기사 8개");
+      assert.equal(await page.locator("#pr-detail .pr-meta").count(), 0, "기사의 언론사·공개 시각·기사 열기 줄 제거");
+      assert.equal(await page.locator(".pr-detail-actions .pr-daychart").count(), 1);
+      assert.equal(await page.locator(".pr-detail-actions #pr-close").count(), 1);
+      assert.match(await page.locator('#art-list button[data-id="2001"]').innerText(), /같은 내용 기사 8개/);
+      assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
+      assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
+      assert.deepEqual(await related.locator("li a").evaluateAll((xs) => xs.map((a) => [a.getAttribute("href"), a.target])),
+        await page.locator("#outlets-pop .outlet-list li a").evaluateAll((xs) => xs.map((a) => [a.getAttribute("href"), a.target])));
+      // 날짜·언론사와 행의 여백까지 하나의 원문 링크로 동작.
+      const firstRow = related.locator("li").first();
+      assert.equal(await firstRow.locator("a .related-article-meta").count(), 1);
+      assert.equal(await firstRow.evaluate((li) => Math.round(li.clientWidth - li.querySelector("a").getBoundingClientRect().width)), 0);
+      await page.context().route("https://example.org/**", (route) => route.fulfill({ status: 200, body: "test article" }));
+      for (const link of [firstRow.locator(".related-article-meta"), page.locator("#pr-detail .pr-title a")]) {
+        const popupPromise = page.waitForEvent("popup");
+        await link.click();
+        const articlePopup = await popupPromise;
+        await articlePopup.waitForLoadState();
+        assert.equal(articlePopup.url(), "https://example.org/2001");
+        await articlePopup.close();
+      }
+      assert.equal(await related.evaluate((el) => !!(el.compareDocumentPosition(document.querySelector("#obs-extras")) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
       // '수정' 메뉴 → 실은 매체 · 같은 내용 합치기 팝업
       if (width > 700) {
         await page.locator(".art-more > summary").click();
@@ -195,15 +243,24 @@ async function main() {
       await page.locator("#pr-detail .pr-title").filter({ hasText: "광학미러 공급 계약 체결" }).waitFor();
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
       await page.goto(`${base}/#/react`);
-      await page.locator("#pr-detail .rx-ov").waitFor();
-      assert.equal(await page.evaluate(() => location.hash), "#/pr");
+      await page.locator("#pr-close").waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
 
-      // 시각 출처 글자는 없고 '시각 고치기'만(회색), 카드 3개가 줄을 꽉 채움
+      // 시각 고치기는 수정 메뉴에서 동작하고, 카드 3개는 줄을 꽉 채움.
       await page.goto(`${base}/#/pr/2003`);
       await page.locator("#pr-detail .pr-title").filter({ hasText: "반도체 장비용 렌즈 수주" }).waitFor();
-      assert.doesNotMatch(await page.locator("#pr-detail .pr-meta").innerText(), /시각 출처/);
+      assert.equal(await page.locator("#pr-detail .pr-meta").count(), 0);
       assert.match(await page.locator("#pr-detail .intraday-box .vb-head").innerText(), /13:10 공개부터/, "머리 글과 그래프 기준 시각이 같음");
-      assert.equal(await page.locator("#pr-detail .pr-meta [data-time-open]").innerText(), "시각 고치기");
+      assert.equal(await page.locator(".art-more-menu [data-time-open]").textContent(), "시각 고치기");
+      await page.locator(".art-more > summary").click();
+      await page.locator(".art-more-menu [data-time-open]").click();
+      assert.equal(await page.locator("#pr-detail [data-time-form]").isVisible(), true);
+      assert.equal(await page.locator(".art-more").evaluate((el) => el.open), false);
+      await page.locator("#pr-detail [data-time-form]").evaluate((el) => el.hidden = true);
+      await page.locator(".pr-detail-actions .pr-daychart").click();
+      await page.waitForFunction(() => !document.querySelector("#day-modal").hidden);
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator("#day-modal").isVisible(), false);
       await page.locator("#pr-cards > div").first().waitFor();
       const cardGap = await page.evaluate(() => { const g = document.querySelector("#pr-cards"), c = [...g.children];
         return g.getBoundingClientRect().right - Math.max(...c.map((x) => x.getBoundingClientRect().right)); });
@@ -257,7 +314,7 @@ async function main() {
       await page.locator("#days-body tr.is-flash").waitFor();
       // 기간 소식 → 같은 기간 뉴스 목록
       await page.locator("[data-news]").click();
-      await page.waitForFunction(() => location.hash === "#/pr");
+      await page.waitForFunction(() => location.hash.startsWith("#/pr/"));
       await page.locator("#art-cond-txt").waitFor();
       assert.match(await page.locator("#art-cond-txt").innerText(), /2026-09-21|9\/21|09-21/);
 
@@ -290,6 +347,20 @@ async function main() {
       await jump.focus();
       await page.keyboard.type("20261001");
       assert.equal(await jump.inputValue(), before, "숫자 입력 막힘");
+
+      // 분류 변경은 수정 메뉴에만 표시하고, 기존 요청 동작을 유지한다.
+      for (const [id, kind, label] of [["2001", "ext", "외부 기사로 바꾸기"], ["2004", "pr", "그린광학 보도자료로 바꾸기"]]) {
+        await page.goto(`${base}/#/pr/${id}`);
+        const change = page.locator(`.art-more-menu [data-kind="${kind}"]`);
+        await change.waitFor({ state: "attached" });
+        assert.equal(await page.locator("#pr-detail [data-kind]").count(), 0);
+        assert.equal(await change.textContent(), label);
+        await page.locator(".art-more > summary").click();
+        await change.click();
+        await page.waitForFunction(() => document.querySelector("#art-fix-msg")?.textContent.length > 0);
+        assert.equal(await change.isDisabled(), true);
+        assert.doesNotMatch(await page.locator("#art-fix-msg").getAttribute("class"), /err/);
+      }
 
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       assert.deepEqual(errors, []);
@@ -370,12 +441,20 @@ async function main() {
       await page.addInitScript(() => { window.__engine = []; new MutationObserver(() => { const e = document.querySelector("#engine"); if (e && window.__engine[window.__engine.length - 1] !== e.textContent.trim()) window.__engine.push(e.textContent.trim()); }).observe(document, { subtree: true, childList: true, characterData: true }); });
       const errors = [], seen = [];
       page.on("pageerror", (error) => errors.push(error.message));
-      let fail = false;
+      let fail = false, livePrice = 12345, stale = false;
+      await page.addInitScript(() => {
+        window.__feedback = [];
+        new MutationObserver((records) => records.forEach((r) => {
+          for (const cls of ["quote-received", "quote-changed"]) {
+            if (r.target.classList.contains(cls) && !(r.oldValue || "").split(" ").includes(cls)) window.__feedback.push(cls);
+          }
+        })).observe(document, { subtree: true, attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+      });
       await page.route("https://go-relay.test.workers.dev/live", (route) => {
         seen.push(route.request().headers()["x-go-auth"]);
         if (fail) return route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } });
         return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
-          body: JSON.stringify({ at: "2026-10-28T10:05", quote: { price: 12345, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
+          body: JSON.stringify({ at: "2026-10-28T10:05", stale, quote: { price: livePrice, change: 345, rate: 2.88, open: 12000, high: 12400, low: 11990, base: 12000, volume: 4321, value: 53000000 },
             kosdaq: { price: 812.34, change: 4.1, rate: 0.51 }, bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }],
             kosdaq_bars: [{ t: "2026-10-28T10:05", c: 812.34 }] }) });
       });
@@ -394,38 +473,34 @@ async function main() {
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"), null, { timeout: 3000 });
       // 메인 화면 큰 가격도 실시간 값으로 (예전엔 새로고침해야 바뀌었음)
       await page.waitForFunction(() => (document.querySelector("#rec-head .rh-p") || {}).textContent?.includes("12,345"), null, { timeout: 3000 });
+      await page.evaluate(() => { window.__feedback = []; });
       await page.clock.runFor(15000);
+      await page.waitForFunction(() => window.__feedback.includes("quote-received"));
+      assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0, "실시간 갱신에는 차트 진입 효과 없음");
+      assert.ok(!(await page.evaluate(() => window.__feedback)).includes("quote-changed"), "같은 가격이면 갱신 점만 반응");
       assert.match(await page.locator("#q-change").textContent(), /345[\s\S]*2\.88%[\s\S]*10:05 기준/);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.ok(seen.length >= 1 && seen.every((x) => x === "RELAY-AUTH"), "들어가는 값 머리말");
+      livePrice = 12346;
+      await page.evaluate(() => { window.__feedback = []; });
+      await page.clock.runFor(15000);
+      await page.waitForFunction(() => window.__feedback.includes("quote-changed"));
+      await page.clock.runFor(700);
+      assert.match(await page.locator("#rec-head .rh-p").textContent(), /12,346/);
+      stale = true; livePrice = 12345;
+      await page.evaluate(() => { window.__feedback = []; });
+      await page.clock.runFor(15000);
+      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("12,345"));
+      assert.deepEqual(await page.evaluate(() => window.__feedback), [], "오래된 응답이면 성공·변동 효과 없음");
       fail = true;                                     // 중계가 안 되면: 화면은 마지막 값 그대로, 오류 없음
       await page.clock.runFor(16000);
       assert.match(await page.locator("#q-price").textContent(), /12,345/);
+      assert.deepEqual(await page.evaluate(() => window.__feedback), [], "실패하면 성공 효과 없음");
       // 30초마다 도는 정기 자료 갱신이 '실시간 10:05'를 '갱신 (정기 실행 시각)'으로 덮어 시각이 왔다 갔다 하지 않음 (실시간 값이 2분 안이면)
       await page.clock.runFor(15000);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.deepEqual(errors, []);
       await page.close();
-    }
-    // 실시간이 안 될 때: 정기 자료(1분마다 다시 읽음)가 새로 올라오면 메인 큰 가격도 따라감 (예전엔 실시간 값이 올 때만 다시 그려 멈춰 있었음)
-    {
-      const dirB = await fs.mkdtemp(path.join(os.tmpdir(), "go-news-page-b-"));
-      execFileSync(python(), [path.join(__dirname, "fixtures", "news_page_site.py"), path.join(dirB, "site")], { stdio: "ignore", env: { ...process.env, FIXTURE_QUOTE: "1" } });
-      const liveB = await fs.readFile(path.join(dirB, "site", "d", "live.bin"));
-      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-      await page.clock.install({ time: new Date("2026-10-28T10:05:10+09:00") });
-      await page.route("https://go-relay.test.workers.dev/live", (route) => route.fulfill({ status: 502, body: "{}", headers: { "access-control-allow-origin": "*" } }));
-      await page.goto(`${base}/#/`);
-      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
-      await page.getByRole("button", { name: "들어가기", exact: true }).click();
-      await page.locator("#rec-head .rh-p").waitFor();
-      assert.doesNotMatch(await page.locator("#rec-head .rh-p").textContent(), /13,000/);
-      await page.route("**/d/live.bin*", (route) => route.fulfill({ status: 200, body: liveB }));
-      await page.clock.runFor(95000);
-      await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("13,000"), null, { timeout: 5000 });   // 정기 자료는 들어옴 (위쪽 작은 가격)
-      await page.waitForFunction(() => document.querySelector("#rec-head .rh-p").textContent.includes("13,000"), null, { timeout: 5000 });
-      await page.close();
-      await fs.rm(dirB, { recursive: true, force: true });
     }
     // 휴대폰: 네이버 테마 링크는 모바일 증권 주소 (PC 주소는 휴대폰에서 네이버 모바일 증권 첫 화면으로 넘어감)
     {
@@ -452,6 +527,7 @@ async function main() {
       await page.goto(`${base}/#/pr`);
       await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#pr-close").click();
       await page.locator("#pr-detail .rx-ov").waitFor();
       assert.equal(await page.locator("#rx-plot.mv-draw").count(), 1, "겹쳐 보기 선 그리기");
       // 조건을 바꿀 때마다 위 요약 숫자가 올라감 (처음 한 번만이 아니라)
@@ -468,23 +544,50 @@ async function main() {
       assert.equal(await page.locator("#pr-detail.mv-in").count(), 1, "기사 상세 떠오르기");
       assert.equal(await page.locator("#pr-detail .pr-title").evaluate((el) => el.getAnimations().length), 0, "제목 옮겨 가기 효과는 뺌");
       await page.locator("#pr-detail .rx-chart.mv-reveal").waitFor();
-      assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "sticky", "오른쪽 상세는 화면에 고정");
-      // 오른쪽 상세 위에서 휠을 돌려도 화면이 내려감 (안에서 끝까지 내리면 화면으로 이어짐)
+      assert.equal(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).position), "static", "오른쪽 상세도 페이지와 함께 스크롤");
+      // 오른쪽 상세 위에서 휠을 돌리면 바로 페이지가 내려감.
+      await page.locator("#pr-detail .rx-chart").hover();
+      const scrollBefore = await page.evaluate(() => window.scrollY);
+      await page.mouse.wheel(0, 400);
+      await page.waitForFunction((before) => window.scrollY > before, scrollBefore);
+      assert.equal(await page.locator("#pr-detail").evaluate((el) => el.scrollTop), 0);
       assert.notEqual(await page.locator("#pr-detail").evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "contain");
-      // 주가 기록: 기간·1일 차트는 선 그리기 없이 바로 (메인 차트), 날짜를 바꾸면 머리 박스 숫자 올라가기
-      await page.goto(`${base}/#/`);
+      // 주가 기록: 최초 진입과 기간 선택에만 효과. 날짜 이동·자동 갱신은 반복하지 않고 숫자 효과 유지.
+      await page.evaluate(() => {
+        window.__recordEntries = [];
+        document.addEventListener("animationstart", (ev) => {
+          if (ev.animationName === "record-chart-entry") window.__recordEntries.push(ev.animationName);
+        });
+      });
+      await page.goto(`${base}/#/day/2026-10-22`);
       await page.locator("#rec-head .rh-box").waitFor();
-      for (const n of [1, 2]) {
-        await page.locator(".rec-tabs button").nth(n).click();
+      await page.waitForFunction(() => window.__recordEntries.length > 0);
+      assert.deepEqual(await page.evaluate(() => window.__recordEntries), ["record-chart-entry"]);
+      for (const range of ["1w", "1m", "3m", "1y", "all", "custom"]) {
+        const before = await page.evaluate(() => window.__recordEntries.length);
+        await page.locator(`.rec-tabs button[data-range="${range}"]`).click();
         await page.locator("#rec-chart .rc-line").waitFor();
-        assert.equal(await page.locator("#rec-chart").evaluate((el) => el.classList.contains("mv-reveal") || el.getAnimations().length > 0), false, "기간 차트 선 그리기 없음");
+        await page.waitForFunction((n) => window.__recordEntries.length === n + 1, before);
       }
+      await page.locator('[data-period="from"]').fill("2026-10-01");
+      await page.locator('[data-period="from"]').blur();
+      await page.waitForFunction(() => window.__recordEntries.length === 8);
+      await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+      await page.waitForTimeout(350);
+      assert.equal(await page.evaluate(() => window.__recordEntries.length), 8, "크기 변경에는 효과 반복 없음");
       await page.locator('.rec-tabs button[data-range="1d"]').click();
       await page.locator("#rec-chart .rc-head").waitFor();
       assert.equal(await page.locator("#rec-chart .mv-reveal").count(), 0, "1일 차트 나타나기 없음");
-      await page.locator('[data-step="-1"]').first().click();
+      await page.locator('[data-jump]').evaluate((el) => { el.value = "2026-10-22"; el.dispatchEvent(new Event("change", { bubbles: true })); });
       await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));
       assert.ok(await page.locator("#rec-head [data-key='rh-price']").evaluate((el) => el.closest(".rh-box") !== null));
+      const prices = new Set();
+      for (let i = 0; i < 8; i++) { prices.add(await page.locator("#rec-head [data-key='rh-price']").textContent()); await page.waitForTimeout(40); }
+      assert.ok(prices.size > 1, "날짜 이동 시 가격 Count-up 유지");
+      await page.locator("#rec-chart .rc-day").waitFor();
+      assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0);
+      assert.equal(await page.locator("#rec-chart .rc-day").evaluate((el) => getComputedStyle(el).animationName), "none", "날짜 이동에는 Fade 없음");
+      assert.equal(await page.evaluate(() => window.__recordEntries.length), 8, "1일 전환과 날짜 이동에는 효과 반복 없음");
       // 뉴스 대시보드: 위 숫자 올라가기, 작은 추이선·월별 추이 선 그리기
       await page.goto(`${base}/#/pivot`);
       await page.locator("#dash-kpi [data-count]").first().waitFor();

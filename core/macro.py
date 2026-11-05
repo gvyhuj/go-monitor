@@ -576,7 +576,9 @@ NAVER_BASE_KEY = "daily:naver_base_v1"
 
 def _sync_daily_kis(code: str, days: int = 150) -> int:
     from . import kis
-    end = datetime.now().date()
+    from .feed import kst_now
+    now = kst_now()
+    end = now.date()
     try:
         rows = kis.daily_range(kis.KOSDAQ_INDEX if code == KOSDAQ else code, (end - timedelta(days=days)).isoformat(),
                                end.isoformat(), index=code == KOSDAQ)
@@ -589,15 +591,20 @@ def store_daily_kis(code: str, rows: list[dict]) -> int:
     """한투 일봉 저장. 기준가(base) = 전 거래일 종가 (앞 날 줄이 없으면 기록에 있는 전 날 종가)."""
     if not rows:
         return 0
+    from .feed import verified_regular_close
     with connect() as conn:
+        saved_days = {r[0].rsplit(":", 1)[-1] for r in conn.execute(
+            "SELECT key FROM system_state WHERE key LIKE ?", (f"regular_close:{code}:%",))}
         prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                             (code, rows[0]["date"])).fetchone()
         p = prev[0] if prev else None
         out = []
         for r in rows:
-            out.append((code, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"] or 0,
+            final = verified_regular_close(code, r["date"]) if r["date"] in saved_days else None
+            close = final["close"] if final else r["close"]
+            out.append((code, r["date"], r["open"], r["high"], r["low"], close, r["volume"] or 0,
                         None if code == KOSDAQ else p))
-            p = r["close"]
+            p = close
         conn.executemany("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume, base) "
                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
     return len(out)
