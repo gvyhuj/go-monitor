@@ -165,10 +165,10 @@ def check() -> str:
     if d.get("session") == "overtime":
         a = d.get("after") or {}
         if d.get("stale"):
-            raise RuntimeError("시간외 중계가 이전 응답을 반환함")
+            raise RuntimeError("애프터마켓 중계가 이전 응답을 반환함")
         if not a.get("price") or not a.get("volume") or a.get("source") == "naver":
-            return f"시간외 시세 미확인 ({d.get('at')} 조회)"
-        return f"시간외 단일가 {a['price']:,}원 ({d.get('at')} 조회)"
+            return f"애프터마켓 시세 미확인 ({d.get('at')} 조회)"
+        return f"애프터마켓 {a['price']:,}원 ({d.get('at')} 조회)"
     q = d.get("quote") or {}
     if q.get("price") is None:
         raise RuntimeError("중계가 현재가를 주지 않음")

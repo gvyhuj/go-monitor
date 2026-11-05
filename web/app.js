@@ -734,7 +734,7 @@
     const stuck = ((STATUS && STATUS.collect && STATUS.collect.sources) || []).some((r) => r.stale);
     const fresh = RELAY.at && Date.now() - new Date(`${RELAY.at}:00+09:00`).getTime() < 180000;
     const afterFresh = RELAY.afterAt && RELAY.after && Date.now() - new Date(`${RELAY.afterAt}:00+09:00`).getTime() < 180000;
-    const label = afterFresh ? `시간외 조회 ${RELAY.afterAt.slice(11, 16)}` : fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
+    const label = afterFresh ? `애프터마켓 ${RELAY.afterAt.slice(11, 16)}` : fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
     setEngine(stuck ? "stale" : "ok", stuck ? `${label} · 수집 확인 필요` : label);
   }
   function setEngine(state, label) {
@@ -787,7 +787,7 @@
   }
   async function relayAsk() {
     const r = STATUS && STATUS.relay, t = kstParts();
-    const overtime = t.hm >= 1600 && t.hm <= 1800;
+    const overtime = t.hm >= 1600 && t.hm <= 2005;     // 거래소 애프터마켓 16:00~20:00 (2026-09-14 시간외 단일가 폐지)
     if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || (!overtime && (t.hm < 900 || t.hm > 1531))) return;
     if (overtime && STATUS.quote?.traded_at?.slice(0, 10) !== t.day) return;
     try {
@@ -805,7 +805,7 @@
           if (!$("#alert") || $("#alert").hidden) { engineLabel(""); if ($("#engine").dataset.state === "ok") drawOnce($("#engine"), "quote-received", 700); }
           if (!PAST_DAY && previous && previous.date === a.date && previous.price !== a.price) drawOnce($("#rec-head .rh-p > span"), "quote-changed", 700);
         }
-        return;  // 시간외 값은 정규장 시세·분봉·분석에 합치지 않음
+        return;  // 애프터마켓 값은 정규장 시세·분봉·분석에 합치지 않음
       }
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
       const previousPrice = RELAY.date === t.day && RELAY.quote ? RELAY.quote.price : null;
@@ -1225,18 +1225,20 @@
       }
     }
 
-    // 큰 가격만 시간외 단일가를 사용. 정규장 종가·차트·분석은 별도 유지.
+    // 그날 애프터마켓 거래(16:00~20:00). 정규장 종가·차트·분석은 별도 유지.
+    // 거래가 있었던 것: 현재가가 종가와 다르거나, 누적 거래량이 정규장 거래량보다 늘었음
     function overtimeFor(ds) {
-      const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts();
+      const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts(), rc = q && q.regular_close;
       if (ds !== latest || ds !== t.day || t.hm < 1600 || !q || q.market_status === "OPEN" || q.regular_close_pending
         || !validOvertime(a) || a.date !== ds) return null;
+      if (rc && rc.close && a.price === rc.close && !(rc.volume && a.volume > rc.volume)) return null;
       return a;
     }
-    // 큰 가격은 늘 정규장 종가. 시간외 단일가는 그 아래 작은 줄 (종가 대비)
+    // 큰 가격은 늘 정규장 종가. 애프터마켓 가격은 그 아래 작은 줄 (종가 대비)
     function afterHtml(ds, close, after) {
       if (!after || !close) return "";
       const d = after.price - close, sign = d > 0 ? "+" : d < 0 ? "−" : "";
-      return `<span class="rh-after">시간외 단일가 <b>${won(after.price)}원</b> <span class="${sgnCls(d)}">${pct(after.price / close - 1)} ${sign}${won(Math.abs(d))}원</span> · ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")}</span>`;
+      return `<span class="rh-after">애프터마켓 <b>${won(after.price)}원</b> <span class="${sgnCls(d)}">${pct(after.price / close - 1)} ${sign}${won(Math.abs(d))}원</span> · ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")}</span>`;
     }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
@@ -3890,7 +3892,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
   });
   (STATIC ? ensureLogin() : Promise.resolve()).then(() => {
     // 처음 그리기 전에 실시간 값을 먼저 받아 둠 (정기 실행 때의 지난 값이 잠깐 보였다 바뀌지 않게). 장중이 아니거나 1.5초 안에 안 오면 그냥 그림
-    refreshStatus().then(() => Promise.race([relayTick(), new Promise((ok) => setTimeout(ok, 1500))])).then(route);
+    // 첫 화면은 실시간 값을 기다리지 않고 바로 그림 (중계는 한투를 1초 간격으로 4번 물어 3초 넘게 걸릴 수 있음). 값이 오면 숫자만 바뀜
+    refreshStatus().then(() => { relayTick(); return route(); });
     setInterval(refreshStatus, STATIC ? 30000 : 10000);
     setInterval(relayTick, 15000);        // 장중에만 실제로 물음 (계정 보호: 15초 간격, 중계도 15초에 한 번까지만 한투를 부름)
     let resuming = false;

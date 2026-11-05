@@ -464,7 +464,6 @@ async function main() {
       await page.locator("#q-price").waitFor({ state: "attached" });
       // 새로고침 직후 정기 실행 때의 지난 값(예: 10:18)이 1초 보였다가 바뀌지 않게: 처음 그릴 때부터 실시간 값
       await page.locator("#rec-head .rh-p").waitFor();
-      assert.match(await page.locator("#rec-head .rh-p").textContent(), /12,345/, "처음 그린 큰 가격이 이미 실시간 값");
       assert.equal(await page.locator("#rec-chart .day-legend").count(), 0, "1분 차트 위 줄(시각·가격·1분 거래량) 없음");
       const eng = await page.evaluate(() => window.__engine.filter(Boolean));
       assert.ok(!eng.some((x) => /갱신/.test(x)), `실시간 전에 '갱신 …'이 잠깐 보이지 않음: ${JSON.stringify(eng)}`);
@@ -500,6 +499,25 @@ async function main() {
       await page.clock.runFor(15000);
       assert.match(await page.locator("#engine").textContent(), /실시간 10:05/);
       assert.deepEqual(errors, []);
+      await page.close();
+    }
+    // 첫 화면은 실시간 값을 기다리지 않음: 중계 답이 3초 걸려도 큰 가격(정기 자료)이 바로 보이고, 답이 오면 바뀜
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.clock.setFixedTime(new Date("2026-10-28T10:05:10+09:00"));
+      await page.route("https://go-relay.test.workers.dev/live", async (route) => { await new Promise((r) => setTimeout(r, 3000));
+        route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
+          body: JSON.stringify({ at: "2026-10-28T10:05", quote: { price: 12345, change: 345, rate: 2.88 }, kosdaq: { price: 812, change: 4, rate: 0.5 },
+            bars: [{ t: "2026-10-28T10:05", o: 12300, h: 12345, l: 12300, c: 12345, v: 9 }], kosdaq_bars: [] }) }); });
+      await page.goto(`${base}/#/`);
+      await page.getByPlaceholder("비밀번호", { exact: true }).fill(PASSWORD);
+      const t0 = Date.now();
+      await page.getByRole("button", { name: "들어가기", exact: true }).click();
+      await page.locator("#rec-head .rh-p").waitFor();
+      const ms = Date.now() - t0;
+      assert.ok(ms < 1500, `큰 가격이 ${ms}ms 만에 보임 (중계 3초를 기다리지 않음)`);
+      assert.doesNotMatch(await page.locator("#rec-head .rh-p").textContent(), /12,345/);
+      await page.waitForFunction(() => document.querySelector("#rec-head .rh-p").textContent.includes("12,345"), null, { timeout: 6000 });
       await page.close();
     }
     // 휴대폰: 네이버 테마 링크는 모바일 증권 주소 (PC 주소는 휴대폰에서 네이버 모바일 증권 첫 화면으로 넘어감)

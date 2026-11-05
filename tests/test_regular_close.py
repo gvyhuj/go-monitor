@@ -29,7 +29,6 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
         return {'price': 10070, 'change': 320, 'rate': 3.28, 'open': 9820, 'high': 10110, 'low': 9350, 'volume': 30000}
     monkeypatch.setattr(kis, 'quote', quote)
     monkeypatch.setattr(kis, 'index_quote', lambda: {'price': 715, 'change': 10, 'rate': 1.5})
-    monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})
     db.set_state('regular_close:KOSDAQ:2026-11-04', json.dumps({'date': '2026-11-04', 'source': 'kis_regular_minute', 'asof': '2026-11-04T15:30',
         'confirmed_at': '2026-11-04T16:55:00', 'open': 715, 'high': 715, 'low': 715, 'close': 715, 'volume': 100, 'base': 705}))
     feed.update_quotes('000001')
@@ -37,7 +36,7 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
     assert out['price'] == 9870 and out['change'] == 120 and out['high'] == 10010
     assert out['traded_at'] == '2026-11-04T15:30:00' and out['regular_close']['source'] == 'kis_regular_minute'
     assert out['latest_quote']['price'] == 10070 and out['latest_quote']['queried_at'] == '2026-11-04T16:55:00'
-    assert out['overtime_status']['state'] == 'unavailable'
+    assert out['overtime_status']['state'] == 'ok' and out['after']['price'] == 10070 and out['after']['session'] == 'krx_after'
     assert calls == ['daily', 'quote'], 'reuse collection; no added daily/quote API requests'
     import webserver as ws
     monkeypatch.setattr(ws, 'load_settings', lambda: {'symbol': '000001'})
@@ -47,7 +46,7 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
     with db.connect() as conn:
         assert tuple(conn.execute("SELECT close,volume FROM minute_bars WHERE symbol='000001'").fetchone()) == (9870, 175)
     db.set_state('after:000001', json.dumps({'date': '2026-11-04', 'source': 'kis', 'price': 9950, 'change': -120, 'rate': -0.01, 'at': '17:00'}))
-    after = feed._kis_after('000001', datetime(2026, 11, 4, 20, 0), True, 9870)
+    after = feed._kis_after('000001', datetime(2026, 11, 4, 20, 30), True, dict(close=9870), None)
     assert after['change'] == 80 and abs(after['rate'] - 80 / 9870) < 1e-12
 
 
@@ -161,21 +160,20 @@ def test_missing_closing_minute_never_promotes_daily_price(tmp_path, monkeypatch
     assert q['regular_close_pending'] and not q.get('regular_close')
 
 
-def test_overtime_query_is_independent_and_zero_is_not_proof_of_no_trades(tmp_path, monkeypatch):
+def test_after_market_uses_current_price_and_no_new_trade_is_not_shown(tmp_path, monkeypatch):
+    # 2026-09-14부터 시간외 단일가 폐지 → 애프터마켓(16:00~20:00). 한투 현재가가 그 가격 (2026-11-05 실측: 종가 9,140 → 현재가 9,190)
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
     monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'test.db')
     db.init_db()
-    now = datetime(2026, 11, 5, 17, 0)
-    monkeypatch.setattr(kis, 'overtime', lambda *a: dict(price=9200, volume=100))
-    after = feed._kis_after('000001', now, True, None)
-    assert after['price'] == 9200 and after['change'] is None
+    monkeypatch.setattr(kis, 'overtime', lambda *a: (_ for _ in ()).throw(AssertionError('없어진 시간외 단일가는 묻지 않음')), raising=False)
+    now, rc = datetime(2026, 11, 5, 17, 0), dict(close=9140, volume=1000)
+    after = feed._kis_after('000001', now, True, rc, dict(price=9190, volume=1008))
+    assert (after['price'], after['change'], after['session']) == (9190, 50, 'krx_after')
     assert json.loads(db.get_state('after_status:000001')['value'])['state'] == 'ok'
-    monkeypatch.setattr(kis, 'overtime', lambda *a: dict(price=0, volume=0))
-    after = feed._kis_after('000001', now, True, 9140)
-    assert after['price'] == 9200, 'retain previously confirmed trades with their original query timestamp'
+    after = feed._kis_after('000001', now, True, rc, dict(price=9140, volume=1000))     # 종가 그대로·거래량 그대로 = 새 거래 없음
+    assert after['price'] == 9190, 'retain previously confirmed trades'
     assert json.loads(db.get_state('after_status:000001')['value'])['state'] == 'unavailable'
-    monkeypatch.setattr(kis, 'overtime', lambda *a: (_ for _ in ()).throw(kis.KisError('fixture failure')))
-    feed._kis_after('000001', now, True, 9140)
+    feed._kis_after('000001', now, True, rc, None)                                       # 현재가를 못 받음
     assert json.loads(db.get_state('after_status:000001')['value'])['state'] == 'error'
 
 
@@ -185,6 +183,5 @@ def test_cached_naver_overtime_is_removed_even_after_query_window(tmp_path, monk
     db.init_db()
     for hour in (17, 20):
         db.set_state('after:000001', json.dumps(dict(date='2026-11-05', price=9130, volume=100, source='naver', session='afterMarket')))
-        monkeypatch.setattr(kis, 'overtime', lambda *a: dict(price=0, volume=0))
-        assert feed._kis_after('000001', datetime(2026, 11, 5, hour, 0), True, 9140) is None
+        assert feed._kis_after('000001', datetime(2026, 11, 5, hour, 0), True, dict(close=9140, volume=100), dict(price=9140, volume=100)) is None
         assert json.loads(db.get_state('after:000001')['value']) is None

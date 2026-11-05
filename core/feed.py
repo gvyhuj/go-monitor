@@ -206,7 +206,7 @@ def _kis_quotes(code: str):
         out["latest_quote"] = {"price": q["price"], "date": now.date().isoformat(),
                                "queried_at": now.isoformat(timespec="seconds"), "source": "kis_current"}
         _apply_regular_close(out, code, at[:10])
-    after = _kis_after(code, now, is_today, out["price"] if out.get("regular_close") else None)
+    after = _kis_after(code, now, is_today, out.get("regular_close"), q)
     status = get_state(f"after_status:{code}")
     if status:
         out["overtime_status"] = json.loads(status["value"])
@@ -226,10 +226,11 @@ def _kis_quotes(code: str):
     set_state(f"quote:{KOSDAQ}", json.dumps(index, ensure_ascii=False))
 
 
-def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
-    """그날 시간외 단일가(거래소 16:00~18:00): 그 시간대 실행마다 한 번 받고, 체결이 있으면 남김 (18시 뒤엔 마지막 값).
-    내부 rate는 정규장 종가 대비이며, 화면의 전일 대비는 별도 기준가로 계산한다."""
-    from . import kis
+def _kis_after(code: str, now: datetime, is_today: bool, regular: dict | None, q: dict | None) -> dict | None:
+    """그날 거래소 애프터마켓(16:00~20:00) 가격. 2026-09-14부터 시간외 단일가가 폐지되고 애프터마켓이 생겨,
+    장 마감 뒤 한투 현재가(q, 정기 수집에서 이미 받는 값)가 애프터마켓 마지막 거래가임 (2026-11-05 실측: 종가 9,140 → 9,190).
+    현재가가 종가와 다르거나 누적 거래량이 정규장 거래량보다 늘었으면 거래가 있었던 것으로 보고 남김 (20:10 뒤엔 마지막 값).
+    rate·change는 정규장 종가 대비."""
     st = get_state(f"after:{code}")
     try:
         saved = json.loads(st["value"]) if st and st.get("value") else None
@@ -238,19 +239,17 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
     if saved and saved.get("source") != "kis":
         saved = None
         set_state(f"after:{code}", "null")  # 이전 네이버 보완값은 장 종료 후에도 재사용하지 않음
+    close = (regular or {}).get("close")
     hm = now.strftime("%H:%M")
-    if is_today and "16:00" <= hm <= "18:30":
+    if is_today and "16:00" <= hm <= "20:10":
         status = {"date": now.date().isoformat(), "queried_at": now.isoformat(timespec="seconds"), "state": "unavailable"}
-        try:
-            o = kis.overtime(code)
-        except kis.KisError:
-            o = None                         # 보조 정보: 다음 실행에 다시
+        price, volume = (q or {}).get("price") or 0, (q or {}).get("volume") or 0
+        regular_volume = (regular or {}).get("volume")
+        if not q:
             status["state"] = "error"
-        if o and (o.get("price") or 0) > 0 and (o.get("volume") or 0) > 0:
-            saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
-                     "source": "kis", "session": "krx_overtime",
-                     "change": o["price"] - close if close else None, "rate": o["price"] / close - 1 if close else None, "at": min(hm, "18:00"),
-                     "queried_at": now.isoformat(timespec="minutes")}
+        elif price > 0 and close and (price != close or (regular_volume and volume > regular_volume)):
+            saved = {"date": now.date().isoformat(), "price": price, "volume": volume, "source": "kis", "session": "krx_after",
+                     "at": min(hm, "20:00"), "queried_at": now.isoformat(timespec="minutes")}
             set_state(f"after:{code}", json.dumps(saved))
             status["state"] = "ok"
         set_state(f"after_status:{code}", json.dumps(status))
