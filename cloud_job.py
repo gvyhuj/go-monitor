@@ -280,6 +280,19 @@ def kis_token_guard(log):
         log.warning("한투 접속 토큰 확보 실패: %s", type(e).__name__)
 
 
+def kis_nxt_probe(code: str):
+    """한 번만: 한투에 이 종목의 넥스트레이드(NX) 현재가를 물어 실행 기록에 남김 (넥스트레이드 거래 대상인지 확인용, 한투 호출 1번)."""
+    from core import kis
+    if not kis.enabled() or get_state("kis:nxt_probe_v1"):
+        return
+    set_state("kis:nxt_probe_v1", feed.kst_now().isoformat(timespec="minutes"))    # 묻기 전에 남김: 실패해도 다시 묻지 않음
+    try:
+        q = kis.quote(code, "NX")
+        annotate("notice", f"넥스트레이드(NX) 한투 응답: 현재가 {q['price']} · 시가 {q['open']} · 거래량 {q['volume']} · 기준가 {q['base']}")
+    except Exception as e:  # noqa: BLE001
+        annotate("notice", f"넥스트레이드(NX) 한투 응답 오류: {type(e).__name__}: {str(e)[:150]}")
+
+
 def relay_guard(code: str, log):
     """실시간 중계(Cloudflare)를 올리고(바뀐 게 있을 때만) 이번 토큰을 넘겨 줌. 실패해도 실행은 계속 (사이트는 예전처럼 정기 갱신)."""
     from core import relay
@@ -468,6 +481,7 @@ def main(argv) -> int:
     log.info("클라우드 감시 실행 (%s, %s)", task, now.isoformat(timespec="minutes"))
     kis_token_guard(log)
     relay_guard(code, log)
+    kis_nxt_probe(code)
     lap("준비")
 
     site_ok = False
