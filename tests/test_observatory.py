@@ -668,3 +668,26 @@ def test_kis_nxt_probe_asks_once(tmp_path, monkeypatch):
     monkeypatch.setattr(cloud_job, 'annotate', lambda kind, msg: notes.append(msg))
     cloud_job.kis_nxt_probe('000001'); cloud_job.kis_nxt_probe('000001')
     assert asked == ['NX'] and notes == ['넥스트레이드(NX) 한투 응답: 현재가 10350 · 시가 10230 · 거래량 1200 · 기준가 9830']
+
+
+def test_overtime_report_once_a_day_without_kis(tmp_path, monkeypatch):
+    # 장 마감 뒤 하루 한 번: 저장된 시간외 단일가 결과만 읽어 실행 기록에 (한투 호출 없음)
+    import json as _json
+    from datetime import datetime
+    import cloud_job
+    from core import db, feed, kis
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setattr(kis, '_get', lambda *a, **k: (_ for _ in ()).throw(AssertionError('한투를 부르면 안 됨')))
+    notes = []
+    monkeypatch.setattr(cloud_job, 'annotate', lambda kind, msg: notes.append(msg))
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 5, 18, 0))
+    cloud_job.overtime_report('000001')
+    assert notes == []                                                     # 18:30 전엔 아직
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 5, 18, 40))
+    db.set_state('after_status:000001', _json.dumps({'date': '2026-11-05', 'queried_at': '2026-11-05T18:29:10', 'state': 'unavailable'}))
+    cloud_job.overtime_report('000001'); cloud_job.overtime_report('000001')
+    assert notes == ['시간외 단일가(2026-11-05): 체결 없음(한투 응답은 정상, 가격·거래량 0) · 마지막 확인 18:29']
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 6, 18, 40))
+    db.set_state('after:000001', _json.dumps({'date': '2026-11-06', 'price': 10280, 'volume': 3120, 'at': '18:00', 'source': 'kis'}))
+    cloud_job.overtime_report('000001')
+    assert notes[-1] == '시간외 단일가(2026-11-06): 받음 10,280원 · 거래량 3,120주 (18:00 기준)'

@@ -293,6 +293,30 @@ def kis_nxt_probe(code: str):
         annotate("notice", f"넥스트레이드(NX) 한투 응답 오류: {type(e).__name__}: {str(e)[:150]}")
 
 
+def overtime_report(code: str):
+    """장 마감 뒤(18:31~) 하루 한 번: 그날 정기 실행이 받아 둔 시간외 단일가 결과를 실행 기록에 한 줄 (한투에 새로 묻지 않음)."""
+    now = feed.kst_now()
+    day = now.date().isoformat()
+    if now.weekday() > 4 or now.strftime("%H:%M") < "18:31" or get_state(f"overtime_report:{day}"):
+        return
+    set_state(f"overtime_report:{day}", now.isoformat(timespec="minutes"))
+    def load(key):
+        st = get_state(key)
+        try:
+            return json.loads(st["value"]) if st and st.get("value") else None
+        except ValueError:
+            return None
+    status, after = load(f"after_status:{code}") or {}, load(f"after:{code}") or {}
+    if after.get("date") == day:
+        msg = f"받음 {after.get('price'):,.0f}원 · 거래량 {after.get('volume'):,.0f}주 ({after.get('at')} 기준)"
+    elif status.get("date") == day:
+        msg = {"unavailable": "체결 없음(한투 응답은 정상, 가격·거래량 0)", "error": "한투 오류"}.get(status.get("state"), str(status.get("state")))
+        msg += f" · 마지막 확인 {str(status.get('queried_at'))[11:16]}"
+    else:
+        msg = "오늘 16:00~18:30에 확인한 기록 없음"
+    annotate("notice", f"시간외 단일가({day}): {msg}")
+
+
 def relay_guard(code: str, log):
     """실시간 중계(Cloudflare)를 올리고(바뀐 게 있을 때만) 이번 토큰을 넘겨 줌. 실패해도 실행은 계속 (사이트는 예전처럼 정기 갱신)."""
     from core import relay
@@ -482,6 +506,7 @@ def main(argv) -> int:
     kis_token_guard(log)
     relay_guard(code, log)
     kis_nxt_probe(code)
+    overtime_report(code)
     lap("준비")
 
     site_ok = False
