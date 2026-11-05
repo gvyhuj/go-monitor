@@ -39,7 +39,7 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
     import webserver as ws
     monkeypatch.setattr(ws, 'load_settings', lambda: {'symbol': '000001'})
     payload = ws.api_intraday({'date': '2026-11-04'})
-    assert payload['close_point'] == {'t': '2026-11-04T15:30', 'c': 9870, 'source': 'kis_daily'}
+    assert payload['close_point'] is None, 'a later daily snapshot must never replace the 15:30 minute'
     assert payload['bars'][-1]['c'] == 9910 and payload['bars'][-1]['v'] == 0
     with db.connect() as conn:
         assert tuple(conn.execute("SELECT close,volume FROM minute_bars WHERE symbol='000001'").fetchone()) == (9910, 0)

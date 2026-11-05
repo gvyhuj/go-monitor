@@ -408,10 +408,10 @@
   const kindColor = (k, dark) => (dark ? { up: "#FF6B7D", down: "#7FA6FF", flat: "#F2BE4B" } : { up: css("--up"), down: css("--down"), flat: css("--vol") })[k];
 
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
-  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], news = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, onNews = null, barMinutes = 1, closePoint = null } = {}) {
+  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], news = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, onNews = null, barMinutes = 1 } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
     // 선 색: 전일 종가(없으면 첫 봉)보다 위면 빨강, 아래면 파랑 (네이버·증권사 앱처럼)
-    const ref = prevClose || (bars.length ? bars[0].c : null), last = closePoint ? closePoint.c : bars.length ? bars[bars.length - 1].c : null;
+    const ref = prevClose || (bars.length ? bars[0].c : null), last = bars.length ? bars[bars.length - 1].c : null;
     const lineColor = kindColor(ref && last != null && last < ref ? "down" : "up", dark);
     // 선 아래를 선 색으로 옅게 채우고 아래로 갈수록 투명하게 (그라데이션)
     const rgba = (a) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(lineColor).trim()); if (!m) return "transparent";
@@ -445,16 +445,6 @@
       let t = toTime(bars[bars.length - 1].t) + 60;
       const end = toTime(extendTo);
       while (t <= end) { pdata.push({ time: t }); vdata.push({ time: t }); t += 60; }
-    }
-    // 확인된 일봉 종가를 가격 선에만 연결. 원본 분봉 OHLC·거래량은 만들어 내지 않음.
-    if (closePoint && closePoint.c != null) {
-      const time = toTime(closePoint.t), point = pdata.find((p) => p.time === time);
-      if (!point || point.value !== closePoint.c) {
-        const volume = vdata.find((p) => p.time === time);
-        if (volume) delete volume.value;
-      }
-      if (point) point.value = closePoint.c; else pdata.push({ time, value: closePoint.c });
-      pdata.sort((a, b) => a.time - b.time);
     }
     price.setData(pdata);
     vol.setData(vdata);
@@ -1499,7 +1489,7 @@
         } catch (_) {}
       }
       if (seq !== loadSeq || !el.isConnected) return;
-      const sig = JSON.stringify([ds, coarseIv, d && d.bars && d.bars.length, d && d.bars && d.bars[d.bars.length - 1], d && d.events && d.events.length, d && d.close_point]);
+      const sig = JSON.stringify([ds, coarseIv, d && d.bars && d.bars.length, d && d.bars && d.bars[d.bars.length - 1], d && d.events && d.events.length]);
       if (silent && sig === daySig) return;
       daySig = sig;
       if (silent) { QUIET = true; drop(); requestAnimationFrame(() => requestAnimationFrame(() => { QUIET = false; })); }
@@ -1514,14 +1504,13 @@
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
       const art = $(".rc-day", el);
-      if (d.close_point && d.bars[d.bars.length - 1].c !== d.close_point.c) $(".rc-head", el).insertAdjacentHTML("beforeend", '<span class="muted">15:30 종가 · 한투 일봉 확인</span>');
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
         news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
         onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
-        extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1, closePoint: d.close_point || null,
+        extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
       });
       st.range = null;
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);

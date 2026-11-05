@@ -65,7 +65,7 @@ const { chromium } = require("playwright");
         assert.match(text,active?/9,950/:/9,920/);
         assert.match(text,active?/2\.05%/:/1\.74%/);
         assert.equal(await page.locator("#q-price").textContent(),"9,920","stored regular quote does not change");
-        assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9920,"chart stays regular");
+        assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9910,"chart preserves actual regular minute");
         if(active){
           assert.match(await page.locator("#rec-head .rh-session").innerText(),/시간외 단일가[\s\S]*조회/);
           assert.match(await page.locator("#rec-head .rh-move").innerText(),/\+200원 · 전일 대비/);
@@ -78,7 +78,7 @@ const { chromium } = require("playwright");
           await page.waitForFunction(()=>document.querySelector("#rec-head .rh-p").textContent.includes("9,700"));
           assert.match(await page.locator("#rec-head .rh-move").innerText(),/−0\.51%[\s\S]*−50원/);
           assert.equal(await page.locator("#q-price").textContent(),"9,920");
-          assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9920);
+          assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9910);
         }
         if(revision===0){
           await fs.mkdir('/workspace/artifacts/overtime-preview',{recursive:true});
