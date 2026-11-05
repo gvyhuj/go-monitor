@@ -655,3 +655,16 @@ def test_kis_members_output_as_list(monkeypatch):
     monkeypatch.setattr(kis, '_get', lambda *a, **k: {'rt_cd': '0', 'output': [_member_out(buys, sells)]})
     info = kis.members('000001')
     assert {t['name'] for t in info['traders']} == {'키움증권', '미래에셋'} and info['foreign_buy'] == 5000
+
+
+def test_kis_nxt_probe_asks_once(tmp_path, monkeypatch):
+    # 넥스트레이드 대상 확인: 한투에 NX 현재가를 딱 한 번만 묻고 실행 기록에 남김 (실패해도 다시 묻지 않음)
+    import cloud_job
+    from core import db, kis
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    asked, notes = [], []
+    monkeypatch.setattr(kis, 'quote', lambda code, market='J': asked.append(market) or {'price': 10350, 'open': 10230, 'volume': 1200, 'base': 9830})
+    monkeypatch.setattr(cloud_job, 'annotate', lambda kind, msg: notes.append(msg))
+    cloud_job.kis_nxt_probe('000001'); cloud_job.kis_nxt_probe('000001')
+    assert asked == ['NX'] and notes == ['넥스트레이드(NX) 한투 응답: 현재가 10350 · 시가 10230 · 거래량 1200 · 기준가 9830']
