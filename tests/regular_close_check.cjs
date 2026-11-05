@@ -69,7 +69,7 @@ const { chromium } = require("playwright");
         assert.match(result.label,revision === 2?/15:30 현재/:revision?/종가 확인 중/:/15:30 정규장 마감/);
         assert.equal(result.last.value,9910,"daily snapshot must not overwrite the actual 15:30 minute, including old publications");
         if (revision === 3) {
-          assert.equal(result.last.time,Math.floor(Date.parse("2026-10-28T15:19:00+09:00") / 1000),"missing closing minute must not be synthesized");
+          assert.equal(result.last.time,Math.floor(Date.parse("2026-10-28T15:19:00Z") / 1000),"missing closing minute must not be synthesized");
           assert.equal(result.volume.value,undefined);
         } else assert.equal(result.volume.value,0,"preserve the original minute volume");
         assert.doesNotMatch(await page.locator("#rec-chart .rc-head").innerText(),/한투 일봉 확인/);
