@@ -780,7 +780,7 @@
     }
     if (!STATUS || !RELAY.quote || RELAY.quote.price == null || !RELAY.at) return;
     const q = STATUS.quote || {}, at = `${RELAY.at}:00`, r = RELAY.quote;
-    if (q.regular_close && q.regular_close.date === at.slice(0, 10) && q.traded_at && at <= q.traded_at) return;   // 장중 중계가 확인된 마감값을 덮지 않음
+    if (q.regular_close && q.regular_close.date === at.slice(0, 10)) return;   // 같은 날 확인된 종가는 일반 현재가 중계가 덮지 않음
     if (q.traded_at && q.traded_at.slice(0, 10) === at.slice(0, 10) && q.traded_at > at) return;   // 정기 자료가 더 새로우면 그대로
     STATUS.quote = { ...q, price: r.price, change: r.change, change_pct: r.rate, open: r.open, high: r.high, low: r.low, volume: r.volume,
       value_text: r.value != null ? `${(r.value / 1e8).toFixed(2)}억` : q.value_text, market_status: "OPEN", traded_at: at, relay: true,
@@ -802,6 +802,7 @@
       const res = await fetch(`${r.url}/live`, { headers: { "x-go-auth": r.auth }, cache: "no-store" });
       if (!res.ok) return;
       const d = await res.json();
+      if (overtime && d.session !== "overtime") return;  // 이전 버전 중계의 일반 현재가를 장외 값으로 합치지 않음
       if (d.session === "overtime") {
         if (!overtime || !d.at || d.at.slice(0, 10) !== t.day || d.stale) return;
         const a = d.after, previous = RELAY.after;

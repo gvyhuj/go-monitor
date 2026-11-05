@@ -49,12 +49,12 @@ const { chromium } = require("playwright");
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   try {
     for (const width of [1280,390]) {
-      for (revision=0;revision<6;revision++) {
+      for (revision=0;revision<7;revision++) {
         const page=await browser.newPage({viewport:{width,height:900},reducedMotion:"reduce"});
         let liveAfterPrice=9950;
         const errors=[];page.on("pageerror",e=>errors.push(e.message));
         await page.clock.setFixedTime(new Date("2026-10-28T17:45:10+09:00"));
-        await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify({session:"overtime",at:"2026-10-28T17:45",stale:revision===5,
+        await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify(revision===6?{at:"2026-10-28T17:45",quote:{price:12000,change:2250,rate:23.08},bars:[{t:"2026-10-28T15:30",c:9910,v:0}]}:{session:"overtime",at:"2026-10-28T17:45",stale:revision===5,
           after:revision>=4?{date:"2026-10-28",price:liveAfterPrice,volume:120,at:"17:45",queried_at:"2026-10-28T17:45"}:null})}));
         await page.goto(`http://127.0.0.1:${server.address().port}/#/`);
         await page.getByPlaceholder("비밀번호",{exact:true}).fill(password);
