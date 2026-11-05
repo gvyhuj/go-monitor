@@ -112,16 +112,24 @@ def _apply_regular_close(out: dict, code: str, day: str):
 
 
 def _ensure_regular_closes(code: str, now: datetime):
-    """보관된 수집 완료 플래그와 무관하게 누락된 마감 확인만 보완. 실패 시 10분 쉬고 재확인."""
+    """마감 직후 수정될 수 있는 일봉을 10분 간격으로 재확인. 18:30 이후 최종 확인 뒤에는 유지."""
     from . import macro
     day = now.date().isoformat()
-    missing = [c for c in (code, KOSDAQ) if not verified_regular_close(c, day)]
+    def needs_refresh(c):
+        final = verified_regular_close(c, day)
+        if not final:
+            return True
+        checked = datetime.fromisoformat(final["confirmed_at"])
+        if now.strftime("%H:%M") <= "18:30":
+            return now - checked >= timedelta(minutes=10)
+        return checked < now.replace(hour=18, minute=30, second=0, microsecond=0)
+    missing = [c for c in (code, KOSDAQ) if needs_refresh(c)]
     key = f"regular_close_check:{code}:{day}"
     old = get_state(key)
     if missing and (not old or now - datetime.fromisoformat(old["value"]) >= timedelta(minutes=10)):
         set_state(key, now.isoformat(timespec="seconds"))
         for c in missing:
-            macro._sync_daily_kis(c)
+            macro._sync_daily_kis(c, days=1)  # 전체 과거 일봉 대신 해당 날짜 주변만, 종목당 1건 조회
     # 현재가 재조회 간격이 아직 안 되었더라도 기존 화면용 값은 확인된 마감값으로 즉시 정규화.
     for c in (code, KOSDAQ):
         saved = get_state(f"quote:{c}")
