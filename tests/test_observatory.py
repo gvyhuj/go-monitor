@@ -407,10 +407,13 @@ def test_kis_collection_quote_minutes_daily(tmp_path, monkeypatch):
     q = _json.loads(db.get_state('quote:000001')['value'])
     assert q['market_status'] == 'OPEN' and q['traded_at'] == '2026-11-02T10:05:00' and q['value_text'] == '0.12억' and q['market_cap'] == 1159e8
     # 장 마감 뒤: 확인된 일봉 종가로 15:30 마감값을 표시.
-    db.set_state('regular_close:000001:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_daily',
-        'confirmed_at': '2026-11-02T16:00:00', 'open': 9800, 'high': 9950, 'low': 9780, 'close': 9900, 'volume': 1234, 'base': 9800}))
-    db.set_state('regular_close:KOSDAQ:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_daily',
-        'confirmed_at': '2026-11-02T16:00:00', 'open': 730, 'high': 731, 'low': 729, 'close': 730.1, 'volume': 10, 'base': 730.1 / 1.0079}))
+    db.set_state('regular_close:000001:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_regular_minute', 'asof': '2026-11-02T15:30',
+        'confirmed_at': '2026-11-02T16:30:00', 'open': 9800, 'high': 9950, 'low': 9780, 'close': 9900, 'volume': 1234, 'base': 9800}))
+    db.set_state('regular_close:KOSDAQ:2026-11-02', _json.dumps({'date': '2026-11-02', 'source': 'kis_regular_minute', 'asof': '2026-11-02T15:30',
+        'confirmed_at': '2026-11-02T16:30:00', 'open': 730, 'high': 731, 'low': 729, 'close': 730.1, 'volume': 10, 'base': 730.1 / 1.0079}))
+    monkeypatch.setattr(feed.naver, 'fetch_overtime_quote', lambda *a: None)
+    monkeypatch.setattr(feed, '_confirm_closing_minute', lambda *a: None)
+    monkeypatch.setattr(macro, '_sync_daily_kis', lambda *a, **kw: 0)
     monkeypatch.setattr(kis, 'overtime', lambda code: {'price': 0, 'volume': 0})
     monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 2, 16, 30))
     feed.update_quotes('000001')
@@ -635,7 +638,7 @@ def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, 'urlopen', lambda *a, **k: Resp(_json.dumps({'session': 'overtime', 'at': '2026-10-31T17:40', 'after': {'price': 9950, 'volume': 120}}).encode()))
     assert relay.check() == '시간외 단일가 9,950원 (2026-10-31T17:40 조회)'
     monkeypatch.setattr(urllib.request, 'urlopen', lambda *a, **k: Resp(_json.dumps({'session': 'overtime', 'at': '2026-10-31T17:40', 'after': None}).encode()))
-    assert '체결 정보 없음' in relay.check()
+    assert '시세 미확인' in relay.check()
     def no_token(req, timeout=0):
         raise urllib.error.HTTPError(req.full_url, 503, 'x', {}, io.BytesIO(b'{"error":"token"}'))
     monkeypatch.setattr(urllib.request, 'urlopen', no_token)

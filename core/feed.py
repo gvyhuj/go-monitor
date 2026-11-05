@@ -91,7 +91,8 @@ def verified_regular_close(code: str, day: str) -> dict | None:
     st = get_state(f"regular_close:{code}:{day}")
     try:
         data = json.loads(st["value"]) if st else None
-        if data and data.get("source") == "kis_daily" and data.get("date") == day and data.get("close", 0) > 0 \
+        if data and data.get("source") == "kis_regular_minute" and data.get("asof") == day + "T15:30" \
+                and data.get("date") == day and data.get("close", 0) > 0 \
                 and data.get("confirmed_at", "") >= day + "T15:30:00":
             return data
     except (ValueError, TypeError):
@@ -99,12 +100,38 @@ def verified_regular_close(code: str, day: str) -> dict | None:
     return None
 
 
+def _confirm_closing_minute(code: str, now: datetime):
+    """조회 시각과 무관하게 한투가 15:30으로 명시한 실제 봉으로 마감값을 확인한다."""
+    from . import kis
+    day = now.date().isoformat()
+    rows = kis.index_minutes() if code == KOSDAQ else kis.minutes(code, "153000")
+    rows = [r for r in rows if r["ts"][:10] == day and "09:00" <= r["ts"][11:] <= "15:30"]
+    point = next((r for r in rows if r["ts"] == day + "T15:30" and (r.get("close") or 0) > 0), None)
+    if not point:
+        return
+    # 첫 마감 수집의 0거래량 임시 봉도 실제 API 분봉으로 보완. 현재가로 봉을 만들지 않는다.
+    _upsert(code, _kis_bars(rows), "kis", replace=True)
+    with connect() as conn:
+        daily = conn.execute("SELECT date,open,high,low,close,volume,base FROM daily_bars WHERE symbol=? AND date=?", (code, day)).fetchone()
+        prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (code, day)).fetchone()
+        if not daily:
+            return
+        final = dict(daily)
+        final.update(close=point["close"], source="kis_regular_minute", asof=point["ts"],
+                     confirmed_at=now.isoformat(timespec="seconds"))
+        final["base"] = final["base"] or (prev[0] if prev else None)
+        conn.execute("UPDATE daily_bars SET close=? WHERE symbol=? AND date=?", (point["close"], code, day))
+    set_state(f"regular_close:{code}:{day}", json.dumps(final))
+
+
 def _apply_regular_close(out: dict, code: str, day: str):
     final = verified_regular_close(code, day)
     if not final:
+        out.pop("regular_close", None)
         out["regular_close_pending"] = True
         return
     base = final.get("base") or (out["price"] - out["change"] if out.get("change") is not None else None)
+    out.pop("regular_close_pending", None)
     out.update(price=final["close"], open=final["open"], high=final["high"], low=final["low"], volume=final["volume"],
                regular_close=final, traded_at=day + "T15:30:00")
     out["change"] = final["close"] - base if base else None
@@ -114,6 +141,8 @@ def _apply_regular_close(out: dict, code: str, day: str):
 def _ensure_regular_closes(code: str, now: datetime):
     """마감 직후 수정될 수 있는 일봉을 10분 간격으로 재확인. 18:30 이후 최종 확인 뒤에는 유지."""
     from . import macro
+    if now.strftime("%H:%M") < "15:31":
+        return
     day = now.date().isoformat()
     def needs_refresh(c):
         final = verified_regular_close(c, day)
@@ -124,18 +153,23 @@ def _ensure_regular_closes(code: str, now: datetime):
             return now - checked >= timedelta(minutes=10)
         return checked < now.replace(hour=18, minute=30, second=0, microsecond=0)
     missing = [c for c in (code, KOSDAQ) if needs_refresh(c)]
-    key = f"regular_close_check:{code}:{day}"
+    key = f"regular_close_check:{code}:{day}:minute_v1"
     old = get_state(key)
     if missing and (not old or now - datetime.fromisoformat(old["value"]) >= timedelta(minutes=10)):
         set_state(key, now.isoformat(timespec="seconds"))
         for c in missing:
             macro._sync_daily_kis(c, days=1)  # 전체 과거 일봉 대신 해당 날짜 주변만, 종목당 1건 조회
+            try:
+                _confirm_closing_minute(c, now)
+            except naver.DataSourceError:
+                pass  # 기존 확인값 유지, 실패 재시도도 10분 간격
     # 현재가 재조회 간격이 아직 안 되었더라도 기존 화면용 값은 확인된 마감값으로 즉시 정규화.
     for c in (code, KOSDAQ):
         saved = get_state(f"quote:{c}")
         quote = json.loads(saved["value"]) if saved else None
         final = verified_regular_close(c, day)
-        if quote and not final and str(quote.get("traded_at", ""))[:10] == day and not quote.get("regular_close_pending"):
+        if quote and not final and str(quote.get("traded_at", ""))[:10] == day:
+            quote.pop("regular_close", None)
             quote.update(regular_close_pending=True, market_status="CLOSE")
             set_state(f"quote:{c}", json.dumps(quote))
         if quote and final and str(quote.get("traded_at", ""))[:10] == day and quote.get("regular_close") != final:
@@ -146,7 +180,7 @@ def _ensure_regular_closes(code: str, now: datetime):
 
 
 def _kis_quotes(code: str):
-    """장중은 한투 현재가, 마감 후는 별도로 확인한 한투 일봉 종가.
+    """장중은 한투 현재가, 마감 후 기록은 시각을 확인한 15:30 분봉.
     현재가 조회 시각을 15:30 확정 종가의 근거로 사용하지 않는다.
     """
     from . import kis
@@ -166,8 +200,13 @@ def _kis_quotes(code: str):
            "market_cap": q["market_cap_100m"] * 1e8 if q.get("market_cap_100m") else None,
            "market_status": "OPEN" if open_ else "CLOSE", "traded_at": at, "fetched_at": now.isoformat(timespec="seconds")}
     if not open_:
+        out["latest_quote"] = {"price": q["price"], "date": now.date().isoformat(),
+                               "queried_at": now.isoformat(timespec="seconds"), "source": "kis_current"}
         _apply_regular_close(out, code, at[:10])
-    after = _kis_after(code, now, is_today, out["price"]) if out.get("regular_close") else None
+    after = _kis_after(code, now, is_today, out["price"] if out.get("regular_close") else None)
+    status = get_state(f"after_status:{code}")
+    if status:
+        out["overtime_status"] = json.loads(status["value"])
     if after and after["date"] == (last_day or "")[:10]:
         out["after"] = after
     set_state(f"quote:{code}", json.dumps(out, ensure_ascii=False))
@@ -194,16 +233,32 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
     except ValueError:
         saved = None
     hm = now.strftime("%H:%M")
-    if is_today and "16:00" <= hm <= "18:30" and close:
+    if is_today and "16:00" <= hm <= "18:30":
+        status = {"date": now.date().isoformat(), "queried_at": now.isoformat(timespec="seconds"), "state": "unavailable"}
         try:
             o = kis.overtime(code)
         except kis.KisError:
             o = None                         # 보조 정보: 다음 실행에 다시
-        if o and o.get("price") and o.get("volume"):
+            status["state"] = "error"
+        if o and (o.get("price") or 0) > 0 and (o.get("volume") or 0) > 0:
             saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
-                     "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00"),
+                     "source": "kis", "session": "krx_overtime",
+                     "change": o["price"] - close if close else None, "rate": o["price"] / close - 1 if close else None, "at": min(hm, "18:00"),
                      "queried_at": now.isoformat(timespec="minutes")}
             set_state(f"after:{code}", json.dumps(saved))
+            status["state"] = "ok"
+        else:
+            try:
+                fallback = naver.fetch_overtime_quote(code, now.date().isoformat())
+            except naver.DataSourceError:
+                fallback = None
+            if fallback:
+                saved = dict(fallback, queried_at=now.isoformat(timespec="seconds"),
+                             change=fallback["price"] - close if close else None,
+                             rate=fallback["price"] / close - 1 if close else None)
+                set_state(f"after:{code}", json.dumps(saved))
+                status.update(state="ok", source="naver")
+        set_state(f"after_status:{code}", json.dumps(status))
     if saved and saved.get("date") == now.date().isoformat() and close:
         saved = {**saved, "change": saved["price"] - close, "rate": saved["price"] / close - 1}
     return saved
