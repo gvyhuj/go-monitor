@@ -280,24 +280,11 @@ def kis_token_guard(log):
         log.warning("한투 접속 토큰 확보 실패: %s", type(e).__name__)
 
 
-def kis_nxt_probe(code: str):
-    """한 번만: 한투에 이 종목의 넥스트레이드(NX) 현재가를 물어 실행 기록에 남김 (넥스트레이드 거래 대상인지 확인용, 한투 호출 1번)."""
-    from core import kis
-    if not kis.enabled() or get_state("kis:nxt_probe_v1"):
-        return
-    set_state("kis:nxt_probe_v1", feed.kst_now().isoformat(timespec="minutes"))    # 묻기 전에 남김: 실패해도 다시 묻지 않음
-    try:
-        q = kis.quote(code, "NX")
-        annotate("notice", f"넥스트레이드(NX) 한투 응답: 현재가 {q['price']} · 시가 {q['open']} · 거래량 {q['volume']} · 기준가 {q['base']}")
-    except Exception as e:  # noqa: BLE001
-        annotate("notice", f"넥스트레이드(NX) 한투 응답 오류: {type(e).__name__}: {str(e)[:150]}")
-
-
 def overtime_report(code: str):
-    """장 마감 뒤(18:31~) 하루 한 번: 그날 정기 실행이 받아 둔 시간외 단일가 결과를 실행 기록에 한 줄 (한투에 새로 묻지 않음)."""
+    """애프터마켓이 끝난 뒤(20:11~) 하루 한 번: 그날 정기 수집이 저장한 애프터마켓 결과를 실행 기록에 한 줄 (한투에 새로 묻지 않음)."""
     now = feed.kst_now()
     day = now.date().isoformat()
-    if now.weekday() > 4 or now.strftime("%H:%M") < "18:31" or get_state(f"overtime_report:{day}"):
+    if now.weekday() > 4 or now.strftime("%H:%M") < "20:11" or get_state(f"overtime_report:{day}"):
         return
     set_state(f"overtime_report:{day}", now.isoformat(timespec="minutes"))
     def load(key):
@@ -308,36 +295,13 @@ def overtime_report(code: str):
             return None
     status, after = load(f"after_status:{code}") or {}, load(f"after:{code}") or {}
     if after.get("date") == day:
-        msg = f"받음 {after.get('price'):,.0f}원 · 거래량 {after.get('volume'):,.0f}주 ({after.get('at')} 기준)"
+        msg = f"마지막 {after.get('price'):,.0f}원 ({after.get('at')} 기준)"
     elif status.get("date") == day:
-        msg = {"unavailable": "체결 없음(한투 응답은 정상, 가격·거래량 0)", "error": "한투 오류"}.get(status.get("state"), str(status.get("state")))
+        msg = {"unavailable": "거래 없음(한투 현재가 = 종가)", "error": "한투 현재가를 받지 못함"}.get(status.get("state"), str(status.get("state")))
         msg += f" · 마지막 확인 {str(status.get('queried_at'))[11:16]}"
     else:
-        msg = "오늘 16:00~18:30에 확인한 기록 없음"
-    annotate("notice", f"시간외 단일가({day}): {msg}")
-
-
-def kis_after_market_probe(code: str):
-    """한 번만 (평일 16:05 뒤): 한투가 거래소 애프터마켓(16:00~20:00) 가격을 주는지 실행 기록에 남김.
-    ① 장 마감 뒤 저장해 둔 한투 현재가와 정규장 종가 비교 (한투 호출 없음) ② 그날 1분봉을 20:00까지 한 번 받아 15:30 뒤 봉 수 (한투 호출 1번)."""
-    from core import kis
-    now = feed.kst_now()
-    if not kis.enabled() or now.weekday() > 4 or now.strftime("%H:%M") < "16:05" or get_state("kis:after_probe_v1"):
-        return
-    set_state("kis:after_probe_v1", now.isoformat(timespec="minutes"))      # 묻기 전에 남김: 실패해도 다시 묻지 않음
-    st = get_state(f"quote:{code}")
-    q = json.loads(st["value"]) if st and st.get("value") else {}
-    rc, lq = q.get("regular_close") or {}, q.get("latest_quote") or {}
-    saved = f"정규장 종가 {rc.get('close')} · 장 마감 뒤 한투 현재가 {lq.get('price')} ({str(lq.get('queried_at'))[11:16]} 조회)"
-    try:
-        bars = kis.minutes(code, "200000")
-        late = [b for b in bars if b["ts"][11:] > "15:30" and b["ts"][:10] == now.date().isoformat()]
-        tail = f"{late[-1]['ts'][11:]} {late[-1]['close']} (거래량 {late[-1]['volume']})" if late else "-"
-        got = f"20:00까지 1분봉 {len(bars)}개 중 15:30 뒤 {len(late)}개, 마지막 {tail}"
-    except Exception as e:  # noqa: BLE001
-        got = f"1분봉 오류 {type(e).__name__}: {str(e)[:120]}"
-    annotate("notice", f"애프터마켓 확인({now.date().isoformat()}): {saved} / {got}")
-
+        msg = "오늘 16:00~20:10에 확인한 기록 없음"
+    annotate("notice", f"애프터마켓({day}): {msg}")
 
 def relay_guard(code: str, log):
     """실시간 중계(Cloudflare)를 올리고(바뀐 게 있을 때만) 이번 토큰을 넘겨 줌. 실패해도 실행은 계속 (사이트는 예전처럼 정기 갱신)."""
@@ -527,9 +491,7 @@ def main(argv) -> int:
     log.info("클라우드 감시 실행 (%s, %s)", task, now.isoformat(timespec="minutes"))
     kis_token_guard(log)
     relay_guard(code, log)
-    kis_nxt_probe(code)
     overtime_report(code)
-    kis_after_market_probe(code)
     lap("준비")
 
     site_ok = False

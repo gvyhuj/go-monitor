@@ -1,4 +1,4 @@
-// 실시간 중계: 정규장 시세와 16:00~18:00 시간외 단일가를 별도 응답으로 제공.
+// 실시간 중계: 정규장 시세와 16:00~20:00 거래소 애프터마켓 가격(현재가)을 별도 응답으로 제공 (내부 이름은 예전 그대로 session "overtime").
 // - 한투 열쇠(KIS_APP_KEY·KIS_APP_SECRET)는 이 Worker의 비밀값에만 있음 (사이트·브라우저에는 없음)
 // - 접속 토큰은 여기서 받지 않음: GitHub 실행이 하루 한 번 받아 KV('kis_token')에 넣어 둔 것을 씀 (토큰 발급은 한 곳에서만)
 // - 사이트 비밀번호를 아는 사람만: 암호화된 사이트 자료 안의 AUTH 값을 x-go-auth 머리말로 보내야 답함
@@ -42,15 +42,15 @@ async function live(env, now) {
   const saved = await env.KV.get("kis_token", "json");
   if (!saved || !saved.token || !(saved.exp_ms > now + 60e3)) return { status: 503, body: { error: "token" } };
   const t = kstNow(now), tok = saved.token, code = env.CODE;
-  if (t.hm >= "16:00" && t.hm <= "18:00") {
+  if (t.hm >= "16:00" && t.hm <= "20:05") {      // 거래소 애프터마켓: 시간외 단일가 폐지(2026-09-14) 뒤엔 현재가가 애프터마켓 거래가
     let o = {}, failed = null;
     try {
-      o = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-overtime-price", "FHPST02300000",
+      o = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-price", "FHKST01010100",
         { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code })).output || {};
     } catch (e) { failed = e; }
-    const price = num(o.ovtm_untp_prpr), volume = num(o.ovtm_untp_vol);
+    const price = num(o.stck_prpr), volume = num(o.acml_vol);
     const queried = new Date(now + 9 * 3600e3).toISOString().slice(0, 19);
-    const after = price > 0 && volume > 0 ? { date: t.day, price, volume, source: "kis", session: "krx_overtime", at: t.hm, queried_at: queried } : null;
+    const after = price > 0 && volume > 0 ? { date: t.day, price, volume, source: "kis", session: "krx_after", at: t.hm, queried_at: queried } : null;
     if (!after && failed) throw failed;
     return { status: 200, body: { session: "overtime", at: `${t.day}T${t.hm}`, after } };
   }
@@ -97,7 +97,7 @@ export default {
     if (!env.AUTH || req.headers.get("x-go-auth") !== env.AUTH) return json({ error: "auth" }, 401);
     if (new URL(req.url).pathname !== "/live") return json({ error: "path" }, 404);
     const now = Date.now();
-    const t = kstNow(now), overtime = t.hm >= "16:00" && t.hm <= "18:00";
+    const t = kstNow(now), overtime = t.hm >= "16:00" && t.hm <= "20:05";
     // 장이 바뀌면 이전 세션의 응답을 재사용하지 않음.
     if (memo.body && ((memo.body.session === "overtime") !== overtime || memo.body.at?.slice(0, 10) !== t.day)) memo = { at: 0, okAt: 0, body: null };
     if (now - memo.at < MEMO_MS) {      // 15초 안에는 한투를 다시 부르지 않음 (실패했을 때도)

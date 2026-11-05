@@ -36,7 +36,7 @@ const { chromium } = require("playwright");
         data.status.quote = {price:9920,change:170,change_pct:1.7435897,market_status:"CLOSE",traded_at:"2026-10-28T15:30:00",regular_close:final,
           latest_quote:{date:"2026-10-28",price:9900,queried_at:"2026-10-28T17:40:00",source:"kis_current"},
           overtime_status:{date:"2026-10-28",state:revision===7?"error":"unavailable"},
-          high:10010,low:9350,after:revision===8||revision===10?{...after,source:"naver",session:revision===10?"regularMarket":"afterMarket",traded_at:"2026-10-28T17:40:00+09:00",volume:null}:revision===0?after:revision===2?{...after,price:0,volume:0}:revision===3?{...after,date:"2026-10-27"}:null};
+          high:10010,low:9350,after:revision===8||revision===10?{...after,source:"naver",session:revision===10?"regularMarket":"afterMarket",traded_at:"2026-10-28T17:40:00+09:00",volume:null}:revision===0?after:revision===2?{...after,price:0,volume:0}:revision===11?{...after,price:9920}:revision===3?{...after,date:"2026-10-27"}:null};
         data.intraday = {...data.intraday,date:"2026-10-28",events:[],prev_close:9750,
           bars:[{t:"2026-10-28T15:19",o:9850,h:9920,l:9850,c:9910,v:47},{t:"2026-10-28T15:30",o:9910,h:9910,l:9910,c:9910,v:0}],
           close_point:{t:"2026-10-28T15:30",c:9920,source:"kis_daily"}};
@@ -51,7 +51,7 @@ const { chromium } = require("playwright");
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   try {
     for (const width of [1280,390]) {
-      for (revision=0;revision<11;revision++) {
+      for (revision=0;revision<12;revision++) {
         const page=await browser.newPage({viewport:{width,height:900},reducedMotion:"reduce"});
         let liveAfterPrice=9950;
         const errors=[];page.on("pageerror",e=>errors.push(e.message));
@@ -70,7 +70,7 @@ const { chromium } = require("playwright");
         assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9910,"chart preserves actual regular minute");
         if(active){
           // 시간외 단일가는 큰 가격 아래 작은 줄 (종가 대비)
-          assert.match(await page.locator("#rec-head .rh-after").innerText(),/시간외 단일가[\s\S]*9,950원[\s\S]*\+0\.30%[\s\S]*\+30원[\s\S]*17:4\d/);
+          assert.match(await page.locator("#rec-head .rh-after").innerText(),/애프터마켓[\s\S]*9,950원[\s\S]*\+0\.30%[\s\S]*\+30원[\s\S]*17:4\d/);
         }else {
           assert.equal(await page.locator('#rec-head .rh-after').count(),0,'no unavailable message or alternate price');
           assert.equal(await page.locator('#rec-head .rh-session').count(),0,'regular close only');

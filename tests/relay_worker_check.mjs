@@ -86,25 +86,25 @@ test("account safety: 1s between KIS calls, no retry when KIS refuses, nothing f
   assert.equal(at.length, 3, "거절 뒤 15초 동안은 한투를 부르지 않음");
 });
 
-test("overtime: one price call, no regular quote/index/bars; zero trades are not a price", async () => {
+test("after-market (16:00~20:00): one current-price call, no index/bars; zero price is not a price", async () => {
   const previous = clockOffset;
   clockOffset = new Date("2026-11-02T17:40:00+09:00").getTime() - systemNow();
   try {
     const w = await load(), calls = [];
     globalThis.fetch = async (url, init) => {
       calls.push(init.headers.tr_id);
-      return new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"9950",ovtm_untp_vol:"120"}}));
+      return new Response(JSON.stringify({rt_cd:"0",output:{stck_prpr:"9950",acml_vol:"1354"}}));
     };
     const e = env({token:"TOK",exp_ms:Date.now()+3600e3});
     const d = await (await w.fetch(req("SECRET-AUTH"),e)).json();
     assert.equal(d.session,"overtime");
-    assert.equal(d.after.price,9950);assert.equal(d.after.volume,120);
+    assert.equal(d.after.price,9950);assert.equal(d.after.volume,1354);assert.equal(d.after.session,"krx_after");
     assert.match(d.after.queried_at,/^2026-11-02T17:40:/);
     assert.equal(d.quote,undefined);assert.equal(d.bars,undefined);
     await w.fetch(req("SECRET-AUTH"),e);
-    assert.deepEqual(calls,["FHPST02300000"],"15초 안에는 한 번만 조회");
+    assert.deepEqual(calls,["FHKST01010100"],"없어진 시간외 단일가 대신 현재가, 15초 안에는 한 번만");
     const empty = await load();
-    globalThis.fetch = async () => new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"0",ovtm_untp_vol:"0"}}));
+    globalThis.fetch = async () => new Response(JSON.stringify({rt_cd:"0",output:{stck_prpr:"0",acml_vol:"0"}}));
     assert.equal((await (await empty.fetch(req("SECRET-AUTH"),e)).json()).after,null);
     const failed = await load();
     globalThis.fetch = async () => new Response(JSON.stringify({rt_cd:"1",msg1:"제한"}),{status:500});
@@ -123,7 +123,7 @@ test("session boundary never reuses a regular response for overtime", async () =
     assert.ok((await (await w.fetch(req("SECRET-AUTH"),e)).json()).quote);
     clockOffset += 30*60e3;
     let overtimeCalls=0;
-    globalThis.fetch = async () => { overtimeCalls++; return new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"9950",ovtm_untp_vol:"120"}})); };
+    globalThis.fetch = async () => { overtimeCalls++; return new Response(JSON.stringify({rt_cd:"0",output:{stck_prpr:"9950",acml_vol:"1354"}})); };
     const next=await (await w.fetch(req("SECRET-AUTH"),e)).json();
     assert.equal(next.session,"overtime");assert.equal(next.quote,undefined);assert.equal(overtimeCalls,1);
   } finally {clockOffset=previous;}
@@ -137,7 +137,7 @@ test("missing KIS overtime never queries another provider", async () => {
     globalThis.fetch=async(url,init)=>{
       calls.push(String(url));
       assert.ok(String(url).includes('openapi.koreainvestment.com'));
-      return new Response(JSON.stringify({rt_cd:'0',output:{ovtm_untp_prpr:'0',ovtm_untp_vol:'0'}}));
+      return new Response(JSON.stringify({rt_cd:'0',output:{stck_prpr:'0',acml_vol:'0'}}));
     };
     const e=env({token:'TOK',exp_ms:Date.now()+3600e3});
     assert.equal((await(await w.fetch(req('SECRET-AUTH'),e)).json()).after,null);
@@ -145,3 +145,15 @@ test("missing KIS overtime never queries another provider", async () => {
     assert.equal(calls.length,1);
   } finally {clockOffset=previous;}
 });
+
+test("after-market runs until 20:00 (old overtime ended at 18:00)", async () => {
+  const previous = clockOffset;
+  clockOffset = new Date("2026-11-05T19:50:00+09:00").getTime() - systemNow();
+  try {
+    const w = await load(), calls = [];
+    globalThis.fetch = async (url, init) => { calls.push(init.headers.tr_id); return new Response(JSON.stringify({rt_cd:"0",output:{stck_prpr:"9190",acml_vol:"1008"}})); };
+    const d = await (await w.fetch(req("SECRET-AUTH"), env({token:"TOK",exp_ms:Date.now()+3600e3}))).json();
+    assert.equal(d.session,"overtime"); assert.equal(d.after.price,9190); assert.deepEqual(calls,["FHKST01010100"]);
+  } finally { clockOffset = previous; }
+});
+
