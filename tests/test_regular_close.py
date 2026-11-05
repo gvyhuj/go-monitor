@@ -62,12 +62,12 @@ def test_intraday_daily_is_not_a_confirmed_close(tmp_path, monkeypatch):
     assert quote['regular_close_pending'] and quote['price'] == 10070
 
 
-def test_missing_close_check_is_throttled_and_stops_after_confirmation(tmp_path, monkeypatch):
+def test_missing_close_check_is_throttled_and_normalizes_cached_quote(tmp_path, monkeypatch):
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
     monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'test.db')
     db.init_db()
     calls = []
-    monkeypatch.setattr(macro, '_sync_daily_kis', lambda c: calls.append(c))
+    monkeypatch.setattr(macro, '_sync_daily_kis', lambda c, **kw: calls.append(c))
     now = datetime(2026, 11, 4, 17, 0)
     feed._ensure_regular_closes('000001', now)
     feed._ensure_regular_closes('000001', now)
@@ -76,7 +76,48 @@ def test_missing_close_check_is_throttled_and_stops_after_confirmation(tmp_path,
         db.set_state(f'regular_close:{c}:2026-11-04', json.dumps({'date': '2026-11-04', 'source': 'kis_daily',
             'confirmed_at': '2026-11-04T17:00:00', 'close': 9870, 'base': 9750, 'open': 9820, 'high': 10010, 'low': 9350, 'volume': 100}))
     db.set_state('quote:000001', json.dumps({'price': 10070, 'change': 320, 'traded_at': '2026-11-04T15:30:00', 'regular_close_pending': True}))
-    feed._ensure_regular_closes('000001', datetime(2026, 11, 4, 18, 0))
+    feed._ensure_regular_closes('000001', datetime(2026, 11, 4, 17, 1))
     assert calls == ['000001', 'KOSDAQ']
     quote = json.loads(db.get_state('quote:000001')['value'])
     assert quote['price'] == 9870 and not quote.get('regular_close_pending')
+
+
+def test_early_close_is_rechecked_without_rewriting_minute_bars(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
+    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'test.db')
+    db.init_db()
+    clock = [datetime(2026, 11, 5, 16, 40)]
+    monkeypatch.setattr(feed, 'kst_now', lambda: clock[0])
+    for code in ('000001', 'KOSDAQ'):
+        db.set_state(f'regular_close:{code}:2026-11-05', json.dumps({
+            'date': '2026-11-05', 'source': 'kis_daily',
+            'confirmed_at': '2026-11-05T15:31:00', 'close': 9140}))
+    db.set_state('quote:000001', json.dumps({'price': 9140, 'traded_at': '2026-11-05T15:30:00'}))
+    with db.connect() as conn:
+        conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES('000001','2026-11-05T15:30',9140,9140,9140,9140,12,'kis')")
+    calls = []
+    def daily(code, start, end, **kwargs):
+        calls.append((code, start, end))
+        return [dict(date='2026-11-04', open=9870, high=9870, low=9870, close=9870, volume=10),
+                dict(date='2026-11-05', open=9740, high=9980, low=8950, close=9060, volume=64778)]
+    monkeypatch.setattr(kis, 'daily_range', daily)
+    feed._ensure_regular_closes('000001', clock[0])
+    quote = json.loads(db.get_state('quote:000001')['value'])
+    assert quote['price'] == 9060 and quote['change'] == -810
+    assert quote['regular_close']['confirmed_at'] == '2026-11-05T16:40:00'
+    assert len(calls) == 2
+    assert all(start == '2026-11-04' and end == '2026-11-05' for _, start, end in calls)
+    clock[0] = datetime(2026, 11, 5, 16, 49)
+    feed._ensure_regular_closes('000001', clock[0])
+    assert len(calls) == 2
+    clock[0] = datetime(2026, 11, 5, 16, 50)
+    feed._ensure_regular_closes('000001', clock[0])
+    assert len(calls) == 4
+    clock[0] = datetime(2026, 11, 5, 18, 35)
+    feed._ensure_regular_closes('000001', clock[0])
+    assert len(calls) == 6
+    clock[0] = datetime(2026, 11, 5, 22, 0)
+    feed._ensure_regular_closes('000001', clock[0])
+    assert len(calls) == 6
+    with db.connect() as conn:
+        assert tuple(conn.execute("SELECT close,volume FROM minute_bars WHERE symbol='000001'").fetchone()) == (9140, 12)
