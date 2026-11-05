@@ -1232,9 +1232,11 @@
         || !validOvertime(a) || a.date !== ds) return null;
       return a;
     }
+    // 큰 가격은 늘 정규장 종가. 시간외 단일가는 그 아래 작은 줄 (종가 대비)
     function afterHtml(ds, close, after) {
-      if (after) return `<span class="rh-after">정규장 종가 ${won(close)}원 · 15:30</span>`;
-      return "";
+      if (!after || !close) return "";
+      const d = after.price - close, sign = d > 0 ? "+" : d < 0 ? "−" : "";
+      return `<span class="rh-after">시간외 단일가 <b>${won(after.price)}원</b> <span class="${sgnCls(d)}">${pct(after.price / close - 1)} ${sign}${won(Math.abs(d))}원</span> · ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")}</span>`;
     }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
@@ -1243,9 +1245,7 @@
       const live = ds === latest ? liveFor(ds) : null;
       const close = live ? live.price : px.close, chg = live ? live.chg : px.change, kq = px.kosdaq;
       const base = (live && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
-      const after = overtimeFor(ds), afterBase = (STATUS && STATUS.quote && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || base;
-      const shownPrice = after ? after.price : close, shownChg = after ? afterBase ? after.price / afterBase - 1 : null : chg;
-      const afterChange = after && afterBase ? after.price - afterBase : null;
+      const after = overtimeFor(ds), shownPrice = close, shownChg = chg;
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;
       const done = !(live && live.open);
       const tag = ds === latest ? `<span class="day-now">${live ? live.pending ? "종가 확인 중" : `${live.at} ${live.open ? "현재" : live.ext ? "시간외 포함" : "정규장 마감"}` : "장 마감"}</span>` : "";
@@ -1255,9 +1255,8 @@
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${live && live.pending ? "최근 조회가 " : done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
-        <span class="rh-r${after ? " rh-overtime" : ""}"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          ${after ? `<span class="rh-session"><span>시간외 단일가</span> ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")} 조회</span>` : ""}
-          <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small>${after ? '<span class="rh-move">' : ""}<b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b>${after ? `<small class="${sgnCls(afterChange)}">${afterChange == null ? "-" : `${afterChange > 0 ? "+" : afterChange < 0 ? "−" : ""}${won(Math.abs(afterChange))}원`} · 전일 대비</small></span>` : ""}</span>${afterHtml(ds, close, after)}</span>
+        <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
+          <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small><b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b></span>${afterHtml(ds, close, after)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }

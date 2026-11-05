@@ -64,14 +64,13 @@ const { chromium } = require("playwright");
         await page.waitForFunction(()=>window.__closingPlot && document.querySelector("#rec-head .rh-p"));
         const active = revision===0 || revision===4;
         const text=await page.locator("#rec-head .rh-p").innerText();
-        assert.match(text,active?/9,950/:/9,920/);
-        assert.match(text,active?/2\.05%/:/1\.74%/);
+        assert.match(text,/9,920/,"큰 가격은 늘 정규장 종가");
+        assert.match(text,/1\.74%/);
         assert.equal(await page.locator("#q-price").textContent(),"9,920","stored regular quote does not change");
         assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9910,"chart preserves actual regular minute");
         if(active){
-          assert.match(await page.locator("#rec-head .rh-session").innerText(),revision>=8?/시간외 시세 · 네이버[\s\S]*조회/:/시간외 단일가[\s\S]*조회/);
-          assert.match(await page.locator("#rec-head .rh-move").innerText(),/\+200원 · 전일 대비/);
-          assert.match(await page.locator("#rec-head .rh-after").innerText(),/정규장 종가 9,920원 · 15:30/);
+          // 시간외 단일가는 큰 가격 아래 작은 줄 (종가 대비)
+          assert.match(await page.locator("#rec-head .rh-after").innerText(),/시간외 단일가[\s\S]*9,950원[\s\S]*\+0\.30%[\s\S]*\+30원[\s\S]*17:4\d/);
         }else {
           assert.equal(await page.locator('#rec-head .rh-after').count(),0,'no unavailable message or alternate price');
           assert.equal(await page.locator('#rec-head .rh-session').count(),0,'regular close only');
@@ -80,8 +79,9 @@ const { chromium } = require("playwright");
         if(revision===4){
           liveAfterPrice=9700;
           await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
-          await page.waitForFunction(()=>document.querySelector("#rec-head .rh-p").textContent.includes("9,700"));
-          assert.match(await page.locator("#rec-head .rh-move").innerText(),/−0\.51%[\s\S]*−50원/);
+          await page.waitForFunction(()=>document.querySelector("#rec-head .rh-after").textContent.includes("9,700"));
+          assert.match(await page.locator("#rec-head .rh-after").innerText(),/−2\.22%[\s\S]*−220원/);
+          assert.match(await page.locator("#rec-head .rh-p").innerText(),/9,920/);
           assert.equal(await page.locator("#q-price").textContent(),"9,920");
           assert.equal(await page.evaluate(()=>window.__closingPlot.price.filter(x=>x.value!=null).at(-1).value),9910);
         }
@@ -89,7 +89,7 @@ const { chromium } = require("playwright");
           await fs.mkdir('/workspace/artifacts/overtime-preview',{recursive:true});
           await page.screenshot({path:`/workspace/artifacts/overtime-preview/header-${width}.png`});
           await page.locator('[data-step="-1"]').click();
-          assert.equal(await page.locator("#rec-head .rh-session").count(),0,"past date must not show today's overtime quote");
+          assert.equal(await page.locator("#rec-head .rh-after").count(),0,"past date must not show today's overtime quote");
         }
         assert.deepEqual(errors,[]);await page.close();
       }
