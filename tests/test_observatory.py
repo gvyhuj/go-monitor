@@ -691,3 +691,24 @@ def test_overtime_report_once_a_day_without_kis(tmp_path, monkeypatch):
     db.set_state('after:000001', _json.dumps({'date': '2026-11-06', 'price': 10280, 'volume': 3120, 'at': '18:00', 'source': 'kis'}))
     cloud_job.overtime_report('000001')
     assert notes[-1] == '시간외 단일가(2026-11-06): 받음 10,280원 · 거래량 3,120주 (18:00 기준)'
+
+
+def test_kis_after_market_probe_once(tmp_path, monkeypatch):
+    # 애프터마켓 확인: 16:05 전엔 안 함, 한 번만, 한투 호출은 1분봉 1번
+    import json as _json
+    from datetime import datetime
+    import cloud_job
+    from core import db, feed, kis
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setenv('KIS_APP_KEY', 'k'); monkeypatch.setenv('KIS_APP_SECRET', 's')
+    asked, notes = [], []
+    monkeypatch.setattr(kis, 'minutes', lambda code, until, market='J': asked.append(until) or [
+        {'ts': '2026-11-06T15:30', 'close': 9920, 'volume': 0}, {'ts': '2026-11-06T16:12', 'close': 9950, 'volume': 30}])
+    monkeypatch.setattr(cloud_job, 'annotate', lambda kind, msg: notes.append(msg))
+    db.set_state('quote:000001', _json.dumps({'regular_close': {'close': 9920}, 'latest_quote': {'price': 9950, 'queried_at': '2026-11-06T16:20:00'}}))
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 6, 15, 50))
+    cloud_job.kis_after_market_probe('000001')
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 6, 16, 20))
+    cloud_job.kis_after_market_probe('000001'); cloud_job.kis_after_market_probe('000001')
+    assert asked == ['200000']
+    assert notes == ['애프터마켓 확인(2026-11-06): 정규장 종가 9920 · 장 마감 뒤 한투 현재가 9950 (16:20 조회) / 20:00까지 1분봉 2개 중 15:30 뒤 1개, 마지막 16:12 9950 (거래량 30)']
