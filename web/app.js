@@ -743,7 +743,8 @@
     if (!relayTried && STATUS && STATUS.relay && STATUS.relay.url) return;
     const stuck = ((STATUS && STATUS.collect && STATUS.collect.sources) || []).some((r) => r.stale);
     const fresh = RELAY.at && Date.now() - new Date(`${RELAY.at}:00+09:00`).getTime() < 180000;
-    const label = fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
+    const afterFresh = RELAY.afterAt && RELAY.after && Date.now() - new Date(`${RELAY.afterAt}:00+09:00`).getTime() < 180000;
+    const label = afterFresh ? `시간외 조회 ${RELAY.afterAt.slice(11, 16)}` : fresh ? `실시간 ${RELAY.at.slice(11, 16)}` : engineBase;
     setEngine(stuck ? "stale" : "ok", stuck ? `${label} · 수집 확인 필요` : label);
   }
   function setEngine(state, label) {
@@ -768,11 +769,15 @@
 
   // ---------------------------------------------------------------- 실시간 중계 (장중 15초마다: Cloudflare Worker → 한투)
   // 주소와 들어가는 값은 암호화된 상태 자료(STATUS.relay)에만 있음. 중계가 안 되면 예전처럼 정기 갱신 자료만 씀
-  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null };
+  const RELAY = { date: null, bars: new Map(), kq: new Map(), quote: null, kosdaq: null, at: null, after: null, afterAt: null };
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
   let onStatusQuote = null;      // 중계가 실패해도 정기 수집으로 받은 새 시세를 주가 기록 머리에 반영
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
   function applyRelay() {
+    if (STATUS && STATUS.quote && RELAY.after && STATUS.quote.traded_at?.slice(0, 10) === RELAY.after.date) {
+      const previous = STATUS.quote.after;
+      if (!previous || (previous.queried_at || `${previous.date}T${previous.at}`) <= RELAY.after.queried_at) STATUS.quote.after = RELAY.after;
+    }
     if (!STATUS || !RELAY.quote || RELAY.quote.price == null || !RELAY.at) return;
     const q = STATUS.quote || {}, at = `${RELAY.at}:00`, r = RELAY.quote;
     if (q.regular_close && q.regular_close.date === at.slice(0, 10) && q.traded_at && at <= q.traded_at) return;   // 장중 중계가 확인된 마감값을 덮지 않음
@@ -790,11 +795,25 @@
   }
   async function relayAsk() {
     const r = STATUS && STATUS.relay, t = kstParts();
-    if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || t.hm < 900 || t.hm > 1531) return;
+    const overtime = t.hm >= 1600 && t.hm <= 1800;
+    if (!r || !r.url || !r.auth || document.visibilityState === "hidden" || t.wd < 1 || t.wd > 5 || (!overtime && (t.hm < 900 || t.hm > 1531))) return;
+    if (overtime && STATUS.quote?.traded_at?.slice(0, 10) !== t.day) return;
     try {
       const res = await fetch(`${r.url}/live`, { headers: { "x-go-auth": r.auth }, cache: "no-store" });
       if (!res.ok) return;
       const d = await res.json();
+      if (d.session === "overtime") {
+        if (!overtime || !d.at || d.at.slice(0, 10) !== t.day || d.stale) return;
+        const a = d.after, previous = RELAY.after;
+        if (a && a.date === t.day && Number.isFinite(a.price) && a.price > 0 && Number.isFinite(a.volume) && a.volume > 0) {
+          RELAY.after = a; RELAY.afterAt = d.at;
+          applyRelay();
+          if (onStatusQuote) onStatusQuote();
+          if (!$("#alert") || $("#alert").hidden) { engineLabel(""); if ($("#engine").dataset.state === "ok") drawOnce($("#engine"), "quote-received", 700); }
+          if (!PAST_DAY && previous && previous.date === a.date && previous.price !== a.price) drawOnce($("#rec-head .rh-p > span"), "quote-changed", 700);
+        }
+        return;  // 시간외 값은 정규장 시세·분봉·분석에 합치지 않음
+      }
       if (!d.at || d.at.slice(0, 10) !== t.day || !d.quote) return;
       const previousPrice = RELAY.date === t.day && RELAY.quote ? RELAY.quote.price : null;
       if (RELAY.date !== t.day) { RELAY.date = t.day; RELAY.bars = new Map(); RELAY.kq = new Map(); }
@@ -1213,12 +1232,18 @@
       }
     }
 
-    // 시간외 단일가 (거래소 16:00~18:00): 큰 가격(정규장 종가) 바로 아래 한 줄, 그날 체결이 있을 때만. 등락은 정규장 종가 대비
-    function afterHtml(ds) {
-      const a = STATUS && STATUS.quote && STATUS.quote.after;
-      if (!a || a.date !== ds || a.price == null) return "";
-      const arrow = a.rate > 0 ? "▲" : a.rate < 0 ? "▼" : "";
-      return `<span class="rh-after" title="거래소 시간외 단일가 (16:00~18:00, 정규장 종가 대비)">시간외 <b class="${sgnCls(a.rate)}">${won(a.price)}원 ${arrow}${(Math.abs(a.rate) * 100).toFixed(2)}%</b> ${esc(a.at)}</span>`;
+    // 큰 가격만 시간외 단일가를 사용. 정규장 종가·차트·분석은 별도 유지.
+    function overtimeFor(ds) {
+      const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts();
+      if (ds !== latest || ds !== t.day || t.hm < 1600 || !q || q.market_status === "OPEN" || q.regular_close_pending
+        || !a || a.date !== ds || !Number.isFinite(a.price) || a.price <= 0 || !Number.isFinite(a.volume) || a.volume <= 0) return null;
+      return a;
+    }
+    function afterHtml(ds, close, after) {
+      if (after) return `<span class="rh-after">정규장 종가 ${won(close)}원 · 15:30</span>`;
+      const t = kstParts();
+      return ds === latest && ds === t.day && t.hm >= 1600 && !(liveFor(ds) || {}).open
+        ? '<span class="rh-after">시간외 체결 정보 없음</span>' : "";
     }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
@@ -1226,7 +1251,10 @@
       if (!px) return "";
       const live = ds === latest ? liveFor(ds) : null;
       const close = live ? live.price : px.close, chg = live ? live.chg : px.change, kq = px.kosdaq;
-      const base = px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
+      const base = (live && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
+      const after = overtimeFor(ds), afterBase = (STATUS && STATUS.quote && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || base;
+      const shownPrice = after ? after.price : close, shownChg = after ? afterBase ? after.price / afterBase - 1 : null : chg;
+      const afterChange = after && afterBase ? after.price - afterBase : null;
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;
       const done = !(live && live.open);
       const tag = ds === latest ? `<span class="day-now">${live ? live.pending ? "종가 확인 중" : `${live.at} ${live.open ? "현재" : live.ext ? "시간외 포함" : "정규장 마감"}` : "장 마감"}</span>` : "";
@@ -1236,8 +1264,9 @@
       return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${live && live.pending ? "최근 조회가 " : done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
-        <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          <span class="rh-p"><span ${close == null ? "" : `data-count="${close}" data-key="rh-price"`}>${won(close)}</span><small>원</small><b class="${sgnCls(chg)}" ${chg == null ? "" : `data-count="${chg}" data-fmt="pct" data-key="rh-chg"`}>${chg == null ? "-" : pct(chg)}</b></span>${afterHtml(ds)}</span>
+        <span class="rh-r${after ? " rh-overtime" : ""}"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
+          ${after ? `<span class="rh-session"><span>시간외 단일가</span> ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")} 조회</span>` : ""}
+          <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small>${after ? '<span class="rh-move">' : ""}<b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b>${after ? `<small class="${sgnCls(afterChange)}">${afterChange == null ? "-" : `${afterChange > 0 ? "+" : afterChange < 0 ? "−" : ""}${won(Math.abs(afterChange))}원`} · 전일 대비</small></span>` : ""}</span>${afterHtml(ds, close, after)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;
     }
