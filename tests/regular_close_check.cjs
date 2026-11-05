@@ -38,6 +38,10 @@ const { chromium } = require("playwright");
         data.intraday = {...data.intraday,date:"2026-10-28",events:[],prev_close:9750,
           bars:[{t:"2026-10-28T15:19",o:9850,h:9920,l:9850,c:9910,v:47},{t:"2026-10-28T15:30",o:9910,h:9910,l:9910,c:9910,v:0}],
           close_point:revision?null:{t:"2026-10-28T15:30",c:9870,source:"kis_daily"}};
+        if (revision === 3) {
+          data.intraday.bars.pop();
+          data.intraday.close_point = {t:"2026-10-28T15:30",c:9060,source:"kis_daily"};
+        }
         const nonce = crypto.randomBytes(12), enc = crypto.createCipheriv("aes-256-gcm", key, nonce);
         body = Buffer.concat([nonce, enc.update(zlib.gzipSync(JSON.stringify(data))), enc.final(), enc.getAuthTag()]);
       }
@@ -49,13 +53,13 @@ const { chromium } = require("playwright");
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   try {
     for (const width of [1280,390]) {
-      for (revision=0;revision<3;revision++) {
+      for (revision=0;revision<4;revision++) {
         const page=await browser.newPage({viewport:{width,height:900},reducedMotion:"reduce"});
         const errors=[];page.on("pageerror",e=>errors.push(e.message));
         await page.clock.setFixedTime(new Date("2026-10-28T15:30:30+09:00"));
         // Simulate a lingering 15:30 relay response: it must not override the verified daily close.
         await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify({at:revision===0?"2026-10-28T15:31":"2026-10-28T15:30",quote:{price:9910,change:160,rate:1.64},bars:[{t:"2026-10-28T15:30",c:9910,v:0}]})}));
-        if (revision === 1) await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:502,body:"{}",headers:{"access-control-allow-origin":"*"}}));
+        if (revision === 1 || revision === 3) await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:502,body:"{}",headers:{"access-control-allow-origin":"*"}}));
         await page.goto(`http://127.0.0.1:${server.address().port}/#/`);
         await page.getByPlaceholder("비밀번호",{exact:true}).fill(password);
         await page.getByRole("button",{name:"들어가기",exact:true}).click();
@@ -63,12 +67,16 @@ const { chromium } = require("playwright");
         const result=await page.evaluate(()=>({header:document.querySelector("#rec-head .rh-p").innerText,label:document.querySelector("#rec-head .rh-d").innerText,last:window.__closingPlot.price.filter(x=>x.value!=null).at(-1),volume:window.__closingPlot.volume.at(-1)}));
         assert.match(result.header,revision === 2?/9,910/:revision?/10,070/:/9,870/);
         assert.match(result.label,revision === 2?/15:30 현재/:revision?/종가 확인 중/:/15:30 정규장 마감/);
-        assert.equal(result.last.value,revision?9910:9870);
-        if(!revision){assert.equal(result.volume.value,undefined);assert.match(await page.locator("#rec-chart .rc-head").innerText(),/한투 일봉 확인/);}
+        assert.equal(result.last.value,9910,"daily snapshot must not overwrite the actual 15:30 minute, including old publications");
+        if (revision === 3) {
+          assert.equal(result.last.time,Math.floor(Date.parse("2026-10-28T15:19:00+09:00") / 1000),"missing closing minute must not be synthesized");
+          assert.equal(result.volume.value,undefined);
+        } else assert.equal(result.volume.value,0,"preserve the original minute volume");
+        assert.doesNotMatch(await page.locator("#rec-chart .rc-head").innerText(),/한투 일봉 확인/);
         assert.deepEqual(errors,[]);await page.close();
       }
     }
-    console.log("정규장 종가 브라우저 검증 통과: PC·모바일 상단·차트 일치 / 거래량 미생성 / 오래된 중계 차단 / 미확인 표시 / 다음 거래일 갱신");
+    console.log("정규장 분봉 브라우저 검증 통과: PC·모바일 일봉 덮어쓰기 차단 / 분봉 가격·거래량 유지 / 오래된 중계 차단 / 다음 거래일 갱신");
   } finally {
     await browser.close(); await new Promise((r) => server.close(r)); await fs.rm(dir, { recursive: true, force: true });
   }

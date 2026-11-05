@@ -287,9 +287,8 @@ def api_intraday(q):
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
     fe = state_json(f"foreign_est:{sym}")      # 장중 외국계 창구 추정 순매수 (그날 값일 때만)
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
-    final = feed.verified_regular_close(sym, d)
-    close_point = {"t": d + "T15:30", "c": final["close"], "source": final["source"]} if final else None
-    return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False), "close_point": close_point,
+    # 조회 시각의 일봉 값은 15:30 체결가라는 보장이 없다. 분봉 차트에 덮어쓰지 않는다.
+    return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False), "close_point": None,
             "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl}
 
 
