@@ -162,6 +162,13 @@ def check() -> str:
         raise RuntimeError(f"중계 응답 {e.code} {msg}".strip()) from None
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         raise RuntimeError(f"중계에 접속하지 못함: {type(e).__name__}") from None
+    if d.get("session") == "overtime":
+        a = d.get("after") or {}
+        if d.get("stale"):
+            raise RuntimeError("시간외 중계가 이전 응답을 반환함")
+        if not a.get("price") or not a.get("volume"):
+            return f"시간외 단일가 체결 정보 없음 ({d.get('at')} 조회)"
+        return f"시간외 단일가 {a['price']:,}원 ({d.get('at')} 조회)"
     q = d.get("quote") or {}
     if q.get("price") is None:
         raise RuntimeError("중계가 현재가를 주지 않음")

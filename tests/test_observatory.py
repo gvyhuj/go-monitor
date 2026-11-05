@@ -632,6 +632,10 @@ def test_relay_check_reports_live_quote_or_error(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, 'urlopen', ok)
     assert relay.check() == '현재가 9,800원 · KOSDAQ 724.38 · 1분봉 30개 (2026-10-31T12:00 기준)'
     assert seen == [('https://go-relay.o.workers.dev/live', 'A')]
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda *a, **k: Resp(_json.dumps({'session': 'overtime', 'at': '2026-10-31T17:40', 'after': {'price': 9950, 'volume': 120}}).encode()))
+    assert relay.check() == '시간외 단일가 9,950원 (2026-10-31T17:40 조회)'
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda *a, **k: Resp(_json.dumps({'session': 'overtime', 'at': '2026-10-31T17:40', 'after': None}).encode()))
+    assert '체결 정보 없음' in relay.check()
     def no_token(req, timeout=0):
         raise urllib.error.HTTPError(req.full_url, 503, 'x', {}, io.BytesIO(b'{"error":"token"}'))
     monkeypatch.setattr(urllib.request, 'urlopen', no_token)

@@ -54,7 +54,7 @@ const { chromium } = require("playwright");
         const errors=[];page.on("pageerror",e=>errors.push(e.message));
         await page.clock.setFixedTime(new Date("2026-10-28T15:30:30+09:00"));
         // Simulate a lingering 15:30 relay response: it must not override the verified daily close.
-        await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify({at:"2026-10-28T15:30",quote:{price:9910,change:160,rate:1.64},bars:[{t:"2026-10-28T15:30",c:9910,v:0}]})}));
+        await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify({at:revision===0?"2026-10-28T15:31":"2026-10-28T15:30",quote:{price:9910,change:160,rate:1.64},bars:[{t:"2026-10-28T15:30",c:9910,v:0}]})}));
         if (revision === 1) await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:502,body:"{}",headers:{"access-control-allow-origin":"*"}}));
         await page.goto(`http://127.0.0.1:${server.address().port}/#/`);
         await page.getByPlaceholder("비밀번호",{exact:true}).fill(password);

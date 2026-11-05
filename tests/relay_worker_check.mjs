@@ -1,6 +1,10 @@
 // 실시간 중계 Worker 검사: 들어가는 값 확인, 토큰이 없으면 한투를 부르지 않음, 3초 안 같은 답, 한투 오류는 502
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+const systemNow = Date.now;
+let clockOffset = new Date("2026-11-02T10:05:00+09:00").getTime() - systemNow();
+before(() => { Date.now = () => systemNow() + clockOffset; });
+after(() => { Date.now = systemNow; });
 
 const load = async () => (await import(`../core/relay_worker.js?x=${Math.random()}`)).default;
 const env = (tok) => ({
@@ -80,4 +84,47 @@ test("account safety: 1s between KIS calls, no retry when KIS refuses, nothing f
   for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 990, `간격 ${at[i] - at[i - 1]}ms`);
   assert.equal((await w.fetch(req("SECRET-AUTH"), e)).status, 503);
   assert.equal(at.length, 3, "거절 뒤 15초 동안은 한투를 부르지 않음");
+});
+
+test("overtime: one price call, no regular quote/index/bars; zero trades are not a price", async () => {
+  const previous = clockOffset;
+  clockOffset = new Date("2026-11-02T17:40:00+09:00").getTime() - systemNow();
+  try {
+    const w = await load(), calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push(init.headers.tr_id);
+      return new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"9950",ovtm_untp_vol:"120"}}));
+    };
+    const e = env({token:"TOK",exp_ms:Date.now()+3600e3});
+    const d = await (await w.fetch(req("SECRET-AUTH"),e)).json();
+    assert.equal(d.session,"overtime");
+    assert.equal(d.after.price,9950);assert.equal(d.after.volume,120);
+    assert.equal(d.after.queried_at,"2026-11-02T17:40");
+    assert.equal(d.quote,undefined);assert.equal(d.bars,undefined);
+    await w.fetch(req("SECRET-AUTH"),e);
+    assert.deepEqual(calls,["FHPST02300000"],"15초 안에는 한 번만 조회");
+    const empty = await load();
+    globalThis.fetch = async () => new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"0",ovtm_untp_vol:"0"}}));
+    assert.equal((await (await empty.fetch(req("SECRET-AUTH"),e)).json()).after,null);
+    const failed = await load();
+    globalThis.fetch = async () => new Response(JSON.stringify({rt_cd:"1",msg1:"제한"}),{status:500});
+    assert.equal((await failed.fetch(req("SECRET-AUTH"),e)).status,502);
+    assert.equal((await failed.fetch(req("SECRET-AUTH"),e)).status,503);
+  } finally { clockOffset = previous; }
+});
+
+test("session boundary never reuses a regular response for overtime", async () => {
+  const previous = clockOffset;
+  clockOffset = new Date("2026-11-02T15:30:00+09:00").getTime() - systemNow();
+  try {
+    const w = await load(), calls = [];
+    globalThis.fetch = kisFake(calls);
+    const e = env({token:"TOK",exp_ms:Date.now()+3600e3});
+    assert.ok((await (await w.fetch(req("SECRET-AUTH"),e)).json()).quote);
+    clockOffset += 30*60e3;
+    let overtimeCalls=0;
+    globalThis.fetch = async () => { overtimeCalls++; return new Response(JSON.stringify({rt_cd:"0",output:{ovtm_untp_prpr:"9950",ovtm_untp_vol:"120"}})); };
+    const next=await (await w.fetch(req("SECRET-AUTH"),e)).json();
+    assert.equal(next.session,"overtime");assert.equal(next.quote,undefined);assert.equal(overtimeCalls,1);
+  } finally {clockOffset=previous;}
 });

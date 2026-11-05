@@ -178,7 +178,7 @@ def _kis_quotes(code: str):
 
 def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
     """그날 시간외 단일가(거래소 16:00~18:00): 그 시간대 실행마다 한 번 받고, 체결이 있으면 남김 (18시 뒤엔 마지막 값).
-    등락은 그날 정규장 종가 대비. 화면은 큰 가격(정규장 종가) 바로 아래 한 줄로만 보여 줌."""
+    내부 rate는 정규장 종가 대비이며, 화면의 전일 대비는 별도 기준가로 계산한다."""
     from . import kis
     st = get_state(f"after:{code}")
     try:
@@ -193,7 +193,8 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
             o = None                         # 보조 정보: 다음 실행에 다시
         if o and o.get("price") and o.get("volume"):
             saved = {"date": now.date().isoformat(), "price": o["price"], "volume": o["volume"],
-                     "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00")}
+                     "change": o["price"] - close, "rate": o["price"] / close - 1, "at": min(hm, "18:00"),
+                     "queried_at": now.isoformat(timespec="minutes")}
             set_state(f"after:{code}", json.dumps(saved))
     if saved and saved.get("date") == now.date().isoformat() and close:
         saved = {**saved, "change": saved["price"] - close, "rate": saved["price"] / close - 1}
