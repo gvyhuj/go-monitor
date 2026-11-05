@@ -763,6 +763,9 @@
   let onRelay = null;            // 주가 기록 화면: 1일 차트를 새 1분봉으로 다시 그림
   let onStatusQuote = null;      // 중계가 실패해도 정기 수집으로 받은 새 시세를 주가 기록 머리에 반영
   const kstParts = () => { const k = new Date(Date.now() + 9 * 3600e3); return { day: k.toISOString().slice(0, 10), hm: k.getUTCHours() * 100 + k.getUTCMinutes(), wd: k.getUTCDay() }; };
+  const validOvertime = (a) => a && Number.isFinite(a.price) && a.price > 0 && (a.source === "naver"
+    ? a.session === "afterMarket" && a.traded_at?.slice(0, 10) === a.date && a.at >= "16:00" && a.at <= "18:30"
+    : Number.isFinite(a.volume) && a.volume > 0);
   function applyRelay() {
     if (STATUS && STATUS.quote && RELAY.after && STATUS.quote.traded_at?.slice(0, 10) === RELAY.after.date) {
       const previous = STATUS.quote.after;
@@ -796,7 +799,7 @@
       if (d.session === "overtime") {
         if (!overtime || !d.at || d.at.slice(0, 10) !== t.day || d.stale) return;
         const a = d.after, previous = RELAY.after;
-        if (a && a.date === t.day && Number.isFinite(a.price) && a.price > 0 && Number.isFinite(a.volume) && a.volume > 0) {
+        if (validOvertime(a) && a.date === t.day) {
           RELAY.after = a; RELAY.afterAt = d.at;
           applyRelay();
           if (onStatusQuote) onStatusQuote();
@@ -1227,14 +1230,18 @@
     function overtimeFor(ds) {
       const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts();
       if (ds !== latest || ds !== t.day || t.hm < 1600 || !q || q.market_status === "OPEN" || q.regular_close_pending
-        || !a || a.date !== ds || !Number.isFinite(a.price) || a.price <= 0 || !Number.isFinite(a.volume) || a.volume <= 0) return null;
+        || !validOvertime(a) || a.date !== ds) return null;
       return a;
     }
     function afterHtml(ds, close, after) {
       if (after) return `<span class="rh-after">정규장 종가 ${won(close)}원 · 15:30</span>`;
       const t = kstParts();
+      const q = STATUS && STATUS.quote, latestQuote = q && q.latest_quote;
+      const quoteText = latestQuote && latestQuote.date === ds && Number.isFinite(latestQuote.price) && latestQuote.price > 0
+        ? ` · 일반 현재가 조회 ${won(latestQuote.price)}원 (${esc(hhmm(latestQuote.queried_at))})` : "";
+      const failed = q && q.overtime_status && q.overtime_status.date === ds && q.overtime_status.state === "error";
       return ds === latest && ds === t.day && t.hm >= 1600 && !(liveFor(ds) || {}).open
-        ? '<span class="rh-after">시간외 체결 정보 없음</span>' : "";
+        ? `<span class="rh-after">${failed ? "시간외 조회 실패" : "시간외 시세 미확인"}${quoteText}</span>` : "";
     }
     // 차트 칸 머리: 고른 날 (왼쪽 날짜·기준가→종가·장중 최고/최저, 오른쪽 종목 이름 위 / 가격·등락 크게). 네이버 기준
     function headHtml() {
@@ -1256,7 +1263,7 @@
         <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${live && live.pending ? "최근 조회가 " : done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r${after ? " rh-overtime" : ""}"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
-          ${after ? `<span class="rh-session"><span>시간외 단일가</span> ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")} 조회</span>` : ""}
+          ${after ? `<span class="rh-session"><span>${after.source === "naver" ? "시간외 시세 · 네이버" : "시간외 단일가"}</span> ${esc(after.queried_at ? hhmm(after.queried_at) : after.at || "-")} 조회</span>` : ""}
           <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small>${after ? '<span class="rh-move">' : ""}<b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b>${after ? `<small class="${sgnCls(afterChange)}">${afterChange == null ? "-" : `${afterChange > 0 ? "+" : afterChange < 0 ? "−" : ""}${won(Math.abs(afterChange))}원`} · 전일 대비</small></span>` : ""}</span>${afterHtml(ds, close, after)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
       </button>`;

@@ -577,7 +577,6 @@ NAVER_BASE_KEY = "daily:naver_base_v1"
 def _sync_daily_kis(code: str, days: int = 150) -> int:
     from . import kis
     from .feed import kst_now
-    from .db import set_state
     now = kst_now()
     end = now.date()
     try:
@@ -585,36 +584,27 @@ def _sync_daily_kis(code: str, days: int = 150) -> int:
                                end.isoformat(), index=code == KOSDAQ)
     except kis.KisError:
         return 0
-    count = store_daily_kis(code, rows)
-    # 기존 일봉 조회를 재사용. 장 마감 뒤에 실제로 받은 날짜별 종가만 확인된 마감값으로 보관.
-    closed = [r for r in rows if r["date"] < end.isoformat() or
-              (r["date"] == end.isoformat() and now.strftime("%H:%M") >= "15:30")]
-    if closed:
-        day = closed[-1]["date"]
-        with connect() as conn:
-            row = conn.execute("SELECT date,open,high,low,close,volume,base FROM daily_bars WHERE symbol=? AND date=?", (code, day)).fetchone()
-            prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (code, day)).fetchone()
-        if row:
-            final = dict(row)
-            final["base"] = final["base"] or (prev[0] if prev else None)
-            final.update(source="kis_daily", confirmed_at=now.isoformat(timespec="seconds"))
-            set_state(f"regular_close:{code}:{day}", json.dumps(final))
-    return count
+    return store_daily_kis(code, rows)
 
 
 def store_daily_kis(code: str, rows: list[dict]) -> int:
     """한투 일봉 저장. 기준가(base) = 전 거래일 종가 (앞 날 줄이 없으면 기록에 있는 전 날 종가)."""
     if not rows:
         return 0
+    from .feed import verified_regular_close
     with connect() as conn:
+        saved_days = {r[0].rsplit(":", 1)[-1] for r in conn.execute(
+            "SELECT key FROM system_state WHERE key LIKE ?", (f"regular_close:{code}:%",))}
         prev = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1",
                             (code, rows[0]["date"])).fetchone()
         p = prev[0] if prev else None
         out = []
         for r in rows:
-            out.append((code, r["date"], r["open"], r["high"], r["low"], r["close"], r["volume"] or 0,
+            final = verified_regular_close(code, r["date"]) if r["date"] in saved_days else None
+            close = final["close"] if final else r["close"]
+            out.append((code, r["date"], r["open"], r["high"], r["low"], close, r["volume"] or 0,
                         None if code == KOSDAQ else p))
-            p = r["close"]
+            p = close
         conn.executemany("INSERT OR REPLACE INTO daily_bars(symbol, date, open, high, low, close, volume, base) "
                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", out)
     return len(out)

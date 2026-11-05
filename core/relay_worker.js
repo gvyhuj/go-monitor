@@ -43,11 +43,19 @@ async function live(env, now) {
   if (!saved || !saved.token || !(saved.exp_ms > now + 60e3)) return { status: 503, body: { error: "token" } };
   const t = kstNow(now), tok = saved.token, code = env.CODE;
   if (t.hm >= "16:00" && t.hm <= "18:00") {
-    const o = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-overtime-price", "FHPST02300000",
-      { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code })).output || {};
+    let o = {}, failed = null;
+    try {
+      o = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-overtime-price", "FHPST02300000",
+        { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code })).output || {};
+    } catch (e) { failed = e; }
     const price = num(o.ovtm_untp_prpr), volume = num(o.ovtm_untp_vol);
-    return { status: 200, body: { session: "overtime", at: `${t.day}T${t.hm}`,
-      after: price > 0 && volume > 0 ? { date: t.day, price, volume, at: t.hm, queried_at: `${t.day}T${t.hm}` } : null } };
+    const queried = new Date(now + 9 * 3600e3).toISOString().slice(0, 19);
+    let after = price > 0 && volume > 0 ? { date: t.day, price, volume, source: "kis", session: "krx_overtime", at: t.hm, queried_at: queried } : null;
+    if (!after) {
+      try { after = await naverOvertime(code, t.day, queried); } catch (_) { /* 미확인 응답은 가격으로 대체하지 않음 */ }
+    }
+    if (!after && failed) throw failed;
+    return { status: 200, body: { session: "overtime", at: `${t.day}T${t.hm}`, after } };
   }
   const q = (await kis(env, tok, "/uapi/domestic-stock/v1/quotations/inquire-price", "FHKST01010100",
     { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code })).output || {};
@@ -69,6 +77,21 @@ async function live(env, now) {
     bars: barsMemo.bars,
     kosdaq_bars: barsMemo.kq,
   } };
+}
+
+async function naverOvertime(code, day, queried) {
+  const r = await fetch(`https://polling.finance.naver.com/api/realtime/domestic/stock/${encodeURIComponent(code)}`, {
+    headers: { accept: "application/json", "user-agent": "Mozilla/5.0", referer: "https://m.stock.naver.com/" }, signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) return null;
+  const q = (await r.json()).datas?.[0], stamp = q?.localTradedAt;
+  if (!q || q.marketSessionType !== "afterMarket" || !/(Z|[+-]\d{2}:\d{2})$/.test(stamp || "")) return null;
+  const ms = Date.parse(stamp);
+  if (!Number.isFinite(ms)) return null;
+  const traded = kstNow(ms), price = num(q.closePriceRaw || q.closePrice);
+  if (traded.day !== day || traded.hm < "16:00" || traded.hm > "18:30" || !(price > 0)) return null;
+  // 누적 거래량은 시간외 거래량이 아니다. 세션이 명시된 시세만 전달한다.
+  return { date: day, price, volume: null, source: "naver", session: "afterMarket", traded_at: `${day}T${traded.hm}:00+09:00`, at: traded.hm, queried_at: queried };
 }
 
 function parseBars(rows, px = "stck_prpr") {
