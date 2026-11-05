@@ -32,7 +32,7 @@ const { chromium } = require("playwright");
         const data = JSON.parse(plain);
         data.published_at = "2026-10-28T17:40:00+09:00";
         const final = {date:"2026-10-28",source:"kis_daily",close:9920,base:9750,confirmed_at:"2026-10-28T16:00:00"};
-        const after = {date:"2026-10-28",price:9950,volume:120,at:"17:40",queried_at:"2026-10-28T17:40",rate:.003};
+        const after = {source:"kis",date:"2026-10-28",price:9950,volume:120,at:"17:40",queried_at:"2026-10-28T17:40",rate:.003};
         data.status.quote = {price:9920,change:170,change_pct:1.7435897,market_status:"CLOSE",traded_at:"2026-10-28T15:30:00",regular_close:final,
           latest_quote:{date:"2026-10-28",price:9900,queried_at:"2026-10-28T17:40:00",source:"kis_current"},
           overtime_status:{date:"2026-10-28",state:revision===7?"error":"unavailable"},
@@ -57,12 +57,12 @@ const { chromium } = require("playwright");
         const errors=[];page.on("pageerror",e=>errors.push(e.message));
         await page.clock.setFixedTime(new Date("2026-10-28T17:45:10+09:00"));
         await page.route("https://go-relay.test.workers.dev/live",r=>r.fulfill({status:200,contentType:"application/json",headers:{"access-control-allow-origin":"*"},body:JSON.stringify(revision===6?{at:"2026-10-28T17:45",quote:{price:12000,change:2250,rate:23.08},bars:[{t:"2026-10-28T15:30",c:9910,v:0}]}:{session:"overtime",at:"2026-10-28T17:45",stale:revision===5,
-          after:revision===9?{date:"2026-10-28",price:liveAfterPrice,volume:null,source:"naver",session:"afterMarket",traded_at:"2026-10-28T17:45:00+09:00",at:"17:45",queried_at:"2026-10-28T17:45"}:revision>=4 && revision<7?{date:"2026-10-28",price:liveAfterPrice,volume:120,at:"17:45",queried_at:"2026-10-28T17:45"}:null})}));
+          after:revision===9?{date:"2026-10-28",price:liveAfterPrice,volume:null,source:"naver",session:"afterMarket",traded_at:"2026-10-28T17:45:00+09:00",at:"17:45",queried_at:"2026-10-28T17:45"}:revision>=4 && revision<7?{date:"2026-10-28",source:"kis",price:liveAfterPrice,volume:120,at:"17:45",queried_at:"2026-10-28T17:45"}:null})}));
         await page.goto(`http://127.0.0.1:${server.address().port}/#/`);
         await page.getByPlaceholder("비밀번호",{exact:true}).fill(password);
         await page.getByRole("button",{name:"들어가기",exact:true}).click();
         await page.waitForFunction(()=>window.__closingPlot && document.querySelector("#rec-head .rh-p"));
-        const active = revision===0 || revision===4 || revision===8 || revision===9;
+        const active = revision===0 || revision===4;
         const text=await page.locator("#rec-head .rh-p").innerText();
         assert.match(text,active?/9,950/:/9,920/);
         assert.match(text,active?/2\.05%/:/1\.74%/);
@@ -73,9 +73,8 @@ const { chromium } = require("playwright");
           assert.match(await page.locator("#rec-head .rh-move").innerText(),/\+200원 · 전일 대비/);
           assert.match(await page.locator("#rec-head .rh-after").innerText(),/정규장 종가 9,920원 · 15:30/);
         }else {
-          const note=await page.locator("#rec-head .rh-after").innerText();
-          assert.match(note,revision===7?/시간외 조회 실패/:/시간외 시세 미확인/);
-          assert.match(note,/일반 현재가 조회 9,900원 \(17:40\)/);
+          assert.equal(await page.locator('#rec-head .rh-after').count(),0,'no unavailable message or alternate price');
+          assert.equal(await page.locator('#rec-head .rh-session').count(),0,'regular close only');
         }
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth),0);
         if(revision===4){

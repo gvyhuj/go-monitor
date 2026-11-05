@@ -2,12 +2,7 @@
 import json
 from datetime import datetime
 import pytest
-from core import db, feed, kis, macro, naver
-
-
-@pytest.fixture(autouse=True)
-def no_external_fallback(monkeypatch):
-    monkeypatch.setattr(naver, 'fetch_overtime_quote', lambda *a: None)
+from core import db, feed, kis, macro
 
 
 def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
@@ -51,7 +46,7 @@ def test_verified_close_keeps_quote_and_chart_consistent(tmp_path, monkeypatch):
     assert payload['bars'][-1]['c'] == 9870 and payload['bars'][-1]['v'] == 175
     with db.connect() as conn:
         assert tuple(conn.execute("SELECT close,volume FROM minute_bars WHERE symbol='000001'").fetchone()) == (9870, 175)
-    db.set_state('after:000001', json.dumps({'date': '2026-11-04', 'price': 9950, 'change': -120, 'rate': -0.01, 'at': '17:00'}))
+    db.set_state('after:000001', json.dumps({'date': '2026-11-04', 'source': 'kis', 'price': 9950, 'change': -120, 'rate': -0.01, 'at': '17:00'}))
     after = feed._kis_after('000001', datetime(2026, 11, 4, 20, 0), True, 9870)
     assert after['change'] == 80 and abs(after['rate'] - 80 / 9870) < 1e-12
 
@@ -184,19 +179,12 @@ def test_overtime_query_is_independent_and_zero_is_not_proof_of_no_trades(tmp_pa
     assert json.loads(db.get_state('after_status:000001')['value'])['state'] == 'error'
 
 
-def test_explicit_naver_overtime_can_fill_missing_kis_price(tmp_path, monkeypatch):
+def test_cached_naver_overtime_is_removed_even_after_query_window(tmp_path, monkeypatch):
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
     monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'test.db')
     db.init_db()
-    monkeypatch.setattr(kis, 'overtime', lambda *a: dict(price=0, volume=0))
-    q = dict(price=9130, market_session='afterMarket', traded_at='2026-11-05T17:08:00+09:00')
-    fallback = naver.overtime_from_quote(q, '2026-11-05')
-    assert fallback and fallback['volume'] is None, 'daily accumulated volume is not overtime volume'
-    monkeypatch.setattr(naver, 'fetch_overtime_quote', lambda *a: fallback)
-    after = feed._kis_after('000001', datetime(2026, 11, 5, 17, 8), True, 9140)
-    assert after['price'] == 9130 and after['source'] == 'naver' and after['change'] == -10
-    assert not db.get_state('regular_close:000001:2026-11-05'), 'fallback cannot write regular records'
-    for changed in (dict(market_session='regularMarket'), dict(market_session=None),
-                    dict(traded_at='2026-11-04T17:08:00+09:00'), dict(traded_at='2026-11-05T15:30:00+09:00'),
-                    dict(traded_at='2026-11-05T17:08:00'), dict(price=0)):
-        assert naver.overtime_from_quote(dict(q, **changed), '2026-11-05') is None
+    for hour in (17, 20):
+        db.set_state('after:000001', json.dumps(dict(date='2026-11-05', price=9130, volume=100, source='naver', session='afterMarket')))
+        monkeypatch.setattr(kis, 'overtime', lambda *a: dict(price=0, volume=0))
+        assert feed._kis_after('000001', datetime(2026, 11, 5, hour, 0), True, 9140) is None
+        assert json.loads(db.get_state('after:000001')['value']) is None

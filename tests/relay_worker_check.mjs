@@ -129,25 +129,19 @@ test("session boundary never reuses a regular response for overtime", async () =
   } finally {clockOffset=previous;}
 });
 
-test("overtime fallback requires an explicit same-day Naver after-market session and stays separate", async () => {
+test("missing KIS overtime never queries another provider", async () => {
   const previous=clockOffset;
   clockOffset=new Date("2026-11-02T17:40:00+09:00").getTime()-systemNow();
   try {
-    const good={marketSessionType:"afterMarket",localTradedAt:"2026-11-02T17:39:00+09:00",closePriceRaw:"9130",accumulatedTradingVolumeRaw:"64788"};
-    for(const changed of [{},{marketSessionType:"regularMarket"},{localTradedAt:"2026-11-01T17:39:00+09:00"},{localTradedAt:"2026-11-02T15:30:00+09:00"},{closePriceRaw:"0"},{localTradedAt:"2026-11-02T17:39:00"}]) {
-      const w=await load(),calls=[];
-      globalThis.fetch=async(url,init)=>{
-        calls.push(String(url));
-        return new Response(JSON.stringify(String(url).includes("naver.com")?{datas:[{...good,...changed}]}:{rt_cd:"0",output:{ovtm_untp_prpr:"0",ovtm_untp_vol:"0"}}));
-      };
-      const e=env({token:"TOK",exp_ms:Date.now()+3600e3});
-      const d=await(await w.fetch(req("SECRET-AUTH"),e)).json();
-      assert.equal(d.quote,undefined);assert.equal(d.bars,undefined);assert.equal(d.kosdaq,undefined);
-      if(!Object.keys(changed).length) {
-        assert.equal(d.after.price,9130);assert.equal(d.after.source,"naver");assert.equal(d.after.volume,null);
-      } else assert.equal(d.after,null);
-      await w.fetch(req("SECRET-AUTH"),e);
-      assert.equal(calls.length,2,"one KIS + one Naver request, memoized for 15 seconds");
-    }
+    const w=await load(), calls=[];
+    globalThis.fetch=async(url,init)=>{
+      calls.push(String(url));
+      assert.ok(String(url).includes('openapi.koreainvestment.com'));
+      return new Response(JSON.stringify({rt_cd:'0',output:{ovtm_untp_prpr:'0',ovtm_untp_vol:'0'}}));
+    };
+    const e=env({token:'TOK',exp_ms:Date.now()+3600e3});
+    assert.equal((await(await w.fetch(req('SECRET-AUTH'),e)).json()).after,null);
+    await w.fetch(req('SECRET-AUTH'),e);
+    assert.equal(calls.length,1);
   } finally {clockOffset=previous;}
 });

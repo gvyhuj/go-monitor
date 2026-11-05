@@ -168,6 +168,9 @@ def _ensure_regular_closes(code: str, now: datetime):
         saved = get_state(f"quote:{c}")
         quote = json.loads(saved["value"]) if saved else None
         final = verified_regular_close(c, day)
+        if quote and quote.get("after") and quote["after"].get("source") != "kis":
+            quote.pop("after")
+            set_state(f"quote:{c}", json.dumps(quote))
         if quote and not final and str(quote.get("traded_at", ""))[:10] == day:
             quote.pop("regular_close", None)
             quote.update(regular_close_pending=True, market_status="CLOSE")
@@ -232,6 +235,9 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
         saved = json.loads(st["value"]) if st and st.get("value") else None
     except ValueError:
         saved = None
+    if saved and saved.get("source") != "kis":
+        saved = None
+        set_state(f"after:{code}", "null")  # 이전 네이버 보완값은 장 종료 후에도 재사용하지 않음
     hm = now.strftime("%H:%M")
     if is_today and "16:00" <= hm <= "18:30":
         status = {"date": now.date().isoformat(), "queried_at": now.isoformat(timespec="seconds"), "state": "unavailable"}
@@ -247,17 +253,6 @@ def _kis_after(code: str, now: datetime, is_today: bool, close) -> dict | None:
                      "queried_at": now.isoformat(timespec="minutes")}
             set_state(f"after:{code}", json.dumps(saved))
             status["state"] = "ok"
-        else:
-            try:
-                fallback = naver.fetch_overtime_quote(code, now.date().isoformat())
-            except naver.DataSourceError:
-                fallback = None
-            if fallback:
-                saved = dict(fallback, queried_at=now.isoformat(timespec="seconds"),
-                             change=fallback["price"] - close if close else None,
-                             rate=fallback["price"] / close - 1 if close else None)
-                set_state(f"after:{code}", json.dumps(saved))
-                status.update(state="ok", source="naver")
         set_state(f"after_status:{code}", json.dumps(status))
     if saved and saved.get("date") == now.date().isoformat() and close:
         saved = {**saved, "change": saved["price"] - close, "rate": saved["price"] / close - 1}
