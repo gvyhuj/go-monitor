@@ -1229,6 +1229,7 @@
     // 거래가 있었던 것: 현재가가 종가와 다르거나, 누적 거래량이 정규장 거래량보다 늘었음
     // 일반 주식 앱처럼: 그날 16:00부터 다음 장이 열리기 전까지 (장이 열리면 market_status OPEN·새 날짜로 사라짐)
     function overtimeFor(ds) {
+      if (ds !== latest) { const h = price[ds] && price[ds].after; return h && h.price > 0 ? { ...h, at: "20:00" } : null; }   // 지난 날: 그날 마지막 가격
       const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts(), rc = q && q.regular_close;
       if (ds !== latest || ds > t.day || (ds === t.day && t.hm < 1600) || !q || q.market_status === "OPEN" || q.regular_close_pending
         || !validOvertime(a) || a.date !== ds) return null;

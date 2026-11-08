@@ -678,3 +678,35 @@ def test_after_market_report_once_a_day_without_kis(tmp_path, monkeypatch):
     db.set_state('after:000001', _json.dumps({'date': '2026-11-06', 'price': 9190, 'volume': 1008, 'at': '20:00', 'source': 'kis'}))
     cloud_job.overtime_report('000001')
     assert notes[-1] == '애프터마켓(2026-11-06): 마지막 9,190원 (20:00 기준)'
+
+
+def test_after_market_history_from_naver_close(tmp_path, monkeypatch):
+    # 지난 애프터마켓: 네이버 일별 종가(애프터마켓 마지막 체결 포함) ≠ 한투 정규장 종가인 날만 (애프터마켓이 생긴 2026-09-14부터).
+    # 처음 한 번 + 평일 20:11 뒤 하루 한 번만 네이버에 묻고, 한투는 부르지 않음.
+    import json as _json
+    from datetime import datetime
+    import webserver
+    from core import db, feed, kis, macro
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setattr(kis, '_get', lambda *a, **k: (_ for _ in ()).throw(AssertionError('한투를 부르면 안 됨')))
+    monkeypatch.setattr(webserver, 'load_settings', lambda: {'symbol': '000001'})
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES('000001',?,1,1,1,?,100)",
+                         [('2026-09-11', 9000), ('2026-11-04', 9990), ('2026-11-05', 9140), ('2026-11-06', 8380)])
+    calls = []
+    naver_rows = [{'date': '2026-11-06', 'close': 8770, 'volume': 52003}, {'date': '2026-11-05', 'close': 9190, 'volume': 66355},
+                  {'date': '2026-11-04', 'close': 9990, 'volume': 31311}, {'date': '2026-09-11', 'close': 9100, 'volume': 10}]
+    monkeypatch.setattr(macro, 'fetch_naver_prices', lambda code, pages=1: calls.append(code) or naver_rows)
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 8, 10, 0))     # 일요일: 처음 한 번은 바로
+    feed.after_history('000001'); feed.after_history('000001')
+    assert calls == ['000001']
+    days = {d['date']: d.get('after') for d in webserver.api_daily({})['days']}
+    assert days['2026-11-06'] == {'price': 8770, 'volume': 52003}
+    assert days['2026-11-05'] == {'price': 9190, 'volume': 66355}
+    assert days['2026-11-04'] is None and days['2026-09-11'] is None          # 같은 값 · 애프터마켓 전
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 9, 20, 0))      # 월요일 20:10 전엔 아직
+    feed.after_history('000001')
+    assert calls == ['000001']
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 9, 20, 20))
+    feed.after_history('000001')
+    assert calls == ['000001', '000001']

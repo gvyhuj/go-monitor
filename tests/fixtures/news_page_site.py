@@ -100,6 +100,8 @@ def main(out: Path) -> None:
             "time_source": "naver", "time_status": "estimated", "followup_candidate": False,
             "observation": {"status": "unavailable", "intraday": None, "windows": {}}, "notes": [],
             "members": [{"id": "2099", "title": "충북TP 우주항공 기업 지원사업 선정", "kind": "ext"}]}, ensure_ascii=False)))
+    # 지난 날 애프터마켓 마지막 가격 (feed.after_history가 네이버 종가로 채우는 값)
+    db.set_state(f"after_days:{SYMBOL}", json.dumps({"2026-10-27": {"price": 12345, "volume": 5}}))
     # 실시간 중계 (주소·들어가는 값은 암호화된 상태 자료에만)
     db.set_state("relay:info", json.dumps({"url": "https://go-relay.test.workers.dev", "auth": "RELAY-AUTH", "ns": "ns", "fp": "x"}))
     items = sitebuild.refresh_items(datetime(2026, 10, 28, 18, 0))

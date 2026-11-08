@@ -492,6 +492,7 @@ def main(argv) -> int:
     kis_token_guard(log)
     relay_guard(code, log)
     overtime_report(code)
+    feed.after_history(code)      # 지난 날 애프터마켓 마지막 가격 (네이버, 하루 한 번)
     lap("준비")
 
     site_ok = False
