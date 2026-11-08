@@ -730,3 +730,23 @@ def test_kis_daily_overtime_probe_once(tmp_path, monkeypatch):
     cloud_job.kis_daily_overtime_probe('000001'); cloud_job.kis_daily_overtime_probe('000001')
     assert calls == ['FHPST02320000']
     assert notes == ['한투 시간외일자별주가 확인: 11/06 한투 8770(거래량 3000)·네이버 8770·종가 8380 / 11/05 한투 0(거래량 0)·네이버 -·종가 9140']
+
+
+def test_after_market_kis_record_wins_over_naver(tmp_path, monkeypatch):
+    # 그날 한투로 직접 받은 애프터마켓 값은 다음 날에도 한투 값으로 (네이버는 한투 기록이 없는 지난 날만 채움)
+    from datetime import datetime
+    import webserver
+    from core import db, feed, macro
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    monkeypatch.setattr(webserver, 'load_settings', lambda: {'symbol': '000001'})
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES('000001',?,1,1,1,?,100)",
+                         [('2026-11-06', 8380), ('2026-11-09', 8000)])
+    feed._kis_after('000001', datetime(2026, 11, 9, 19, 40), True, dict(close=8000, volume=100), dict(price=8100, volume=150))
+    monkeypatch.setattr(macro, 'fetch_naver_prices', lambda code, pages=1: [
+        {'date': '2026-11-09', 'close': 8090, 'volume': 160}, {'date': '2026-11-06', 'close': 8770, 'volume': 52003}])
+    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 9, 20, 20))
+    feed.after_history('000001')
+    days = {d['date']: d.get('after') for d in webserver.api_daily({})['days']}
+    assert (days['2026-11-09']['price'], days['2026-11-09']['source'], days['2026-11-09']['at']) == (8100, 'kis', '19:40')
+    assert days['2026-11-06'] == {'price': 8770, 'volume': 52003}
