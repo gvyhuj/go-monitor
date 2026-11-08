@@ -377,9 +377,9 @@ async function main() {
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#rec-head .rh-box").waitFor();
       await page.locator('.rec-tabs button[data-range="1d"]').click();
-      await page.locator("#rec-chart .rc-head").waitFor();
+      await page.locator("#rec-chart :is(.rc-day, .day-nochart)").waitFor();
       await page.evaluate(() => {
-        window.__chart = document.querySelector("#rec-chart .rc-head"); window.__seen = [];
+        window.__chart = document.querySelector("#rec-chart :is(.rc-day, .day-nochart)"); window.__seen = [];
         new MutationObserver(() => { if (document.querySelector("#rec-chart .loading")) window.__seen.push("loading"); })
           .observe(document.querySelector("#rec-chart"), { subtree: true, childList: true });
       });
@@ -387,7 +387,7 @@ async function main() {
       await page.waitForTimeout(300);
       await page.clock.fastForward(31000);
       await page.waitForTimeout(300);
-      assert.ok(await page.evaluate(() => document.querySelector("#rec-chart .rc-head") === window.__chart), "같은 자료인데 1일 차트를 다시 그림");
+      assert.ok(await page.evaluate(() => document.querySelector("#rec-chart :is(.rc-day, .day-nochart)") === window.__chart), "같은 자료인데 1일 차트를 다시 그림");
       assert.deepEqual(await page.evaluate(() => window.__seen), [], "'불러오는 중'이 다시 나옴");
       assert.deepEqual(errors, []);
       await page.close();
@@ -594,7 +594,7 @@ async function main() {
       await page.waitForTimeout(350);
       assert.equal(await page.evaluate(() => window.__recordEntries.length), 8, "크기 변경에는 효과 반복 없음");
       await page.locator('.rec-tabs button[data-range="1d"]').click();
-      await page.locator("#rec-chart .rc-head").waitFor();
+      await page.locator("#rec-chart :is(.rc-day, .day-nochart)").waitFor();
       assert.equal(await page.locator("#rec-chart .mv-reveal").count(), 0, "1일 차트 나타나기 없음");
       await page.locator('[data-jump]').evaluate((el) => { el.value = "2026-10-22"; el.dispatchEvent(new Event("change", { bubbles: true })); });
       await page.waitForFunction(() => document.querySelector("#rec-head [data-key='rh-price']"));

@@ -66,7 +66,13 @@ const { chromium } = require("playwright");
       await page.clock.fastForward(62000);
       await page.waitForTimeout(250);
       assert.equal(await page.locator("#rec-head .rh-box").getAttribute("data-marker"), "kept");
-      await page.locator('[data-step="-1"]').click();
+      // 날짜 이동(‹ 날짜 › 오늘·달력)은 가격 카드 안에 한 줄로: 차트 위 따로 있던 버튼 줄은 없음
+      assert.equal(await page.locator("#rec-chart .rc-head [data-step], #rec-chart .rc-head [data-today], #rec-chart .rc-head [data-jump]").count(), 0);
+      assert.equal(await page.locator("#rec-head [data-jump]").count(), 1);
+      const before = await page.locator("#rec-head .rh-date").innerText();
+      await page.locator('#rec-head [data-step="-1"]').click();
+      await page.waitForFunction((b) => document.querySelector("#rec-head .rh-date").innerText !== b, before);
+      assert.equal(await page.locator("dialog[open]").count(), 0, "날짜 화살표는 하루 분석 창을 열지 않음");
       const date = await page.locator("#rec-head .rh-d").innerText();
       revision = 2;
       await page.clock.fastForward(62000);

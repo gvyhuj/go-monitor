@@ -72,7 +72,7 @@ const { chromium } = require("playwright");
           assert.equal(result.last.time,Math.floor(Date.parse("2026-10-28T15:19:00Z") / 1000),"missing closing minute must not be synthesized");
           assert.equal(result.volume.value,undefined);
         } else assert.equal(result.volume.value,0,"preserve the original minute volume");
-        assert.doesNotMatch(await page.locator("#rec-chart .rc-head").innerText(),/한투 일봉 확인/);
+        assert.doesNotMatch(await page.locator("#rec-chart").innerText(),/한투 일봉 확인/);
         assert.deepEqual(errors,[]);await page.close();
       }
     }

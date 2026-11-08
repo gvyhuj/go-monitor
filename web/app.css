@@ -190,6 +190,15 @@ button.tcard:hover::after { border-color: var(--brand-blue); opacity: 1; transfo
 .rh-l { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rh-d { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rh-d .day-now { margin-left: 0; }
+.rh-nav { display: inline-flex; align-items: center; gap: 4px; }
+.rh-arw, .rh-today { display: inline-grid; place-items: center; height: 28px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface);
+  color: var(--ink-2); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.rh-arw { width: 28px; padding: 0; }
+.rh-today { margin-left: 4px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+.rh-arw:disabled, .rh-today:disabled { opacity: .4; cursor: default; }
+.rh-date { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 6px; cursor: pointer; }
+.rh-date i { font-style: normal; font-size: 11px; color: var(--muted); }
+.rh-date input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .rh-s { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
 .rh-r { text-align: right; }
 .rh-nm { display: block; font-size: 12.5px; color: var(--muted); }
@@ -1134,10 +1143,6 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 14px; }
 .rc-head b { font-size: 16px; }
 .rc-head { flex-wrap: wrap; }
-.rc-jump input { height: 30px; padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
-  border: 1px solid var(--line-2); border-radius: 8px; }
-.rc-jump input { cursor: pointer; caret-color: transparent; }
-.rc-jump input::-webkit-datetime-edit { pointer-events: none; }
 .rc-jump-note { font-size: 12.5px; }
 .rc-period { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px; }
 /* 차트 아래 날짜 정보 칸: 고른 날(마우스를 올리면 그날) 종가·KOSDAQ·거래량·소식 */
