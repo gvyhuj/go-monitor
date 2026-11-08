@@ -1455,7 +1455,7 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .obs-folds .obs-fold-body .outlet-list { margin: 0; }
 @media (max-width: 900px) { .art-list button[data-id] { padding-right: 100px; } }
 #obs-close { white-space: nowrap; flex: 0 0 auto; }
-.obs-eyebrow { margin: 0 0 4px; font-size: 12px; font-weight: 700; color: var(--brand-blue); letter-spacing: .02em; }
+.obs-eyebrow { margin: 0 0 4px; font-size: 12px; font-weight: 700; color: var(--brand-blue); letter-spacing: .02em; white-space: nowrap; }
 .obs-empty { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding: 18px; border: 1px dashed var(--line-2); border-radius: var(--r-md); background: var(--canvas); color: var(--ink-2); font-size: 13px; }
 .obs-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .obs-cards > div, .obs-note { background: var(--canvas); border: 1px solid var(--line); padding: 9px 11px; border-radius: 8px; }

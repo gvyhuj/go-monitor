@@ -384,6 +384,10 @@
   }
 
   // ---------------------------------------------------------------- charts
+  // 축 눈금 글자: 오른쪽 값 이름표(종목·KOSDAQ 마지막 값)와 세로로 16px 안쪽이면 비움 (이름표 밑으로 반쯤 삐져나오지 않게)
+  function tickLabels(prices, toY, ys, fmt) {
+    return prices.map((p) => { const y = toY(p); return y != null && ys.some((t) => t != null && Math.abs(t - y) < 16) ? "" : fmt(p); });
+  }
   function baseChart(el, dark, opts = {}) {
     const text = dark ? "rgba(255,255,255,.62)" : css("--muted");
     const grid = dark ? "rgba(255,255,255,.07)" : css("--line");
@@ -597,6 +601,10 @@
     const st = toTime(startT);
     s1.setData(d1.some(p => p.time === st) ? d1 : [...d1, { time: st }].sort((a,b) => a.time-b.time));
     if (d2.length) s2.setData(d2);
+    const lastOf = (d) => { for (let i = d.length - 1; i >= 0; i--) if (d[i].value != null) return d[i].value; return null; };
+    const lasts = [lastOf(d1), lastOf(d2)];
+    chart.applyOptions({ localization: { tickmarksPriceFormatter: (ps) => tickLabels(ps, (p) => s1.priceToCoordinate(p),
+      lasts.map((v) => (v == null ? null : s1.priceToCoordinate(v))), (p) => pctRaw(p)) } });
     s1.createPriceLine({ price: 0, color: css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false });
     const near = d1.find((p) => p.time === st);
     if (d1.length) {
