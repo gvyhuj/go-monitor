@@ -1255,13 +1255,19 @@
       const r = (v) => (base && v ? pct(v / base - 1) : "-");
       const ext = live ? live.ext : false;
       const hi = (live && STATUS.quote.high) || px.high, lo = (live && STATUS.quote.low) || px.low;     // 오늘은 네이버 현재가의 고가·저가
-      return `<button type="button" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
-        <span class="rh-l"><span class="rh-d">${dayLabel(ds)}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
+      const di = daily.findIndex((x) => x.date === ds), last = daily.length - 1;
+      // 날짜 이동: ‹ 날짜(누르면 달력) › 오늘 — 차트 위 버튼 줄 대신 머리 안에 한 줄로
+      const nav = `<span class="rh-nav"><button type="button" class="rh-arw" data-step="-1" ${di <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹</button>
+        <label class="rh-date" title="눌러서 달력에서 고르면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)">${dayLabel(ds)}<i aria-hidden="true">▾</i><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
+        <button type="button" class="rh-arw" data-step="1" ${di >= last ? "disabled" : ""} aria-label="다음 거래일">›</button>
+        <button type="button" class="rh-today" data-today ${di >= last ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button></span>`;
+      return `<div role="button" tabindex="0" class="rh-box is-click" data-head title="${ev ? "이날 급등·급락 기록 자세히" : done ? "이날 하루 분석" : "지금까지 하루 움직임 분석"}">
+        <span class="rh-l"><span class="rh-d">${nav}${tag}${ev ? `<span class="chip ${ev.direction}">${kindOf(ev)}</span>${tierTag(ev)}` : ""}</span>
           <span class="rh-s">${base ? `기준가 ${won(base)}원 → ` : ""}${live && live.pending ? "최근 조회가 " : done ? ext ? "시간외 포함 최종가 " : "종가 " : ""}${won(close)}원 · 장중 최고 <span class="${sgnCls(hi && base ? hi - base : 0)}">${hi ? `${won(hi)}원 ` : ""}(${r(hi)})</span> / 최저 <span class="${sgnCls(lo && base ? lo - base : 0)}">${lo ? `${won(lo)}원 ` : ""}(${r(lo)})</span></span></span>
         <span class="rh-r"><span class="rh-nm"><b>${esc(STATUS.name || "")}</b>${esc(STATUS.symbol || "")}</span>
           <span class="rh-p"><span ${shownPrice == null ? "" : `data-count="${shownPrice}" data-key="rh-price"`}>${won(shownPrice)}</span><small>원</small><b class="${sgnCls(shownChg)}" ${shownChg == null ? "" : `data-count="${shownChg}" data-fmt="pct" data-key="rh-chg"`}>${shownChg == null ? "-" : pct(shownChg)}</b></span>${afterHtml(ds, close, after)}</span>
         <span class="rh-kq"><small>KOSDAQ${ext ? " 정규장" : ""}</small><b class="${sgnCls(kq)}" ${kq == null ? "" : `data-count="${kq}" data-fmt="pct" data-key="rh-kq"`}>${kq == null ? "-" : pct(kq)}</b></span>
-      </button>`;
+      </div>`;
     }
     // 오른쪽 '주요 숫자'. 고른 날의 기록 + '지금' 숫자(현재 기준: PER·PBR)
     // ⓘ에 마우스를 올리거나(폰은 누르면) 설명
@@ -1496,12 +1502,8 @@
       daySig = sig;
       if (silent) { QUIET = true; drop(); requestAnimationFrame(() => requestAnimationFrame(() => { QUIET = false; })); }
       const i = daily.findIndex((x) => x.date === ds);
-      const nav = `<div class="rc-head"><button type="button" class="btn small" data-step="-1" ${i <= 0 ? "disabled" : ""} aria-label="이전 거래일">‹ 이전 날</button>
-        <button type="button" class="btn small" data-step="1" ${i >= daily.length - 1 ? "disabled" : ""} aria-label="다음 거래일">다음 날 ›</button>
-        <button type="button" class="btn small" data-today ${i >= daily.length - 1 ? "disabled" : ""} title="오늘(휴장일이면 가장 최근 거래일)로">오늘</button>
-        <label class="rc-jump" title="눌러서 달력에서 고르면 그날 1일 차트로 갑니다 (장이 안 열린 날이면 그 전 거래일)"><input type="date" aria-label="날짜로 가기" data-jump value="${esc(ds)}" min="${esc(daily[0].date)}" max="${esc(latest)}"></label>
-        ${calState.jumpNote ? `<span class="muted rc-jump-note">${esc(calState.jumpNote)}</span>` : ""}
-        ${coarseIv ? coarseTip(coarseIv) : ""}</div>`;
+      const nav = calState.jumpNote || coarseIv ? `<div class="rc-head">${calState.jumpNote ? `<span class="muted rc-jump-note">${esc(calState.jumpNote)}</span>` : ""}
+        ${coarseIv ? coarseTip(coarseIv) : ""}</div>` : "";
       calState.jumpNote = "";
       if (!d || !d.bars || !d.bars.length) { el.innerHTML = nav + `<p class="muted day-nochart">이날 분봉 기록이 없습니다.</p>`; return; }
       el.innerHTML = nav + `<article class="day-card rc-day">${dayCardHtml(d, [], ds === latest)}</article>`;
@@ -1544,6 +1546,9 @@
     box.onclick = async (ev) => {
       const jp = ev.target.closest("[data-jump]");
       if (jp) { try { jp.showPicker(); } catch (_) {} return; }      // 날짜는 달력에서만 고름
+      if (ev.target.closest("[data-today]")) { pick(latest); return; }
+      const step = ev.target.closest("[data-step]");
+      if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
       if (ev.target.closest("[data-head].is-click")) { openHead(); return; }
       const ib = ev.target.closest("[data-theme]");
       if (ib) { openTheme(ib.dataset.theme); return; }
@@ -1560,9 +1565,6 @@
         else lineChart();
         return;
       }
-      if (ev.target.closest("[data-today]")) { pick(latest); return; }
-      const step = ev.target.closest("[data-step]");
-      if (step) { const i = daily.findIndex((x) => x.date === calState.sel) + +step.dataset.step; if (daily[i]) pick(daily[i].date); return; }
       const pk = ev.target.closest("[data-pick]");
       if (pk) { pick(pk.dataset.pick); return; }
       const e = ev.target.closest("[data-id]");
@@ -1571,6 +1573,7 @@
       if (del) { deleteRecord(del); return; }
     };
     box.onkeydown = (ev) => {     // 숫자 입력 막기: Enter·스페이스·↓는 달력 열기, Tab·Esc는 그대로
+      if (ev.target.matches("[data-head].is-click") && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openHead(); return; }
       const j = ev.target.closest("[data-jump]");
       if (!j || ev.key === "Tab" || ev.key === "Escape") return;
       ev.preventDefault();
