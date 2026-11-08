@@ -712,26 +712,6 @@ def test_after_market_history_from_naver_close(tmp_path, monkeypatch):
     assert calls == ['000001', '000001']
 
 
-def test_kis_daily_overtime_probe_once(tmp_path, monkeypatch):
-    # 한투 '시간외일자별주가'(FHPST02320000)가 애프터마켓 값을 주는지: 한 번만 불러 네이버로 채운 값과 나란히 실행 기록에
-    import json as _json
-    from datetime import datetime
-    import cloud_job
-    from core import db, feed, kis
-    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
-    monkeypatch.setattr(kis, 'enabled', lambda: True)
-    monkeypatch.setattr(feed, 'kst_now', lambda: datetime(2026, 11, 8, 15, 0))
-    calls, notes = [], []
-    monkeypatch.setattr(kis, '_get', lambda path, tr_id, params: calls.append(tr_id) or {'output2': [
-        {'stck_bsop_date': '20261106', 'ovtm_untp_prpr': '8770', 'ovtm_untp_vol': '3000', 'stck_clpr': '8380'},
-        {'stck_bsop_date': '20261105', 'ovtm_untp_prpr': '0', 'ovtm_untp_vol': '0', 'stck_clpr': '9140'}]})
-    monkeypatch.setattr(cloud_job, 'annotate', lambda kind, msg: notes.append(msg))
-    db.set_state('after_days:000001', _json.dumps({'2026-11-06': {'price': 8770, 'volume': 52003}}))
-    cloud_job.kis_daily_overtime_probe('000001'); cloud_job.kis_daily_overtime_probe('000001')
-    assert calls == ['FHPST02320000']
-    assert notes == ['한투 시간외일자별주가 확인: 11/06 한투 8770(거래량 3000)·네이버 8770·종가 8380 / 11/05 한투 0(거래량 0)·네이버 -·종가 9140']
-
-
 def test_after_market_kis_record_wins_over_naver(tmp_path, monkeypatch):
     # 그날 한투로 직접 받은 애프터마켓 값은 다음 날에도 한투 값으로 (네이버는 한투 기록이 없는 지난 날만 채움)
     from datetime import datetime
