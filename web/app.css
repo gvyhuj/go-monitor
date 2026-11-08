@@ -1500,14 +1500,13 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .obs-fold-body { padding: 4px 0 12px; }
 .obs-note { margin: 8px 0; }
 .obs-note-head { margin: 0 0 6px; font-size: 13px; }
-.obs-cta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .obs-similar td, .obs-similar th { font-size: 12.5px; }
 .obs-similar tr.on td { background: var(--canvas); }
 .rx-gap { fill:none; stroke:#9aa5b6; stroke-width:2; stroke-dasharray:1 5; cursor:help; pointer-events:stroke; }
 .rx-gap.on { stroke:var(--up); }.rx-gap.average { stroke:var(--brand-blue); }
 .rx-avg { pointer-events:stroke; }.rx-leg { flex-wrap:wrap; }
 
-@media(max-width:720px){.obs-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#pr-cards{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.obs-cta .btn{flex:1 1 100%}}
+@media(max-width:720px){.obs-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#pr-cards{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}}
 .rx-gap-hit { fill:none; stroke:transparent; stroke-width:16; pointer-events:stroke; cursor:help; }
 
 /* ---------------------------------------------------------------- 움직임

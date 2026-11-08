@@ -3263,7 +3263,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : "";
     const closeButton = `<button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button>`;
-    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc ? closeButton : `<div class="pr-detail-actions">${dayChartButton}${closeButton}</div>`}</div>
+    // AI에게 묻기는 제목 옆 버튼 줄 맨 앞에 (자료를 다 받으면 켜짐)
+    const askButton = d.observation_event_id ? `<button type="button" class="btn small primary" id="obs-question" disabled>AI에게 묻기</button>` : "";
+    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc && !askButton ? closeButton : `<div class="pr-detail-actions">${askButton}${isDisc ? "" : dayChartButton}${closeButton}</div>`}</div>
       <h2 class="pr-title${isDisc ? "" : " pr-article-title"}">${!isDisc && a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</h2>`;
     if (isDisc) html += `<p class="pr-meta">${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}${dayChartButton}</p>`;
     if (!isDisc) html += timeForm(a);
@@ -3312,9 +3314,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // AI에게 묻기는 상세에, 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
+    // 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id) html += `<div class="obs-cta art-fix"><button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button></div>`;
     html += `<div class="obs-folds">`;
 
     // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)

@@ -171,6 +171,8 @@ async function main() {
       assert.equal(await page.locator("#pr-detail .pr-meta").count(), 0, "기사의 언론사·공개 시각·기사 열기 줄 제거");
       assert.equal(await page.locator(".pr-detail-actions .pr-daychart").count(), 1);
       assert.equal(await page.locator(".pr-detail-actions #pr-close").count(), 1);
+      assert.equal(await page.locator(".pr-detail-actions #obs-question").count(), 1, "AI에게 묻기는 제목 옆 버튼 줄에");
+      assert.equal(await page.locator(".obs-cta").count(), 0);
       assert.match(await page.locator('#art-list button[data-id="2001"]').innerText(), /같은 내용 기사 8개/);
       assert.equal(await related.locator("xpath=ancestor::details").count(), 0);
       assert.equal(await related.locator("li").count(), await page.locator("#outlets-pop .outlet-list li").count());
