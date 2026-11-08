@@ -303,6 +303,27 @@ def overtime_report(code: str):
         msg = "오늘 16:00~20:10에 확인한 기록 없음"
     annotate("notice", f"애프터마켓({day}): {msg}")
 
+def kis_daily_overtime_probe(code: str):
+    """한 번만: 한투 '주식현재가 시간외일자별주가'(FHPST02320000, 최근 30일)가 애프터마켓 날짜별 값을 주는지
+    네이버로 채운 값(after_days)과 최근 6일을 나란히 실행 기록에 (한투 호출 1번, 실패해도 다시 묻지 않음)."""
+    from core import kis
+    if not kis.enabled() or get_state("kis:daily_overtime_probe_v1"):
+        return
+    set_state("kis:daily_overtime_probe_v1", feed.kst_now().isoformat(timespec="minutes"))
+    st = get_state(f"after_days:{code}")
+    nv = json.loads(st["value"]) if st and st.get("value") else {}
+    try:
+        rows = kis._get("/uapi/domestic-stock/v1/quotations/inquire-daily-overtimeprice", "FHPST02320000",
+                        {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}).get("output2") or []
+        msg = " / ".join(
+            f"{r.get('stck_bsop_date', '')[4:6]}/{r.get('stck_bsop_date', '')[6:8]} 한투 {r.get('ovtm_untp_prpr')}(거래량 {r.get('ovtm_untp_vol')})"
+            f"·네이버 {(nv.get(f'{d[:4]}-{d[4:6]}-{d[6:8]}') or {}).get('price', '-')}·종가 {r.get('stck_clpr')}"
+            for r in rows[:6] for d in [r.get("stck_bsop_date", "")]) or "자료 없음"
+    except Exception as e:  # noqa: BLE001
+        msg = f"오류 {type(e).__name__}: {str(e)[:120]}"
+    annotate("notice", f"한투 시간외일자별주가 확인: {msg}")
+
+
 def relay_guard(code: str, log):
     """실시간 중계(Cloudflare)를 올리고(바뀐 게 있을 때만) 이번 토큰을 넘겨 줌. 실패해도 실행은 계속 (사이트는 예전처럼 정기 갱신)."""
     from core import relay
@@ -492,6 +513,8 @@ def main(argv) -> int:
     kis_token_guard(log)
     relay_guard(code, log)
     overtime_report(code)
+    feed.after_history(code)      # 지난 날 애프터마켓 마지막 가격 (네이버, 하루 한 번)
+    kis_daily_overtime_probe(code)
     lap("준비")
 
     site_ok = False

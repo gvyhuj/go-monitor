@@ -251,11 +251,54 @@ def _kis_after(code: str, now: datetime, is_today: bool, regular: dict | None, q
             saved = {"date": now.date().isoformat(), "price": price, "volume": volume, "source": "kis", "session": "krx_after",
                      "at": min(hm, "20:00"), "queried_at": now.isoformat(timespec="minutes")}
             set_state(f"after:{code}", json.dumps(saved))
+            _keep_after_day(code, saved["date"], {"price": price, "volume": volume, "source": "kis", "at": saved["at"]})
             status["state"] = "ok"
         set_state(f"after_status:{code}", json.dumps(status))
     if saved and saved.get("date") == now.date().isoformat() and close:
         saved = {**saved, "change": saved["price"] - close, "rate": saved["price"] / close - 1}
     return saved
+
+
+AFTER_FROM = "2026-09-14"      # 거래소 애프터마켓(16:00~20:00) 시작일 (시간외 단일가 폐지)
+
+
+def _keep_after_day(code: str, day: str, rec: dict):
+    st = get_state(f"after_days:{code}")
+    hist = json.loads(st["value"]) if st and st.get("value") else {}
+    hist[day] = rec
+    set_state(f"after_days:{code}", json.dumps(hist))
+
+
+def after_history(code: str) -> int:
+    """지난 날 애프터마켓 마지막 가격 {날짜: {price, volume}} (after_days:{code}). 그날 한투로 받은 값은 _kis_after가 남기고,
+    한투 기록이 없는 날만 여기서 채움. 네이버 일별 종가는 애프터마켓 마지막 체결까지 포함하므로
+    한투 정규장 종가와 다른 날만 남김 (2026-11-05·06 실측: 네이버 9,190·8,770 = 한투로 확인한 애프터마켓 값).
+    처음 한 번 + 평일 20:11 뒤 하루 한 번 네이버에 한 번만 물음 (한투는 부르지 않음)."""
+    from . import macro
+    now = kst_now()
+    day, hm = now.date().isoformat(), now.strftime("%H:%M")
+    st = get_state(f"after_days_checked:{code}")
+    if st and st.get("value") and (st["value"] >= day or now.weekday() > 4 or hm < "20:11"):
+        return 0
+    try:
+        rows = macro.fetch_naver_prices(code, 1)
+    except naver.DataSourceError:
+        return 0
+    with connect() as conn:
+        reg = dict(conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date>=?", (code, AFTER_FROM)).fetchall())
+    old = get_state(f"after_days:{code}")
+    hist = json.loads(old["value"]) if old and old.get("value") else {}
+    for r in rows:
+        d = r["date"]
+        if d < AFTER_FROM or d not in reg or (d == day and hm < "20:11") or (hist.get(d) or {}).get("source") == "kis":
+            continue        # 오늘은 애프터마켓이 끝난 뒤에만, 그날 한투로 직접 받은 값은 그대로
+        if r["close"] != reg[d]:
+            hist[d] = {"price": r["close"], "volume": r["volume"]}
+        else:
+            hist.pop(d, None)
+    set_state(f"after_days:{code}", json.dumps(hist))
+    set_state(f"after_days_checked:{code}", day)
+    return len(hist)
 
 
 def update_quotes(code: str):

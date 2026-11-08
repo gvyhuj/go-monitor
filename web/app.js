@@ -384,6 +384,10 @@
   }
 
   // ---------------------------------------------------------------- charts
+  // 축 눈금 글자: 오른쪽 값 이름표(종목·KOSDAQ 마지막 값)와 세로로 16px 안쪽이면 비움 (이름표 밑으로 반쯤 삐져나오지 않게)
+  function tickLabels(prices, toY, ys, fmt) {
+    return prices.map((p) => { const y = toY(p); return y != null && ys.some((t) => t != null && Math.abs(t - y) < 16) ? "" : fmt(p); });
+  }
   function baseChart(el, dark, opts = {}) {
     const text = dark ? "rgba(255,255,255,.62)" : css("--muted");
     const grid = dark ? "rgba(255,255,255,.07)" : css("--line");
@@ -597,6 +601,10 @@
     const st = toTime(startT);
     s1.setData(d1.some(p => p.time === st) ? d1 : [...d1, { time: st }].sort((a,b) => a.time-b.time));
     if (d2.length) s2.setData(d2);
+    const lastOf = (d) => { for (let i = d.length - 1; i >= 0; i--) if (d[i].value != null) return d[i].value; return null; };
+    const lasts = [lastOf(d1), lastOf(d2)];
+    chart.applyOptions({ localization: { tickmarksPriceFormatter: (ps) => tickLabels(ps, (p) => s1.priceToCoordinate(p),
+      lasts.map((v) => (v == null ? null : s1.priceToCoordinate(v))), (p) => pctRaw(p)) } });
     s1.createPriceLine({ price: 0, color: css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Solid, axisLabelVisible: false });
     const near = d1.find((p) => p.time === st);
     if (d1.length) {
@@ -1229,6 +1237,7 @@
     // 거래가 있었던 것: 현재가가 종가와 다르거나, 누적 거래량이 정규장 거래량보다 늘었음
     // 일반 주식 앱처럼: 그날 16:00부터 다음 장이 열리기 전까지 (장이 열리면 market_status OPEN·새 날짜로 사라짐)
     function overtimeFor(ds) {
+      if (ds !== latest) { const h = price[ds] && price[ds].after; return h && h.price > 0 ? { at: "20:00", ...h } : null; }   // 지난 날: 그날 마지막 가격 (한투로 받은 날은 한투 값·시각)
       const q = STATUS && STATUS.quote, a = q && q.after, t = kstParts(), rc = q && q.regular_close;
       if (ds !== latest || ds > t.day || (ds === t.day && t.hm < 1600) || !q || q.market_status === "OPEN" || q.regular_close_pending
         || !validOvertime(a) || a.date !== ds) return null;
@@ -3262,7 +3271,9 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
           return `<button type="button" class="btn small pr-daychart" data-daychart="${esc(rd)}" data-cur="${esc(a.id)}" data-cur-ts="${a.untimed ? "" : esc(a.ts)}" data-cur-k="${ck}" data-cur-title="${esc(a.title)}">${other ? `반응일(${+rd.slice(5, 7)}/${+rd.slice(8, 10)}) 주가 차트` : "그날 주가 차트"}</button>`;
         })() : "";
     const closeButton = `<button type="button" class="btn small" id="pr-close" title="이 기사 선택을 풀고, 지금 목록 기사 전체를 한 그래프로 겹쳐 봅니다">← 전체 기사 보기</button>`;
-    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc ? closeButton : `<div class="pr-detail-actions">${dayChartButton}${closeButton}</div>`}</div>
+    // AI에게 묻기는 제목 옆 버튼 줄 맨 앞에 (자료를 다 받으면 켜짐)
+    const askButton = d.observation_event_id ? `<button type="button" class="btn small primary" id="obs-question" disabled>AI에게 묻기</button>` : "";
+    let html = `<div class="pr-close-row"><span class="obs-eyebrow">선택한 ${noun}</span>${isDisc && !askButton ? closeButton : `<div class="pr-detail-actions">${askButton}${isDisc ? "" : dayChartButton}${closeButton}</div>`}</div>
       <h2 class="pr-title${isDisc ? "" : " pr-article-title"}">${!isDisc && a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</h2>`;
     if (isDisc) html += `<p class="pr-meta">${a.office ? `${esc(a.office)} 제출 · ` : ""}${dayLabel(a.ts)} ${a.untimed ? "접수 (시각 미상)" : `${hhmm(a.ts)} 접수`}${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.pblntf === "K" ? "KIND에서 원문 보기" : "DART에서 원문 보기"}</a>` : ""}${dayChartButton}</p>`;
     if (!isDisc) html += timeForm(a);
@@ -3311,9 +3322,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // AI에게 묻기는 상세에, 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
+    // 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
-    if (d.observation_event_id) html += `<div class="obs-cta art-fix"><button type="button" class="btn primary" id="obs-question" disabled>AI에게 묻기</button></div>`;
     html += `<div class="obs-folds">`;
 
     // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)

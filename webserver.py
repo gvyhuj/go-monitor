@@ -329,6 +329,8 @@ def api_daily(_q):
             (sym,))}
         tops = trader_tops(conn, sym)
         th, th_info = theme_rows(conn, sym)
+        ah = conn.execute("SELECT value FROM system_state WHERE key=?", (f"after_days:{sym}",)).fetchone()
+    after = json.loads(ah[0]) if ah and ah[0] else {}       # 지난 날 애프터마켓 마지막 가격 (feed.after_history)
     kdates = sorted(kq)
     kprev = {d: kq[p] for p, d in zip(kdates, kdates[1:])}
     days = []
@@ -341,7 +343,7 @@ def api_daily(_q):
                      "change": c / prev - 1 if prev else None, "base": prev,
                      "kosdaq": kq[d] / kprev[d] - 1 if d in kq and d in kprev else None, "kosdaq_close": kq.get(d),
                      "foreign": f[0], "organ": f[1], "individual": f[2], "foreign_ratio": f[3],
-                     "traders": tops.get(d), "themes": th.get(d), "theme_info": th_info.get(d)})
+                     "traders": tops.get(d), "themes": th.get(d), "theme_info": th_info.get(d), "after": after.get(d)})
     with connect() as conn:
         theme_nos = {name: no for no, name in conn.execute("SELECT theme_no, theme_name FROM stock_themes WHERE code=?", (sym,))}
     return {"days": days, "theme_nos": theme_nos}    # 테마 이름 → 네이버 테마 번호 (네이버에서 보기 링크)

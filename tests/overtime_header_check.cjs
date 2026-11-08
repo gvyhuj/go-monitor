@@ -90,7 +90,9 @@ const { chromium } = require("playwright");
           await fs.mkdir('/workspace/artifacts/overtime-preview',{recursive:true});
           await page.screenshot({path:`/workspace/artifacts/overtime-preview/header-${width}.png`});
           await page.locator('[data-step="-1"]').click();
-          assert.equal(await page.locator("#rec-head .rh-after").count(),0,"past date must not show today's overtime quote");
+          // 지난 날: 오늘 값이 아니라 그날 애프터마켓 마지막 가격 (네이버 종가로 채운 기록, 20:00 마감)
+          await page.waitForFunction(()=>!document.querySelector("#rec-head .rh-after")?.textContent.includes("9,950"));
+          assert.match(await page.locator("#rec-head .rh-after").innerText(),/애프터마켓[\s\S]*12,345원[\s\S]*20:00/);
         }
         assert.deepEqual(errors,[]);await page.close();
       }
