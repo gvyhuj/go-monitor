@@ -36,7 +36,8 @@ def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
         return None                       # 한투가 '접속 자리 꽉 참'이라고 해서 쉬는 중 (시세 수집은 그대로)
     say = []
     end = now.date().isoformat()
-    if not s.get("investors"):            # 외국인·기관·개인 지난 기록 (한투가 주지 않는 날은 네이버 기록 그대로)
+    # 외국인·기관·개인 지난 기록 (한투가 주지 않는 날은 네이버 기록 그대로). 한투가 00:00~15:40엔 'TIME LIMIT'으로 거절해 그 뒤에만
+    if not s.get("investors") and now.strftime("%H:%M") > "15:40":
         rows = sorted(kis.investors_range(code, FIRST_DAY, end), key=lambda r: r["date"])
         with connect() as conn:
             conn.executemany("INSERT OR REPLACE INTO investor_daily(symbol, bizdate, foreign_net, organ_net, individual_net) "

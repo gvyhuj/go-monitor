@@ -747,10 +747,10 @@ def test_kis_backfill_investors_history(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(kis, 'investors_range', lambda code, s, e: calls.append((s, e)) or [
         {'date': '20261030', 'foreign': -10, 'organ': 5, 'individual': 5}, {'date': '20261029', 'foreign': 3, 'organ': 0, 'individual': -3}])
-    m = kis_backfill.run('000001', datetime(2026, 11, 10, 2, 0), 40)
+    m = kis_backfill.run('000001', datetime(2026, 11, 10, 16, 0), 40)
     assert calls == [('2020-01-01', '2026-11-10')]
     assert '투자자 2일(2026-10-29~2026-10-30)' in m and '2026-10-01' in m
-    assert kis_backfill.run('000001', datetime(2026, 11, 10, 2, 0), 40) is None and len(calls) == 1
+    assert kis_backfill.run('000001', datetime(2026, 11, 10, 16, 0), 40) is None and len(calls) == 1
     with db.connect() as conn:
         got = {r[0]: r[1:] for r in conn.execute("SELECT bizdate, foreign_net, organ_net, individual_net FROM investor_daily")}
     assert got == {'20260102': (1, 1, 1), '20261030': (-10, 5, 5), '20261029': (3, 0, -3)}
@@ -769,3 +769,17 @@ def test_kis_investors_range_pages_back(monkeypatch):
     assert [r['date'] for r in rows] == ['20261105', '20261106', '20261109', '20261110']
     assert rows[0] == {'date': '20261105', 'foreign': 1, 'organ': -2, 'individual': 1}
     assert seen == [('FHPTJ04160001', '20261110'), ('FHPTJ04160001', '20261108'), ('FHPTJ04160001', '20261104')]
+
+
+def test_kis_investors_history_only_after_1540(tmp_path, monkeypatch):
+    # 한투 '종목별 투자자매매동향(일별)'은 00:00~15:40에 'OPSQ2001 TIME LIMIT'로 거절 → 그 시간엔 묻지 않음
+    import json as _json
+    from datetime import datetime
+    from core import db, kis, kis_backfill
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    db.set_state('kis:backfill', _json.dumps({'done': '2026-10-01T03:00'}))
+    calls = []
+    monkeypatch.setattr(kis, 'investors_range', lambda code, s, e: calls.append(e) or [])
+    assert kis_backfill.run('000001', datetime(2026, 11, 10, 11, 54), 4) is None and calls == []
+    assert kis_backfill.run('000001', datetime(2026, 11, 10, 15, 39), 4) is None and calls == []
+    assert '투자자 0일' in kis_backfill.run('000001', datetime(2026, 11, 10, 15, 45), 40) and calls == ['2026-11-10']
