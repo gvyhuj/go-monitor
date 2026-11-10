@@ -114,47 +114,34 @@ jobs:
           key: db-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 사이트 파일 묶기
-        id: pages_artifact
         if: success() && hashFiles('_site/index.html') != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
-      # actions/deploy-pages는 판 번호로 늘 커밋 번호를 보내, 같은 커밋으로 반복 게시하면 Pages가 옛 판을 계속 내려준 적이 있음
-      # → 실행마다 다른 판 번호로 직접 게시 (deploy_pages.py)
       - name: 사이트 올리기
         id: deploy
         if: success() && hashFiles('_site/index.html') != ''
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        continue-on-error: true
-        run: python deploy_pages.py "${{ steps.pages_artifact.outputs.artifact_id }}" 1
-
-      - name: 사이트 올리기 (직접 게시가 안 되면 예전 방식으로)
-        id: deploy_fallback
-        if: success() && hashFiles('_site/index.html') != '' && steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       - name: 실제 게시 파일 확인
         id: verify_publication
-        if: success() && (steps.deploy.outcome == 'success' || steps.deploy_fallback.outcome == 'success')
+        if: success() && steps.deploy.outcome == 'success'
         continue-on-error: true
         env:
           PAGE_URL: ${{ steps.deploy.outputs.page_url }}
-        run: python verify_publication.py --site-url "${PAGE_URL:-https://$GITHUB_REPOSITORY_OWNER.github.io/${GITHUB_REPOSITORY#*/}/}"
+        run: python verify_publication.py --site-url "$PAGE_URL" --attempts 12      # 반영까지 20~30초 걸리는 때가 있어 1분까지 기다림
 
       - name: 게시 파일 불일치 시 한 번 다시 올리기
         id: redeploy
         if: steps.verify_publication.outcome == 'failure'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python deploy_pages.py "${{ steps.pages_artifact.outputs.artifact_id }}" 2
+        uses: actions/deploy-pages@v4
 
       - name: 재배포 실제 게시 파일 확인
         if: steps.redeploy.outcome == 'success'
         env:
           PAGE_URL: ${{ steps.redeploy.outputs.page_url }}
-        run: python verify_publication.py --site-url "${PAGE_URL:-https://$GITHUB_REPOSITORY_OWNER.github.io/${GITHUB_REPOSITORY#*/}/}" --attempts 12
+        run: python verify_publication.py --site-url "$PAGE_URL" --attempts 12
 
       - name: 최신 백업 (릴리스 '최신 백업', 1시간마다 덮어씀)
         if: always() && hashFiles('backup/*.db.enc') != ''
