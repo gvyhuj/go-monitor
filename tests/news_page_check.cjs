@@ -306,6 +306,12 @@ async function main() {
       assert.match(await page.locator(".ps-news").innerText(), /보도자료 3[\s\S]*외부 3[\s\S]*주요 공시 1/);
       assert.match(await page.locator(".ps-line").innerText(), /순매수 합계[\s\S]*평균 거래량/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+      // 숫자 칸은 제목 칸과 같은 오른쪽 끝에 맞춤 (날짜만 왼쪽)
+      assert.deepEqual(await page.evaluate(() => {
+        const ths = [...document.querySelectorAll(".days-table thead th")], tds = [...document.querySelectorAll("#days-body tr:first-child td")];
+        return ths.slice(1).map((th, i) => { const c = document.createRange(); c.selectNodeContents(tds[i + 1]); const t = c.getBoundingClientRect(), h = document.createRange(); h.selectNodeContents(th);
+          return !tds[i + 1].textContent.trim() || Math.abs(t.right - h.getBoundingClientRect().right) < 2; }).filter((ok) => !ok).length;
+      }), 0, "숫자와 제목의 오른쪽 끝이 다름");
       // 오른 날 → 그 날들만 표에
       const upN = +(await page.locator('[data-quick="up"]').innerText()).replace("일", "");
       await page.locator('[data-quick="up"]').click();

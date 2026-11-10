@@ -982,6 +982,7 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .days-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .days-table th, .days-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .days-table th { position: sticky; top: 0; background: var(--surface); text-align: right; font-weight: 600; }
+.days-table td.num { text-align: right; }      /* 숫자는 제목 칸과 같은 오른쪽 끝에 */
 .days-table th:first-child, .days-table td:first-child { text-align: left; }
 
 /* 전체 검색 */
