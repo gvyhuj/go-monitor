@@ -179,6 +179,29 @@ def investors(code: str) -> list[dict]:
              "foreign": _num(r.get("frgn_ntby_qty")), "organ": _num(r.get("orgn_ntby_qty"))} for r in rows]
 
 
+def investors_range(code: str, start: str, end: str) -> list[dict]:
+    """외국인·기관·개인 순매수 일별 start~end (종목별 투자자매매동향(일별), FHPTJ04160001). 날짜를 거슬러 여러 번 물음.
+    date는 investors()와 같은 YYYYMMDD."""
+    out: dict[str, dict] = {}
+    cur = end
+    for _ in range(40):
+        rows = _get("/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily", "FHPTJ04160001",
+                    {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code, "FID_INPUT_DATE_1": cur.replace("-", ""),
+                     "FID_ORG_ADJ_PRC": "", "FID_ETC_CLS_CODE": ""}).get("output2") or []
+        iso = lambda d: f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+        rows = [r for r in rows if r.get("stck_bsop_date") and start <= iso(r["stck_bsop_date"]) <= cur
+                and r["stck_bsop_date"] not in out]
+        if not rows:
+            break
+        for r in rows:
+            out[r["stck_bsop_date"]] = {"date": r["stck_bsop_date"], "foreign": _num(r.get("frgn_ntby_qty")),
+                                        "organ": _num(r.get("orgn_ntby_qty")), "individual": _num(r.get("prsn_ntby_qty"))}
+        cur = (datetime.fromisoformat(iso(min(r["stck_bsop_date"] for r in rows))) - timedelta(days=1)).date().isoformat()
+        if cur < start:
+            break
+    return [out[k] for k in sorted(out)]
+
+
 def members(code: str, market: str = "J") -> dict:
     """거래원(회원사) 그날 누적: 거래소가 공개하는 매수 상위 5곳·매도 상위 5곳 (주식현재가 회원사, FHKST01010600)."""
     o = _get("/uapi/domestic-stock/v1/quotations/inquire-member", "FHKST01010600",

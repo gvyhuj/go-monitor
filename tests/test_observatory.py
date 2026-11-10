@@ -444,6 +444,7 @@ def test_kis_backfill_replaces_history_in_steps(tmp_path, monkeypatch):
     days = ['2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']
     monkeypatch.setattr(kis, 'daily_range', lambda code, s, e, index=False: [
         {'date': d, 'open': 1, 'high': 1, 'low': 1, 'close': 100 + i, 'volume': 1} for i, d in enumerate(days)])
+    monkeypatch.setattr(kis, 'investors_range', lambda code, s, e: [])
     monkeypatch.setattr(kis, 'full_day_bars', lambda code, d: [] if d == '2026-10-27' else [
         {'ts': d + 'T09:00', 'open': 1, 'high': 2, 'low': 1, 'close': 2, 'volume': 5}])
     with db.connect() as conn:
@@ -560,7 +561,7 @@ def test_kis_backfill_pauses_on_session_full(tmp_path, monkeypatch):
     from datetime import datetime
     from core import db, kis, kis_backfill
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
-    kis_backfill._save({'daily': {'n': 1}, 'kosdaq_daily': {'n': 1}})
+    kis_backfill._save({'investors': {'n': 1}, 'daily': {'n': 1}, 'kosdaq_daily': {'n': 1}})
     with db.connect() as conn:
         conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES ('X','2026-10-29',1,1,1,1,1)")
     calls = []
@@ -730,3 +731,41 @@ def test_after_market_kis_record_wins_over_naver(tmp_path, monkeypatch):
     days = {d['date']: d.get('after') for d in webserver.api_daily({})['days']}
     assert (days['2026-11-09']['price'], days['2026-11-09']['source'], days['2026-11-09']['at']) == (8100, 'kis', '19:40')
     assert days['2026-11-06'] == {'price': 8770, 'volume': 52003}
+
+
+def test_kis_backfill_investors_history(tmp_path, monkeypatch):
+    # 외국인·기관·개인 지난 기록도 한투로 (종목별 투자자매매동향(일별)). 한투가 주지 않는 날은 네이버 기록 그대로.
+    # 일봉·1분봉 다시 받기가 이미 끝났어도 이 단계는 한 번 함.
+    import json as _json
+    from datetime import datetime
+    from core import db, kis, kis_backfill
+    monkeypatch.setattr(db, 'DATA_DIR', tmp_path); monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'monitor.db'); db.init_db()
+    db.set_state('kis:backfill', _json.dumps({'done': '2026-10-01T03:00', 'daily': {'n': 1}, 'kosdaq_daily': {'n': 1}}))
+    with db.connect() as conn:
+        conn.executemany("INSERT INTO investor_daily(symbol,bizdate,foreign_net,organ_net,individual_net) VALUES ('000001',?,?,?,?)",
+                         [('20260102', 1, 1, 1), ('20261030', 2, 2, 2)])
+    calls = []
+    monkeypatch.setattr(kis, 'investors_range', lambda code, s, e: calls.append((s, e)) or [
+        {'date': '20261030', 'foreign': -10, 'organ': 5, 'individual': 5}, {'date': '20261029', 'foreign': 3, 'organ': 0, 'individual': -3}])
+    m = kis_backfill.run('000001', datetime(2026, 11, 10, 2, 0), 40)
+    assert calls == [('2020-01-01', '2026-11-10')]
+    assert '투자자 2일(2026-10-29~2026-10-30)' in m and '2026-10-01' in m
+    assert kis_backfill.run('000001', datetime(2026, 11, 10, 2, 0), 40) is None and len(calls) == 1
+    with db.connect() as conn:
+        got = {r[0]: r[1:] for r in conn.execute("SELECT bizdate, foreign_net, organ_net, individual_net FROM investor_daily")}
+    assert got == {'20260102': (1, 1, 1), '20261030': (-10, 5, 5), '20261029': (3, 0, -3)}
+
+
+def test_kis_investors_range_pages_back(monkeypatch):
+    from core import kis
+    pages = {'20261110': ['20261110', '20261109'], '20261108': ['20261106', '20261105'], '20261104': ['20200102']}
+    seen = []
+    def fake(path, tr, params):
+        seen.append((tr, params['FID_INPUT_DATE_1']))
+        return {'output2': [{'stck_bsop_date': d, 'frgn_ntby_qty': '1', 'orgn_ntby_qty': '-2', 'prsn_ntby_qty': '1'}
+                            for d in pages.get(params['FID_INPUT_DATE_1'], [])]}
+    monkeypatch.setattr(kis, '_get', fake)
+    rows = kis.investors_range('000001', '2026-11-01', '2026-11-10')
+    assert [r['date'] for r in rows] == ['20261105', '20261106', '20261109', '20261110']
+    assert rows[0] == {'date': '20261105', 'foreign': 1, 'organ': -2, 'individual': 1}
+    assert seen == [('FHPTJ04160001', '20261110'), ('FHPTJ04160001', '20261108'), ('FHPTJ04160001', '20261104')]

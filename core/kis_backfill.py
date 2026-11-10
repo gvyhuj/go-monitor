@@ -1,6 +1,6 @@
 """지난 기록을 한국투자증권 Open API로 다시 받기 (실행마다 조금씩, 끝나면 멈춤).
 
-순서: ① 이 종목 일봉 전체 ② KOSDAQ 지수 일봉 전체 ③ 이 종목 지난 날짜 1분봉 (최근 날부터 거슬러, 하루씩 통째로 바꿈).
+순서: ⓪ 외국인·기관·개인 일별 ① 이 종목 일봉 전체 ② KOSDAQ 지수 일봉 전체 ③ 이 종목 지난 날짜 1분봉 (최근 날부터 거슬러, 하루씩 통째로 바꿈).
 KOSDAQ 지수의 지난 1분봉은 한투가 주지 않아 기록에 있는 것을 그대로 둠.
 진행 상황은 system_state 'kis:backfill' (JSON)에 남김.
 """
@@ -32,12 +32,22 @@ def _save(s: dict):
 def run(code: str, now: datetime, max_days: int, log=None) -> str | None:
     """이번 실행에서 할 만큼 하고 한 줄 요약 (다 끝났으면 None)."""
     s = _state()
-    if s.get("done"):
-        return None
     if s.get("pause_until") and now.isoformat(timespec="minutes") < s["pause_until"]:
         return None                       # 한투가 '접속 자리 꽉 참'이라고 해서 쉬는 중 (시세 수집은 그대로)
     say = []
     end = now.date().isoformat()
+    if not s.get("investors"):            # 외국인·기관·개인 지난 기록 (한투가 주지 않는 날은 네이버 기록 그대로)
+        rows = sorted(kis.investors_range(code, FIRST_DAY, end), key=lambda r: r["date"])
+        with connect() as conn:
+            conn.executemany("INSERT OR REPLACE INTO investor_daily(symbol, bizdate, foreign_net, organ_net, individual_net) "
+                             "VALUES (?, ?, ?, ?, ?)", [(code, r["date"], r["foreign"], r["organ"], r["individual"]) for r in rows])
+        d = lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}"
+        s["investors"] = {"n": len(rows), "from": d(rows[0]["date"]) if rows else None, "to": d(rows[-1]["date"]) if rows else None}
+        _save(s)
+        say.append(f"투자자 {len(rows)}일({s['investors']['from']}~{s['investors']['to']})"
+                   + (f" · 일봉·1분봉은 {s['done'][:10]}에 이미 끝남" if s.get("done") else ""))
+    if s.get("done"):
+        return "한투로 지난 기록 다시 받기: " + " · ".join(say) if say else None
     if not s.get("daily"):
         rows = kis.daily_range(code, FIRST_DAY, end)
         n = store_daily_kis(code, rows)
