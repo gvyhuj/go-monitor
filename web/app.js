@@ -724,7 +724,7 @@
     if (Date.now() - RUN_HEALTH_AT < 5 * 60000) return RUN_HEALTH;      // 공개 API 횟수 제한(시간당 60번) 때문에 5분마다만
     RUN_HEALTH_AT = Date.now();
     try {
-      const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/runs?per_page=10`, { cache: "no-store" });
+      const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/workflows/monitor.yml/runs?per_page=10`, { cache: "no-store" });
       if (!r.ok) throw new Error(String(r.status));
       const runs = (await r.json()).workflow_runs || [];
       const recent = runs.filter((x) => Date.now() - new Date(x.created_at).getTime() < 15 * 60000);

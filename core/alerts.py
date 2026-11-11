@@ -148,7 +148,7 @@ def send_test(log=None) -> bool:
 
 # ------------------------------------------------------------------ 갱신 멈춤 알림
 # A: 수집은 정상인데 사이트(GitHub Pages)에 새 자료가 30분 넘게 안 올라감
-# B: 네이버 시세를 30분 넘게 정상으로 받지 못함 (값이 그대로인 것과는 구분: '응답 성공 시각'으로 봄)
+# B: 시세를 30분 넘게 정상으로 받지 못함 (값이 그대로인 것과는 구분: '응답 성공 시각'으로 봄)
 # 같은 종류는 하루 한 번만 알리고, 다시 정상이 되면 '복구'를 한 번 알림.
 # 자동 실행 자체가 멈춘 경우는 알림을 보낼 주체가 없으므로 사이트 경고로만 알림.
 STALE_MIN = 30
@@ -254,8 +254,8 @@ def check_health(now: datetime, trading_day: bool, log=None) -> list:
             else:
                 last = _dt("data_last_ok")
                 err = (get_state("data_status") or {}).get("value") or ""
-                title = f"[{word}] 네이버 시세를 {last:%H:%M} 이후 받지 못하고 있습니다" if last else f"[{word}] 네이버 시세를 받지 못하고 있습니다"
-                msg = "자동 실행은 돌고 있지만 네이버에서 시세를 받지 못하고 있습니다." + (f" 마지막 오류: {err[:200]}" if err.startswith("error") else "")
+                title = f"[{word}] 시세를 {last:%H:%M} 이후 받지 못하고 있습니다" if last else f"[{word}] 시세를 받지 못하고 있습니다"
+                msg = "자동 실행은 돌고 있지만 시세를 받지 못하고 있습니다." + (f" 마지막 오류: {err[:200]}" if err.startswith("error") else "")
         elif kind not in bad and k.get("active"):
             title = f"[복구] {word}가 풀렸습니다 ({now:%m/%d %H:%M})"
             msg = "다시 정상적으로 갱신되고 있습니다."
