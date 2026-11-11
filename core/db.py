@@ -348,11 +348,3 @@ def count_bars(symbol: str) -> int:
             ).fetchone()[0]
         )
 
-
-def clear_demo_data(symbol: str):
-    with connect() as conn:
-        conn.execute("DELETE FROM events WHERE symbol=?", (symbol,))
-        conn.execute("DELETE FROM minute_bars WHERE symbol=?", (symbol,))
-        conn.execute(
-            "DELETE FROM system_state WHERE key=?", (f"last_processed_ts:{symbol}",)
-        )

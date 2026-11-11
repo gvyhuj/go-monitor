@@ -467,10 +467,6 @@ def _ret_path(symbol: str, d0: str, n_after: int = 3):
     return out
 
 
-def _close_series(code: str, lo: str, hi: str) -> dict:
-    return {r["date"]: r["close"] for r in _daily(code, lo, hi) if r.get("close")}
-
-
 def decompose(symbol: str, d0: str) -> dict | None:
     """반응일 주가 변동을 '시장 몫 + 고유(기사) 몫'으로 나눔. 이벤트 상세(하루)와 같은 계산(causal.day_split)."""
     from . import causal

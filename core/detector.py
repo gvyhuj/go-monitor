@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import statistics
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -69,21 +68,6 @@ def load_settings() -> dict:
     return s
 
 
-def robust_z(value: float, samples: list[float]) -> float:
-    """중앙값·MAD 기반 이상도. 거래가 뜸해 MAD가 0이면 평균절대편차로 대체."""
-    vals = [float(x) for x in samples if x is not None]
-    if len(vals) < 5:
-        return 0.0
-    med = statistics.median(vals)
-    devs = [abs(x - med) for x in vals]
-    scale = statistics.median(devs) / 0.6745
-    if scale < 1e-12:
-        scale = (sum(devs) / len(devs)) * 1.2533
-    if scale < 1e-12:
-        return 0.0
-    return (value - med) / scale
-
-
 def load_bars(symbol: str, since: str | None = None) -> pd.DataFrame:
     with connect() as conn:
         df = pd.read_sql_query(
@@ -118,19 +102,6 @@ def _fill_minute_grid(day: pd.DataFrame) -> pd.DataFrame:
     out["source"] = out["source"].fillna("filled")
     out.index.name = "ts"
     return out.reset_index()
-
-
-def _feature_rows(df: pd.DataFrame) -> pd.DataFrame:
-    out = []
-    for _, day in df.groupby(df["ts"].dt.date, sort=True):
-        day = _fill_minute_grid(day)
-        day["date"] = day["ts"].dt.date
-        day["minute"] = day["ts"].dt.strftime("%H:%M")
-        day["ret5"] = day["close"].pct_change(5)
-        day["ret15"] = day["close"].pct_change(15)
-        day["vol5"] = day["volume"].rolling(5).sum()
-        out.append(day)
-    return pd.concat(out, ignore_index=True) if out else df
 
 
 DETECTOR_VERSION = "4"   # 기준이 바뀌면 올림 → 새 기준으로 다시 찾음 (2→3: 관찰 단계 추가, 기존 기록은 유지, 3→4: 거래대금 기준 없앰)

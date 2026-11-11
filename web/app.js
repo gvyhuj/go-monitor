@@ -1830,12 +1830,6 @@
   }
 
 
-  function dayChange(d) {
-    if (!d.prev_close || !d.bars.length) return null;
-    const live = liveFor(d.date);
-    return live ? live.chg : (d.close || d.bars[d.bars.length - 1].c) / d.prev_close - 1;
-  }
-
   function dayCardHtml(d, dayArts, isLatest) {
     const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
     // 하루 전체 등락 (전일 종가 대비)를 맨 위 한 칸으로. 하루 기록(급등·급락)이 있으면 이 칸이 곧 그 기록이고,
@@ -2132,7 +2126,6 @@
     };
     if (DAY_ROWS[ds]) fill(); else ensureDaily().then(fill);
   }
-  const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
 
   /** 공시 (뉴스 목록은 화면에서 뺌: 이 종목 기사는 '이 종목 기사' 칸에 있음. ChatGPT 자료에는 그대로 넣음) */
   function disclosureBlock(c) {
@@ -2196,16 +2189,6 @@
         sendReq({ type: "cause_delete", date: x.date, direction: x.direction, scope: x.scope, start_ts: x.start_ts, last_ts: x.last_ts, at_ts: x.start_ts });
       };
     });
-    const btn = $("#re-analyze");
-    if (btn) btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = "분석하는 중…";
-      try {
-        await api(`/api/events/${e.id}/analyze`, { method: "POST" });
-        drawerCharts.forEach((x) => { try { x.remove(); } catch (_) {} });
-        drawerCharts = [];
-        renderEventDrawer(await api(`/api/events/${e.id}`));
-      } catch (err) { btn.disabled = false; btn.textContent = "다시 분석"; alertInline(btn, err.message); }
-    };
   }
 
   // 원인 질문용: 숫자·사실 자료만 정리 (사이트의 자동 추정 결론은 넣지 않음 — 답이 그 결론에 끌려가지 않게)
@@ -2264,15 +2247,8 @@
     return `${text}\n\n[질문] ${question}`;
   }
 
-  function alertInline(el, msg) {
-    const p = document.createElement("p");
-    p.className = "note"; p.style.color = "var(--up)"; p.textContent = msg;
-    el.parentElement.after(p);
-  }
-
   // ---------------------------------------------------------------- articles (기사·공시 모음)
   const CAT_CLS = { "회사 발표": "c-co", "언론 분석": "c-press", "리서치": "c-res", "테마·수혜주": "c-theme", "시황·특징주": "c-mkt", "단순 언급": "c-etc" };
-  const TONE_TXT = { 1: "호재", "-1": "악재", 0: "" };
   const catTag = (c) => `<span class="ctag ${CAT_CLS[c] || "c-etc"}">${esc(c)}</span>`;
   const toneTag = (t) => (t ? `<span class="tone ${t > 0 ? "pos" : "neg"}">${t > 0 ? "호재" : "악재"}</span>` : "");
   const verdictTag = (e) => (e && e.verdict ? `<span class="vtag v-${e.verdict_cls}">${esc(e.verdict)}</span>` : "");
@@ -2334,11 +2310,9 @@
     const stamp = (t) => t ? t.slice(0, 16).replace("T", " ") : "시각 미상";
     return `${reason} ${stamp(x.analysis_ts || x.ts)}${x.start ? ` · 비교 시작 ${stamp(x.start)}` : ""}${x.mode ? ` · ${MODE_TXT[x.mode] || ""}` : ""}`;
   }
-const OBS_STATUS = {confirmed:'확인',estimated:'추정',unknown:'미상',complete:'관측 가능',partial:'일부 미집계',unavailable:'관측값 없음',pending:'진행 중'};
 const OBS_KIND = {company_press_release:'당사 보도자료',external_article:'외부기사',disclosure:'주요 공시'};
 // 이전 기록의 '외부 기업 발표'는 저장값을 바꾸지 않고 외부기사로 읽습니다.
 const obsKind = (k) => k === 'external_company_announcement' ? 'external_article' : k;
-const obsLink = (url,label) => /^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `${esc(label)} (원문 주소 없음)`;
 function observationQuestion(d) {
   // 질문용 사본 정리: 아직 오지 않은 날(값 없음)은 빼고, 거래 없던 1분은 그렇다고 적고, 'calc' 시각은 뜻을 풀어 씀
   const o0=d.observation, o={...o0};
@@ -3326,16 +3300,12 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
     html += `<div class="obs-folds">`;
 
-    // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)
-    const ev = "";
-
     // 공시: 같은 내용이라 이 공시 시각부터 잰 기사들
     if (isDisc) {
       const ls = a.links || [];
       html += `<details class="obs-fold" data-fold="links"><summary><span>같은 내용의 보도자료·기사</span><small>${ls.length}건</small></summary><div class="obs-fold-body"><section class="outlet-list">
         ${ls.length ? `<ul>${ls.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> <a href="#/pr/${esc(r.id)}">${esc(r.title)}</a>${r.kind === "pr" ? ' <span class="ktag k-pr">자사 보도자료</span>' : ""}</li>`).join("")}</ul>`
           : `<p class="note">이 공시 뒤 36시간 안에 같은 내용(계약·실적·IR·증자·전환사채)으로 나온 기사가 없습니다.</p>`}</section></div></details>`;
-      html += ev ? `<section class="evidence">${ev}</section>` : "";
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
     const outlets = entries.map((r) => r.lead ? { ...r, merged: !!a.story_with } : r);
@@ -3359,7 +3329,6 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ${a.manual ? "" : `<div class="merge-box editable"><button type="button" class="btn-link" id="merge-open">같은 내용인데 따로 보이는 기사 합치기</button><div id="merge-list" hidden></div></div>`}
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section></div></dialog>`;
-    if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
     box.innerHTML = html;
     enter(box);

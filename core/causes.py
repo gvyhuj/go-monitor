@@ -259,11 +259,6 @@ def _norm(name: str) -> str:
     return (name or "").replace(" ", "").replace("증권", "").replace("투자", "")
 
 
-def _theme_names(code: str) -> list[str]:
-    with connect() as conn:
-        return [r[0] for r in conn.execute("SELECT theme_name FROM stock_themes WHERE code=?", (code,))]
-
-
 def _daily_close(code: str, day: str):
     with connect() as conn:
         r = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date=?", (code, day)).fetchone()
@@ -554,18 +549,6 @@ def _decompose_window(symbol: str, day, own, kq, daily: bool):
     return {"own": own, "market": mk, "specific": own - mk, "z": None, "kosdaq": kq,
             "method": (dc or {}).get("method") or "단순", "beta_market": bm,
             "sigma": (dc or {}).get("sigma"), "basis": "구간"}
-
-
-def _returns(code: str, lo: str, hi: str) -> dict:
-    with connect() as conn:
-        rows = conn.execute("SELECT date, close FROM daily_bars WHERE symbol=? AND date BETWEEN ? AND ? ORDER BY date",
-                            (code, lo, hi)).fetchall()
-    out, prev = {}, None
-    for d, c in rows:
-        if prev and c:
-            out[d] = c / prev - 1
-        prev = c
-    return out
 
 
 def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, sign) -> list[dict]:
@@ -893,7 +876,6 @@ def analyze(event_id: int | None, stage: str = "1차", fetch=None, ev: dict | No
         split["z"], split["abn_p"], split["abn_basis"] = abn["z"], abn["p"], abn["basis"]
     external_led = False  # A model decomposition cannot establish causal leadership.
     unusual = bool(abn and abn["p"] < 0.05 and spec is not None and spec * sign > 0)
-    own_led = (not external_led) and unusual
 
     # --- 바깥 흐름의 배경 소식 (테마·시황·거시 이슈) ----------------------------
     from . import macro as _macro

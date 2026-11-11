@@ -32,18 +32,6 @@ def close_at_or_before(df: pd.DataFrame, t: datetime):
     return None if sub.empty else float(sub["close"].iloc[-1])
 
 
-def pct_change_between(symbol: str, t0: datetime, t1: datetime):
-    """t0 시점 종가 → t1 시점 종가 변화율. 데이터 없으면 None."""
-    df = load_range(symbol, t0 - timedelta(days=5), t1)
-    if df.empty:
-        return None
-    a = close_at_or_before(df, t0)
-    b = close_at_or_before(df[df["ts"] > t0], t1) if not df[df["ts"] > t0].empty else None
-    if a is None or b is None or a == 0:
-        return None
-    return b / a - 1
-
-
 @dataclass
 class PRResult:
     ok: bool
