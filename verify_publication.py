@@ -23,10 +23,12 @@ def verify(site_dir: Path, site_url: str, *, attempts: int = 6, delay: float = 5
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
                 actual = response.read(len(expected) + 1)
+                seen = {k: getattr(response, "headers", {}).get(k) for k in ("Last-Modified", "Age", "X-Cache", "X-Served-By")}
             if actual == expected:
                 print(f"Published live payload verified: {digest[:12]}", flush=True)
                 return
             detail = f"different payload ({hashlib.sha256(actual).hexdigest()[:12]}; expected {digest[:12]})"
+            detail += f" {seen}"    # 원인 분석용: 옛 판이 중간 저장(CDN)인지 Pages 원본인지 구분
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             detail = type(error).__name__
         print(f"Waiting for Pages publication ({attempt}/{attempts}): {detail}", flush=True)

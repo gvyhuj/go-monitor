@@ -54,6 +54,7 @@ def deploy(artifact_id: str, *, req=_req, token_fn=_oidc_token, commit_fn=_fresh
     end = time.monotonic() + timeout
     while True:
         status = req("GET", f"{API}/repos/{repo}/pages/deployments/{dep}", token).get("status")
+        print(f"  Pages 상태: {status}", flush=True)   # 원인 분석용: 실제로 처리됐는지(대기→동기화→성공) 남김
         if status == "succeed":
             print("Pages 게시 완료", flush=True)
             return d.get("page_url")
