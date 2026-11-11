@@ -81,7 +81,7 @@ def main(argv) -> int:
             kq, own = daily("KOSDAQ"), daily(sym)
     since = min(own) if own else "2025-11-17"
     print("## 일봉 자료 검증 (기록 vs 야후 파이낸스)")
-    for name, ours, ticker in (("KOSDAQ 지수", kq, "%5EKQ11"), ("그린광학", own, f"{sym}.KQ")):
+    for name, ours, ticker in (("KOSDAQ 지수", kq, "%5EKQ11"), ("이 종목", own, f"{sym}.KQ")):
         try:
             check(name, ours, yahoo_daily(ticker), since)
         except Exception as e:  # noqa: BLE001

@@ -53,7 +53,7 @@ def _clean(ln: str) -> str:
 
 
 def _is_title(t: str) -> bool:
-    """'종합판단', '그린광학 주가 변동 원인 분석 (2026.10.12)'처럼 내용 없는 제목 줄"""
+    """'종합판단', '○○ 주가 변동 원인 분석 (2026.10.12)'처럼 내용 없는 제목 줄"""
     if len(t) <= 8 and not re.search(r"[.다요음]$", t):
         return True
     return bool(re.search(r"원인\s*분석", t) and re.search(r"\d{4}[.\-/]\s*\d{1,2}", t))

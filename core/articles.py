@@ -82,7 +82,7 @@ def classify(title: str, body: str, name: str | None = None, office: str = "") -
         if t.lstrip().startswith("[") and not t.lstrip().startswith("[단독]"):
             return "언론 분석", mention          # 기획 연재 ([빛을 담는 기업들] 등)
         # 회사 발표는 이 회사가 제목의 주어일 때만 (첫 쉼표·말줄임표 앞에 이름이 있을 때).
-        # 예: '충북○○위원회, 우수 중소기업 탐방…그린광학 방문'은 다른 기관이 주어라 외부 기사 (언론 분석)
+        # 예: '충북○○위원회, 우수 중소기업 탐방…○○ 방문'은 다른 기관이 주어라 외부 기사 (언론 분석)
         subject = re.split(r"[,，…]|\.\.\.", t, 1)[0]
         return ("회사 발표" if has_company and name in subject else "언론 분석"), mention
     if name in b[:90]:
@@ -812,7 +812,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
         lead["tone_override"] = next((g.get("tone_override") for g in group if g.get("tone_override") is not None), None)
         out.append(lead)
-    # '회사 발표'는 기사 내용의 유형일 뿐, 그린광학이 배포한 보도자료의 증거가 아닙니다.
+    # '회사 발표'는 기사 내용의 유형일 뿐, 회사가 배포한 보도자료의 증거가 아닙니다.
     # 자체 배포는 직접 등록 또는 담당자가 pr로 명시한 경우만 확정 분류합니다.
     from .article_integrity import time_quality
     for a in out:

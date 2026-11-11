@@ -26,7 +26,8 @@ def time_quality(article: dict) -> str:
 
 def _tokens(title: str) -> set[str]:
     txt = unicodedata.normalize("NFKC", title or "").lower().replace("美", "미 ")
-    txt = re.sub(r"그린광학|\(주\)|주식회사", " ", txt)
+    from .articles import company_name
+    txt = re.sub(rf"{re.escape(company_name().lower())}|\(주\)|주식회사", " ", txt)
     return {t for t in re.findall(r"[가-힣a-z0-9]{2,}", txt)
             if t not in {"관련", "국내", "선정", "공급", "기업", "지원", "참여", "추진", "기술", "개발", "보도", "주가"}}
 

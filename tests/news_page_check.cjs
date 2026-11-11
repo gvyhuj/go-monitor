@@ -72,7 +72,7 @@ async function main() {
       await page.locator("#pr-close").click();
       assert.equal(await page.evaluate(() => location.hash), "#/pr");
 
-      // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 그린광학 보도자료.
+      // One page: no separate 뉴스 반응 view; '회사 발표' articles are in 자사 보도자료.
       assert.deepEqual(await page.locator(".view-seg a").allInnerTexts(), ["목록", "대시보드"]);
       // README 탭 없음, 맨 아래 출처 문구·로그아웃 없음
       assert.deepEqual(await page.locator(".tabs a").allInnerTexts(), ["주가 기록", "뉴스"]);
@@ -101,18 +101,18 @@ async function main() {
       await page.locator("#art-cond").click();
       assert.deepEqual(await page.locator('#art-pop button[data-ck="range"]').allInnerTexts(), ["전체", "3달", "6달", "1년", "직접 고르기"]);
       // 위 요약 칸은 조건을 따라감 (기본 1년, 이름도 1년)
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*그린광학 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 10개/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 1년\s*자사 보도자료 · 2025-10-29 ~ 2026-10-29[\s\S]*한 달 평균[\s\S]*한 건당 실린 매체[\s\S]*전체\s*3건\s*매체 기사 합계 10개/);
       await page.locator('#art-pop button[data-ck="mode"][data-cv="late"]').click();
       assert.equal(await list.count(), 0);
       assert.match(await page.locator("#pr-score").innerText(), /15시 이후[\s\S]*전체\s*0건/);
       // 기간을 3달·직접 고르기로 바꾸면 이름과 숫자가 따라감
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       await page.locator('#art-pop button[data-ck="range"][data-cv="92"]').click();
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 3달\s*그린광학 보도자료 · 2026-07-29 ~ 2026-10-29[\s\S]*전체\s*3건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*최근 3달\s*자사 보도자료 · 2026-07-29 ~ 2026-10-29[\s\S]*전체\s*3건/);
       await page.locator('#art-pop button[data-ck="range"][data-cv="custom"]').click();
       await page.locator("#art-from").fill("2026-10-16"); await page.locator("#art-from").dispatchEvent("change");
       await page.locator("#art-to").fill("2026-10-22"); await page.locator("#art-to").dispatchEvent("change");
-      assert.match(await page.locator("#pr-score").innerText(), /기준\s*직접 고른 기간\s*그린광학 보도자료 · 2026-10-16 ~ 2026-10-22[\s\S]*전체\s*2건/);
+      assert.match(await page.locator("#pr-score").innerText(), /기준\s*직접 고른 기간\s*자사 보도자료 · 2026-10-16 ~ 2026-10-22[\s\S]*전체\s*2건/);
       await page.locator('#art-pop button[data-ck="range"][data-cv="365"]').click();
       await page.locator('#art-pop button[data-ck="mode"][data-cv="all"]').click();
       assert.equal(await list.count(), 3);
@@ -126,7 +126,7 @@ async function main() {
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
       assert.equal(await page.locator('#art-list button[data-id="2001"]').getAttribute("aria-current"), "true");
       assert.deepEqual(await page.locator("#pr-detail [data-rxr]").allInnerTexts(), ["공개 직후", "전후 5거래일"]);
-      assert.match(await page.locator("#rx-cmp").innerText(), /다른 그린광학 보도자료 2건/);
+      assert.match(await page.locator("#rx-cmp").innerText(), /다른 자사 보도자료 2건/);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
       assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
       assert.equal(await page.locator("#obs-question").innerText(), "AI에게 묻기");
@@ -357,7 +357,7 @@ async function main() {
       assert.equal(await jump.inputValue(), before, "숫자 입력 막힘");
 
       // 분류 변경은 수정 메뉴에만 표시하고, 기존 요청 동작을 유지한다.
-      for (const [id, kind, label] of [["2001", "ext", "외부 기사로 바꾸기"], ["2004", "pr", "그린광학 보도자료로 바꾸기"]]) {
+      for (const [id, kind, label] of [["2001", "ext", "외부 기사로 바꾸기"], ["2004", "pr", "자사 보도자료로 바꾸기"]]) {
         await page.goto(`${base}/#/pr/${id}`);
         const change = page.locator(`.art-more-menu [data-kind="${kind}"]`);
         await change.waitFor({ state: "attached" });

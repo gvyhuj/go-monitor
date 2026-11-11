@@ -218,8 +218,8 @@ def test_reported_time_quality_and_followup_flags():
     assert time_quality({"ts": "2026-06-19T16:00", "source": "naver"}) == "reported"
     assert time_quality({"ts": "2026-06-19T10:00", "source": "google"}) == "reported"
     assert time_quality({"ts": "2026-06-19T16:00", "source": "google", "manual": True}) == "manually_entered"
-    a = {"ts": "2026-02-25T10:38", "title": "그린광학, 美 우주군 프로젝트 참여"}
-    b = {"ts": "2026-02-25T17:00", "title": "그린광학, 미 우주군 프로젝트 국내 유일 선정"}
+    a = {"ts": "2026-02-25T10:38", "title": "가나광학, 美 우주군 프로젝트 참여"}
+    b = {"ts": "2026-02-25T17:00", "title": "가나광학, 미 우주군 프로젝트 국내 유일 선정"}
     # Same publication date can still produce DIFFERENT event-study dates.
     assert likely_followup(a, b)
     b["ts"] = "2026-03-20T17:00"
@@ -243,19 +243,19 @@ def test_kind_pr_is_confirmed_only_and_same_story_followup_is_not_another_indepe
 
 
 def test_company_report_only_when_company_is_subject():
-    # 다른 기관이 주어인 기사('…그린광학 방문')는 회사 발표가 아니라 외부 기사(언론 분석)
+    # 다른 기관이 주어인 기사('…가나광학 방문')는 회사 발표가 아니라 외부 기사(언론 분석)
     from core import articles as a
-    assert a.classify("충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…그린광학 방문", "", name="그린광학")[0] == "언론 분석"
-    assert a.classify("그린광학, 인도 GalaxEye 위성군에 광학미러 공급", "", name="그린광학")[0] == "회사 발표"
-    assert a.classify("그린광학 신제품 출시", "", name="그린광학")[0] == "회사 발표"
+    assert a.classify("충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…가나광학 방문", "", name="가나광학")[0] == "언론 분석"
+    assert a.classify("가나광학, 인도 GalaxEye 위성군에 광학미러 공급", "", name="가나광학")[0] == "회사 발표"
+    assert a.classify("가나광학 신제품 출시", "", name="가나광학")[0] == "회사 발표"
 
 
 def test_false_negative_words_are_not_bad_news():
     # '인적자원'의 '적자'는 악재가 아님, 진짜 '영업적자'는 악재
     from core import articles as a
-    t = "충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…그린광학 방문"
+    t = "충북지역인적자원개발위원회, 직업계고 학부모 우수 중소기업 탐방…가나광학 방문"
     assert not any(w in a.neg_text(t) for w in a.STRONG_NEG) and a.tone_of(t) >= 0
-    assert any(w in a.neg_text("그린광학, 3분기 영업적자 확대") for w in a.STRONG_NEG)
+    assert any(w in a.neg_text("가나광학, 3분기 영업적자 확대") for w in a.STRONG_NEG)
 
 
 def test_earliest_article_stays_lead_even_when_later_article_was_picked(tmpdb):

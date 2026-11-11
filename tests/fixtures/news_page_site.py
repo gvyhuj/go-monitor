@@ -21,7 +21,7 @@ from core import db, sitebuild, yahoo  # noqa: E402
 PASSWORD = "public-site-password"
 SALT = b"0123456789abcdef"
 SYMBOL = "000001"
-# (id, KST time, office, title, category, +30분 move). '회사 발표' = 그린광학 보도자료 탭
+# (id, KST time, office, title, category, +30분 move). '회사 발표' = 자사 보도자료 탭
 ARTICLES = [
     ("2001", "2026-10-22T10:05", "검증일보", "광학미러 공급 계약 체결", "회사 발표", -0.012),
     ("2002", "2026-10-20T09:40", "검증경제", "3분기 실적 설명회 개최", "회사 발표", 0.024),

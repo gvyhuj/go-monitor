@@ -575,7 +575,7 @@ def _desk(split, ext_share, abn, unusual, ranked, chk3, basket, bz, conc, cal, s
     def add(k, state, text):
         out.append({"k": k, "state": state, "text": text})
     if split and split.get("own") is not None:
-        txt = (f"그린광학 실제 등락률: {_fmt_pct(split['own'])} · "
+        txt = (f"이 종목 실제 등락률: {_fmt_pct(split['own'])} · "
                f"시장 추정 기여분: {split['market']*100:+.2f}%p · "
                f"종목 고유 추정분: {split['specific']*100:+.2f}%p. "
                "과거 관계에 따른 모형 추정이며 실제 상승·하락 원인을 확정하지 않습니다.")
