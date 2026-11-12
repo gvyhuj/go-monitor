@@ -724,7 +724,7 @@
     if (Date.now() - RUN_HEALTH_AT < 5 * 60000) return RUN_HEALTH;      // 공개 API 횟수 제한(시간당 60번) 때문에 5분마다만
     RUN_HEALTH_AT = Date.now();
     try {
-      const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/runs?per_page=10`, { cache: "no-store" });
+      const r = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/workflows/monitor.yml/runs?per_page=10`, { cache: "no-store" });
       if (!r.ok) throw new Error(String(r.status));
       const runs = (await r.json()).workflow_runs || [];
       const recent = runs.filter((x) => Date.now() - new Date(x.created_at).getTime() < 15 * 60000);
@@ -897,7 +897,7 @@
   }
 
   // ---------------------------------------------------------------- 오늘 한눈에 (위 카드 줄)
-  // 소식 칸: 최근 거래일의 그린광학 보도자료(건수·실린 매체 수)·주요 공시·외부 기사. 차트 점과 같은 기준
+  // 소식 칸: 최근 거래일의 자사 보도자료(건수·실린 매체 수)·주요 공시·외부 기사. 차트 점과 같은 기준
   function fillToday(daily, arts, discs, events, onNews, day = null) {
     if (!daily.length) return;
     const last = daily[daily.length - 1].date;
@@ -1212,7 +1212,7 @@
           ${periodHtml(daily, calState, "data-period")}
           <div id="rec-head"></div>
           <div class="rec-main"><div class="rec-left"><div id="rec-chart"></div>
-            <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div></div>
+            <div class="rec-legend"><span><i class="mk pr"></i>자사 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div></div>
             <aside class="rec-side" id="rec-side"></aside></div>
         </section><div class="tcard b-seg">${segHtml()}</div></div>
         <section id="rec-day"></section>`;
@@ -1830,12 +1830,6 @@
   }
 
 
-  function dayChange(d) {
-    if (!d.prev_close || !d.bars.length) return null;
-    const live = liveFor(d.date);
-    return live ? live.chg : (d.close || d.bars[d.bars.length - 1].c) / d.prev_close - 1;
-  }
-
   function dayCardHtml(d, dayArts, isLatest) {
     const closed = d.bars.length && d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
     // 하루 전체 등락 (전일 종가 대비)를 맨 위 한 칸으로. 하루 기록(급등·급락)이 있으면 이 칸이 곧 그 기록이고,
@@ -2132,7 +2126,6 @@
     };
     if (DAY_ROWS[ds]) fill(); else ensureDaily().then(fill);
   }
-  const e_isDailyNote = (c) => (c && c.move && c.move.from && c.move.to ? "같은 기간 변동률입니다." : "");
 
   /** 공시 (뉴스 목록은 화면에서 뺌: 이 종목 기사는 '이 종목 기사' 칸에 있음. ChatGPT 자료에는 그대로 넣음) */
   function disclosureBlock(c) {
@@ -2196,16 +2189,6 @@
         sendReq({ type: "cause_delete", date: x.date, direction: x.direction, scope: x.scope, start_ts: x.start_ts, last_ts: x.last_ts, at_ts: x.start_ts });
       };
     });
-    const btn = $("#re-analyze");
-    if (btn) btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = "분석하는 중…";
-      try {
-        await api(`/api/events/${e.id}/analyze`, { method: "POST" });
-        drawerCharts.forEach((x) => { try { x.remove(); } catch (_) {} });
-        drawerCharts = [];
-        renderEventDrawer(await api(`/api/events/${e.id}`));
-      } catch (err) { btn.disabled = false; btn.textContent = "다시 분석"; alertInline(btn, err.message); }
-    };
   }
 
   // 원인 질문용: 숫자·사실 자료만 정리 (사이트의 자동 추정 결론은 넣지 않음 — 답이 그 결론에 끌려가지 않게)
@@ -2264,15 +2247,8 @@
     return `${text}\n\n[질문] ${question}`;
   }
 
-  function alertInline(el, msg) {
-    const p = document.createElement("p");
-    p.className = "note"; p.style.color = "var(--up)"; p.textContent = msg;
-    el.parentElement.after(p);
-  }
-
   // ---------------------------------------------------------------- articles (기사·공시 모음)
   const CAT_CLS = { "회사 발표": "c-co", "언론 분석": "c-press", "리서치": "c-res", "테마·수혜주": "c-theme", "시황·특징주": "c-mkt", "단순 언급": "c-etc" };
-  const TONE_TXT = { 1: "호재", "-1": "악재", 0: "" };
   const catTag = (c) => `<span class="ctag ${CAT_CLS[c] || "c-etc"}">${esc(c)}</span>`;
   const toneTag = (t) => (t ? `<span class="tone ${t > 0 ? "pos" : "neg"}">${t > 0 ? "호재" : "악재"}</span>` : "");
   const verdictTag = (e) => (e && e.verdict ? `<span class="vtag v-${e.verdict_cls}">${esc(e.verdict)}</span>` : "");
@@ -2290,7 +2266,7 @@
   // 소식 없는 날과 비교 (README에 표시): 기사 하나는 잡음이 커도, 같은 종류 날을 모으면 차이가 보임
   function baselineHtml(b) {
     if (!b) return "";
-    const NAMES = { pr: "그린광학 보도자료 날", disc: "주요 공시 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
+    const NAMES = { pr: "자사 보도자료 날", disc: "주요 공시 날", ext: "외부 기사만 있는 날", none: "소식 없는 날 (기준)" };
     const rows = ["pr", "disc", "ext", "none"].map((k) => {
       const g = b.groups[k] || {};
       return `<tr${k === "none" ? ' class="muted"' : ""}><td>${NAMES[k]}</td><td class="num">${g.n || 0}일</td>
@@ -2334,18 +2310,16 @@
     const stamp = (t) => t ? t.slice(0, 16).replace("T", " ") : "시각 미상";
     return `${reason} ${stamp(x.analysis_ts || x.ts)}${x.start ? ` · 비교 시작 ${stamp(x.start)}` : ""}${x.mode ? ` · ${MODE_TXT[x.mode] || ""}` : ""}`;
   }
-const OBS_STATUS = {confirmed:'확인',estimated:'추정',unknown:'미상',complete:'관측 가능',partial:'일부 미집계',unavailable:'관측값 없음',pending:'진행 중'};
 const OBS_KIND = {company_press_release:'당사 보도자료',external_article:'외부기사',disclosure:'주요 공시'};
 // 이전 기록의 '외부 기업 발표'는 저장값을 바꾸지 않고 외부기사로 읽습니다.
 const obsKind = (k) => k === 'external_company_announcement' ? 'external_article' : k;
-const obsLink = (url,label) => /^https?:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `${esc(label)} (원문 주소 없음)`;
 function observationQuestion(d) {
   // 질문용 사본 정리: 아직 오지 않은 날(값 없음)은 빼고, 거래 없던 1분은 그렇다고 적고, 'calc' 시각은 뜻을 풀어 씀
   const o0=d.observation, o={...o0};
   if(o0.intraday)o.intraday={...o0.intraday,points:(o0.intraday.points||[]).map(p=>p.stock_price==null&&p.kosdaq_price!=null?{time:p.time,offset:p.offset,kosdaq_price:p.kosdaq_price,kq:p.kq,note:'이 1분 체결 없음'}:p)};
   if(o0.windows)o.windows=Object.fromEntries(Object.entries(o0.windows).map(([k,w])=>[k,{...w,points:(w.points||[]).filter(p=>p.stock_price!=null||p.kosdaq_price!=null)}]));
   const mc=d.market_context;
-  return `그린광학 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
+  return `${(STATUS && STATUS.name) || "이 종목"} 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
 // 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문·결과 저장, 관련 소식, 검토 기록, 유사 사건, 분류·연결 수정.
@@ -2435,8 +2409,8 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <line class="rx-zero" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>
       <line class="rx-t0" x1="${xs(0)}" x2="${xs(0)}" y1="${T}" y2="${H - B}"/>
       ${[X0, ...Array.from({ length: X1 / (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30) + 1 }, (_, i) => i * (X1 <= 30 ? 10 : X1 <= 60 ? 15 : 30))].map((m) => `<text class="rx-ax" x="${xs(m)}" y="${H - 8}" text-anchor="middle">${m === 0 ? "비교 시작" : `${m > 0 ? "+" : ""}${m}분`}</text>`).join("")}
-      ${lines.map((o) => { const dd = d(o.s, o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" pathLength="1" d="${dd}"/><path class="rx-hit" d="${dd}"/>${gaps(o.s,o.x.interval||1,reactState.pick===o.x.id?"on":"",o.x.start,`그린광학 ${o.x.interval}분 / KOSDAQ ${o.x.kq_interval||"-"}분`)}${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1" fill="#9aa5b6"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
-      ${avg.length ? `<path class="rx-avg" pathLength="1" d="${d(avg)}"/>${gaps(avg,1,"average",null,`그린광학 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 중앙값" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
+      ${lines.map((o) => { const dd = d(o.s, o.x.interval || 1); return `<g class="rx-g" data-id="${esc(o.x.id)}" data-t="${esc(`${dayLabel(o.x.ts)} ${hhmm(o.x.ts)} · ${o.x.title}`)}"><path class="rx-one${reactState.pick === o.x.id ? " on" : ""}" pathLength="1" d="${dd}"/><path class="rx-hit" d="${dd}"/>${gaps(o.s,o.x.interval||1,reactState.pick===o.x.id?"on":"",o.x.start,`이 종목 ${o.x.interval}분 / KOSDAQ ${o.x.kq_interval||"-"}분`)}${o.s.filter(([m]) => m >= X0).map(([m,v]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="1" fill="#9aa5b6"><title>${m > 0 ? "+" : ""}${m}분 ${reactState.vsKq ? points(v) : pct(v)}</title></circle>`).join("")}</g>`; }).join("")}
+      ${avg.length ? `<path class="rx-avg" pathLength="1" d="${d(avg)}"/>${gaps(avg,1,"average",null,`이 종목 ${[...new Set(list.map(x=>x.interval))].join("/")}분 / KOSDAQ ${[...new Set(list.map(x=>x.kq_interval))].join("/")}분`)}${avg.map(([m,v,n]) => `<circle cx="${xs(m)}" cy="${ys(v)}" r="2" tabindex="0" data-gap="${m}분 · 유효 사건 ${n}건, 같은 시각 관측 · 실제 공통 시각의 중앙값" class="rx-avg"><title>${m}분 · 유효 사건 ${n}건, 같은 시각 관측</title></circle>`).join("")}` : ""}
       ${reactState.pick ? (() => {            // 고른 기사: 이 종목(굵게) + 같은 시간 KOSDAQ(점선)
         const o = lines.find((q) => q.x.id === reactState.pick); if (!o) return "";
         const kq = !reactState.vsKq && o.x.path && o.x.path.kq && o.x.path.kq.length > 1 ? `<path class="rx-kq" d="${d(o.x.path.kq.filter(([m]) => m <= X1), o.x.kq_interval || 1)}"/>` : "";
@@ -2489,7 +2463,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       <br>시장과의 비교는 아래 ‘KOSDAQ 대비 중앙값’과 기사 화면의 ‘코스닥과 비교’에서 봅니다.
       <br>주가 움직임은 기사 외 여러 요인의 영향을 받으므로 기사의 직접적인 효과를 뜻하지 않습니다.
       <br>파란 선은 각 시각 유효 사건의 중앙값(정렬했을 때 가운데 값)입니다. 크게 움직인 몇 건에 끌려가는 평균 대신 보통의 흐름을 보여 줍니다.  사건 ID와 비교 시작으로 중복 제거합니다. 서로 다른 값이 충돌하는 사건은 제외합니다. 1사건뿐인 시각에는 중앙값 선을 표시하지 않습니다. 공개 직전 한 봉 간격 안의 완료 가격을 기준으로 하며 같은 시각 가격이 없으면 KOSDAQ 차이는 미집계입니다. 없는 가격을 보간하지 않습니다. 점선 연결은 표시 전용이며 계산·CSV에 포함하지 않습니다. KOSDAQ 차감은 단순 비교이며 시장의 인과 효과를 완전히 제거한 값이 아닙니다. 소표본은 일반화할 수 없습니다.</details>`
-      + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`그린광학 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
+      + (reactState.vsKq ? `<br>KOSDAQ 비교 가능 관측 시각이 드뭅니다. 이 점들은 실제 공통 시각의 중앙값입니다. 봉 간격: ${[...new Set(list.map(x=>`이 종목 ${x.interval||'-'}분 / KOSDAQ ${x.kq_interval||'-'}분`))].join(', ')}` : '');
     const buckets=new Map(); for(const x of list){const v=stepV(x,reactState.h);if(v==null)continue;const k=(x.event_key||x.id)+'|'+(x.start||'');if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(v);}
     const conflicts=[...buckets.entries()].filter(([,v])=>Math.max(...v)-Math.min(...v)>=1e-8);
     $("#rx-sum").innerHTML+=`<details><summary>집계 품질: 충돌/제외 ${conflicts.length}사건 · 시각 미상 ${list.filter(x=>x.untimed).length}건 · 중복 제외 ${[...buckets.values()].reduce((n,v)=>n+v.length-1,0)}건</summary>${conflicts.map(([k,v])=>esc(k)+': '+v.map(pct).join(', ')).join('<br>')||'충돌 없음'}</details>`;
@@ -2538,7 +2512,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const out = [];
     for (const a of items) {
       if (a.hidden) continue;
-      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "그린광학 보도자료" : "외부 기사";
+      const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "자사 보도자료" : "외부 기사";
       const base = { kind, category: a.category || "-", lead: a.id };
       out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
         url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
@@ -2556,7 +2530,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     return r[dim] || "-";
   };
   // 한 기준(dim)으로 세기: [{key, n, by: {구분: 건수}}] 많은 순 (시간 기준은 시간 순)
-  const DASH_KINDS = ["그린광학 보도자료", "외부 기사"];
+  const DASH_KINDS = ["자사 보도자료", "외부 기사"];
   const dashKey = (r, dim) => (dim === "reporter" ? (r.reporter ? `${r.reporter} · ${r.office}` : "") : pivotKey(r, dim));
   function dashAgg(rows, dim) {
     const m = new Map();
@@ -2573,7 +2547,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
 
   // 기사 대시보드 (언론 모니터링 대시보드 구성 참고: 숫자 카드 · 기사 추이 · 상위 언론사 · 자주 쓴 기자 · 주제 타일 · 기사 피드)
   // 선·순위·타일을 누르면 그 조건으로 나머지가 함께 걸러짐 (다시 누르면 풀림). 원본은 언제든 엑셀로
-  const DASH_CLS = { "그린광학 보도자료": "s-pr", "외부 기사": "s-ext" };
+  const DASH_CLS = { "자사 보도자료": "s-pr", "외부 기사": "s-ext" };
   function dashLine(el, rows, sel) {
     // 월별 두 선 (보도자료·외부 기사), 마우스를 올리면 그달 숫자, 누르면 그달로 걸러짐
     if (!rows.length) { el.innerHTML = `<p class="muted">해당 기사가 없습니다.</p>`; return; }
@@ -2631,7 +2605,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${pivotState[key] === v}">${t}</button>`).join("")}</div>`;
     const drawCtl = () => {
       $("#piv-ctl").innerHTML = `${seg("range", [["all", "전체"], ["365", "1년"], ["183", "6개월"], ["92", "3개월"], ["31", "1개월"]])}
-        ${seg("kind", [["all", "전체"], ["그린광학 보도자료", "보도자료"], ["외부 기사", "외부 기사"]])}`;
+        ${seg("kind", [["all", "전체"], ["자사 보도자료", "보도자료"], ["외부 기사", "외부 기사"]])}`;
     };
     drawCtl();
     const F = pivotState.f;
@@ -2655,13 +2629,13 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       // 플러저블(Plausible) 상위 출처 목록처럼 이름 뒤에 건수만큼 옅은 막대, 막대는 보도자료·외부 기사 비율로 나눔
       el.innerHTML = list.length ? `<ol class="dash-board">${list.map((x, i) => {
         const [name, sub] = dim === "reporter" ? x.key.split(" · ") : [x.key, ""];
-        const pr = x.by["그린광학 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
+        const pr = x.by["자사 보도자료"] || 0, ext = x.by["외부 기사"] || 0;
         return `<li><button type="button" class="dash-row${F[dim] === x.key ? " on" : F[dim] ? " off" : ""}" data-d="${dim}" data-v="${esc(x.key)}">
           <span class="rk">${x.rank}</span>
           <span class="nm"><span class="bar" style="width:${((x.n / max) * 100).toFixed(1)}%;--i:${i}"><i class="b-pr" style="flex:${pr}"></i><i class="b-ext" style="flex:${ext}"></i></span>
             <b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}</span>
           <span class="ct"><b data-count="${x.n}" data-key="bd-${dim}-${esc(x.key)}" data-from0>${x.n}</b><small class="muted">${Math.round((x.n / total) * 100)}%</small></span>
-          <span class="mix"><span title="그린광학 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
+          <span class="mix"><span title="자사 보도자료"${pr ? "" : ' class="zero"'}><i class="dot s-pr"></i>${pr}</span><span title="외부 기사"${ext ? "" : ' class="zero"'}><i class="dot s-ext"></i>${ext}</span></span></button></li>`;
       }).join("")}</ol>${dashPager(dim, pages[dim], full.length)}` : `<p class="muted">${nq ? `“${esc(pivotState.q[dim])}”이(가) 들어간 ${dim === "reporter" ? "기자" : "언론사"}가 없습니다.` : "해당 기사가 없습니다."}</p>`;
       // 막대가 위에서부터 차례로 왼쪽→오른쪽으로 자라고 건수는 올라감 (조건·쪽·찾기가 바뀔 때만, 창 크기만 바뀌면 안 함)
       const bk = JSON.stringify([pivotState.range, pivotState.unit, pivotState.kind, F, pages[dim], pivotState.q[dim]]);
@@ -2678,7 +2652,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     function tiles(el) {
       const list = dashAgg(base.filter((r) => pass(r, "topic")), "topic");
       el.innerHTML = list.length ? list.map((x) => `<button type="button" class="dash-chip dash-row${F.topic === x.key ? " on" : F.topic ? " off" : ""}" data-d="topic" data-v="${esc(x.key)}"
-          title="보도자료 ${x.by["그린광학 보도자료"] || 0} · 외부 ${x.by["외부 기사"] || 0}">${esc(x.key)}<b>${x.n}</b></button>`).join("")
+          title="보도자료 ${x.by["자사 보도자료"] || 0} · 외부 ${x.by["외부 기사"] || 0}">${esc(x.key)}<b>${x.n}</b></button>`).join("")
         : `<p class="muted">해당 기사가 없습니다.</p>`;
     }
     let lastDrawKey = "";
@@ -2696,11 +2670,11 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       shown = base.filter((r) => pass(r)).sort((x, y) => (x.ts < y.ts ? 1 : -1));
       const offices = new Set(shown.map((r) => r.office)).size;
       const monthsAll = dashAgg(shown, "month");
-      const prN = shown.filter((r) => r.kind === "그린광학 보도자료").length, extN = shown.length - prN;
+      const prN = shown.filter((r) => r.kind === "자사 보도자료").length, extN = shown.length - prN;
       const share = (n) => (shown.length ? `${Math.round((n / shown.length) * 100)}%` : "-");
       $("#dash-kpi").innerHTML = `
         <div class="kpi"><small>보도</small><b>${cnt(shown.length, "all")}<em>건</em></b>${spark(monthsAll)}</div>
-        <div class="kpi k-pr"><small><i class="mk pr"></i>그린광학 보도자료</small><b>${cnt(prN, "pr")}<em>건</em></b><span class="muted">전체의 ${share(prN)}</span></div>
+        <div class="kpi k-pr"><small><i class="mk pr"></i>자사 보도자료</small><b>${cnt(prN, "pr")}<em>건</em></b><span class="muted">전체의 ${share(prN)}</span></div>
         <div class="kpi k-ext"><small><i class="mk ext"></i>외부 기사</small><b>${cnt(extN, "ext")}<em>건</em></b><span class="muted">전체의 ${share(extN)}</span></div>
         <div class="kpi"><small>언론사</small><b>${cnt(offices, "office")}<em>곳</em></b><span class="muted">기자 확인 ${cnt(new Set(shown.filter((r) => r.reporter).map((r) => r.reporter + r.office)).size, "rep")}명</span></div>`;
       countUp($("#dash-kpi"));      // 기간·구분·고르기를 바꾸면 숫자가 이전 값에서 새 값으로
@@ -2723,7 +2697,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       $("#dash-feed-pager").innerHTML = dashPager("feed", pg.feed, shown.length);
       $("#dash-list").innerHTML = shown.slice(pg.feed * DASH_PER, (pg.feed + 1) * DASH_PER).map((r) => `<li><div>
         <a href="#/pr/${esc(r.lead)}" class="t">${esc(r.title)}</a>
-        <div class="meta"><span class="ktag ${r.kind === "그린광학 보도자료" ? "k-pr" : "k-ext"}">${r.kind === "그린광학 보도자료" ? "보도자료" : "외부"}</span>
+        <div class="meta"><span class="ktag ${r.kind === "자사 보도자료" ? "k-pr" : "k-ext"}">${r.kind === "자사 보도자료" ? "보도자료" : "외부"}</span>
           <span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)}</span>
           ${r.url ? `<a class="muted" href="${esc(r.url)}" target="_blank" rel="noopener">원문</a>` : ""}</div></div></li>`).join("")
         || `<li class="empty"><strong>조건에 맞는 기사가 없습니다.</strong></li>`;
@@ -2840,7 +2814,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       pr: events.filter((e) => e.kind === "pr" || e.kind === "company"),
       ext: events.filter((e) => e.kind !== "pr" && e.kind !== "company" && !e.noise),
     };
-    const LABEL = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
+    const LABEL = { pr: "자사 보도자료", ext: "외부 기사", disc: "공시" };
     // 공시: 종류(DART 분류 + 거래소 조치) 버튼으로 거름. discTypes가 null이면 '전체'(처음 기본값),
     // Set이면 고른 종류만 (전체 상태에서 한 종류를 누르면 그것만, 더 누르면 더해지고, 다 빼면 다시 전체)
     if (artState.discTypes === undefined) artState.discTypes = null;
@@ -2868,7 +2842,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const perMonth = months ? list.length / months : null;
       const num = (v, key, txt, fmt = "", suf = "") => v == null ? "-" : `<b data-count="${v}" data-key="sc-${cat}-${key}" data-from0${fmt ? ` data-fmt="${fmt}"` : ""}${suf ? ` data-suf="${suf}"` : ""}>${txt}</b>`;
       // 맨 왼쪽: 지금 고른 기준 (탭 · 기간 · 공개 시점 · 주제 · 검색어), 그 옆 숫자 칸은 이 기준으로 계산
-      const LABELS = { pr: "그린광학 보도자료", ext: "외부 기사", disc: "공시" };
+      const LABELS = { pr: "자사 보도자료", ext: "외부 기사", disc: "공시" };
       const extra = [artState.mode !== "all" ? (MODES.find((m) => m[0] === artState.mode) || [, ""])[1] : "", artState.topic, artState.q ? `검색 “${artState.q}”` : ""].filter(Boolean);
       return `<div class="score-line">
         <span class="sc-basis"><small>기준</small><b>${esc(r === "all" ? "전체 기간" : r === "custom" ? "직접 고른 기간" : `최근 ${name}`)}</b>
@@ -3073,7 +3047,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const n = multi.ids.size, to = artState.cat === "pr" ? "ext" : "pr";
       bar.innerHTML = `<b>${n}건 선택</b><span class="muted">기사를 눌러 고르세요 (n개 매체 묶음은 묶음 전체가 함께 바뀝니다)</span><span class="spacer"></span>
         <button type="button" class="btn small" data-bulk="hide" ${n ? "" : "disabled"}>목록에서 삭제</button>
-        <button type="button" class="btn small" data-bulk="${to}" ${n ? "" : "disabled"}>${to === "pr" ? "그린광학 보도자료로" : "외부 기사로"}</button>
+        <button type="button" class="btn small" data-bulk="${to}" ${n ? "" : "disabled"}>${to === "pr" ? "자사 보도자료로" : "외부 기사로"}</button>
         <button type="button" class="btn-link" data-bulk="cancel">취소</button><span class="form-msg" id="bulk-msg"></span>`;
     }
     $("#art-multi").onclick = () => {
@@ -3086,7 +3060,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       if (act === "cancel") { multi.on = false; multi.ids.clear(); drawBulk(); renderList(); return; }
       if (!ids.length) return;
       if (act === "hide" && b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = `${ids.length}건 삭제 — 한 번 더 누르기`; return; }
-      const title = `${ids.length}건 ${act === "hide" ? "목록에서 삭제" : act === "pr" ? "그린광학 보도자료로" : "외부 기사로"}`;
+      const title = `${ids.length}건 ${act === "hide" ? "목록에서 삭제" : act === "pr" ? "자사 보도자료로" : "외부 기사로"}`;
       const item = act === "hide" ? { type: "hide", ids, title } : { type: "article_kind", ids, kind: act, title };
       const msg = $("#bulk-msg");
       try {
@@ -3322,20 +3296,16 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     }
     // 공개 시각 확인 같은 안내만 (반응일 하루 표는 뺌)
     if (notes.length) html += `<section class="verdict-box">${notes.map((x) => `<div class="vb-note">${x}</div>`).join("")}</section>`;
-    // 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 그린광학 보도자료).
+    // 구분 바꾸기는 수정 메뉴에 (직접 등록한 기사는 늘 자사 보도자료).
     const toKinds = !a.manual && !isDisc ? (a.kind === "pr" || a.kind === "company" ? ["ext"] : ["pr"]) : [];
     html += `<div class="obs-folds">`;
-
-    // 예상 대비 차이·95% 범위 같은 분석 숫자는 맨 위가 아니라 근거 쪽에 (판단은 사용자가)
-    const ev = "";
 
     // 공시: 같은 내용이라 이 공시 시각부터 잰 기사들
     if (isDisc) {
       const ls = a.links || [];
       html += `<details class="obs-fold" data-fold="links"><summary><span>같은 내용의 보도자료·기사</span><small>${ls.length}건</small></summary><div class="obs-fold-body"><section class="outlet-list">
-        ${ls.length ? `<ul>${ls.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> <a href="#/pr/${esc(r.id)}">${esc(r.title)}</a>${r.kind === "pr" ? ' <span class="ktag k-pr">그린광학 보도자료</span>' : ""}</li>`).join("")}</ul>`
+        ${ls.length ? `<ul>${ls.map((r) => `<li><span class="muted">${dayLabel(r.ts)} ${hhmm(r.ts)} · ${esc(r.office || "-")}</span> <a href="#/pr/${esc(r.id)}">${esc(r.title)}</a>${r.kind === "pr" ? ' <span class="ktag k-pr">자사 보도자료</span>' : ""}</li>`).join("")}</ul>`
           : `<p class="note">이 공시 뒤 36시간 안에 같은 내용(계약·실적·IR·증자·전환사채)으로 나온 기사가 없습니다.</p>`}</section></div></details>`;
-      html += ev ? `<section class="evidence">${ev}</section>` : "";
     }
     // 이 기사를 실은 매체 전부 (링크), 링크를 모으지 못한 매체는 네이버 뉴스 검색으로
     const outlets = entries.map((r) => r.lead ? { ...r, merged: !!a.story_with } : r);
@@ -3359,14 +3329,13 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ${a.manual ? "" : `<div class="merge-box editable"><button type="button" class="btn-link" id="merge-open">같은 내용인데 따로 보이는 기사 합치기</button><div id="merge-list" hidden></div></div>`}
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section></div></dialog>`;
-    if (!isDisc) html += ev ? `<section class="evidence">${ev}</section>` : "";
     html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
     box.innerHTML = html;
     enter(box);
     const closeBtn = $("#pr-close");
     if (closeBtn) closeBtn.onclick = () => prHooks && prHooks.close();
     const act = $("#art-act");
-    if (act) act.innerHTML = isDisc ? "" : toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "그린광학 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
+    if (act) act.innerHTML = isDisc ? "" : toKinds.map((k) => `<button class="btn-link editable" type="button" data-kind="${k}">${k === "pr" ? "자사 보도자료로 바꾸기" : "외부 기사로 바꾸기"}</button>`).join("")
       + timeSrc(a)
       + `<button class="btn-link" type="button" id="art-outlets">실은 매체 · 같은 내용 합치기 <small class="muted">${a.outlets_total || outlets.length}곳</small></button>`
       + (a.manual ? `<button class="btn-link danger-link" type="button" id="pr-del">이 기사 삭제</button>`
@@ -3600,7 +3569,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
     const r = (v) => (base ? pct(v / base - 1) : "-");
     body.innerHTML = `<p class="dm-sub">${base ? `기준가 ${won(base)}원 → ` : ""}${won(last)}원 <b class="${base ? sgnCls(last - base) : ""}">${r(last)}</b> · 장중 최고 <span class="${base ? sgnCls(hi - base) : ""}">${r(hi)}</span> / 최저 <span class="${base ? sgnCls(lo - base) : ""}">${r(lo)}</span>${iv > 1 ? ` ${coarseTip(iv)}` : ""}</p>
       <div class="day-legend"></div><div class="dm-chart"></div>
-      <div class="rec-legend"><span><i class="mk pr"></i>그린광학 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div>`;
+      <div class="rec-legend"><span><i class="mk pr"></i>자사 보도자료</span><span><i class="mk disc"></i>주요 공시</span><span><i class="mk ext"></i>외부 기사</span></div>`;
     const closed = bars[bars.length - 1].t.slice(11) >= "15:30";
     dayModalChart = priceVolumeChart($(".dm-chart", body), $(".day-legend", body), bars, {
       events: (d.events || []).filter((e) => !isDaily(e)), news, prevClose: base, interactive: false, barMinutes: iv,

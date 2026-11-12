@@ -29,7 +29,7 @@ assert.match(context.measureList(measure), /반응일 실제<\/span><span class=
 assert.doesNotMatch(context.measureList(measure), /예상 대비|%p/);          // 목록에는 실제 등락만 (분석 숫자는 상세 아래쪽)
 assert.equal(context.measureList({ value: 0.9 }), "");
 const prCount = context.countLine("pr");
-assert.doesNotMatch(prCount, /최근 6개월 그린광학 보도자료/);
+assert.doesNotMatch(prCount, /최근 6개월 자사 보도자료/);
 assert.match(prCount, /기준<\/small><b>전체 기간<\/b>[\s\S]*한 달 평균<\/small><b[^>]*>\d+\.\d건/);
 assert.match(prCount, /한 건당 실린 매체<\/small><b[^>]*>4\.3곳/);   // (3+1+9)/3
 assert.match(prCount, /2025-12-01 ~ 2026-10-29[\s\S]*전체<\/small><b[^>]*>3건/);
@@ -59,8 +59,8 @@ const arts = [{ id: "a", ts: "2026-10-08T09:00", office: "A", reporter: "홍", t
   , { id: "d", ts: "2025-12-01T09:00", office: "A", reporter: "홍", title: "t4", kind: "ext", topic: "기타" }];
 const outlet = pctx.pivotRows(arts, "outlet");
 assert.equal(outlet.length, 3);
-assert.equal(outlet[1].kind, "그린광학 보도자료");
-assert.equal(pctx.pivotRows([{...arts[0], kind:"pr"}], "story")[0].kind, "그린광학 보도자료");
+assert.equal(outlet[1].kind, "자사 보도자료");
+assert.equal(pctx.pivotRows([{...arts[0], kind:"pr"}], "story")[0].kind, "자사 보도자료");
 assert.equal(outlet[2].kind, "외부 기사");
 assert.equal(outlet[1].topic, "수주·계약");
 assert.equal(pctx.pivotRows(arts, "story").length, 2);
@@ -69,7 +69,7 @@ const rep = pctx.dashAgg(outlet, "reporter");
 assert.equal(rep.length, 1);
 assert.equal(rep[0].key, "홍 · A");
 assert.equal(rep[0].n, 2);
-assert.equal(rep[0].by["그린광학 보도자료"], 1);
+assert.equal(rep[0].by["자사 보도자료"], 1);
 assert.equal(rep[0].by["외부 기사"], 1);
 assert.equal(JSON.stringify(pctx.dashAgg(outlet, "month").map((x) => x.key)), JSON.stringify(["2025-12", "2026-10"]));
 assert.equal(JSON.stringify(pctx.dashAgg(outlet, "office").map((x) => [x.key, x.n])), JSON.stringify([["A", 2], ["B", 1]]));

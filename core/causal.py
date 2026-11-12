@@ -45,10 +45,6 @@ def _rets(code: str, lo: str, hi: str) -> dict:
     return {rows[i][0]: rows[i][2] / rows[i - 1][2] - 1 for i in range(1, len(rows)) if rows[i - 1][2]}
 
 
-def _p_txt(p):
-    return "-" if p is None else ("0.001 미만" if p < 0.001 else f"{p:.3f}")
-
-
 # ------------------------------------------------------------------ ① 대체: 사건연구 (업종 ETF 기록 부족 시)
 
 NEWS_DISC_TYPES = ("A", "B", "C", "I", "K")     # 정기(실적)·주요사항·발행·거래소 공시·거래소 조치 (지분 보고 등은 뺌)

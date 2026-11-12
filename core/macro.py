@@ -25,7 +25,7 @@ import re
 import time as _time
 from datetime import date, datetime, timedelta
 
-from . import daum, naver
+from . import naver
 from .db import connect
 
 KOSDAQ = "KOSDAQ"

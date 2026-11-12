@@ -827,7 +827,6 @@ def main(argv) -> int:
         chk.append("일봉 " + ", ".join(f"{k} {v}일" for k, v in other.items()) + f" / 종목 테마 {n_theme}개"
                    + " / 회사 설정 " + ("있음" if settings.get("symbol") else "없음"))
         try:                               # 직접 등록 기사가 사이트 목록에 들어갔는지 (건수만)
-            import webserver as _ws
             with connect() as conn:
                 n_pr = conn.execute("SELECT COUNT(*) FROM pr_events").fetchone()[0]
                 cached_list = conn.execute("SELECT value, built_at FROM site_items WHERE key='articles'").fetchone()

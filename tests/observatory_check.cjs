@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
 const src=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
 const fn=n=>{const a=src.indexOf('  function '+n+'(');return src.slice(a,src.indexOf('\n  }',a)+4);};
-function ctx(){const nodes=new Map();const $=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',textContent:'',dataset:{},querySelectorAll:()=>[]});return nodes.get(s);};const c={$ ,csvDownloadRows:()=>{},main:{},location:{hash:'#/react'},window:{addEventListener(){},removeEventListener(){}},setTimeout,clearTimeout,dashResize:null,artViewSeg:()=>'',esc:v=>String(v??''),sgnCls:()=>'',pct:v=>v==null?'-':(v*100).toFixed(2)+'%',points:v=>v==null?'-':(v*100).toFixed(2)+'%p',hhmm:t=>(t||'').slice(11,16),dayLabel:t=>t,isoDate:()=>'',MAIN_DISC:new Set(),BAR_TIP:'',toTime:t=>Date.parse(t+'Z')/1000};vm.createContext(c);vm.runInContext(fn('reactionAt')+fn('reactionSamples')+src.slice(src.indexOf('  const reactState ='),src.indexOf('  // 기사 대시보드:'))+'\nreactState.range="all";reactState.h="30";',c);return c;}
+function ctx(){const nodes=new Map();const $=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',textContent:'',dataset:{},querySelectorAll:()=>[]});return nodes.get(s);};const c={$ ,STATUS:null,csvDownloadRows:()=>{},main:{},location:{hash:'#/react'},window:{addEventListener(){},removeEventListener(){}},setTimeout,clearTimeout,dashResize:null,artViewSeg:()=>'',esc:v=>String(v??''),sgnCls:()=>'',pct:v=>v==null?'-':(v*100).toFixed(2)+'%',points:v=>v==null?'-':(v*100).toFixed(2)+'%p',hhmm:t=>(t||'').slice(11,16),dayLabel:t=>t,isoDate:()=>'',MAIN_DISC:new Set(),BAR_TIP:'',toTime:t=>Date.parse(t+'Z')/1000};vm.createContext(c);vm.runInContext(fn('reactionAt')+fn('reactionSamples')+src.slice(src.indexOf('  const reactState ='),src.indexOf('  // 기사 대시보드:'))+'\nreactState.range="all";reactState.h="30";',c);return c;}
 const fixture=()=>({id:'a',event_key:'a',ts:'2026-10-06T09:06',title:'synthetic',kind:'ext',interval:1,kq_interval:5,start:'2026-10-06T09:06',steps:{30:{own:.03,kq:null,diff:null}},path:{own:[[0,0],[1,.01],[4,.04],[9,.09]],kq:[[4,.01],[9,.02]]}});
 const run=(c,code)=>vm.runInContext(code,c);   // const 값(reactState 등)은 vm 안에서만 보임
 // '여러 기사 겹쳐 보기'(뉴스 목록 오른쪽): host 안에 그래프·요약을 그림
@@ -10,7 +10,7 @@ test('T15 T25 T26: observed-only medians and gap labels',()=>{
  const c=ctx(),a=fixture();const items=[a,{...a,id:'b',event_key:'b'}];const v=ov(c,items);
  assert.match(c.$('#rx-plot').innerHTML,/rx-gap/);assert.match(c.$('#rx-plot').innerHTML,/관측 데이터 없는 구간/);assert.match(c.$('#rx-plot').innerHTML,/계산에 사용되지 않습니다/);
  run(c,'reactState.vsKq=true');ov(c,items);   // 화면 체크박스는 없앴지만 계산 경로는 그대로 검사
- const svg=c.$('#rx-plot').innerHTML;assert.match(svg,/유효 사건 2건/);assert.match(svg,/rx-gap average/);assert.match(svg,/그린광학 1분 \/ KOSDAQ 5분/);
+ const svg=c.$('#rx-plot').innerHTML;assert.match(svg,/유효 사건 2건/);assert.match(svg,/rx-gap average/);assert.match(svg,/이 종목 1분 \/ KOSDAQ 5분/);
  assert.equal((svg.match(/class="rx-avg"><title>/g)||[]).length,2); // Only common minutes 4 and 9.
  run(c,'reactState.vsKq=false');ov(c,[a]);assert.doesNotMatch(c.$('#rx-plot').innerHTML,/class="rx-avg"/);
 });

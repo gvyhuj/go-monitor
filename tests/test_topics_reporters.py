@@ -9,11 +9,11 @@ from core import reporters, topics
 
 
 @pytest.mark.parametrize("title,primary,also", [
-    ("그린광학, 이스라엘 방산기업과 47억 공급계약…ZnS 소재 추가 수주", "수주·계약", "방산"),
-    ("충북TP, 그린광학 AI 코팅기술 고도화 지원", "정부·기관 지원", "기술·제품"),
-    ("그린광학, 3분기 영업이익 흑자 전환", "실적", None),
-    ("[특징주] 그린광학, 우주항공 테마 강세", "우주·위성", "주가·시황"),
-    ("그린광학 대표 인터뷰", "기타", None),
+    ("가나광학, 이스라엘 방산기업과 47억 공급계약…ZnS 소재 추가 수주", "수주·계약", "방산"),
+    ("충북TP, 가나광학 AI 코팅기술 고도화 지원", "정부·기관 지원", "기술·제품"),
+    ("가나광학, 3분기 영업이익 흑자 전환", "실적", None),
+    ("[특징주] 가나광학, 우주항공 테마 강세", "우주·위성", "주가·시황"),
+    ("가나광학 대표 인터뷰", "기타", None),
 ])
 def test_topic_rules(title, primary, also):
     got, all_ = topics.classify(title, "", topics.DEFAULT_TOPICS)
@@ -23,14 +23,14 @@ def test_topic_rules(title, primary, also):
 
 
 @pytest.mark.parametrize("title,body,also,not_also", [
-    ("그린광학, SDT와 SWIR 카메라 MOU 체결", "", None, "수주·계약"),
-    ("그린광학, 해외 기업과 양해각서 체결", "", None, "수주·계약"),
-    ("그린광학, 방산기업과 mou", "", "방산", "수주·계약"),
+    ("가나광학, SDT와 SWIR 카메라 MOU 체결", "", None, "수주·계약"),
+    ("가나광학, 해외 기업과 양해각서 체결", "", None, "수주·계약"),
+    ("가나광학, 방산기업과 mou", "", "방산", "수주·계약"),
     # 제목에 없고 본문 뒤쪽(80자 밖)에만 있어도 MOU (예: 교수신문 209923)
-    ("SDT·그린광학, 양자점 단파 적외선 카메라 국산화 맞손",
-     "양자기술 전문기업 SDT(대표 윤지원)와 초정밀 광학 전문기업 그린광학(대표 조현일)이 양자점 기반 SWIR(단파 적외선) "
+    ("SDT·가나광학, 양자점 단파 적외선 카메라 국산화 맞손",
+     "양자기술 전문기업 SDT(대표 윤지원)와 초정밀 광학 전문기업 가나광학(대표 조현일)이 양자점 기반 SWIR(단파 적외선) "
      "카메라 공동 개발에 나선다.양사는 8일 업무협약(MOU)을 체결하고", "기술·제품", "수주·계약"),
-    ("그린광학, MOU 이어 47억 공급계약", "", "수주·계약", None),
+    ("가나광학, MOU 이어 47억 공급계약", "", "수주·계약", None),
 ])
 def test_mou_is_its_own_topic(title, body, also, not_also):
     got, all_ = topics.classify(title, body, topics.DEFAULT_TOPICS)
@@ -41,18 +41,18 @@ def test_mou_is_its_own_topic(title, body, also, not_also):
         assert not_also not in all_
 
 
-@pytest.mark.parametrize("title", ["그린광학, MOUSE 신제품 출시", "SMOU 데이터"])
+@pytest.mark.parametrize("title", ["가나광학, MOUSE 신제품 출시", "SMOU 데이터"])
 def test_mou_not_matched_inside_other_words(title):
     assert topics.classify(title, "", topics.DEFAULT_TOPICS)[0] != "MOU"
 
 
 def test_topic_falls_back_to_summary_start():
-    assert topics.classify("그린광학 대표 인터뷰", "올해 방산 수출 확대 계획을 밝혔다", topics.DEFAULT_TOPICS)[0] == "방산"
+    assert topics.classify("가나광학 대표 인터뷰", "올해 방산 수출 확대 계획을 밝혔다", topics.DEFAULT_TOPICS)[0] == "방산"
 
 
 @pytest.mark.parametrize("page,name", [
     ('<strong>삼성전자 정규장 상승 마감뒤 NXT 종가 0.47%↓</strong>[이데일리 안유리 기자] SK하이닉스 주가가', "안유리"),
-    ("(서울=연합뉴스) 홍길동 기자 = 그린광학이 23일", "홍길동"),
+    ("(서울=연합뉴스) 홍길동 기자 = 가나광학이 23일", "홍길동"),
     ("본문 끝. 김철수 기자 kim@example.co.kr 저작권자", "김철수"),
     ("본문 끝. 김철수 기자(kimcs@news.com)", "김철수"),
     ("이 발표 후 주가는 올랐습니다. 곽우진 기자가 보도합니다. [리포트]", "곽우진"),

@@ -1,6 +1,6 @@
 """급등·급락 기준을 정하기 위한 숫자 (수동 실행 '급등락 기준 살펴보기' 워크플로).
 
-백업을 풀어 그린광학의 평소 움직임 크기를 셈. 공개 저장소라 실행 기록도 공개 → 가격은 찍지 않고
+백업을 풀어 이 종목의 평소 움직임 크기를 셈. 공개 저장소라 실행 기록도 공개 → 가격은 찍지 않고
 비율·분위수·날 수만 남김.
 
 - 하루 등락(종가 ÷ 기준가): 전체 기간·최근 120거래일, 크기별 분위수와 ±3·5·7·10% 넘은 날 비율 (KOSDAQ 함께)
@@ -96,15 +96,15 @@ def main(argv) -> int:
             own = daily_returns(conn, sym)[LISTING_SKIP:]
             kq = [x for x in daily_returns(conn, "KOSDAQ") if own and x[0] >= own[0][0]]
             print("## 하루 등락 (종가 ÷ 전날 기준가, 상장 첫 5거래일 뺌)")
-            print(table("그린광학 · 전체 기간", own))
-            print(table("그린광학 · 최근 120거래일", own[-120:]))
+            print(table("이 종목 · 전체 기간", own))
+            print(table("이 종목 · 최근 120거래일", own[-120:]))
             print(table("KOSDAQ 지수 · 같은 기간 (비교용)", kq))
             m30 = intraday_max30(conn, sym)
             first = conn.execute("SELECT MIN(substr(ts,1,10)) FROM minute_bars WHERE symbol=? AND source LIKE 'naver%'", (sym,)).fetchone()[0]
             print("## 장중 30분 안 최대 움직임 (1분봉 있는 날, 3분 중앙값 가격)")
-            print(table("그린광학 · 전체 기간 (하루마다 가장 큰 30분 움직임)", m30, "30분 움직임"))
+            print(table("이 종목 · 전체 기간 (하루마다 가장 큰 30분 움직임)", m30, "30분 움직임"))
             if first:
-                print(table(f"그린광학 · {first} 뒤 (네이버 1분봉)", [x for x in m30 if x[0] >= first], "30분 움직임"))
+                print(table(f"이 종목 · {first} 뒤 (네이버 1분봉)", [x for x in m30 if x[0] >= first], "30분 움직임"))
             print("## 지금 기록된 급등·급락 수")
             rows = conn.execute("SELECT event_type, COALESCE(tier,'-'), CASE WHEN substr(start_ts,1,10) < ? THEN '전' ELSE '후' END, COUNT(*) "
                                 "FROM events WHERE symbol=? GROUP BY 1, 2, 3 ORDER BY 1, 3, 2", (first or "9999", sym)).fetchall()

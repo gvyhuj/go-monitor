@@ -143,3 +143,13 @@ def test_investor_stale_when_last_trading_day_missing(tmp_path, monkeypatch):
         conn.execute("INSERT INTO investor_daily(symbol,bizdate,foreign_net,organ_net,individual_net,close,volume,foreign_ratio) "
                      "VALUES ('X','20261023',0,0,0,1,1,0)")
     assert not feed.investor_stale("X", date(2026, 10, 26))        # 오늘 값은 장 마감 뒤라 기다림
+
+
+def test_fetch_fail_alert_does_not_blame_naver(tmpdb, monkeypatch):
+    # 시세는 한투에서 받음: 수집 실패 알림이 엉뚱한 출처(네이버)를 가리키면 안 됨
+    posted = []
+    monkeypatch.setattr(alerts, "_post_issue", lambda t, b: posted.append(t + b) or 1)
+    monkeypatch.setattr(alerts, "_site_modified", lambda: NOW)
+    set_state("data_last_ok", (NOW - timedelta(minutes=40)).isoformat(timespec="seconds"))
+    alerts.check_health(NOW, trading_day=True)
+    assert len(posted) == 1 and "시세" in posted[0] and "네이버" not in posted[0]

@@ -12,7 +12,6 @@ import base64
 import hashlib
 import gzip
 import json
-import os
 import secrets
 import shutil
 from datetime import datetime, timedelta
@@ -89,21 +88,6 @@ def build(out: Path, password: str, salt: bytes, items: list[tuple[str, str, boo
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")
     return n
-
-
-def salt_for(meta_path: Path, password: str) -> bytes:
-    """사이트 열쇠의 salt. 비밀번호가 바뀌면 새 salt (이전에 기억된 로그인은 다시 묻게 됨)."""
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except Exception:
-        meta = {}
-    fp = hashlib.sha256(("go-fp:" + password).encode("utf-8")).hexdigest()
-    if meta.get("salt") and meta.get("fp") == fp:
-        return base64.b64decode(meta["salt"])
-    salt = secrets.token_bytes(16)
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps({"salt": base64.b64encode(salt).decode(), "fp": fp}), encoding="utf-8")
-    return salt
 
 
 SQLITE_MAGIC = b"SQLite format 3\x00"

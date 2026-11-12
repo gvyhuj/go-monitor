@@ -301,7 +301,6 @@ def probe(code: str, now: datetime) -> str:
     k = step("KOSDAQ 일봉", lambda: daily(KOSDAQ_INDEX, (now - timedelta(days=150)).date().isoformat(), end, index=True))
     if k is not None:
         parts.append(f"KOSDAQ 일봉 {span(k, 'date')}" + (f" 마지막 종가 {k[-1]['close']}" if k else ""))
-    last = (k or [{}])[-1].get("date") if k else None
     m = step("오늘 1분봉", lambda: minutes(code, "153000"))
     if m is not None:
         parts.append(f"당일 1분봉 {span(m, 'ts')}")

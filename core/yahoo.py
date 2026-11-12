@@ -108,15 +108,6 @@ def series(conn, code: str, day: str, min_minutes: int = MIN_DAY_MINUTES) -> tup
     return None, []
 
 
-def _day_rows(conn, code: str, day: str):
-    """(이 종목 간격, 이 종목 봉, 지수 간격, 지수 봉) — 둘의 간격이 다를 수 있음 (지난 날 지수는 1분봉이 없음)."""
-    iv, own = series(conn, code, day)
-    kv, idx = series(conn, INDEX, day)
-    if own and idx:
-        return iv, own, kv, idx
-    return None, [], None, []
-
-
 def krx_closes(conn, code: str) -> dict:
     """거래소(KRX) 정규장 종가 {날짜: 가격}. 저장 일봉 close는 네이버 기준(넥스트레이드 시간외 ~20:00 포함 마지막 체결가)이라
     외부 시세(거래소 종가)와 다를 수 있음 → 분석·AI 질문은 이 값을 씀.
