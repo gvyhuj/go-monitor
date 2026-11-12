@@ -1,10 +1,9 @@
 """사이트 지킴이: '주가 감시' 이어달리기가 끊기면(실행 하나가 시작에 실패, 2026-11-12 05:23) 다시 시작시킴."""
 import os
 import subprocess
+import textwrap
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-import yaml
 
 FAKE_GH = """#!/bin/bash
 case "$*" in
@@ -16,8 +15,9 @@ esac
 
 
 def _run(tmp_path, newest_min, status, success_min=5):
-    steps = yaml.safe_load(Path(".github/workflows/health.yml").read_text())["jobs"]["watchdog"]["steps"]
-    script = "\n".join(s["run"] for s in steps if "run" in s)
+    text = Path(".github/workflows/health.yml").read_text(encoding="utf-8")      # 자동 검사 환경에는 yaml 모듈이 없어 글자로 잘라 냄
+    block = text.split("      - name: 자동 실행 확인\n        run: |\n", 1)[1].split("\n\n  restore-test:", 1)[0]
+    script = textwrap.dedent(block)
     gh = tmp_path / "gh"
     gh.write_text(FAKE_GH)
     gh.chmod(0o755)
