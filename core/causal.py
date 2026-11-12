@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 
 from .db import connect
+from .relevance import NOISE_CATEGORIES      # 단순 언급·시황 기사 (한 곳에서만 정함)
 
 KOSDAQ = "KOSDAQ"
 
@@ -48,7 +49,6 @@ def _rets(code: str, lo: str, hi: str) -> dict:
 # ------------------------------------------------------------------ ① 대체: 사건연구 (업종 ETF 기록 부족 시)
 
 NEWS_DISC_TYPES = ("A", "B", "C", "I", "K")     # 정기(실적)·주요사항·발행·거래소 공시·거래소 조치 (지분 보고 등은 뺌)
-NOISE_CATEGORIES = ("단순 언급", "시황·특징주")
 _NEWS_CACHE: dict = {}
 
 
