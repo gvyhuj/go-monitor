@@ -1,5 +1,7 @@
 # 사이트 지킴이 (주가 감시와 따로 돎)
-# - 3시간마다: '주가 감시' 자동 실행이 8시간 넘게 성공하지 못했으면 실패로 표시
+# - 30분마다: '주가 감시'가 30분 넘게 새로 시작되지 않았으면 다시 시작시킴
+#   (실행 하나가 시작에 실패하면 다음 실행 예약이 끊겨 몇 시간씩 멈춤, 2026-11-12 05:23~08:57)
+#   그리고 8시간 넘게 성공하지 못했으면 실패로 표시
 #   (자동 실행 자체가 멈추면 그 안의 멈춤 알림도 못 보내므로, 밖에서 확인)
 # - 매주 월요일: 최신·주간 백업을 실제로 풀어 열어 보고, 핵심 표가 차 있고 최근 자료까지 있는지 확인
 # 실패하면 GitHub이 저장소 주인에게 메일로 알림 (GitHub 알림 설정의 Actions 메일)
@@ -9,7 +11,7 @@ name: 사이트 지킴이
 
 on:
   schedule:
-    - cron: "17 */3 * * *"          # 3시간마다: 자동 실행 확인
+    - cron: "7,37 * * * *"          # 30분마다: 자동 실행 확인
     - cron: "41 1 * * 1"            # 월요일 KST 10:41: 백업 복원 시험
   workflow_dispatch:
     inputs:
@@ -20,11 +22,11 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write      # 끊긴 '주가 감시'를 다시 시작
 
 jobs:
   watchdog:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 */3 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7,37 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -32,6 +34,17 @@ jobs:
     steps:
       - name: 자동 실행 확인
         run: |
+          # 가장 최근 실행이 끝난 채로 30분 넘게 새 실행이 없으면 이어달리기가 끊긴 것 → 다시 시작
+          # (정상일 때는 실행이 다음 실행을 예약할 때까지 '진행 중'으로 남아 있음)
+          read -r created status <<< "$(gh run list -R "$GITHUB_REPOSITORY" --workflow monitor.yml --limit 1 --json createdAt,status --jq '.[0] | "\(.createdAt) \(.status)"')"
+          if [ -n "$created" ] && [ "$status" = "completed" ]; then
+            idle=$(( ( $(date +%s) - $(date -d "$created" +%s) ) / 60 ))
+            if [ "$idle" -gt 30 ]; then
+              echo "::warning::'주가 감시'가 ${idle}분째 새로 시작되지 않아 다시 시작합니다."
+              gh workflow run monitor.yml -R "$GITHUB_REPOSITORY" --ref main
+              echo "끊긴 자동 실행을 다시 시작함 (${idle}분 멈춤)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
           last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow monitor.yml --status success --limit 1 --json updatedAt --jq '.[0].updatedAt')
           if [ -z "$last" ]; then echo "::error::'주가 감시' 성공한 실행을 찾지 못했습니다."; exit 1; fi
           age=$(( ( $(date +%s) - $(date -d "$last" +%s) ) / 60 ))
