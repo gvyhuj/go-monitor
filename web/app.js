@@ -1198,8 +1198,10 @@
     let chartEntryPending = true;
     const revealRecordChart = (el) => {
       if (!chartEntryPending || !el) return;
-      chartEntryPending = false;
       drawOnce(el, "record-chart-entry", 550);
+      // 효과가 실제로 시작됐을 때 '했음'으로 침: 시작 전에 다른 다시 그리기(크기 변화 등)가 차트를 갈아 끼우면 새 차트에서 다시 함
+      if (el.classList.contains("record-chart-entry")) el.addEventListener("animationstart", () => { chartEntryPending = false; }, { once: true });
+      else chartEntryPending = false;
     };
     const stopChartEntry = () => {
       chartEntryPending = false;

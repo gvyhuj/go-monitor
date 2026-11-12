@@ -598,9 +598,18 @@ async function main() {
       await page.locator('[data-period="from"]').fill("2026-10-01");
       await page.locator('[data-period="from"]').blur();
       await page.waitForFunction(() => window.__recordEntries.length === 8);
+      // 기간을 고른 직후, 효과가 시작되기도 전에 다른 다시 그리기(크기 변화 등)가 차트를 갈아 끼워도 효과는 한 번 나와야 함
+      // (다시 그리기 예약 → 기간 클릭 → 화면이 한 번도 그려지지 않은 채 예약 시각이 지남)
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event("resize"));
+        document.querySelector('.rec-tabs button[data-range="1m"]').click();
+        const end = performance.now() + 300;
+        while (performance.now() < end);
+      });
+      await page.waitForFunction(() => window.__recordEntries.length === 9);
       await page.evaluate(() => window.dispatchEvent(new Event("resize")));
       await page.waitForTimeout(350);
-      assert.equal(await page.evaluate(() => window.__recordEntries.length), 8, "크기 변경에는 효과 반복 없음");
+      assert.equal(await page.evaluate(() => window.__recordEntries.length), 9, "크기 변경에는 효과 반복 없음");
       await page.locator('.rec-tabs button[data-range="1d"]').click();
       await page.locator("#rec-chart :is(.rc-day, .day-nochart)").waitFor();
       assert.equal(await page.locator("#rec-chart .mv-reveal").count(), 0, "1일 차트 나타나기 없음");
@@ -613,7 +622,7 @@ async function main() {
       await page.locator("#rec-chart .rc-day").waitFor();
       assert.equal(await page.locator("#rec-chart .record-chart-entry").count(), 0);
       assert.equal(await page.locator("#rec-chart .rc-day").evaluate((el) => getComputedStyle(el).animationName), "none", "날짜 이동에는 Fade 없음");
-      assert.equal(await page.evaluate(() => window.__recordEntries.length), 8, "1일 전환과 날짜 이동에는 효과 반복 없음");
+      assert.equal(await page.evaluate(() => window.__recordEntries.length), 9, "1일 전환과 날짜 이동에는 효과 반복 없음");
       // 뉴스 대시보드: 위 숫자 올라가기, 작은 추이선·월별 추이 선 그리기
       await page.goto(`${base}/#/pivot`);
       await page.locator("#dash-kpi [data-count]").first().waitFor();
