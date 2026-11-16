@@ -2374,48 +2374,15 @@ function observationQuestion(d) {
   return `${(STATUS && STATUS.name) || "이 종목"} 사건 관찰 기록입니다. 기사의 인과 효과를 단정하지 마세요.\n${JSON.stringify({event_id:d.event_id,title:d.title,first_public_at:d.first_public_at,time_source:d.time_source,time_status:d.time_status,pr_distributed_at:d.pr_distributed_at,analysis_at:d.analysis_at,observation:o,sources:d.members.map(x=>({title:x.title,ts:x.ts,url:x.url})),identity_status:d.identity_status,same_event_candidates:d.same_event_candidates,event_kind:d.event_kind,classification_sources:d.classification_sources,context:d.context,market_context:mc,snapshot_version:d.snapshot_version},null,2)}\n확인 사실 / 가능한 배경 / 직접 방아쇠 후보 / 반대 증거 / 미확인 / 당시 판단 신뢰도(주관적 평가)를 구분해 주세요. 출처 링크와 발표 시각을 제시하고 추가 외부 기사·공시 검색이 필요한 부분을 밝혀 주세요. 수집 정보 없음은 실제 사건 없음을 뜻하지 않습니다. 가격 기준: 일별·기준 가격은 거래소(KRX) 정규장 종가(넥스트레이드 시간외 제외, KOSDAQ은 지수 종가), 분 단위는 정규장 1분봉입니다. 네이버·증권사 앱의 '종가'는 시간외 포함 마지막 가격이라 다를 수 있습니다. 기업행동 수정주가 보정은 하지 않았으니 해당 기간이면 확인해 주세요.`;
 }
 const obsStamp = (t) => t ? t.slice(0,16).replace('T',' ').replace(/-/g,'.') : '시각 미상';
-// 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문·결과 저장, 관련 소식, 검토 기록, 유사 사건, 분류·연결 수정.
+// 기사 상세(뉴스 목록) 아래에 붙는 사건 관찰 기록: AI 질문 버튼 연결.
 // 그래프와 숫자는 기사 상세가 그림. host: 접는 항목을 넣을 곳. 버튼(#obs-question)은 기사 상세에 이미 있음
-async function observationExtras(host, eid, { openEvent = null, topicOf = null } = {}) {
+async function observationExtras(host, eid) {
   if(!host)return;
-  let d,index;
-  try { index=await api('/api/observatory'); eid=index.aliases?.[eid]||eid;d=await api('/api/observatory/'+encodeURIComponent(eid)); }
+  let d;
+  try { const index=await api('/api/observatory'); eid=index.aliases?.[eid]||eid;d=await api('/api/observatory/'+encodeURIComponent(eid)); }
   catch(e){host.innerHTML=`<p class="obs-muted" role="alert">사건 관찰 기록을 불러오지 못했습니다: ${esc(e.message)}</p>`;return;}
   if(!host.isConnected)return;
-  let openFolds=new Set();
-  const render=()=>{
-    if (host.querySelector('[data-fold]')) openFolds=new Set([...host.querySelectorAll('details[data-fold][open]')].map(x=>x.dataset.fold));
-    const fold=(key,title,meta,body)=>`<details class="obs-fold" data-fold="${key}"${openFolds.has(key)?' open':''}><summary><span>${title}</span><small>${meta}</small></summary><div class="obs-fold-body">${body}</div></details>`;
-    host.innerHTML=`
-    ${fold('similar','유사 사건','<span id="obs-similar-sub"></span>',`<div id="obs-results" class="rx-table-wrap"></div>`)}
-`;
-    host.querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    $('#obs-question').onclick=()=>openAsk(observationQuestion(d));
-    // 유사 사건: 이 사건과 분야 태그나 고객·파트너가 겹치는 사건만. '기술·개발'은 제목에 흔한 말이라 그것만 겹치면 넣지 않음
-    const similar=()=>{
-      const WEAK=new Set(['기술·개발']),myTags=d.business_tags||[],partner=(d.partner||'').trim();
-      const hasPartner=partner&&partner!=='미확인';
-      const mine=new Set((topicOf&&topicOf({...d,member_ids:(d.members||[]).map(m=>String(m.id))}))||[d.event_id]);
-      const sameTopic=x=>x.event_id===d.event_id||((topicOf&&topicOf(x))||[x.event_id]).some(k=>mine.has(k));
-      const scored=index.items.filter(x=>!sameTopic(x)).map(x=>{const shared=myTags.filter(t=>(x.business_tags||[]).includes(t)),byPartner=hasPartner&&(x.partner||'').trim()===partner;
-        return {x,shared,byPartner,score:shared.reduce((a,t)=>a+(WEAK.has(t)?.5:1),0)+(byPartner?2:0)};}).filter(r=>r.score>=1)
-        .sort((a,b)=>b.score-a.score||(b.x.first_public_at||'').localeCompare(a.x.first_public_at||''));
-      // 같은 주제(뉴스 목록에서 한 줄로 묶인 기사)는 한 줄로: 가장 관련 높은 것 하나만 쓰고 건수만 표시
-      const byTopic=new Map();
-      for(const r of scored){const keys=(topicOf&&topicOf(r.x))||[r.x.event_id];const g=keys.map(k=>byTopic.get(k)).find(Boolean);
-        if(g){g.n++;keys.forEach(k=>byTopic.set(k,g));}else{const ng={...r,n:1};keys.forEach(k=>byTopic.set(k,ng));}}
-      const topics=[...new Set(byTopic.values())];
-      const basis=[...myTags.map(t=>`「${t}」`),hasPartner?`파트너 「${partner}」`:''].filter(Boolean).join(' ');
-      if(!basis){$('#obs-similar-sub').textContent='비교 기준 없음';$('#obs-results').innerHTML='<p class="obs-muted">이 기사 제목에는 분야 태그(방산·우주항공·반도체·수주·공급 등)와 고객·파트너가 없어 비교할 사건을 고르지 않았습니다.</p>';return;}
-      const values=topics.map(r=>r.x.steps['30']?.own).filter(x=>x!=null).sort((a,b)=>a-b),n=values.length;
-      $('#obs-similar-sub').textContent=`${basis} · ${topics.length}건`;
-      $('#obs-results').innerHTML=topics.length?`<table class="rx-table obs-similar"><thead><tr><th>공개</th><th>사건</th><th>+30분</th><th>KOSDAQ 대비</th><th></th></tr></thead><tbody>${topics.slice(0,30).map(({x,n:cnt,shared,byPartner})=>`<tr><td class="nowrap">${esc(x.first_public_at?obsStamp(x.first_public_at).slice(2,10):'미상')}</td><td>${esc(x.title)}<br><small class="muted">겹침 ${esc([...shared,byPartner?'파트너':''].filter(Boolean).join('·'))}${cnt>1?` · 같은 주제 ${cnt}건`:''}</small></td><td class="num ${sgnCls(x.steps['30']?.own)}">${pct(x.steps['30']?.own)}</td><td class="num">${points(x.steps['30']?.diff)}</td><td class="nowrap"><button type="button" class="btn-link" data-obs-open="${esc(x.event_id)}">보기</button></td></tr>`).join('')}</tbody></table>
-      <p class="obs-muted">유효 n=${n} (같은 주제는 1건, 지금 기사 제외)${topics.length>30?' · 관련 높은 30건 표시':''}. ${n<5?'소표본: 통계 결론 보류.':''} ${n>=2?`+30분 중앙값 ${pct(n%2?values[n>>1]:(values[n/2-1]+values[n/2])/2)}`:''} 기사 효과의 통계적 증거가 아닙니다.</p>`
-        :`<p class="obs-muted">${esc(basis)}이(가) 겹치는 다른 사건이 아직 없습니다.</p>`;
-      $('#obs-results').querySelectorAll('[data-obs-open]').forEach(b=>b.onclick=()=>openEvent?openEvent(b.dataset.obsOpen):null);
-    };
-    similar();
-  };render();
+  $('#obs-question').onclick=()=>openAsk(observationQuestion(d));      // 유사 사건 칸은 없앰 (2026-11-16)
 }
 
   // ---- '여러 기사 겹쳐 보기'(뉴스 목록 오른쪽)와 기사 그래프에 겹치는 다른 기사·중앙값: 같은 계산을 한 곳에서
@@ -3149,13 +3116,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       const b = was && [...$("#art-list").querySelectorAll("button[data-id]")].find((x) => x.dataset.id === was);
       if (b) b.focus({ preventScroll: true });
     };
-    // 유사 사건을 주제별 한 줄로: 기사 id → 뉴스 목록에서 묶인 대표 기사 id
-    const topicLead = new Map();
-    items.forEach((a) => { topicLead.set(a.id, a.id); (a.related || []).forEach((r) => r.id && topicLead.set(r.id, a.id)); (a.related_titles || []).forEach((r) => r.id && topicLead.set(r.id, a.id)); });
-    const normTitle = (t) => String(t || "").replace(/[\s\[\]【】()（）"'“”‘’…·,.!?\-–—]/g, "").toLowerCase();
     prHooks = {
-      // 같은 묶음(대표 기사) 또는 같은 제목이면 같은 주제
-      topicOf: (x) => [...new Set((x.member_ids || []).map((id) => topicLead.get(id)).filter(Boolean).map((l) => "a:" + l)), "t:" + normTitle(x.title)],
       overlay: (id) => { const r = rxById.get(id); return r ? { ...reactionOverlay(currentRows(), id), label: LABEL[artState.cat] } : null; },
       openEvent: (eid) => { const r = [...rxById.values()].find((x) => x.event_id === eid); if (!r) return;
         const inList = shown(artState.cat).some((x) => (x.ids || [x.id]).includes(r.id));
@@ -3381,7 +3342,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       ${a.manual ? "" : `<div class="merge-box editable"><button type="button" class="btn-link" id="merge-open">같은 내용인데 따로 보이는 기사 합치기</button><div id="merge-list" hidden></div></div>`}
       ${missing ? `<p class="note">나머지 ${missing}곳은 네이버가 묶음으로만 알려줘 개별 링크가 없습니다 → <a href="https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(`"${a.title.slice(0, 40)}"`)}" target="_blank" rel="noopener">네이버 뉴스에서 같은 제목 찾기</a></p>` : ""}
 </section></div></dialog>`;
-    html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 접는 항목 (관련 소식 · 검토 기록 · 유사 사건)
+    html += `<div id="obs-extras" data-eid="${esc(d.observation_event_id || "")}"></div></div>`;      // 사건 관찰 기록 (AI 질문 버튼 연결)
     box.innerHTML = html;
     enter(box);
     const closeBtn = $("#pr-close");
@@ -3432,7 +3393,7 @@ async function observationExtras(host, eid, { openEvent = null, topicOf = null }
       enter(rxEl, "mv-reveal");      // 선이 왼쪽에서 오른쪽으로 그려지듯 나타남
       drawTab("day");
     }
-    if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id, { openEvent: (eid) => prHooks && prHooks.openEvent(eid), topicOf: prHooks && prHooks.topicOf })
+    if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id)
       .then(() => { box.querySelectorAll("#obs-question").forEach((b) => { b.disabled = false; }); });
 
     box.querySelectorAll("[data-ev]").forEach((x) => x.addEventListener("click", (ev2) => { ev2.preventDefault(); openEvent(+x.dataset.ev); }));

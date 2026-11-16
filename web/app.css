@@ -1514,8 +1514,6 @@ a.muted:hover { color: var(--brand-blue); text-decoration: underline; text-under
 .obs-fold-body { padding: 4px 0 12px; }
 .obs-note { margin: 8px 0; }
 .obs-note-head { margin: 0 0 6px; font-size: 13px; }
-.obs-similar td, .obs-similar th { font-size: 12.5px; }
-.obs-similar tr.on td { background: var(--canvas); }
 .rx-gap { fill:none; stroke:#9aa5b6; stroke-width:2; stroke-dasharray:1 5; cursor:help; pointer-events:stroke; }
 .rx-gap.on { stroke:var(--up); }.rx-gap.average { stroke:var(--brand-blue); }
 .rx-avg { pointer-events:stroke; }.rx-leg { flex-wrap:wrap; }

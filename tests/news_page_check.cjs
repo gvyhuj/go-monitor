@@ -153,13 +153,10 @@ async function main() {
       assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
       assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pr-cards small, #pr-cards strong")]
         .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > e.parentElement.getBoundingClientRect().right + 1).map((e) => e.textContent)), [], "카드 글자가 잘리지 않음");
-      for (const label of ["유사 사건"]) {
-        await page.locator("#pr-detail .obs-fold > summary", { hasText: label }).first().waitFor();
-      }
-      // 접는 항목은 유사 사건 하나: 실은 매체는 '수정' 메뉴로, 관련 소식·검토 기록·분류·연결 수정·분석 기준은 없앰
-      assert.deepEqual((await page.locator("#pr-detail .obs-folds > .obs-fold > summary, #obs-extras > .obs-fold > summary").allInnerTexts()).map((t) => t.split("\n")[0]),
-        ["유사 사건"]);
-      // 관련 기사는 그래프 아래·유사 사건 위에 항상 펼쳐지고 제목은 원문으로 연결.
+      // 접는 항목 없음: 유사 사건 칸도 없앰 (2026-11-16)
+      assert.deepEqual(await page.locator("#pr-detail .obs-folds > .obs-fold, #obs-extras > .obs-fold").count(), 0);
+      assert.equal(await page.locator("#pr-detail").getByText("유사 사건").count(), 0);
+      // 관련 기사는 그래프 아래에 항상 펼쳐지고 제목은 원문으로 연결.
       const related = page.locator("#related-articles");
       assert.equal(await related.isVisible(), true);
       assert.deepEqual(await page.locator("#pr-detail").evaluate((el) => {
@@ -280,21 +277,6 @@ async function main() {
       await page.keyboard.press("Escape");
       assert.equal(await pop.isVisible(), false, "Esc로 팝업 닫힘");
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2003", "팝업은 기사 화면을 떠나지 않음");
-
-      // 유사 사건: 분야 태그가 겹치는 다른 사건만 (지금 기사와 같은 주제·예전 기록은 빼고, 전체 목록이 나오면 안 됨)
-      await page.goto(`${base}/#/pr/2005`);
-      await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
-      const simRows = page.locator("#obs-results tbody tr");
-      await simRows.first().waitFor();
-      const sim = await simRows.allInnerTexts();
-      assert.equal(sim.length, 1, sim.join(" / "));
-      assert.match(sim[0], /우주항공 부품주 동향[\s\S]*겹침 우주항공/);
-      assert.match(await page.locator("#obs-similar-sub").innerText(), /「우주항공」 · 1건/);
-      await page.goto(`${base}/#/pr/2003`);
-      await page.locator("#pr-detail .obs-fold > summary", { hasText: "유사 사건" }).click();
-      await simRows.first().waitFor();
-      const sim2 = await simRows.allInnerTexts();
-      assert.ok(sim2.some((t) => t.includes("광학미러 공급 계약")) && !sim2.some((t) => /실적 설명회|우주항공/.test(t)), sim2.join(" / "));
 
       // 일별 표: 위 다섯 칸 줄 대신 고른 기간 요약 카드 4개 + 순매수·거래량 한 줄
       await page.goto(`${base}/#/days`);
