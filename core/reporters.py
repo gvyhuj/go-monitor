@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import html as _html
-import json
 import os
 import re
 import urllib.parse
@@ -30,32 +29,7 @@ PATTERNS = [
     re.compile(NAME + r"\s?" + TITLE + r"(?:가|이) 보도합니다"),
     re.compile(r"(?:Biz|뉴스|TV|YTN|KBS|MBC|SBS|MBN|JTBC|채널A|연합뉴스TV)\s+" + NAME + r"입니다"),
 ]
-STOP = {"이번", "관련", "해당", "담당", "전문", "증권", "취재", "사진", "영상", "편집", "그래픽", "기자", "본지", "온라인", "디지털",
-        "편집국", "편집부", "뉴스팀", "취재팀", "관리자", "운영자", "뉴스룸", "데스크"}
-# 작성자 칸 원문 그대로 (앞에 부서명이 붙거나 성·이름이 띄어 있어도 읽음 → _person으로 이름만)
-#   이투데이: "author":{"@type":"Person","name":"대구경북취재본부 이종팔"} · <meta property="dd:author" content="…">
-#   벤처스퀘어(워드프레스): "author":{"@type":"Person","name":"한 혜선"} (= "한 혜선")
-AUTHOR_RAW = [
-    re.compile(r'"author"\s*:\s*\[?\s*\{[^{}]*?"name"\s*:\s*"([^"]{1,60})"'),
-    re.compile(r'<meta[^>]+(?:name|property)="dd:author"[^>]*content="([^"]{1,60})"'),
-    re.compile(r'class="reporter_name"[^>]*>(?:\s*<[^>]+>)*\s*([^<]{1,60})<'),
-]
-
-
-def _person(raw: str) -> str | None:
-    """작성자 칸 글에서 사람 이름(2~4글자)만. '대구경북취재본부 이종팔 기자' → 이종팔, '한 혜선' → 한혜선."""
-    if "\\u" in raw:
-        try:
-            raw = json.loads(f'"{raw}"')
-        except ValueError:
-            pass
-    raw = re.sub(r"\s*" + TITLE + r"\s*$", "", _html.unescape(raw).strip())
-    toks = re.findall(r"[가-힣]+", raw)
-    if not toks:
-        return None
-    if len(toks) >= 2 and len(toks[-2]) == 1 and len(toks[-2] + toks[-1]) <= 4:      # 성과 이름을 띄어 씀
-        return toks[-2] + toks[-1]
-    return toks[-1] if 2 <= len(toks[-1]) <= 4 else None
+STOP = {"이번", "관련", "해당", "담당", "전문", "증권", "취재", "사진", "영상", "편집", "그래픽", "기자", "본지", "온라인", "디지털"}
 TIME_PATTERNS = [
     re.compile(r'property="article:published_time"\s+content="([^"]+)"'),
     re.compile(r'content="([^"]+)"\s+property="article:published_time"'),
@@ -73,17 +47,10 @@ def parse(page: str, office: str = "") -> str | None:
     text = re.sub(r"<[^>]+>", " ", page)
     text = re.sub(r"\s+", " ", _html.unescape(text))
     off = re.sub(r"\s+", "", office or "")
-    ok = lambda name: name and name not in STOP and not (off and (name in off or off in name))
     for i, pat in enumerate(PATTERNS):
-        if i == 3:      # 페이지 머리 작성자 정보에서 못 찾았으면 본문 글귀보다 먼저 구조화된 작성자 칸
-            for raw_pat in AUTHOR_RAW:
-                for m in raw_pat.finditer(page):
-                    name = _person(m.group(1))
-                    if ok(name):
-                        return name
         for m in pat.finditer(page if i < 3 else text):
             name = m.group(1)
-            if ok(name):
+            if name not in STOP and not (off and (name in off or off in name)):
                 return name
     return None
 

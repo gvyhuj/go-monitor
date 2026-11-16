@@ -58,13 +58,6 @@ def test_topic_falls_back_to_summary_start():
     ("이 발표 후 주가는 올랐습니다. 곽우진 기자가 보도합니다. [리포트]", "곽우진"),
     ("환율은 1320원에서 움직였습니다. <span>SBS</span> <span>Biz</span> 윤지혜입니다.", "윤지혜"),
     ('<em class="media_end_head_journalist_name">박영희 기자</em>', "박영희"),
-    # 이투데이: 구조화 데이터·dd:author에 부서명이 붙음 (본문엔 '기자 기자 이름을 클릭하면…')
-    ('<script type="application/ld+json">{"author":{"@type":"Person","name":"대구경북취재본부 이종팔"}}</script>', "이종팔"),
-    ('<meta property="dd:author" content="대구경북취재본부 이종팔">', "이종팔"),
-    ('<dd class="reporter_name"> <a class="detaillink nolink">대구경북취재본부 이종팔 기자</a> </dd>', "이종팔"),
-    # 벤처스퀘어(워드프레스): 유니코드 이스케이프에 성·이름이 띄어 있음 (= "한 혜선")
-    ('{"author":{"@type":"Person","name":"\\ud55c \\ud61c\\uc120","url":"https://www.venturesquare.net/author/sunny/"}}', "한혜선"),
-    ('{"author":{"@type":"Organization","name":"편집국"}}', None),
     ("기자 이름이 없는 기사 본문입니다.", None),
     ("[관련 기자] 이번 기자 회견", None),
 ])
