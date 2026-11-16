@@ -953,7 +953,9 @@
     $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="뉴스 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
       + `<span class="t-go" data-go="disc" title="뉴스 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="뉴스 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
-    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))];
+    // 보도자료·공시·외부 기사를 섞어 공개 시각 순으로 (시각을 모르는 것은 맨 뒤)
+    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))]
+      .sort((x, y) => (x.a.untimed ? 1 : 0) - (y.a.untimed ? 1 : 0) || String(x.a.ts).localeCompare(String(y.a.ts)));
     const MAXL = 4;
     // 줄이 넘치면 종류(보도자료·공시·외부 기사)마다 첫 줄은 남기고 나머지를 앞에서부터 채움 (매체가 많아도 공시가 밀려나지 않게)
     const firsts = new Set(["pr", "disc", "ext"].map((k) => lines.findIndex((x) => x.k === k)).filter((i) => i >= 0));
