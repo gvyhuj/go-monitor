@@ -273,6 +273,7 @@ button.tcard:hover::after { border-color: var(--brand-blue); opacity: 1; transfo
 .tn-item { display: flex; align-items: center; gap: 6px; font-size: 13.5px; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; min-width: 0; }
 .tn-item:hover { background: var(--canvas); }
 .tn-item .tn-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tn-item .tn-o { flex: none; color: var(--ink-2); font-weight: 600; }
 .tn-item:hover .tn-t { text-decoration: underline; text-underline-offset: 3px; }
 .tn-item .muted { flex: none; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .tn-item .mk { flex: none; }
