@@ -953,15 +953,24 @@
     $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="뉴스 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
       + `<span class="t-go" data-go="disc" title="뉴스 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="뉴스 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
-    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))];
+    // 보도자료·공시·외부 기사를 섞어 공개 시각 순으로 (시각을 모르는 것은 맨 뒤)
+    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))]
+      .sort((x, y) => (x.a.untimed ? 1 : 0) - (y.a.untimed ? 1 : 0) || String(x.a.ts).localeCompare(String(y.a.ts)));
     const MAXL = 4;
-    // 줄이 넘치면 종류(보도자료·공시·외부 기사)마다 첫 줄은 남기고 나머지를 앞에서부터 채움 (매체가 많아도 공시가 밀려나지 않게)
-    const firsts = new Set(["pr", "disc", "ext"].map((k) => lines.findIndex((x) => x.k === k)).filter((i) => i >= 0));
-    const shown = lines.length <= MAXL ? lines
-      : lines.filter((x, i) => firsts.has(i) || i < MAXL - [...firsts].filter((j) => j >= i).length);
-    const hiddenL = lines.filter((x) => !shown.includes(x));
-    $("#q-news-list").innerHTML = shown.map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`).join("")
-      + (hiddenL.length ? `<span class="tn-more" data-go="${hiddenL[0].k}">외 ${hiddenL.length}건 →</span>` : "");
+    const item = ({ k, a }, dup) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"${dup ? ' aria-hidden="true"' : ""}><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // 4줄이 넘으면 목록이 위로 천천히 계속 돎(같은 목록을 두 번 이어 붙여 끊김 없이). 마우스를 올리면 멈춤.
+    // 움직임 줄이기 설정이면 예전처럼 4줄 + '외 N건'
+    const listHtml = lines.length <= MAXL ? lines.map((x) => item(x)).join("")
+      : still ? lines.slice(0, MAXL).map((x) => item(x)).join("") + `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>`
+      : `<span class="tn-roll"><span class="tn-track" style="animation-duration:${lines.length * 3}s">${lines.map((x) => item(x)).join("")}${lines.map((x) => item(x, true)).join("")}</span></span>`;
+    const listEl = $("#q-news-list");
+    if (listEl.dataset.html !== listHtml) {          // 30초마다 다시 그려도 내용이 같으면 그대로 (도는 목록이 처음으로 튀지 않게)
+      listEl.dataset.html = listHtml;
+      listEl.innerHTML = listHtml;
+      const roll = $(".tn-roll", listEl), first = roll && $(".tn-item", roll);
+      if (first) roll.style.height = `${MAXL * ((first.offsetHeight || 25) + 2)}px`;     // 보이는 칸 = 4줄
+    }
     $("#q-news-sub").textContent = "";      // 매체별로 한 줄씩 보이므로 '몇 개 매체에 실림' 안내는 따로 두지 않음
     const card = $("#q-news-card");
     // 소식 건수가 바뀌면 숫자가 살짝 커졌다 돌아옴
@@ -1553,7 +1562,9 @@
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
-        news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
+        // 같은 내용 묶음도 매체별 기사마다 그 기사가 나온 시각에 표시 (그날 나온 것만)
+        news: [...(artDay[ds] || []).filter((a) => !a.untimed).flatMap((a) => articleEntries(a).filter((r) => r.lead || (r.ts && !r.untimed && r.ts.slice(0, 10) === ds))
+          .map((r) => ({ ts: r.ts, k: isPr(a) ? "pr" : "ext", title: r.office ? `${r.office} · ${r.title}` : r.title, id: r.id }))),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
         onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
         extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
