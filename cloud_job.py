@@ -596,6 +596,21 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v5", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명 빈 기사 {n_re}건 다시 읽기 (작성자 칸 형식 추가)")
 
+    # 한 번만: '껑충'·'들썩'이 있으면 실적 기사도 시황으로 버리던 규칙을 고친 뒤, 그렇게 버린 기사를 다시 모으게 함
+    # (다시 모으지 않음 목록에서 빼고, 구글 뉴스 지난 기간 검색을 처음부터 한 번 더)
+    if not get_state("articles:noise_restore_v1"):
+        from core.articles import _category, company_name
+        from core.relevance import NOISE_CATEGORIES
+        name = company_name()
+        with connect() as conn:
+            rows = conn.execute("SELECT id, title, office FROM dropped_articles WHERE reason='noise'").fetchall()
+            back = [r[0] for r in rows if _category(r[1] or "", "", name, r[2] or "", None)[0] not in NOISE_CATEGORIES]
+            conn.executemany("DELETE FROM dropped_articles WHERE id=?", [(i,) for i in back])
+            if back:
+                conn.execute("DELETE FROM system_state WHERE key='articles:google_backfill_v2'")
+        set_state("articles:noise_restore_v1", now.isoformat(timespec="minutes"))
+        annotate("notice", f"시황으로 잘못 버린 기사 {len(back)}건 다시 모으기 ('껑충'·'들썩' 실적 기사 등)")
+
     # 매번: 아직 기자명을 안 읽은 기사가 있으면 한 번에 많이 읽어 바로 채움 (평소엔 수집할 때 15건씩)
     try:
         from core import reporters
