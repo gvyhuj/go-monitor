@@ -375,3 +375,16 @@ def test_stock_news_without_mobile_url_still_gets_article_link(tmpdb, monkeypatc
     articles._save("X", articles.fetch_stock_news("X"), "naver")
     rows = articles.article_rows("X")
     assert rows[0]["url"] == "https://n.news.naver.com/mnews/article/018/0006410385"
+
+
+def test_article_without_naver_link_takes_google_or_original_link(tmpdb):
+    # 네이버로 찾은 기사는 네이버 주소, 네이버 주소를 못 얻었으면 같은 기사의 구글·원문 주소라도 씀
+    title = f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가"
+    with db.connect() as conn:
+        _art(conn, "0180006410385", "2026-11-16T11:04", title)
+        conn.execute("UPDATE articles SET office='이데일리'")
+    g = {"id": "gabc", "ts": "2026-11-16T11:04", "office": "이데일리", "title": title, "body": "",
+         "url": "https://www.edaily.co.kr/News/Read?newsId=01234"}
+    articles._save("X", [g], "google")
+    rows = articles.article_rows("X")
+    assert len(rows) == 1 and rows[0]["url"] == g["url"]
