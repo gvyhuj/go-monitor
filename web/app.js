@@ -448,6 +448,7 @@
       priceFormat: { type: "custom", minMove: 1, formatter: (v) => int(v) }, priceLineVisible: false, lastValueVisible: false,
     }, 1);
     price.priceScale().applyOptions({ scaleMargins: { top: 0.16, bottom: 0.14 } });   // 위·아래 여백: 급등락 글자 자리
+    vol.priceScale().applyOptions({ entireTextOnly: true });     // 거래량 맨 위·아래 눈금은 숫자가 다 보일 때만 (칸 경계에 잘린 '2,000' 안 보이게)
     chart.panes()[1].setStretchFactor(0.32);
     chart.panes()[0].setStretchFactor(1);
 
