@@ -961,6 +961,18 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .mk.pr { background: var(--mk-pr); }
 .mk.disc { background: var(--mk-disc); border-radius: 1px; }
 .mk.ext { background: var(--muted); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.mk.kq { width: 16px; height: 0; border-radius: 0; border-top: 1.5px dashed var(--muted); vertical-align: middle; }
+.rec-legend [hidden] { display: none; }
+.chart-tools { display: flex; justify-content: flex-end; margin: 2px 0 -2px; }
+.kq-switch { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 12.5px; color: var(--muted); background: none; border: 0; padding: 4px 2px; cursor: pointer; transition: color .2s; }
+.kq-switch:hover, .kq-switch[aria-checked="true"] { color: var(--ink); }
+.kq-switch:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; border-radius: 6px; }
+.kq-dash { width: 14px; border-top: 1.5px dashed currentColor; opacity: .7; }
+.kq-track { position: relative; width: 28px; height: 16px; border-radius: 999px; background: var(--line-2); transition: background .2s; }
+.kq-knob { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
+.kq-switch[aria-checked="true"] .kq-track { background: var(--navy); }
+.kq-switch[aria-checked="true"] .kq-knob { transform: translateX(12px); }
+@media (prefers-reduced-motion: reduce) { .kq-switch, .kq-track, .kq-knob { transition: none; } }
 #cal-chart-box .day-card { margin-top: 12px; }
 @media (max-width: 640px) {
   .cal { padding: 10px 8px 12px; }

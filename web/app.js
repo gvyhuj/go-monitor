@@ -411,9 +411,28 @@
 
   const kindColor = (k, dark) => (dark ? { up: "#FF6B7D", down: "#7FA6FF", flat: "#F2BE4B" } : { up: css("--up"), down: css("--down"), flat: css("--vol") })[k];
 
+  // 1일 차트 'KOSDAQ 같이 보기' 켬/끔 (이 브라우저에만 기억)
+  const KQ_KEY = "go:kq-overlay";
+  const kqOn = () => { try { return localStorage.getItem(KQ_KEY) === "1"; } catch (_) { return false; } };
   /** 가격(위)·거래량(아래) 두 칸 차트. events가 있으면 구간 거래량을 종류 색으로 칠하고 표시를 붙임. */
-  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], news = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, onNews = null, barMinutes = 1 } = {}) {
+  function priceVolumeChart(el, legendEl, bars, { dark = false, events = [], news = [], prevClose = null, extendTo = null, interactive = true, onEvent = null, onNews = null, barMinutes = 1, kosdaq = null, kosdaqPrev = null } = {}) {
     const chart = baseChart(el, dark, interactive ? {} : { handleScroll: false, handleScale: false });
+    // KOSDAQ 겹쳐 그리기('KOSDAQ 같이 보기'를 켰을 때만 보임): 전일 대비 같은 비율을 이 종목 가격으로 환산(전일 종가선이 둘의 0%).
+    // 가는 회색 점선으로 종목 선 뒤에. 켜면 가격 축 범위에도 들어가 잘리지 않음. 각 봉 시각의 마지막 KOSDAQ 값을 써서 시간 축은 그대로
+    const kqAt = new Map();
+    if (kosdaq && kosdaq.length && kosdaqPrev && prevClose) {
+      let j = -1;
+      for (const b of bars) {
+        const t = toTime(b.t);
+        while (j + 1 < kosdaq.length && toTime(kosdaq[j + 1].t) <= t) j++;
+        if (j >= 0) kqAt.set(t, kosdaq[j].c / kosdaqPrev - 1);
+      }
+    }
+    const kqLine = kqAt.size ? chart.addSeries(LW.LineSeries, {
+      color: dark ? "rgba(255,255,255,.45)" : css("--muted"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      priceFormat: { type: "custom", minMove: 1, formatter: (v) => won(v) }, visible: kqOn(),
+    }, 0) : null;
     // 선 색: 전일 종가(없으면 첫 봉)보다 위면 빨강, 아래면 파랑 (네이버·증권사 앱처럼)
     const ref = prevClose || (bars.length ? bars[0].c : null), last = bars.length ? bars[bars.length - 1].c : null;
     const lineColor = kindColor(ref && last != null && last < ref ? "down" : "up", dark);
@@ -452,6 +471,7 @@
     }
     price.setData(pdata);
     vol.setData(vdata);
+    if (kqLine) kqLine.setData([...kqAt].map(([time, r]) => ({ time, value: prevClose * (1 + r) })));
 
     if (prevClose) {
       price.createPriceLine({ price: prevClose, color: dark ? "rgba(255,255,255,.4)" : css("--line-2"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed, axisLabelVisible: true, title: "전일 종가" });
@@ -570,6 +590,11 @@
       chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : pinT));
       showAt = (t) => { pinT = t; show(t); };
     }
+    chart.setKosdaq = (on) => {       // 켜고 끄면 가격 축이 바뀌므로 급등락·소식 표시도 다시 놓음
+      if (!kqLine) return;
+      kqLine.applyOptions({ visible: on });
+      if (tags.length || dots.length) requestAnimationFrame(() => requestAnimationFrame(placeTags));
+    };
     return chart;
   }
 
@@ -1526,7 +1551,22 @@
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
         onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
         extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
+        kosdaq: d.kosdaq, kosdaqPrev: d.kosdaq_prev_close,
       });
+      // 차트 오른쪽 위 'KOSDAQ 겹쳐 보기' 스위치 (KOSDAQ 분봉·전일 종가가 있을 때만)
+      if (d.kosdaq && d.kosdaq.length && d.kosdaq_prev_close && d.prev_close) {
+        const bar = document.createElement("div");
+        bar.className = "chart-tools";
+        bar.innerHTML = `<button type="button" class="kq-switch" role="switch" aria-checked="${kqOn()}" title="KOSDAQ의 전일 대비 등락률을 이 종목 가격으로 바꿔 점선으로 겹쳐 봄 (전일 종가선에서 같은 높이 = 같은 등락률)"><span class="kq-dash" aria-hidden="true"></span>KOSDAQ 겹쳐 보기<span class="kq-track" aria-hidden="true"><span class="kq-knob"></span></span></button>`;
+        $(".day-chart", art).before(bar);
+        const sw = $(".kq-switch", bar);
+        sw.onclick = () => {
+          const on = !kqOn();
+          try { localStorage.setItem(KQ_KEY, on ? "1" : "0"); } catch (_) {}
+          sw.setAttribute("aria-checked", String(on));
+          if (chart && chart.setKosdaq) chart.setKosdaq(on);
+        };
+      }
       st.range = null;
       if (!coarseIv) attachRange(art, chart, d, st, arts, i > 0 ? daily[i - 1].date : null);
       const dayAsk = $("[data-day-ask]", art);
