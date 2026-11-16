@@ -188,6 +188,11 @@ def _save(code: str, items: list[dict], source: str) -> int:
                                (code, min(i["ts"] for i in items)[:10])).fetchall()
             have = {_key_title(r[1]) + "|" + _key_office(r[2]) for r in got}
             ids = {r[0] for r in got}          # 네이버 뉴스판 기사는 종목 뉴스와 번호가 같음 → 묶음 매체 수(outlets)를 덮어쓰지 않게
+            by_key = {_key_title(r[1]) + "|" + _key_office(r[2]): r[0] for r in got}
+            for i in items:                    # 이미 있는 기사가 주소가 없으면 이 출처(네이버 검색·구글·원문)의 주소로 채움
+                old = i["id"] if i["id"] in ids else by_key.get(_key_title(i["title"]) + "|" + _key_office(i.get("office")))
+                if old and i.get("url"):
+                    conn.execute("UPDATE articles SET url=? WHERE id=? AND (url='' OR url IS NULL)", (i["url"], old))
             items = [i for i in items if i["id"] not in ids and _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
         items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]     # 모으는 기간 전 기사는 넣지 않음
         from . import relevance
