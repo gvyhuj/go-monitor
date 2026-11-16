@@ -962,7 +962,7 @@
     const shown = lines.length <= MAXL ? lines
       : lines.filter((x, i) => firsts.has(i) || i < MAXL - [...firsts].filter((j) => j >= i).length);
     const hiddenL = lines.filter((x) => !shown.includes(x));
-    $("#q-news-list").innerHTML = shown.map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`).join("")
+    $("#q-news-list").innerHTML = shown.map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}"${a.url ? ` data-url="${esc(a.url)}"` : ""} title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`).join("")
       + (hiddenL.length ? `<span class="tn-more" data-go="${hiddenL[0].k}">외 ${hiddenL.length}건 →</span>` : "");
     $("#q-news-sub").textContent = "";      // 매체별로 한 줄씩 보이므로 '몇 개 매체에 실림' 안내는 따로 두지 않음
     const card = $("#q-news-card");
@@ -970,6 +970,7 @@
     const sig = $("#q-news").textContent; if (card && card.dataset.sig && card.dataset.sig !== sig) $("#q-news").querySelectorAll("b").forEach((b) => enter(b, "mv-pop")); if (card) card.dataset.sig = sig;
     if (card) card.onclick = (ev) => {
       const open = ev.target.closest("[data-open]");
+      if (open && open.dataset.url) { window.open(open.dataset.url, "_blank", "noopener"); return; }     // 기사·공시 원문으로 바로
       if (open) { artState.day = latest; location.hash = `#/pr/${open.dataset.open}`; return; }
       const go = ev.target.closest("[data-go]");
       if (go) { artState.cat = go.dataset.go; artState.day = latest; location.hash = "#/pr"; return; }
@@ -3297,12 +3298,11 @@ async function observationExtras(host, eid) {
       numsHtml = `${simpleSteps(d.observation?.intraday ? Object.entries(d.observation.intraday.steps).map(([m,r])=>({minutes:+m,...r})) : ic.rows.map((r) => ({ minutes: r.minutes, own: r.own, kq: r.kosdaq })), ic.rows.some((r) => r.minutes === 30) ? 30 : ic.rows[0] && ic.rows[0].minutes)}
         <div class="vb-note">기준·종료 시각에 기록된 가격만 사용합니다. '-'는 해당 시각 가격이 없어 미계산이며 보합이 아닙니다. KOSDAQ도 같은 두 시각의 가격이 있을 때만 비교합니다. 장 전·장 외의 기준가는 저장된 전 거래일 일봉 종가(종목은 시간외 포함 가능)입니다.</div>`;
     }
-    // 공개 뒤 주가: 한 차트에 이 기사 + KOSDAQ + (지금 목록의) 다른 기사·중앙값. 탭으로 전후 5거래일
+    // 공개 뒤 주가: 공개(반응 시작)부터 1시간, 이 종목 + KOSDAQ만 (다른 기사·중앙값·전후 5거래일은 뺌, 2026-11-16)
     const win5 = d.observation?.windows?.["5"];
     if (iw || ic || d.reaction_chart || (win5 && (win5.points || []).length)) {
       const w = d.observation?.intraday || iw || ic;   // 그래프·카드와 같은 기준 시각
       html += `<section class="verdict-box intraday-box"><div class="vb-head">공개 뒤 주가 <small class="muted">${w ? span0(w) : ""}${iw ? " · 1분봉 기준" : ic ? ` · ${barLabel(ic.interval, ic.kq_interval)}` : ""}</small></div>
-        <div class="rx-tabs"><div class="seg" role="group" aria-label="관찰 기간"><button type="button" data-rxr="day" aria-pressed="true">공개 직후</button><button type="button" data-rxr="5" aria-pressed="false">전후 5거래일</button></div><span class="rx-cmp" id="rx-cmp"></span></div>
         <div class="rx-legend day-legend"></div><div class="rx-chart"></div><div class="obs-empty" id="rx-empty" hidden></div>
         <div class="obs-cards" id="pr-cards"></div><p class="note" id="rx-tab-note"></p>
         ${numsHtml ? `<details class="obs-fold"><summary><span>코스닥과 비교</span><small>+30·60·120분</small></summary><div class="obs-fold-body">${numsHtml}</div></details>` : ""}</section>`;
@@ -3363,35 +3363,18 @@ async function observationExtras(host, eid) {
     // 발표 직후 그래프: 이 종목·KOSDAQ를 공개 시각 기준 % 변화로 한 축에 (선 위 화살표 = 공개 시각)
     const rc = d.reaction_chart, rxEl = $(".rx-chart", box);
     if (rxEl) {
-      const ov = prHooks && prHooks.overlay(a.id);
       const stepsD = d.observation?.intraday?.steps || {};
       const card = (label, v, unit = pct) => `<div><small>${label}</small><strong class="${sgnCls(v)}">${v == null ? "미집계" : unit(v)}</strong></div>`;
       const emptyBox = $("#rx-empty", box), legend = $(".rx-legend", box);
-      let tabChart = null;
-      const drawTab = (tab) => {
-        if (tabChart) { try { tabChart.remove(); } catch (_) {} charts = charts.filter((c) => c !== tabChart); tabChart = null; }
-        rxEl.innerHTML = ""; legend.innerHTML = ""; emptyBox.hidden = true; rxEl.hidden = false;
-        box.querySelectorAll("[data-rxr]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.rxr === tab)));
-        $("#rx-cmp", box).textContent = tab === "day" && ov && ov.n ? `비교: 지금 목록의 다른 ${ov.label} ${ov.n}건 · 중앙값은 +${ov.until}분까지` : "";
-        const empty = (msg) => { rxEl.hidden = true; emptyBox.hidden = false; emptyBox.innerHTML = `<strong>이 구간에는 비교할 관측 시세가 없습니다.</strong><span>${esc(msg)} 없는 값은 만들지 않고 비워 둡니다.</span>`; };
-        if (tab === "day") {
-          if (rc && rc.base_own) tabChart = indexedChart(rxEl, legend, rc.own, rc.kq, rc.base_own, rc.base_kq, rc.start, rc.kind === "open" || rc.kind === "late" ? "장 시작" : basisReason === "publication" ? "공개" : "분석 기준", false, ov && ov.n ? ov : null);
-          else empty(d.observation?.missing_reason ? `${d.observation.missing_reason}.` : "공개 시각 앞뒤의 분봉 시세가 없습니다." + (win5 ? " 일별 흐름은 [전후 5거래일]에서 볼 수 있습니다." : ""));
-          $("#pr-cards", box).innerHTML = card("+30분", stepsD["30"]?.own) + card("+60분", stepsD["60"]?.own)
-            + (ov && ov.n ? card(`다른 기사 중앙값 +${ov.until}분`, ov.othersMedian) : card("시장 대비 +30분", stepsD["30"]?.diff, points));
-          $("#rx-tab-note", box).textContent = "";
-        } else {
-          const pts = (win5 && win5.points) || [], b0 = win5 && win5.base_own;
-          if (pts.some((p) => p.stock_price != null) && b0) tabChart = indexedChart(rxEl, legend, pts.map((p) => ({ t: `${p.time}T09:00`, c: p.stock_price })), pts.map((p) => ({ t: `${p.time}T09:00`, c: p.kosdaq_price })), b0, win5.base_kq, `${d.observation.day}T09:00`, "반응일", true);
-          else empty("이 기간에 저장된 일별 종가가 없습니다.");
-          const post = (win5 && win5.post) || {};
-          $("#pr-cards", box).innerHTML = card("공개 전 5거래일", win5 && win5.pre_trend) + card("공개 후 5거래일", post.own) + card("KOSDAQ", post.kq) + card("시장 대비", post.diff, points);
-          $("#rx-tab-note", box).textContent = `${win5 && win5.base_day ? `${win5.base_day} 거래소 종가 = 0%. ` : ""}공개 전에 이미 움직였는지, 공개 뒤 움직임이 이어졌는지 보는 참고용입니다. ${(win5 && win5.price_warning) || ""}`;
-        }
-      };
-      box.querySelectorAll("[data-rxr]").forEach((b) => (b.onclick = () => { drawTab(b.dataset.rxr); enter(rxEl, "mv-reveal"); }));
+      if (rc && rc.base_own) {
+        const t0 = toTime(rc.start), hour = (bs) => (bs || []).filter((x) => { const t = toTime(x.t); return t >= t0 - 300 && t <= t0 + 3600; });     // 공개 5분 전(표시가 안 잘리게)부터 1시간 뒤까지
+        indexedChart(rxEl, legend, hour(rc.own), hour(rc.kq), rc.base_own, rc.base_kq, rc.start, rc.kind === "open" || rc.kind === "late" ? "장 시작" : basisReason === "publication" ? "공개" : "분석 기준", false, null);
+      } else {
+        rxEl.hidden = true; emptyBox.hidden = false;
+        emptyBox.innerHTML = `<strong>이 구간에는 관측 시세가 없습니다.</strong><span>${esc(d.observation?.missing_reason ? `${d.observation.missing_reason}.` : "공개 시각 뒤 1시간의 분봉 시세가 없습니다.")} 없는 값은 만들지 않고 비워 둡니다.</span>`;
+      }
+      $("#pr-cards", box).innerHTML = card("+30분", stepsD["30"]?.own) + card("+60분", stepsD["60"]?.own) + card("시장 대비 +60분", stepsD["60"]?.diff, points);
       enter(rxEl, "mv-reveal");      // 선이 왼쪽에서 오른쪽으로 그려지듯 나타남
-      drawTab("day");
     }
     if (d.observation_event_id) observationExtras($("#obs-extras", box), d.observation_event_id)
       .then(() => { box.querySelectorAll("#obs-question").forEach((b) => { b.disabled = false; }); });

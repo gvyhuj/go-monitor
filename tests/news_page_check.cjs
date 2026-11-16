@@ -120,37 +120,23 @@ async function main() {
       assert.equal(await page.locator("#art-pop").isHidden(), true, "Esc로 조건 창 닫힘");
       await page.locator("#art-sort").selectOption("time");
 
-      // Selecting: the same right side shows that article with the other listed articles and the median.
+      // 고르면 오른쪽에 그 기사의 공개 뒤 1시간만 (이 종목·KOSDAQ, 다른 기사·중앙값·전후 5거래일 없음, 2026-11-16)
       await page.locator('#art-list button[data-id="2001"]').click();
       await page.locator("#pr-detail .pr-title").filter({ hasText: "광학미러 공급 계약 체결" }).waitFor();
       assert.equal(await page.evaluate(() => location.hash), "#/pr/2001");
       assert.equal(await page.locator('#art-list button[data-id="2001"]').getAttribute("aria-current"), "true");
-      assert.deepEqual(await page.locator("#pr-detail [data-rxr]").allInnerTexts(), ["공개 직후", "전후 5거래일"]);
-      assert.match(await page.locator("#rx-cmp").innerText(), /다른 자사 보도자료 2건/);
+      assert.equal(await page.locator("#pr-detail [data-rxr], #rx-cmp").count(), 0);
       await page.locator("#pr-detail .rx-chart canvas").first().waitFor();
       assert.equal(await page.locator("#pr-close").innerText(), "← 전체 기사 보기");
       assert.equal(await page.locator("#obs-question").innerText(), "AI에게 묻기");
       assert.equal(await page.locator("#rx-tab-note").innerText(), "", "공개 직후 탭 아래 안내 문장 없음");
-      // 왼쪽 목록의 다른 기사에 마우스를 올리면 오른쪽 그래프에서 그 기사 선이 진해짐 (그래프 위 마우스로는 제목을 띄우지 않음)
-      if (width > 700) {
-        const chartEl = page.locator("#pr-detail .rx-chart");
-        await page.mouse.move(5, 5);
-        const before = await chartEl.screenshot();
-        await page.locator('#art-list button[data-id="2002"]').hover();
-        const after = await chartEl.screenshot();
-        assert.ok(!before.equals(after), "목록에서 고른 기사 선 강조");
-        await page.mouse.move(5, 5);
-        assert.ok((await chartEl.screenshot()).equals(before), "목록에서 벗어나면 원래대로");
-        assert.equal(await page.locator(".rx-line-tip").count(), 0);
-      }
-      assert.match(await page.locator("#pr-cards").innerText(), /다른 기사 중앙값/);
+      assert.match(await page.locator("#pr-cards").innerText(), /\+30분[\s\S]*\+60분[\s\S]*시장 대비 \+60분/);
+      assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /중앙값/);
       assert.doesNotMatch(await page.locator("#pr-cards").innerText(), /KOSDAQ/, "코스닥 값은 '코스닥과 비교' 표에만");
       assert.match(await page.locator("#pr-detail .obs-fold > summary", { hasText: "코스닥과 비교" }).first().innerText(), /코스닥과 비교/);
       // '수정' 메뉴: 여러 개 고르기·기사 등록·고른 기사의 목록에서 삭제
       assert.equal(await page.locator(".art-more > summary").innerText(), "수정 ▾");
       assert.equal(await page.locator(".art-more-menu #art-hide").textContent(), "목록에서 삭제");
-      await page.locator('#pr-detail [data-rxr="5"]').click();
-      assert.match(await page.locator("#pr-cards").innerText(), /공개 전 5거래일/);
       assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pr-cards small, #pr-cards strong")]
         .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > e.parentElement.getBoundingClientRect().right + 1).map((e) => e.textContent)), [], "카드 글자가 잘리지 않음");
       // 접는 항목 없음: 유사 사건 칸도 없앰 (2026-11-16)
