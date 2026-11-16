@@ -402,3 +402,18 @@ def test_earnings_articles_same_day_form_one_story_with_earliest_lead(tmpdb):
     rows = {a["id"]: a for a in articles.article_rows("X")}
     assert set(rows) == {"s", "x"}
     assert [r["office"] for r in rows["s"]["related_titles"]] == ["이데일리", "중부매일"]
+
+
+def test_merged_same_outlet_article_keeps_naver_link(tmpdb):
+    # 서울신문 10:39(원문 amp 주소)·10:43(네이버 주소)을 한 줄로 합칠 때 링크는 네이버 뉴스로 (2026-11-16)
+    t = f"(주){NAME}, 3분기 별도 누적 영업익 696% 증가…연결 누적 순이익 흑자전환"
+    with db.connect() as conn:
+        _art(conn, "s1", "2026-11-16T10:39", t)
+        _art(conn, "0810003699678", "2026-11-16T10:43", t)
+        conn.execute("UPDATE articles SET office='서울신문', url='https://amp.seoul.co.kr/seoul/20261116500076' WHERE id='s1'")
+        conn.execute("UPDATE articles SET office='서울신문', url='https://n.news.naver.com/mnews/article/081/0003699678?sid=101' "
+                     "WHERE id='0810003699678'")
+    rows = articles.article_rows("X")
+    assert len(rows) == 1 and not rows[0]["related_titles"]
+    assert rows[0]["ts"] == "2026-11-16T10:39"
+    assert rows[0]["url"] == "https://n.news.naver.com/mnews/article/081/0003699678?sid=101"

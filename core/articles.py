@@ -803,14 +803,18 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         group.sort(key=lambda a: (a["ts"] or "9999", a["id"] not in picks, not a.get("manual"), a["id"]))
         # 같은 내용 묶음 안에서 같은 매체가 1시간 안에 낸 기사는 한 기사 (네이버 주소·원문 주소로 두 번 들어오거나
         # 제목 끝·'㈜'만 바꿔 다시 실어도 한 번만 셈. 가장 이른 것을 남김)
-        seen = {}
+        seen = {}                     # 매체 → (시각, 남긴 기사)
         kept = []
         for g in group:
             o, t = _key_office(g.get("office")), datetime.fromisoformat(g["ts"]) if g["ts"] else None
-            if o and t and o in seen and t - seen[o] <= timedelta(hours=1):
+            if o and t and o in seen and t - seen[o][0] <= timedelta(hours=1):
+                k = seen[o][1]            # 링크는 되도록 네이버 뉴스로 (합쳐진 쪽에만 있어도)
+                if "news.naver.com" in (g.get("url") or "") and "news.naver.com" not in (k.get("url") or ""):
+                    k["url"] = g["url"]
                 continue
             if o and t:
-                seen[o] = t
+                g = dict(g)
+                seen[o] = (t, g)
             kept.append(g)
         group = kept
         lead = dict(group[0])
