@@ -536,11 +536,7 @@
     }
     // 글자끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 더 멀리 띄우거나 반대쪽으로
     const placeTags = () => {
-      // 차트가 이미 지워졌거나(다른 날·화면으로 바꿈) 화면에서 빠진 뒤 크기 감시 등이 늦게 부르면 건너뜀
-      let pane = null;
-      try { pane = el.isConnected ? chart.panes()[0] : null; } catch (_) { pane = null; }
-      if (!pane) return;
-      const H = pane.getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
+      const H = chart.panes()[0].getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
       const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
       const place = ({ g: { tag, ring, up }, x, y }) => {
         const off = x == null || y == null;
@@ -948,34 +944,19 @@
     } else renderQuote();
     const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
-    // 같은 내용 묶음도 매체별 기사 하나하나로 (그날 실린 것만, 같은 주소는 한 번). 건수 = 기사 수
-    const each = (list) => list.flatMap((a) => articleEntries(a).filter((r) => r.lead || on(r.ts)).map((r) => ({ ...r, untimed: r.lead ? a.untimed : r.untimed })))
-      .sort((x, y) => (x.untimed ? 1 : 0) - (y.untimed ? 1 : 0) || String(x.ts).localeCompare(String(y.ts)));
-    const pr = each(ar.filter(isPr)), extL = each(ar.filter((a) => !isPr(a))), ext = extL.length;
+    const pr = ar.filter(isPr), ext = ar.length - pr.length;
+    const outlets = pr.reduce((t, a) => t + (a.outlets_total || 1), 0);
     const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
     $("#q-news-label").textContent = `${when} 소식`;
     $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="뉴스 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
       + `<span class="t-go" data-go="disc" title="뉴스 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="뉴스 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
-    // 보도자료·공시·외부 기사를 섞어 공개 시각 순으로 (시각을 모르는 것은 맨 뒤)
-    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))]
-      .sort((x, y) => (x.a.untimed ? 1 : 0) - (y.a.untimed ? 1 : 0) || String(x.a.ts).localeCompare(String(y.a.ts)));
+    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...ar.filter((a) => !isPr(a)).map((a) => ({ k: "ext", a }))];
     const MAXL = 4;
-    const item = ({ k, a }, dup) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"${dup ? ' aria-hidden="true"' : ""}><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`;
-    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // 4줄이 넘으면 목록이 위로 천천히 계속 돎(같은 목록을 두 번 이어 붙여 끊김 없이). 마우스를 올리면 멈춤.
-    // 움직임 줄이기 설정이면 예전처럼 4줄 + '외 N건'
-    const listHtml = lines.length <= MAXL ? lines.map((x) => item(x)).join("")
-      : still ? lines.slice(0, MAXL).map((x) => item(x)).join("") + `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>`
-      : `<span class="tn-roll"><span class="tn-track" style="animation-duration:${lines.length * 3}s">${lines.map((x) => item(x)).join("")}${lines.map((x) => item(x, true)).join("")}</span></span>`;
-    const listEl = $("#q-news-list");
-    if (listEl.dataset.html !== listHtml) {          // 30초마다 다시 그려도 내용이 같으면 그대로 (도는 목록이 처음으로 튀지 않게)
-      listEl.dataset.html = listHtml;
-      listEl.innerHTML = listHtml;
-      const roll = $(".tn-roll", listEl), first = roll && $(".tn-item", roll);
-      if (first) roll.style.height = `${MAXL * ((first.offsetHeight || 25) + 2)}px`;     // 보이는 칸 = 4줄
-    }
-    $("#q-news-sub").textContent = "";      // 매체별로 한 줄씩 보이므로 '몇 개 매체에 실림' 안내는 따로 두지 않음
+    $("#q-news-list").innerHTML = lines.slice(0, MAXL).map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span><span class="tn-t">${esc(a.title)}</span></span>`).join("")
+      + (lines.length > MAXL ? `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>` : "");
+    // 실린 매체 수는 아래 작은 글씨로 (위 숫자 줄은 한 줄로)
+    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 뉴스 탭에서 열림` : "제목을 누르면 뉴스 탭에서 열림") : "";
     const card = $("#q-news-card");
     // 소식 건수가 바뀌면 숫자가 살짝 커졌다 돌아옴
     const sig = $("#q-news").textContent; if (card && card.dataset.sig && card.dataset.sig !== sig) $("#q-news").querySelectorAll("b").forEach((b) => enter(b, "mv-pop")); if (card) card.dataset.sig = sig;
@@ -1566,9 +1547,7 @@
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
-        // 같은 내용 묶음도 매체별 기사마다 그 기사가 나온 시각에 표시 (그날 나온 것만)
-        news: [...(artDay[ds] || []).filter((a) => !a.untimed).flatMap((a) => articleEntries(a).filter((r) => r.lead || (r.ts && !r.untimed && r.ts.slice(0, 10) === ds))
-          .map((r) => ({ ts: r.ts, k: isPr(a) ? "pr" : "ext", title: r.office ? `${r.office} · ${r.title}` : r.title, id: r.id }))),
+        news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
         onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
         extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,

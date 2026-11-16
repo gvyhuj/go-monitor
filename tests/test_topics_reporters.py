@@ -58,13 +58,6 @@ def test_topic_falls_back_to_summary_start():
     ("이 발표 후 주가는 올랐습니다. 곽우진 기자가 보도합니다. [리포트]", "곽우진"),
     ("환율은 1320원에서 움직였습니다. <span>SBS</span> <span>Biz</span> 윤지혜입니다.", "윤지혜"),
     ('<em class="media_end_head_journalist_name">박영희 기자</em>', "박영희"),
-    # 이투데이: 구조화 데이터·dd:author에 부서명이 붙음 (본문엔 '기자 기자 이름을 클릭하면…')
-    ('<script type="application/ld+json">{"author":{"@type":"Person","name":"대구경북취재본부 이종팔"}}</script>', "이종팔"),
-    ('<meta property="dd:author" content="대구경북취재본부 이종팔">', "이종팔"),
-    ('<dd class="reporter_name"> <a class="detaillink nolink">대구경북취재본부 이종팔 기자</a> </dd>', "이종팔"),
-    # 벤처스퀘어(워드프레스): 유니코드 이스케이프에 성·이름이 띄어 있음 (= "한 혜선")
-    ('{"author":{"@type":"Person","name":"\\ud55c \\ud61c\\uc120","url":"https://www.venturesquare.net/author/sunny/"}}', "한혜선"),
-    ('{"author":{"@type":"Organization","name":"편집국"}}', None),
     ("기자 이름이 없는 기사 본문입니다.", None),
     ("[관련 기자] 이번 기자 회견", None),
 ])
@@ -150,7 +143,6 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
     assert row == {"ts": "2026-10-20T09:26", "time_from": "page"}
     assert time_quality({"source": "google", **row}) == "reported"
     assert time_quality({"source": "google", "ts": "2026-10-20T17:00"}) == "check_time"
-    assert time_quality({"source": "google", "ts": "2026-11-16T00:00"}) == "check_time"   # 구글이 날짜만 알 때 00:00
 
 
 @pytest.mark.parametrize("page, want", [
@@ -158,9 +150,6 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
     ('"datePublished": "2026-06-19T01:40:09Z"', "2026-06-19T10:40"),
     ("입력 2026.10.19 18:43 수정 2026.10.20", "2026-10-19T18:43"),
     ("시각 없음", None),
-    ('"datePublished": "2026-11-16"', None),
-    ('"datePublished": "2026-11-16"<li>입력 <span>2026.11.16 07:31</span></li><li>수정 2026.11.16 09:02</li>', "2026-11-16T07:31"),
-    ("<em>등록</em> 2026/11/16 07:31", "2026-11-16T07:31"),      # 날짜만 있으면 00:00으로 만들지 않음 (중부매일 00:00, 2026-11-16)
 ])
 def test_parse_time_formats(page, want):
     assert reporters.parse_time(page) == want
@@ -214,20 +203,3 @@ def test_naver_page_without_name_falls_back_to_original(tmp_path, monkeypatch):
     assert reporters.fill("X", fetch=lambda u: pages[u], resolve=lambda u: None) == 1
     with db.connect() as conn:
         assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김나영"
-
-
-def test_google_article_stuck_at_midnight_is_read_again_once(tmp_path, monkeypatch):
-    # 중부매일 00:00 (2026-11-16): 원문 날짜만 읽어 00:00이 된 구글 기사 → 한 번 다시 열어 본문 '입력' 시각으로
-    from core import db
-    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
-    db.init_db()
-    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
-    with db.connect() as conn:
-        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,source,time_from,reporter,reporter_at) VALUES "
-                     "('g','X','2026-11-16T00:00','t','https://www.jbnews.com/news/articleView.html?idxno=1','google',"
-                     "'page','홍길동','2026-11-16T09:00')")
-    page = '"datePublished": "2026-11-16" 입력 2026.11.16 07:31 홍길동 기자'
-    reporters.fill("X", fetch=lambda u: page, naver=lambda t, u: None)
-    with db.connect() as conn:
-        assert conn.execute("SELECT ts FROM articles").fetchone()[0] == "2026-11-16T07:31"

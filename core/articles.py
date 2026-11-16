@@ -30,10 +30,7 @@ NAME = "이 종목"
 CATEGORIES = ["회사 발표", "언론 분석", "리서치", "테마·수혜주", "시황·특징주", "단순 언급"]
 
 MARKET_STRONG = ("특징주", "상한가", "하한가", "핫종목", "급등", "급락", "신고가", "52주", "주가", "초고수", "상승률", "하락률",
-                 "줄상승", "[종목NOW]", "서울데이터랩")
-# 주가에도 실적에도 쓰는 말: 실적·계약 같은 회사 소식 단어가 함께 있으면 시황으로 보지 않음
-# (예: "그린광학, 영업이익 8배 '껑충'…순이익도 흑자전환"은 실적 기사)
-MARKET_MOOD = ("들썩", "껑충")
+                 "들썩", "껑충", "줄상승", "[종목NOW]", "서울데이터랩")
 MARKET_WEAK = ("↑", "↓", "강세", "약세", "오름세", "내림세")
 RESEARCH = ("리서치", "밸류파인더", "목표주가", "투자의견", "리포트", "보고서", "연구원", "커버리지", "기업분석")
 COMPANY = ("수주", "계약", "공급", "MOU", "협약", "체결", "선정", "참여", "참가", "개발", "출시", "양산", "인증", "실적",
@@ -77,8 +74,7 @@ def classify(title: str, body: str, name: str | None = None, office: str = "") -
     if office in NOISE_OFFICE or NOISE_TITLE.search(t):
         return "단순 언급", mention
     has_company = any(w in t for w in COMPANY)
-    mood = any(w in t for w in MARKET_MOOD) or (in_title and any(w in t for w in MARKET_WEAK))
-    if any(w in t for w in MARKET_STRONG) or (mood and not has_company):
+    if any(w in t for w in MARKET_STRONG) or (in_title and any(w in t for w in MARKET_WEAK) and not has_company):
         return "시황·특징주", mention
     if any(w in t for w in RESEARCH) or (in_title and any(w in b[:90] for w in RESEARCH) and not has_company):
         return "리서치", mention
@@ -136,8 +132,7 @@ def fetch_stock_news(code: str, page: int = 1, size: int = 50) -> list[dict]:
                 "office": it.get("officeName") or "",
                 "title": html.unescape(it.get("titleFull") or it.get("title") or "").strip(),
                 "body": html.unescape(it.get("body") or "").strip(),
-                "url": it.get("mobileNewsUrl") or (f"https://n.news.naver.com/mnews/article/{it['officeId']}/{it['articleId']}"
-                                                   if it.get("officeId") and it.get("articleId") else ""),
+                "url": it.get("mobileNewsUrl") or "",
                 "outlets": int(group.get("total") or 1),
             })
     return out
@@ -188,11 +183,6 @@ def _save(code: str, items: list[dict], source: str) -> int:
                                (code, min(i["ts"] for i in items)[:10])).fetchall()
             have = {_key_title(r[1]) + "|" + _key_office(r[2]) for r in got}
             ids = {r[0] for r in got}          # 네이버 뉴스판 기사는 종목 뉴스와 번호가 같음 → 묶음 매체 수(outlets)를 덮어쓰지 않게
-            by_key = {_key_title(r[1]) + "|" + _key_office(r[2]): r[0] for r in got}
-            for i in items:                    # 이미 있는 기사가 주소가 없으면 이 출처(네이버 검색·구글·원문)의 주소로 채움
-                old = i["id"] if i["id"] in ids else by_key.get(_key_title(i["title"]) + "|" + _key_office(i.get("office")))
-                if old and i.get("url"):
-                    conn.execute("UPDATE articles SET url=? WHERE id=? AND (url='' OR url IS NULL)", (i["url"], old))
             items = [i for i in items if i["id"] not in ids and _key_title(i["title"]) + "|" + _key_office(i.get("office")) not in have]
         items = [i for i in items if (i.get("ts") or "") >= COVERAGE_FROM]     # 모으는 기간 전 기사는 넣지 않음
         from . import relevance
@@ -209,8 +199,7 @@ def _save(code: str, items: list[dict], source: str) -> int:
         before = conn.total_changes
         conn.executemany(
             "INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention, first_seen, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets, "
-            "url=CASE WHEN articles.url='' OR articles.url IS NULL THEN excluded.url ELSE articles.url END",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets",
             rows)
         return conn.total_changes - before
 
@@ -386,8 +375,6 @@ def group_stories(code: str):
     rows.sort(key=lambda r: r["ts"])
     stories = []   # (story_id, ts, tokens)
     assign = {}
-    from . import topics
-    table, earn = topics.rules(), set()      # earn: 실적 기사로 시작한 묶음
     for r in rows:
         tk = _tokens(r["title"], name)
         t = datetime.fromisoformat(r["ts"])
@@ -399,17 +386,11 @@ def group_stories(code: str):
             j = shared / len(tk | stk)
             if (j >= 0.3 or (shared >= 2 and j >= 0.2)) and (best is None or j > best[1]):
                 best = (sid, j)
-        if not best and topics.classify(r["title"], "", table)[0] == "실적":
-            # 실적 기사는 매체마다 다른 숫자·표현을 써서 제목이 잘 안 겹침 → 24시간 안의 실적 묶음에 붙임 (분기 실적은 한 번)
-            best = next(((sid, 0) for sid, st, _ in reversed(stories)
-                         if sid in earn and t - st <= timedelta(hours=24)), None)
         if best:
             assign[r["id"]] = best[0]
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
-            if topics.classify(r["title"], "", table)[0] == "실적":
-                earn.add(r["id"])
     # 사이트에서 직접 묶은 기사: '이 두 기사는 같은 내용'이라는 연결로 보고 연결된 묶음을 모두 하나로 (방향 무관).
     # 예전에는 대상을 따라가며 옮겨서, 같은 두 기사를 서로 반대 방향으로 합치면(A에 B, B에 A) 순환이 되어 아무것도 안 합쳐졌음
     with connect() as conn:
@@ -805,18 +786,6 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     for sid, group in by_story.items():
         # 모든 묶음의 대표는 가장 이른 공개 시각. 직접 선택·등록은 같은 시각일 때만 우선.
         group.sort(key=lambda a: (a["ts"] or "9999", a["id"] not in picks, not a.get("manual"), a["id"]))
-        # 같은 내용 묶음 안에서 같은 매체가 1시간 안에 낸 기사는 한 기사 (네이버 주소·원문 주소로 두 번 들어오거나
-        # 제목 끝·'㈜'만 바꿔 다시 실어도 한 번만 셈. 가장 이른 것을 남김)
-        seen = {}
-        kept = []
-        for g in group:
-            o, t = _key_office(g.get("office")), datetime.fromisoformat(g["ts"]) if g["ts"] else None
-            if o and t and o in seen and t - seen[o] <= timedelta(hours=1):
-                continue
-            if o and t:
-                seen[o] = t
-            kept.append(g)
-        group = kept
         lead = dict(group[0])
         # 대표가 자동 수집 기사로 바뀌어도 직접 등록한 보도자료 묶음의 분류는 유지.
         if any(g.get("manual") for g in group):

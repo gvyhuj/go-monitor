@@ -25,13 +25,6 @@ def test_classify_uses_company_name_and_drops_noise():
     assert articles.classify("2026년10월20일(화) S브리핑", "", NAME)[0] == "단순 언급"
 
 
-def test_mood_words_with_company_news_are_not_market_noise():
-    # '껑충'·'들썩'은 실적 기사에도 쓰임 → 회사 소식 단어가 함께 있으면 시황으로 버리지 않음
-    assert articles.classify(f"{NAME}, 영업이익 8배 ‘껑충’…순이익도 흑자전환", "", NAME)[0] == "회사 발표"
-    assert articles.classify(f"{NAME} 주가 껑충", "", NAME)[0] == "시황·특징주"          # '주가'는 그대로 시황
-    assert articles.classify("우주株 들썩…투자자 몰려", "", NAME)[0] == "시황·특징주"     # 회사 소식 단어 없으면 시황
-
-
 def _art(conn, aid, ts, title, outlets=1, category=None):
     cat = category or articles.classify(title, "", NAME)[0]
     conn.execute("INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention) "
@@ -49,7 +42,7 @@ def test_same_publisher_portal_and_direct_links_count_as_one_outlet(tmpdb):
     rows = articles.article_rows("X")
     assert len(rows) == 1
     assert rows[0]["outlets_total"] == 2
-    assert [r["office"] for r in rows[0]["related_titles"]] == ["머니투데이"]  # 같은 매체의 포털·원문 주소는 한 기사
+    assert len(rows[0]["related_titles"]) == 2  # Three article links, two publishers.
 
 
 def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
@@ -317,7 +310,6 @@ def test_tied_earliest_articles_can_still_be_picked(tmpdb):
     with db.connect() as conn:
         _art(conn, "a", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
         _art(conn, "b", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
-        conn.execute("UPDATE articles SET office='다른매체' WHERE id='b'")
         conn.execute("INSERT INTO article_links(a,b) VALUES('a','b')")
         conn.execute("INSERT INTO system_state(key,value) VALUES (?,?)", (articles.LEAD_PICKS, '["b"]'))
     lead = articles.article_rows("X")[0]
@@ -340,72 +332,3 @@ def test_time_fix_overrides_and_restores(tmpdb):
     cloud_job.apply_inbox({"type": "article_time", "id": "g", "ts": None}, logging.getLogger())
     a = articles.article_rows("X")[0]
     assert (a["ts"], a["time_source"], a["ts_auto"]) == ("2026-04-22T16:00", "구글 뉴스", None)
-
-
-def test_same_outlet_same_article_via_portal_and_original_url_counted_once(tmpdb):
-    # 서울신문 같은 기사가 네이버 주소(종목 뉴스)와 원문 주소(검색·구글)로 두 번 들어와 같은 묶음에 두 줄로 셈 (2026-11-16)
-    t = f"{NAME}, 美 기업과 위성 카메라 공급계약"
-    with db.connect() as conn:
-        _art(conn, "0180006410385", "2026-11-16T08:00", t)
-        _art(conn, "0810003500001", "2026-11-16T09:10", t)
-        _art(conn, "s0123456789abcdef0", "2026-11-16T09:10", t + "…")
-        conn.execute("UPDATE articles SET office='이데일리', url='https://n.news.naver.com/mnews/article/018/0006410385' WHERE id='0180006410385'")
-        conn.execute("UPDATE articles SET office='서울신문', url='https://n.news.naver.com/mnews/article/081/0003500001' WHERE id='0810003500001'")
-        conn.execute("UPDATE articles SET office='서울신문', url='https://www.seoul.co.kr/news/economy/2026/11/16/20261116500001' WHERE id LIKE 's%'")
-    rows = articles.article_rows("X")
-    assert len(rows) == 1
-    assert [r["office"] for r in rows[0]["related_titles"]] == ["서울신문"]
-
-
-def test_same_outlet_repost_with_slightly_different_title_counted_once(tmpdb):
-    # 서울신문 10:39·10:43 두 줄 (2026-11-16): 같은 묶음·같은 매체에서 몇 분 차이로 다시 실린 기사.
-    # 제목이 '㈜'/'(주)'나 끝부분만 달라도 한 기사로 셈
-    with db.connect() as conn:
-        _art(conn, "s1", "2026-11-16T10:39", f"㈜{NAME}, 3분기 별도 누적 영업익 69억원…전년 대비 흑자 전환")
-        _art(conn, "0810003500001", "2026-11-16T10:43", f"(주){NAME}, 3분기 별도 누적 영업익 69억…흑자 전환")
-        _art(conn, "0180006410385", "2026-11-16T11:04", f"{NAME}, 3분기 누적 영업이익 18억원…흑자 전환")
-        conn.execute("UPDATE articles SET office='서울신문'")
-        conn.execute("UPDATE articles SET office='이데일리' WHERE id='0180006410385'")
-        conn.execute("INSERT INTO article_links(a,b) VALUES('s1','0180006410385')")
-    rows = articles.article_rows("X")
-    assert len(rows) == 1
-    assert [r["office"] for r in [rows[0], *rows[0]["related_titles"]]] == ["서울신문", "이데일리"]
-
-
-def test_stock_news_without_mobile_url_still_gets_article_link(tmpdb, monkeypatch):
-    # 이데일리 11:04 (2026-11-16): 네이버 종목 뉴스 항목에 주소(mobileNewsUrl)가 없어 상세 화면에 링크가 안 뜸
-    item = {"officeId": "018", "articleId": "0006410385", "officeName": "이데일리", "datetime": "202611161104",
-            "title": f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가", "body": ""}
-    monkeypatch.setattr(articles.naver, "_json", lambda url: [{"total": 1, "items": [item]}])
-    with db.connect() as conn:          # 예전에 주소 없이 저장된 기사도 다시 받으면 채움
-        _art(conn, "0180006410385", "2026-11-16T11:04", item["title"])
-    articles._save("X", articles.fetch_stock_news("X"), "naver")
-    rows = articles.article_rows("X")
-    assert rows[0]["url"] == "https://n.news.naver.com/mnews/article/018/0006410385"
-
-
-def test_article_without_naver_link_takes_google_or_original_link(tmpdb):
-    # 네이버로 찾은 기사는 네이버 주소, 네이버 주소를 못 얻었으면 같은 기사의 구글·원문 주소라도 씀
-    title = f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가"
-    with db.connect() as conn:
-        _art(conn, "0180006410385", "2026-11-16T11:04", title)
-        conn.execute("UPDATE articles SET office='이데일리'")
-    g = {"id": "gabc", "ts": "2026-11-16T11:04", "office": "이데일리", "title": title, "body": "",
-         "url": "https://www.edaily.co.kr/News/Read?newsId=01234"}
-    articles._save("X", [g], "google")
-    rows = articles.article_rows("X")
-    assert len(rows) == 1 and rows[0]["url"] == g["url"]
-
-
-def test_earnings_articles_same_day_form_one_story_with_earliest_lead(tmpdb):
-    # 2026-11-16 분기보고서 뒤 실적 기사 셋: 제목 낱말이 거의 안 겹쳐도 같은 날 '실적' 기사는 한 묶음, 가장 먼저 나온 서울신문이 대표
-    with db.connect() as conn:
-        _art(conn, "s", "2026-11-16T10:39", f"(주){NAME}, 3분기 별도 누적 영업익 696% 증가…연결 누적 순이익 흑자전환")
-        _art(conn, "e", "2026-11-16T11:04", f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가")
-        _art(conn, "j", "2026-11-16T13:20", f"{NAME}, 영업이익 8배 ‘껑충’…순이익도 흑자전환")
-        _art(conn, "x", "2026-11-16T14:00", f"{NAME}, 위성 카메라 공급계약 체결")
-        for i, o in (("s", "서울신문"), ("e", "이데일리"), ("j", "중부매일"), ("x", "머니투데이")):
-            conn.execute("UPDATE articles SET office=? WHERE id=?", (o, i))
-    rows = {a["id"]: a for a in articles.article_rows("X")}
-    assert set(rows) == {"s", "x"}
-    assert [r["office"] for r in rows["s"]["related_titles"]] == ["이데일리", "중부매일"]

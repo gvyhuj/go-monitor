@@ -16,11 +16,9 @@ def time_quality(article: dict) -> str:
     ts is replaced only by the publisher's own page time (time_from='page', see reporters.fill)."""
     if article.get("manual") or article.get("time_from") == "manual":
         return "manually_entered"
-    ts = str(article.get("ts") or "")
-    if article.get("source") == "google" and ts[11:16] == "00:00":     # 구글·원문이 날짜만 알 때 00:00
-        return "check_time"
     if article.get("time_from") == "page":
         return "reported"
+    ts = str(article.get("ts") or "")
     if article.get("source") == "google" and ts[11:16] in {"16:00", "17:00"}:
         return "check_time"
     return "reported"
