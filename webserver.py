@@ -282,6 +282,13 @@ def api_intraday(q):
     day_close = None                     # 네이버 종가 (넥스트레이드 포함 마지막 체결가). 1분 차트는 정규장(15:30)까지
     if dr and dr["base"]:
         prev_close, day_close = float(dr["base"]), float(dr["close"])
+    # KOSDAQ 전일 종가 (1일 차트에 KOSDAQ을 같은 비율로 겹쳐 그릴 기준): 전 거래일 일봉 종가, 없으면 직전 분봉 종가
+    with connect() as conn:
+        kr = conn.execute("SELECT close FROM daily_bars WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 1", (KOSDAQ, d)).fetchone()
+    kq_prev = float(kr["close"]) if kr and kr["close"] else None
+    if kq_prev is None:
+        kprev = analysis.load_range(KOSDAQ, day0 - timedelta(days=10), day0 - timedelta(minutes=1))
+        kq_prev = float(kprev["close"].iloc[-1]) if not kprev.empty else None
     with connect() as conn:
         th, th_info = (x.get(d) for x in theme_rows(conn, sym))
         tl = trader_tops_live(conn, sym, d) if d == dates[0] else None
@@ -289,7 +296,7 @@ def api_intraday(q):
     fe = fe if fe and fe.get("date") == d and fe.get("buy") is not None else None
     # 조회 시각의 일봉 값은 15:30 체결가라는 보장이 없다. 분봉 차트에 덮어쓰지 않는다.
     return {"date": d, "dates": dates, "bars": bars_payload(own), "kosdaq": bars_payload(kq, full=False), "close_point": None,
-            "prev_close": prev_close, "close": day_close, "events": event_rows(sym, d, d, None), "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl}
+            "prev_close": prev_close, "kosdaq_prev_close": kq_prev, "close": day_close, "events": event_rows(sym, d, d, None), "themes": th, "theme_info": th_info, "foreign_est": fe, "traders_live": tl}
 
 
 def _relay_info():

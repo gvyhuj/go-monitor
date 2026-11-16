@@ -961,6 +961,8 @@ section.evidence > .d-block:first-of-type { margin-top: 18px; }
 .mk.pr { background: var(--mk-pr); }
 .mk.disc { background: var(--mk-disc); border-radius: 1px; }
 .mk.ext { background: var(--muted); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.mk.kq { width: 16px; height: 0; border-radius: 0; border-top: 1.5px dashed var(--muted); vertical-align: middle; }
+.rec-legend [hidden] { display: none; }
 #cal-chart-box .day-card { margin-top: 12px; }
 @media (max-width: 640px) {
   .cal { padding: 10px 8px 12px; }
