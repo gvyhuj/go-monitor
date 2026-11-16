@@ -370,3 +370,15 @@ def test_same_outlet_repost_with_slightly_different_title_counted_once(tmpdb):
     rows = articles.article_rows("X")
     assert len(rows) == 1
     assert [r["office"] for r in [rows[0], *rows[0]["related_titles"]]] == ["서울신문", "이데일리"]
+
+
+def test_stock_news_without_mobile_url_still_gets_article_link(tmpdb, monkeypatch):
+    # 이데일리 11:04 (2026-11-16): 네이버 종목 뉴스 항목에 주소(mobileNewsUrl)가 없어 상세 화면에 링크가 안 뜸
+    item = {"officeId": "018", "articleId": "0006410385", "officeName": "이데일리", "datetime": "202611161104",
+            "title": f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가", "body": ""}
+    monkeypatch.setattr(articles.naver, "_json", lambda url: [{"total": 1, "items": [item]}])
+    with db.connect() as conn:          # 예전에 주소 없이 저장된 기사도 다시 받으면 채움
+        _art(conn, "0180006410385", "2026-11-16T11:04", item["title"])
+    articles._save("X", articles.fetch_stock_news("X"), "naver")
+    rows = articles.article_rows("X")
+    assert rows[0]["url"] == "https://n.news.naver.com/mnews/article/018/0006410385"
