@@ -42,7 +42,7 @@ def test_same_publisher_portal_and_direct_links_count_as_one_outlet(tmpdb):
     rows = articles.article_rows("X")
     assert len(rows) == 1
     assert rows[0]["outlets_total"] == 2
-    assert len(rows[0]["related_titles"]) == 2  # Three article links, two publishers.
+    assert [r["office"] for r in rows[0]["related_titles"]] == ["머니투데이"]  # 같은 매체의 포털·원문 주소는 한 기사
 
 
 def test_pr_when_company_news_on_three_outlets_and_override(tmpdb):
@@ -310,6 +310,7 @@ def test_tied_earliest_articles_can_still_be_picked(tmpdb):
     with db.connect() as conn:
         _art(conn, "a", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
         _art(conn, "b", "2026-05-18T09:05", f"{NAME}, 카메라 공동 개발")
+        conn.execute("UPDATE articles SET office='다른매체' WHERE id='b'")
         conn.execute("INSERT INTO article_links(a,b) VALUES('a','b')")
         conn.execute("INSERT INTO system_state(key,value) VALUES (?,?)", (articles.LEAD_PICKS, '["b"]'))
     lead = articles.article_rows("X")[0]
@@ -332,3 +333,18 @@ def test_time_fix_overrides_and_restores(tmpdb):
     cloud_job.apply_inbox({"type": "article_time", "id": "g", "ts": None}, logging.getLogger())
     a = articles.article_rows("X")[0]
     assert (a["ts"], a["time_source"], a["ts_auto"]) == ("2026-04-22T16:00", "구글 뉴스", None)
+
+
+def test_same_outlet_same_article_via_portal_and_original_url_counted_once(tmpdb):
+    # 서울신문 같은 기사가 네이버 주소(종목 뉴스)와 원문 주소(검색·구글)로 두 번 들어와 같은 묶음에 두 줄로 셈 (2026-11-16)
+    t = f"{NAME}, 美 기업과 위성 카메라 공급계약"
+    with db.connect() as conn:
+        _art(conn, "0180006410385", "2026-11-16T08:00", t)
+        _art(conn, "0810003500001", "2026-11-16T09:10", t)
+        _art(conn, "s0123456789abcdef0", "2026-11-16T09:10", t + "…")
+        conn.execute("UPDATE articles SET office='이데일리', url='https://n.news.naver.com/mnews/article/018/0006410385' WHERE id='0180006410385'")
+        conn.execute("UPDATE articles SET office='서울신문', url='https://n.news.naver.com/mnews/article/081/0003500001' WHERE id='0810003500001'")
+        conn.execute("UPDATE articles SET office='서울신문', url='https://www.seoul.co.kr/news/economy/2026/11/16/20261116500001' WHERE id LIKE 's%'")
+    rows = articles.article_rows("X")
+    assert len(rows) == 1
+    assert [r["office"] for r in rows[0]["related_titles"]] == ["서울신문"]

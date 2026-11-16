@@ -786,6 +786,9 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
     for sid, group in by_story.items():
         # 모든 묶음의 대표는 가장 이른 공개 시각. 직접 선택·등록은 같은 시각일 때만 우선.
         group.sort(key=lambda a: (a["ts"] or "9999", a["id"] not in picks, not a.get("manual"), a["id"]))
+        # 같은 매체·같은 제목은 한 기사 (네이버 주소와 원문 주소로 두 번 들어와도 한 번만 셈)
+        seen = set()
+        group = [g for g in group if not ((k := _key_office(g.get("office")) + "|" + _key_title(g["title"])) in seen or seen.add(k))]
         lead = dict(group[0])
         # 대표가 자동 수집 기사로 바뀌어도 직접 등록한 보도자료 묶음의 분류는 유지.
         if any(g.get("manual") for g in group):
