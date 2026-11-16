@@ -1553,7 +1553,9 @@
       const closed = d.bars[d.bars.length - 1].t.slice(11) >= "15:30";
       chart = priceVolumeChart($(".day-chart", art), null, d.bars, {
         events: d.events.filter((e) => !isDaily(e)), prevClose: d.prev_close, interactive: false, onEvent: (id) => openEvent(id),
-        news: [...(artDay[ds] || []).filter((a) => !a.untimed).map((a) => ({ ts: a.ts, k: isPr(a) ? "pr" : "ext", title: a.title, id: a.id })),
+        // 같은 내용 묶음도 매체별 기사마다 그 기사가 나온 시각에 표시 (그날 나온 것만)
+        news: [...(artDay[ds] || []).filter((a) => !a.untimed).flatMap((a) => articleEntries(a).filter((r) => r.lead || (r.ts && !r.untimed && r.ts.slice(0, 10) === ds))
+          .map((r) => ({ ts: r.ts, k: isPr(a) ? "pr" : "ext", title: r.office ? `${r.office} · ${r.title}` : r.title, id: r.id }))),
           ...(discDay[ds] || []).filter((x) => !x.untimed).map((x) => ({ ts: x.ts, k: "disc", title: x.title, id: x.id }))],
         onNews: (id) => { artState.day = ds; location.hash = `#/pr/${id}`; },
         extendTo: closed || coarseIv ? null : `${d.date}T15:30`, barMinutes: coarseIv || 1,
