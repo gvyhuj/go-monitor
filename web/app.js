@@ -944,19 +944,25 @@
     } else renderQuote();
     const ar = arts.filter((a) => !a.hidden && a.category !== "단순 언급" && on(a.ts));
     const isPr = (a) => a.kind === "pr" || a.kind === "company";
-    const pr = ar.filter(isPr), ext = ar.length - pr.length;
-    const outlets = pr.reduce((t, a) => t + (a.outlets_total || 1), 0);
+    // 같은 내용 묶음도 매체별 기사 하나하나로 (그날 실린 것만, 같은 주소는 한 번). 건수 = 기사 수
+    const each = (list) => list.flatMap((a) => articleEntries(a).filter((r) => r.lead || on(r.ts)).map((r) => ({ ...r, untimed: r.lead ? a.untimed : r.untimed })))
+      .sort((x, y) => (x.untimed ? 1 : 0) - (y.untimed ? 1 : 0) || String(x.ts).localeCompare(String(y.ts)));
+    const pr = each(ar.filter(isPr)), extL = each(ar.filter((a) => !isPr(a))), ext = extL.length;
     const dc = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || "")).length;
     $("#q-news-label").textContent = `${when} 소식`;
     $("#q-news").innerHTML = `<span class="t-go" data-go="pr" title="뉴스 탭에서 이날 보도자료 보기"><i class="mk pr"></i>보도자료 <b>${pr.length}</b></span>`
       + `<span class="t-go" data-go="disc" title="뉴스 탭에서 이날 공시 보기"><i class="mk disc"></i>공시 <b>${dc}</b></span><span class="t-go" data-go="ext" title="뉴스 탭에서 이날 외부 기사 보기"><i class="mk ext"></i>외부기사 <b>${ext}</b></span>`;
     const dcList = discs.filter((x) => on(x.ts) && MAIN_DISC.has(x.pblntf || ""));
-    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...ar.filter((a) => !isPr(a)).map((a) => ({ k: "ext", a }))];
+    const lines = [...pr.map((a) => ({ k: "pr", a })), ...dcList.map((a) => ({ k: "disc", a })), ...extL.map((a) => ({ k: "ext", a }))];
     const MAXL = 4;
-    $("#q-news-list").innerHTML = lines.slice(0, MAXL).map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span><span class="tn-t">${esc(a.title)}</span></span>`).join("")
-      + (lines.length > MAXL ? `<span class="tn-more" data-go="${lines[MAXL].k}">외 ${lines.length - MAXL}건 →</span>` : "");
-    // 실린 매체 수는 아래 작은 글씨로 (위 숫자 줄은 한 줄로)
-    $("#q-news-sub").textContent = lines.length ? (pr.length ? `보도자료 ${outlets}개 매체에 실림 · 제목을 누르면 뉴스 탭에서 열림` : "제목을 누르면 뉴스 탭에서 열림") : "";
+    // 줄이 넘치면 종류(보도자료·공시·외부 기사)마다 첫 줄은 남기고 나머지를 앞에서부터 채움 (매체가 많아도 공시가 밀려나지 않게)
+    const firsts = new Set(["pr", "disc", "ext"].map((k) => lines.findIndex((x) => x.k === k)).filter((i) => i >= 0));
+    const shown = lines.length <= MAXL ? lines
+      : lines.filter((x, i) => firsts.has(i) || i < MAXL - [...firsts].filter((j) => j >= i).length);
+    const hiddenL = lines.filter((x) => !shown.includes(x));
+    $("#q-news-list").innerHTML = shown.map(({ k, a }) => `<span class="tn-item" data-open="${esc(a.id)}" title="${esc(a.title)}"><i class="mk ${k}"></i><span class="muted">${a.untimed ? "--:--" : hhmm(a.ts)}</span>${k !== "disc" && a.office ? `<span class="tn-o">${esc(a.office)}</span>` : ""}<span class="tn-t">${esc(a.title)}</span></span>`).join("")
+      + (hiddenL.length ? `<span class="tn-more" data-go="${hiddenL[0].k}">외 ${hiddenL.length}건 →</span>` : "");
+    $("#q-news-sub").textContent = "";      // 매체별로 한 줄씩 보이므로 '몇 개 매체에 실림' 안내는 따로 두지 않음
     const card = $("#q-news-card");
     // 소식 건수가 바뀌면 숫자가 살짝 커졌다 돌아옴
     const sig = $("#q-news").textContent; if (card && card.dataset.sig && card.dataset.sig !== sig) $("#q-news").querySelectorAll("b").forEach((b) => enter(b, "mv-pop")); if (card) card.dataset.sig = sig;
