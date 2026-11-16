@@ -158,7 +158,9 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
     ('"datePublished": "2026-06-19T01:40:09Z"', "2026-06-19T10:40"),
     ("입력 2026.10.19 18:43 수정 2026.10.20", "2026-10-19T18:43"),
     ("시각 없음", None),
-    ('"datePublished": "2026-11-16"', None),      # 날짜만 있으면 00:00으로 만들지 않음 (중부매일 00:00, 2026-11-16)
+    ('"datePublished": "2026-11-16"', None),
+    ('"datePublished": "2026-11-16"<li>입력 <span>2026.11.16 07:31</span></li><li>수정 2026.11.16 09:02</li>', "2026-11-16T07:31"),
+    ("<em>등록</em> 2026/11/16 07:31", "2026-11-16T07:31"),      # 날짜만 있으면 00:00으로 만들지 않음 (중부매일 00:00, 2026-11-16)
 ])
 def test_parse_time_formats(page, want):
     assert reporters.parse_time(page) == want

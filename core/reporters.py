@@ -60,7 +60,7 @@ TIME_PATTERNS = [
     re.compile(r'property="article:published_time"\s+content="([^"]+)"'),
     re.compile(r'content="([^"]+)"\s+property="article:published_time"'),
     re.compile(r'"datePublished"\s*:\s*"([^"]+)"'),
-    re.compile(r'(?:입력|등록|승인)\s*:?\s*(20\d\d[.-]\d\d[.-]\d\d\s+\d\d:\d\d)'),
+    re.compile(r'(?:입력|등록|승인)\s*:?\s*(20\d\d[./-]\d\d[./-]\d\d\s+\d\d:\d\d)'),    # 본문 글귀 (태그를 뺀 글에서 찾음)
 ]
 MAX_TRIES = 10         # 기사 페이지를 못 열면 다음 실행에 다시 (10번까지)
 BATCH = 15             # 실행 한 번에 여는 기사 수 (새 기사 먼저, 남으면 지난 기사)
@@ -90,11 +90,12 @@ def parse(page: str, office: str = "") -> str | None:
 
 def parse_time(page: str) -> str | None:
     """원문 페이지의 게시 시각 (한국 시각 'YYYY-MM-DDTHH:MM'). 못 찾으면 None."""
-    for pat in TIME_PATTERNS:
-        m = pat.search(page)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))      # '입력 <span>2026.11.16 07:31</span>'처럼 태그가 끼어도
+    for i, pat in enumerate(TIME_PATTERNS):
+        m = pat.search(page if i < 3 else text)
         if not m:
             continue
-        raw = re.sub(r"(\d{4})[.](\d\d)[.](\d\d)", r"\1-\2-\3", m.group(1).strip()).replace(" ", "T")
+        raw = re.sub(r"(\d{4})[./](\d\d)[./](\d\d)", r"\1-\2-\3", m.group(1).strip()).replace(" ", "T")
         if "T" not in raw:      # 날짜만 있으면 00:00으로 만들지 않고 다음 칸(본문 '입력 …' 등)을 봄
             continue
         try:
