@@ -597,7 +597,7 @@
     chart.subscribeCrosshairMove((p) => {
       const b = p && p.time && p.point ? bars.find((x) => toTime(x.t) === p.time) : null;
       if (!b) { tip.hidden = true; return; }
-      tip.innerHTML = `<span class="muted">${+b.t.slice(5, 7)}.${+b.t.slice(8, 10)}. ${hhmm(b.t)}</span><span>시세 <b>${won(b.c)}원</b></span><span>거래량 <b>${int(b.v)}</b></span>`;
+      tip.innerHTML = `<span class="muted">${hhmm(b.t)}</span><span>시세 <b>${won(b.c)}원</b></span><span>거래량 <b>${int(b.v)}</b></span>`;
       tip.hidden = false;
       const W = el.clientWidth, w = tip.offsetWidth, x = p.point.x + 14 + w > W ? p.point.x - 14 - w : p.point.x + 14;
       tip.style.left = `${Math.max(0, x)}px`; tip.style.top = `${Math.max(0, p.point.y - tip.offsetHeight - 10)}px`;
