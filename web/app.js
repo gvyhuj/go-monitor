@@ -536,7 +536,11 @@
     }
     // 글자끼리 겹치면(가까운 시각의 두 표시, 좁은 화면) 더 멀리 띄우거나 반대쪽으로
     const placeTags = () => {
-      const H = chart.panes()[0].getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
+      // 차트가 이미 지워졌거나(다른 날·화면으로 바꿈) 화면에서 빠진 뒤 크기 감시 등이 늦게 부르면 건너뜀
+      let pane = null;
+      try { pane = el.isConnected ? chart.panes()[0] : null; } catch (_) { pane = null; }
+      if (!pane) return;
+      const H = pane.getHeight() || el.clientHeight, W = el.clientWidth, placed = [];   // 가격 칸 안에만 (거래량 칸 침범 X)
       const hit = (a, b) => a.l < b.r + 4 && b.l < a.r + 4 && a.t < b.b + 4 && b.t < a.b + 4;
       const place = ({ g: { tag, ring, up }, x, y }) => {
         const off = x == null || y == null;
