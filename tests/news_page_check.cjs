@@ -244,6 +244,11 @@ async function main() {
       await page.locator("#pr-detail [data-time-form]").evaluate((el) => el.hidden = true);
       await page.locator(".pr-detail-actions .pr-daychart").click();
       await page.waitForFunction(() => !document.querySelector("#day-modal").hidden);
+      // 1일 차트에 마우스를 올리면 시각·시세·거래량 말풍선 (거래량 칸에는 숫자 눈금 없음, 2026-11-16)
+      const dayBox = await page.locator("#day-modal canvas").first().boundingBox();
+      await page.mouse.move(dayBox.x + dayBox.width * 0.3, dayBox.y + 60);
+      await page.locator("#day-modal .pv-tip:not([hidden])").waitFor();
+      assert.match(await page.locator("#day-modal .pv-tip").innerText(), /\d+\.\d+\. \d\d:\d\d[\s\S]*시세 [\d,]+원[\s\S]*거래량 [\d,]+/);
       await page.keyboard.press("Escape");
       assert.equal(await page.locator("#day-modal").isVisible(), false);
       await page.locator("#pr-cards > div").first().waitFor();

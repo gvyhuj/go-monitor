@@ -445,10 +445,9 @@
       crosshairMarkerRadius: 4,
     }, 0);
     const vol = chart.addSeries(LW.HistogramSeries, {
-      priceFormat: { type: "custom", minMove: 1, formatter: (v) => int(v) }, priceLineVisible: false, lastValueVisible: false,
+      priceFormat: { type: "custom", minMove: 1, formatter: () => "" }, priceLineVisible: false, lastValueVisible: false,   // 거래량 칸 숫자 눈금은 뺌 (값은 말풍선으로)
     }, 1);
     price.priceScale().applyOptions({ scaleMargins: { top: 0.16, bottom: 0.14 } });   // 위·아래 여백: 급등락 글자 자리
-    vol.priceScale().applyOptions({ entireTextOnly: true });     // 거래량 맨 위·아래 눈금은 숫자가 다 보일 때만 (칸 경계에 잘린 '2,000' 안 보이게)
     chart.panes()[1].setStretchFactor(0.32);
     chart.panes()[0].setStretchFactor(1);
 
@@ -591,6 +590,18 @@
       chart.subscribeCrosshairMove((p) => show(p && p.time ? p.time : pinT));
       showAt = (t) => { pinT = t; show(t); };
     }
+    // 마우스를 올린 자리: 시각·시세·거래량 말풍선 (위 줄 legend가 없는 차트에서도 값이 보이게)
+    const tip = document.createElement("div");
+    tip.className = "pv-tip"; tip.hidden = true;
+    el.appendChild(tip);
+    chart.subscribeCrosshairMove((p) => {
+      const b = p && p.time && p.point ? bars.find((x) => toTime(x.t) === p.time) : null;
+      if (!b) { tip.hidden = true; return; }
+      tip.innerHTML = `<span class="muted">${+b.t.slice(5, 7)}.${+b.t.slice(8, 10)}. ${hhmm(b.t)}</span><span>시세 <b>${won(b.c)}원</b></span><span>거래량 <b>${int(b.v)}</b></span>`;
+      tip.hidden = false;
+      const W = el.clientWidth, w = tip.offsetWidth, x = p.point.x + 14 + w > W ? p.point.x - 14 - w : p.point.x + 14;
+      tip.style.left = `${Math.max(0, x)}px`; tip.style.top = `${Math.max(0, p.point.y - tip.offsetHeight - 10)}px`;
+    });
     chart.setKosdaq = (on) => {       // 켜고 끄면 가격 축이 바뀌므로 급등락·소식 표시도 다시 놓음
       if (!kqLine) return;
       kqLine.applyOptions({ visible: on });

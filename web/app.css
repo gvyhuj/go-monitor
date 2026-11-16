@@ -1100,6 +1100,8 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .dl-sel { fill: var(--canvas); }
 .dl-hit { fill: transparent; cursor: pointer; }
 .dl-tip { position: absolute; top: 4px; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.08); white-space: nowrap; }
+.pv-tip { position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; display: flex; flex-direction: column; gap: 1px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.08); white-space: nowrap; color: var(--ink); }
+.pv-tip[hidden] { display: none; }
 .dl-tip i, .dash-legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: 3px; }
 .s-pr { background: var(--s-pr); }
 .s-ext { background: var(--s-ext); }
