@@ -589,6 +589,13 @@ def main(argv) -> int:
         set_state("articles:reporter_retry_v4", now.isoformat(timespec="minutes"))
         annotate("notice", f"기자명 빈 기사 {n_re}건 다시 읽기 (네이버판에 없으면 언론사 원문에서)")
 
+    # 한 번만: 작성자 칸(구조화 데이터·dd:author)을 읽게 고친 뒤(이투데이·벤처스퀘어 등), 10번 실패해 멈춘 빈 기사도 다시 읽게 함
+    if not get_state("articles:reporter_retry_v5"):
+        with connect() as conn:
+            n_re = conn.execute("UPDATE articles SET reporter_at=NULL, reporter_tries=0 WHERE reporter IS NULL").rowcount
+        set_state("articles:reporter_retry_v5", now.isoformat(timespec="minutes"))
+        annotate("notice", f"기자명 빈 기사 {n_re}건 다시 읽기 (작성자 칸 형식 추가)")
+
     # 매번: 아직 기자명을 안 읽은 기사가 있으면 한 번에 많이 읽어 바로 채움 (평소엔 수집할 때 15건씩)
     try:
         from core import reporters
