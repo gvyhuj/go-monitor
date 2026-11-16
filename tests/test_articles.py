@@ -25,6 +25,13 @@ def test_classify_uses_company_name_and_drops_noise():
     assert articles.classify("2026년10월20일(화) S브리핑", "", NAME)[0] == "단순 언급"
 
 
+def test_mood_words_with_company_news_are_not_market_noise():
+    # '껑충'·'들썩'은 실적 기사에도 쓰임 → 회사 소식 단어가 함께 있으면 시황으로 버리지 않음
+    assert articles.classify(f"{NAME}, 영업이익 8배 ‘껑충’…순이익도 흑자전환", "", NAME)[0] == "회사 발표"
+    assert articles.classify(f"{NAME} 주가 껑충", "", NAME)[0] == "시황·특징주"          # '주가'는 그대로 시황
+    assert articles.classify("우주株 들썩…투자자 몰려", "", NAME)[0] == "시황·특징주"     # 회사 소식 단어 없으면 시황
+
+
 def _art(conn, aid, ts, title, outlets=1, category=None):
     cat = category or articles.classify(title, "", NAME)[0]
     conn.execute("INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention) "

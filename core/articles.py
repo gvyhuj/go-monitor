@@ -30,7 +30,10 @@ NAME = "이 종목"
 CATEGORIES = ["회사 발표", "언론 분석", "리서치", "테마·수혜주", "시황·특징주", "단순 언급"]
 
 MARKET_STRONG = ("특징주", "상한가", "하한가", "핫종목", "급등", "급락", "신고가", "52주", "주가", "초고수", "상승률", "하락률",
-                 "들썩", "껑충", "줄상승", "[종목NOW]", "서울데이터랩")
+                 "줄상승", "[종목NOW]", "서울데이터랩")
+# 주가에도 실적에도 쓰는 말: 실적·계약 같은 회사 소식 단어가 함께 있으면 시황으로 보지 않음
+# (예: "그린광학, 영업이익 8배 '껑충'…순이익도 흑자전환"은 실적 기사)
+MARKET_MOOD = ("들썩", "껑충")
 MARKET_WEAK = ("↑", "↓", "강세", "약세", "오름세", "내림세")
 RESEARCH = ("리서치", "밸류파인더", "목표주가", "투자의견", "리포트", "보고서", "연구원", "커버리지", "기업분석")
 COMPANY = ("수주", "계약", "공급", "MOU", "협약", "체결", "선정", "참여", "참가", "개발", "출시", "양산", "인증", "실적",
@@ -74,7 +77,8 @@ def classify(title: str, body: str, name: str | None = None, office: str = "") -
     if office in NOISE_OFFICE or NOISE_TITLE.search(t):
         return "단순 언급", mention
     has_company = any(w in t for w in COMPANY)
-    if any(w in t for w in MARKET_STRONG) or (in_title and any(w in t for w in MARKET_WEAK) and not has_company):
+    mood = any(w in t for w in MARKET_MOOD) or (in_title and any(w in t for w in MARKET_WEAK))
+    if any(w in t for w in MARKET_STRONG) or (mood and not has_company):
         return "시황·특징주", mention
     if any(w in t for w in RESEARCH) or (in_title and any(w in b[:90] for w in RESEARCH) and not has_company):
         return "리서치", mention
