@@ -132,7 +132,8 @@ def fetch_stock_news(code: str, page: int = 1, size: int = 50) -> list[dict]:
                 "office": it.get("officeName") or "",
                 "title": html.unescape(it.get("titleFull") or it.get("title") or "").strip(),
                 "body": html.unescape(it.get("body") or "").strip(),
-                "url": it.get("mobileNewsUrl") or "",
+                "url": it.get("mobileNewsUrl") or (f"https://n.news.naver.com/mnews/article/{it['officeId']}/{it['articleId']}"
+                                                   if it.get("officeId") and it.get("articleId") else ""),
                 "outlets": int(group.get("total") or 1),
             })
     return out
@@ -199,7 +200,8 @@ def _save(code: str, items: list[dict], source: str) -> int:
         before = conn.total_changes
         conn.executemany(
             "INSERT INTO articles(id, symbol, ts, office, title, body, url, outlets, category, tone, mention, first_seen, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET outlets=excluded.outlets, "
+            "url=CASE WHEN articles.url='' OR articles.url IS NULL THEN excluded.url ELSE articles.url END",
             rows)
         return conn.total_changes - before
 
