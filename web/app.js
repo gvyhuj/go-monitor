@@ -1031,8 +1031,10 @@
       .catch(() => fillToday(daily, arts, discs, []));
     const count = (list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) m[d] = (m[d] || 0) + 1; }); return m; };
     const shown = (a) => !a.hidden && a.category !== "단순 언급" && a.ts;
-    const prN = count(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company")), (a) => a.ts.slice(0, 10));
-    const extN = count(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company"), (a) => a.ts.slice(0, 10));
+    // 보도자료·외부 기사는 묶음 수가 아니라 기사 수 (같은 내용 묶음 속 매체별 기사도 각자 나온 날에 1건씩, 오늘 소식 칸과 같게)
+    const each = (list) => list.flatMap((a) => articleEntries(a));
+    const prN = count(each(arts.filter((a) => shown(a) && (a.kind === "pr" || a.kind === "company"))), (r) => (r.ts || "").slice(0, 10));
+    const extN = count(each(arts.filter((a) => shown(a) && a.kind !== "pr" && a.kind !== "company")), (r) => (r.ts || "").slice(0, 10));
     const discN = count(discs.filter((x) => x.ts && MAIN_DISC.has(x.pblntf)), (x) => x.ts.slice(0, 10));
     const won = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     const net = (v) => (v == null ? "-" : `<span class="${sgnCls(v)}">${v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ko-KR")}</span>`);

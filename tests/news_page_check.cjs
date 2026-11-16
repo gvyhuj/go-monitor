@@ -276,7 +276,7 @@ async function main() {
       assert.deepEqual((await page.locator(".ps-card > small").allInnerTexts()), ["기간 등락 · 시장 대비", "기간 최고 · 최저", "오른 날 · 내린 날", "기간 소식"]);
       assert.match(await page.locator(".ps-range").innerText(), /2026-09-21 ~ 2026-10-28 · 28거래일/);
       assert.match(await page.locator(".ps-card").first().innerText(), /\+3\.91%[\s\S]*KOSDAQ[\s\S]*시장보다/);
-      assert.match(await page.locator(".ps-news").innerText(), /보도자료 3[\s\S]*외부 3[\s\S]*주요 공시 1/);
+      assert.match(await page.locator(".ps-news").innerText(), /보도자료 10[\s\S]*외부 3[\s\S]*주요 공시 1/);
       assert.match(await page.locator(".ps-line").innerText(), /순매수 합계[\s\S]*평균 거래량/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
       // 숫자 칸은 제목 칸과 같은 오른쪽 끝에 맞춤 (날짜만 왼쪽)
@@ -285,6 +285,9 @@ async function main() {
         return ths.slice(1).map((th, i) => { const c = document.createRange(); c.selectNodeContents(tds[i + 1]); const t = c.getBoundingClientRect(), h = document.createRange(); h.selectNodeContents(th);
           return !tds[i + 1].textContent.trim() || Math.abs(t.right - h.getBoundingClientRect().right) < 2; }).filter((ok) => !ok).length;
       }), 0, "숫자와 제목의 오른쪽 끝이 다름");
+      // 보도자료·외부 기사 칸은 묶음 수가 아니라 기사 수 (10/22 광학미러 계약 묶음 = 매체 8곳 기사 8개, 2026-11-16)
+      const row1022 = page.locator("#days-body tr", { hasText: "2026-10-22" });
+      assert.equal(await row1022.locator("td").nth(-3).innerText(), "8");
       // 오른 날 → 그 날들만 표에
       const upN = +(await page.locator('[data-quick="up"]').innerText()).replace("일", "");
       await page.locator('[data-quick="up"]').click();
