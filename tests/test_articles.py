@@ -348,3 +348,18 @@ def test_same_outlet_same_article_via_portal_and_original_url_counted_once(tmpdb
     rows = articles.article_rows("X")
     assert len(rows) == 1
     assert [r["office"] for r in rows[0]["related_titles"]] == ["서울신문"]
+
+
+def test_same_outlet_repost_with_slightly_different_title_counted_once(tmpdb):
+    # 서울신문 10:39·10:43 두 줄 (2026-11-16): 같은 묶음·같은 매체에서 몇 분 차이로 다시 실린 기사.
+    # 제목이 '㈜'/'(주)'나 끝부분만 달라도 한 기사로 셈
+    with db.connect() as conn:
+        _art(conn, "s1", "2026-11-16T10:39", f"㈜{NAME}, 3분기 별도 누적 영업익 69억원…전년 대비 흑자 전환")
+        _art(conn, "0810003500001", "2026-11-16T10:43", f"(주){NAME}, 3분기 별도 누적 영업익 69억…흑자 전환")
+        _art(conn, "0180006410385", "2026-11-16T11:04", f"{NAME}, 3분기 누적 영업이익 18억원…흑자 전환")
+        conn.execute("UPDATE articles SET office='서울신문'")
+        conn.execute("UPDATE articles SET office='이데일리' WHERE id='0180006410385'")
+        conn.execute("INSERT INTO article_links(a,b) VALUES('s1','0180006410385')")
+    rows = articles.article_rows("X")
+    assert len(rows) == 1
+    assert [r["office"] for r in [rows[0], *rows[0]["related_titles"]]] == ["서울신문", "이데일리"]
