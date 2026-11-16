@@ -150,6 +150,7 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
     assert row == {"ts": "2026-10-20T09:26", "time_from": "page"}
     assert time_quality({"source": "google", **row}) == "reported"
     assert time_quality({"source": "google", "ts": "2026-10-20T17:00"}) == "check_time"
+    assert time_quality({"source": "google", "ts": "2026-11-16T00:00"}) == "check_time"   # 구글이 날짜만 알 때 00:00
 
 
 @pytest.mark.parametrize("page, want", [
@@ -157,6 +158,7 @@ def test_google_article_time_is_taken_from_original_page(tmp_path, monkeypatch):
     ('"datePublished": "2026-06-19T01:40:09Z"', "2026-06-19T10:40"),
     ("입력 2026.10.19 18:43 수정 2026.10.20", "2026-10-19T18:43"),
     ("시각 없음", None),
+    ('"datePublished": "2026-11-16"', None),      # 날짜만 있으면 00:00으로 만들지 않음 (중부매일 00:00, 2026-11-16)
 ])
 def test_parse_time_formats(page, want):
     assert reporters.parse_time(page) == want
@@ -210,3 +212,20 @@ def test_naver_page_without_name_falls_back_to_original(tmp_path, monkeypatch):
     assert reporters.fill("X", fetch=lambda u: pages[u], resolve=lambda u: None) == 1
     with db.connect() as conn:
         assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김나영"
+
+
+def test_google_article_stuck_at_midnight_is_read_again_once(tmp_path, monkeypatch):
+    # 중부매일 00:00 (2026-11-16): 원문 날짜만 읽어 00:00이 된 구글 기사 → 한 번 다시 열어 본문 '입력' 시각으로
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,source,time_from,reporter,reporter_at) VALUES "
+                     "('g','X','2026-11-16T00:00','t','https://www.jbnews.com/news/articleView.html?idxno=1','google',"
+                     "'page','홍길동','2026-11-16T09:00')")
+    page = '"datePublished": "2026-11-16" 입력 2026.11.16 07:31 홍길동 기자'
+    reporters.fill("X", fetch=lambda u: page, naver=lambda t, u: None)
+    with db.connect() as conn:
+        assert conn.execute("SELECT ts FROM articles").fetchone()[0] == "2026-11-16T07:31"

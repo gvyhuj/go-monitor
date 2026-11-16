@@ -95,6 +95,8 @@ def parse_time(page: str) -> str | None:
         if not m:
             continue
         raw = re.sub(r"(\d{4})[.](\d\d)[.](\d\d)", r"\1-\2-\3", m.group(1).strip()).replace(" ", "T")
+        if "T" not in raw:      # 날짜만 있으면 00:00으로 만들지 않고 다음 칸(본문 '입력 …' 등)을 봄
+            continue
         try:
             t = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
@@ -139,6 +141,11 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
     naver = naver or naver_link
     now = datetime.now().isoformat(timespec="minutes")
     with connect() as conn:
+        if not conn.execute("SELECT 1 FROM system_state WHERE key='reporters:midnight_reread_v1'").fetchone():
+            # 한 번만: 원문에서 날짜만 읽어(또는 구글이 날짜만 줘서) 00:00이 된 구글 기사를 다시 열어 실제 시각을 읽음
+            conn.execute("UPDATE articles SET reporter_at=NULL, reporter_tries=0 WHERE source='google' AND ts LIKE '%T00:00' "
+                         "AND COALESCE(time_from, '') != 'manual'")
+            conn.execute("INSERT INTO system_state(key, value) VALUES ('reporters:midnight_reread_v1', ?)", (now,))
         rows = conn.execute("SELECT id, url, ts, source, office, title FROM articles WHERE symbol=? AND ((reporter_at IS NULL "
                             "AND COALESCE(reporter_tries, 0) < ?) OR (url LIKE '%news.google.com/%' AND resolved_at IS NULL)) "
                             "ORDER BY COALESCE(reporter_tries, 0), ts DESC", (symbol, MAX_TRIES)).fetchall()
