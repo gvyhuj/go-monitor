@@ -382,6 +382,8 @@ def group_stories(code: str):
     rows.sort(key=lambda r: r["ts"])
     stories = []   # (story_id, ts, tokens)
     assign = {}
+    from . import topics
+    table, earn = topics.rules(), set()      # earn: 실적 기사로 시작한 묶음
     for r in rows:
         tk = _tokens(r["title"], name)
         t = datetime.fromisoformat(r["ts"])
@@ -393,11 +395,17 @@ def group_stories(code: str):
             j = shared / len(tk | stk)
             if (j >= 0.3 or (shared >= 2 and j >= 0.2)) and (best is None or j > best[1]):
                 best = (sid, j)
+        if not best and topics.classify(r["title"], "", table)[0] == "실적":
+            # 실적 기사는 매체마다 다른 숫자·표현을 써서 제목이 잘 안 겹침 → 24시간 안의 실적 묶음에 붙임 (분기 실적은 한 번)
+            best = next(((sid, 0) for sid, st, _ in reversed(stories)
+                         if sid in earn and t - st <= timedelta(hours=24)), None)
         if best:
             assign[r["id"]] = best[0]
         else:
             stories.append((r["id"], t, tk))
             assign[r["id"]] = r["id"]
+            if topics.classify(r["title"], "", table)[0] == "실적":
+                earn.add(r["id"])
     # 사이트에서 직접 묶은 기사: '이 두 기사는 같은 내용'이라는 연결로 보고 연결된 묶음을 모두 하나로 (방향 무관).
     # 예전에는 대상을 따라가며 옮겨서, 같은 두 기사를 서로 반대 방향으로 합치면(A에 B, B에 A) 순환이 되어 아무것도 안 합쳐졌음
     with connect() as conn:

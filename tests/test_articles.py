@@ -388,3 +388,17 @@ def test_article_without_naver_link_takes_google_or_original_link(tmpdb):
     articles._save("X", [g], "google")
     rows = articles.article_rows("X")
     assert len(rows) == 1 and rows[0]["url"] == g["url"]
+
+
+def test_earnings_articles_same_day_form_one_story_with_earliest_lead(tmpdb):
+    # 2026-11-16 분기보고서 뒤 실적 기사 셋: 제목 낱말이 거의 안 겹쳐도 같은 날 '실적' 기사는 한 묶음, 가장 먼저 나온 서울신문이 대표
+    with db.connect() as conn:
+        _art(conn, "s", "2026-11-16T10:39", f"(주){NAME}, 3분기 별도 누적 영업익 696% 증가…연결 누적 순이익 흑자전환")
+        _art(conn, "e", "2026-11-16T11:04", f"{NAME}, 3분기 누적 영업이익 18억원… 전년 동기 대비 695.5% 증가")
+        _art(conn, "j", "2026-11-16T13:20", f"{NAME}, 영업이익 8배 ‘껑충’…순이익도 흑자전환")
+        _art(conn, "x", "2026-11-16T14:00", f"{NAME}, 위성 카메라 공급계약 체결")
+        for i, o in (("s", "서울신문"), ("e", "이데일리"), ("j", "중부매일"), ("x", "머니투데이")):
+            conn.execute("UPDATE articles SET office=? WHERE id=?", (o, i))
+    rows = {a["id"]: a for a in articles.article_rows("X")}
+    assert set(rows) == {"s", "x"}
+    assert [r["office"] for r in rows["s"]["related_titles"]] == ["이데일리", "중부매일"]
