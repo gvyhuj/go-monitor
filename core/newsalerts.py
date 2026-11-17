@@ -9,7 +9,7 @@
 보도자료 판단은 사이트와 같음: 직접 고른 구분(kind_override)이 먼저, 없으면 분류 '회사 발표'.
 단 제목에 악재 단어가 있으면 회사가 낸 기사로 보지 않음 (회사가 스스로 악재 기사를 내는 일은 드묾).
 '이름만 언급' 검사가 끝난 기사만 셈 (지워질 기사로 알림이 가지 않게).
-공개 저장소라 알림에는 제목 없이 건수만 적음.
+공개 저장소라 알림에는 제목·원문 주소 없이 구분·시각·매체와 사이트 링크만 적음.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def snapshot(symbol: str, now: datetime) -> dict:
         if stories:
             q = ",".join("?" * len(stories))
             for r in conn.execute(
-                    f"SELECT id, story, office, outlets, title, category, kind_override FROM articles "
+                    f"SELECT id, story, ts, office, outlets, title, category, kind_override FROM articles "
                     f"WHERE symbol=? AND hidden=0 AND mention_checked_at IS NOT NULL AND COALESCE(story, id) IN ({q})",
                     (symbol, *stories)):
                 group.setdefault(r["story"] or r["id"], []).append(dict(r))
@@ -60,8 +60,10 @@ def snapshot(symbol: str, now: datetime) -> dict:
     out = {}
     for sid, g in group.items():
         # 실린 매체 수: 사이트와 같게, 네이버 묶음 수와 실제 모은 매체 수 중 큰 값
+        first = min(g, key=lambda a: (a.get("ts") or "9999", a["id"]))      # 가장 먼저 나온 기사 (사이트의 대표)
         out[sid] = {"ids": sorted(a["id"] for a in g), "pr": any(is_pr(a) for a in g),
-                    "outlets": max(max(int(a.get("outlets") or 1) for a in g), len({_key_office(a.get("office")) for a in g}))}
+                    "outlets": max(max(int(a.get("outlets") or 1) for a in g), len({_key_office(a.get("office")) for a in g})),
+                    "first": {"id": first["id"], "ts": first.get("ts") or "", "office": first.get("office") or ""}}
     return {"stories": out, "disc": sorted(discl)}
 
 
@@ -92,6 +94,27 @@ def title_of(new: dict, now: datetime) -> str:
     return f"[소식] {' · '.join(parts)} ({now:%m/%d %H:%M})"
 
 
+def body_of(new: dict, site: str) -> str:
+    """알림 본문: 하나씩 '구분 · 시각 · 매체 (외 n곳) → 사이트 링크'. 공개 저장소라 제목·원문 주소는 넣지 않음
+    (링크는 기사 번호뿐이라 종목이 드러나지 않고, 누르면 사이트에서 비밀번호를 넣은 뒤 그 기사가 바로 열림)."""
+    import os
+    link = lambda i: f"{site}#/pr/{i}" if site else ""
+    lines = []
+    for kind, label in (("pr", "보도자료"), ("ext", "외부 기사")):
+        for st in sorted(new[kind], key=lambda x: x["first"]["ts"]):
+            f, more = st["first"], st["outlets"] - 1
+            lines.append(f"- {label} · {f['ts'][11:16]} {f['office']}{f' 외 {more}곳' if more > 0 else ''} → {link(f['id'])}")
+    if new["disc"]:
+        with connect() as conn:
+            ts = dict(conn.execute(f"SELECT no, ts FROM disclosures WHERE no IN ({','.join('?' * len(new['disc']))})",
+                                   new["disc"]).fetchall())
+        for no in sorted(new["disc"], key=lambda n: ts.get(n) or ""):
+            lines.append(f"- 공시 · {(ts.get(no) or '')[11:16] or '시각 미상'} → {link('d' + no)}")
+    owner = os.environ.get("GITHUB_REPOSITORY_OWNER") or os.environ.get("GITHUB_REPOSITORY", "/").split("/")[0]
+    return (f"@{owner} 새 기사·공시가 들어왔습니다.\n\n" + "\n".join(lines)
+            + "\n\n_자동 알림입니다. 이 글은 알림용이라 바로 닫힙니다._")
+
+
 def send_new(symbol: str, now: datetime | None = None, log=None, post=None) -> str | None:
     """새 기사·공시가 있으면 알림 하나를 보내고 제목을 돌려줌. 처음 켤 때는 지금까지 것을 보낸 것으로 표시만 함."""
     from . import alerts
@@ -108,7 +131,7 @@ def send_new(symbol: str, now: datetime | None = None, log=None, post=None) -> s
         return None
     title = title_of(new, now)
     try:
-        post(title, alerts._body("새 기사·공시가 들어왔습니다. 내용은 사이트에서 확인하세요."))
+        post(title, body_of(new, alerts._site()))
     except (urllib.error.URLError, KeyError, ValueError) as ex:
         if log:
             log(f"알림 실패: {ex}")
