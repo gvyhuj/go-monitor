@@ -1019,12 +1019,14 @@
     let daily, arts, discs;
     try {
       [daily, arts, discs] = await Promise.all([
-        api("/api/daily").then((d) => withLiveDay(d.days || [])),      // 장중 오늘 줄도 (차트 화면과 같게)
+        api("/api/daily").then((d) => d.days || []),
         api("/api/articles").then((d) => d.items || []).catch(() => []),
         api("/api/disclosures").then((d) => d.items || []).catch(() => []),
       ]);
     } catch (e) { box.innerHTML = `<div class="empty"><strong>일별 자료를 불러오지 못했습니다.</strong>${esc(e.message)}</div>`; return; }
     if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
+    const baseDays = daily;
+    daily = await withLiveDay(baseDays);      // 장중 오늘 줄도 (차트 화면과 같게)
     $("#hero").hidden = true;      // 위 다섯 칸 카드 줄 대신 아래 '고른 기간' 카드
     let dayEvents = [];      // 급등·급락 기록 (기간 카드의 '급등락 N')
     api("/api/events").then((d) => { dayEvents = d.events || []; fillToday(daily, arts, discs, dayEvents); if ($("#days-body")) draw(); })
@@ -1166,6 +1168,14 @@
       rows.map((x) => [x.date, x.open, x.high, x.low, x.close, x.change == null ? "" : (x.change * 100).toFixed(2), x.volume,
         x.kosdaq == null ? "" : (x.kosdaq * 100).toFixed(2), x.foreign ?? "", x.organ ?? "", x.individual ?? "",
         prN[x.date] || 0, extN[x.date] || 0, discN[x.date] || 0]));
+    // 장중 오늘 줄은 열어 둔 동안에도 새 값으로: 실시간 시세가 오면 바로, 그 밖에는 30초마다 (한투 호출은 늘지 않음)
+    const refreshLive = async () => {
+      const next = await withLiveDay(baseDays);
+      if (!$("#days-body") || !next.length || !next[next.length - 1].live) return;
+      daily = next; draw();
+    };
+    onRelay = refreshLive;
+    timers.push(setInterval(refreshLive, 30000));
   }
 
   // 주가 기록 (로빈후드·토스 종목 화면 참고): 기간 탭이 있는 큰 차트가 주인공, 선 위에 그날 소식 점,

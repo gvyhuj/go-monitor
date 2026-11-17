@@ -68,7 +68,7 @@ def main(out: Path) -> None:
                 conn.execute("INSERT INTO daily_bars(symbol,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,1)",
                              (symbol, day, value, value, value, value))
         if os.environ.get("GO_FIXTURE_LIVE_DAY"):     # 장중: 오늘(10/29) 1분봉은 있고 일봉은 아직 없음
-            for m in range(31):
+            for m in range(int(os.environ.get("GO_FIXTURE_LIVE_MINUTES", "31"))):
                 stamp = (datetime(2026, 10, 29, 9, 0) + timedelta(minutes=m)).isoformat(timespec="minutes")
                 for symbol, value in ((SYMBOL, price * (1 + 0.001 * m)), (yahoo.INDEX, index)):
                     conn.execute("INSERT INTO minute_bars(symbol,ts,open,high,low,close,volume,source) VALUES(?,?,?,?,?,?,2,'kis')",
