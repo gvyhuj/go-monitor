@@ -1299,7 +1299,8 @@ table.pivot tfoot th, table.pivot tfoot td, table.pivot .tot { font-weight: 700;
 .rx-pub-tag { position: absolute; top: 2px; left: 1px; transform: translateX(-50%); padding: 0 7px; border-radius: 999px; background: var(--mk-pub); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }
 .rec-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 12px; }
 .rec-period input { height: 34px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 8px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); }
-.days-controls .rec-period { margin: 0; }   /* 나란히 놓인 두 칸은 윗선을 맞춤 */
+.days-controls .rec-period { margin: 0; }
+.days-controls .rec-tabs { margin-bottom: 0; }   /* 차트 화면용 아래 여백 때문에 이 줄에서만 기간 탭이 위로 뜨던 것 */   /* 나란히 놓인 두 칸은 윗선을 맞춤 */
 
 .dup-del { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
 .dup-del:hover { color: var(--brand-blue); text-decoration: underline; }

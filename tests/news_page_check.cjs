@@ -279,6 +279,12 @@ async function main() {
       assert.match(await page.locator(".ps-news").innerText(), /보도자료 10[\s\S]*외부 3[\s\S]*주요 공시 1/);
       assert.match(await page.locator(".ps-line").innerText(), /순매수 합계[\s\S]*평균 거래량/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+      // 일별 표 조절 줄: 기간 탭·등락 고르기·내려받기 버튼의 세로 가운데가 맞음 (기간 탭만 위로 뜨던 문제, 2026-11-17)
+      if (width > 700) {
+        const mids = await page.evaluate(() => [".days-controls .rec-tabs button", ".days-controls .seg button", "#days-csv"]
+          .map((q) => { const r = document.querySelector(q).getBoundingClientRect(); return Math.round(r.top + r.height / 2); }));
+        assert.ok(Math.max(...mids) - Math.min(...mids) <= 1, `세로 가운데 ${mids.join(", ")}`);
+      }
       // 숫자 칸은 제목 칸과 같은 오른쪽 끝에 맞춤 (날짜만 왼쪽)
       assert.deepEqual(await page.evaluate(() => {
         const ths = [...document.querySelectorAll(".days-table thead th")], tds = [...document.querySelectorAll("#days-body tr:first-child td")];
