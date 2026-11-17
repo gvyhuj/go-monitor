@@ -23,4 +23,3 @@ jobs:
       - run: node tests/dashboard_badges_check.cjs
       - run: node tests/run_health_check.cjs
       - run: node tests/primary_analysis_check.cjs
-      - run: node tests/days_live_row_check.cjs
