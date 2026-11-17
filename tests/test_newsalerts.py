@@ -158,9 +158,8 @@ def test_failed_post_retries_next_run(tmpdb):
     assert run(T0 + timedelta(minutes=6), p).startswith("[소식] 공시 1건")
 
 
-def test_body_lists_each_item_with_office_time_and_site_link(tmpdb, monkeypatch):
-    # 알림 본문: 건수만이 아니라 하나씩 '구분 · 시각 · 매체 → 사이트 링크' (제목·원문 주소는 공개 저장소라 넣지 않음, 2026-11-17)
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/go-monitor")
+def test_body_lists_each_item_with_office_time_and_original_link(tmpdb):
+    # 알림 본문: 건수만이 아니라 하나씩 '구분 · 시각 · 매체 → 원문 링크(기사 원문·DART/KIND)'. 제목은 넣지 않음 (2026-11-17)
     bodies = []
     post = lambda title, body: bodies.append(body)
     run(T0, post)                                       # 처음 켤 때는 표시만
@@ -168,11 +167,16 @@ def test_body_lists_each_item_with_office_time_and_site_link(tmpdb, monkeypatch)
     art("e1", "이데일리", "가나광학 3분기 실적2", "회사 발표", T0 + timedelta(minutes=64), story="s1")
     art("x1", "B경제", "가나광학 주가 분석", "언론 분석", T0 + timedelta(minutes=50))
     with connect() as conn:
+        conn.execute("UPDATE articles SET url='https://n.news.naver.com/mnews/article/081/0003699678' WHERE id='s1'")
+        conn.execute("UPDATE articles SET url='https://example.com/x1' WHERE id='x1'")
         conn.execute("INSERT INTO disclosures(no, symbol, date, ts, title, first_seen) VALUES (?,?,?,?,?,?)",
                      ("20261117000123", SYM, "2026-10-20", "2026-10-20T10:05", "분기보고서", "2026-10-20T10:06"))
+        conn.execute("INSERT INTO disclosures(no, symbol, date, ts, title, first_seen) VALUES (?,?,?,?,?,?)",
+                     ("K20261117000456", SYM, "2026-10-20", "2026-10-20T10:20", "조회공시", "2026-10-20T10:21"))
     run(T0 + timedelta(minutes=70), post)
     body = bodies[-1]
-    assert "보도자료 · 09:39 서울신문 외 1곳 → https://owner.github.io/go-monitor/#/pr/s1" in body
-    assert "외부 기사 · 09:50 B경제 → https://owner.github.io/go-monitor/#/pr/x1" in body
-    assert "공시 · 10:05 → https://owner.github.io/go-monitor/#/pr/d20261117000123" in body
+    assert "보도자료 · 09:39 서울신문 외 1곳 → https://n.news.naver.com/mnews/article/081/0003699678" in body
+    assert "외부 기사 · 09:50 B경제 → https://example.com/x1" in body
+    assert "공시 · 10:05 → https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261117000123" in body
+    assert "공시 · 10:20 → https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20261117000456" in body
     assert "가나광학" not in body and "분기보고서" not in body
