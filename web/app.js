@@ -1019,7 +1019,7 @@
     let daily, arts, discs;
     try {
       [daily, arts, discs] = await Promise.all([
-        api("/api/daily").then((d) => d.days || []),
+        api("/api/daily").then((d) => withLiveDay(d.days || [])),      // 장중 오늘 줄도 (차트 화면과 같게)
         api("/api/articles").then((d) => d.items || []).catch(() => []),
         api("/api/disclosures").then((d) => d.items || []).catch(() => []),
       ]);
@@ -1193,6 +1193,28 @@
     input.parentElement.querySelectorAll(`[${attr}]`).forEach((i) => { i.value = s[i.getAttribute(attr)]; });
     return true;
   }
+  // 오늘 일봉은 장 마감 뒤(15:50)에야 쌓이므로, 장중에는 실시간 1분봉으로 오늘 줄을 만들어 붙인 새 목록을 돌려줌.
+  // 차트·일별 표가 같이 씀 (받아 둔 일별 자료 자체는 고치지 않음 — 예전에는 차트 화면을 거쳐야만 일별 표에 오늘 줄이 보였음)
+  async function withLiveDay(rows) {
+    const daily = rows.slice();
+    if (!daily.length) return daily;
+    try {
+      const lv = await api("/api/intraday"), lb = (lv && lv.bars) || [], last = daily[daily.length - 1];
+      if (lv && lv.date > last.date && lb.length) {
+        const close = lb[lb.length - 1].c, kc = lv.kosdaq && lv.kosdaq.length ? lv.kosdaq[lv.kosdaq.length - 1].c : null;
+        const base = lv.prev_close || last.close;
+        daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
+          volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
+          kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
+          foreign: null, organ: null, individual: null, foreign_ratio: null, themes: lv.themes || null, theme_info: lv.theme_info || null,
+          foreign_est: lv.foreign_est || null, traders: lv.traders_live || null, live: true });
+        DAY_ROWS[lv.date] = daily[daily.length - 1];
+      } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
+        daily[daily.length - 1] = DAY_ROWS[last.date] = { ...last, foreign_est: lv.foreign_est };       // 장 마감 뒤 일봉은 생겼지만 거래소 개인·외국인·기관 확정치는 아직 → 장중 추정을 이어서 보여 줌
+      }
+    } catch (_) {}
+    return daily;
+  }
   async function viewCalendar() {
     const box = $("#view");
     box.innerHTML = `<p class="loading">불러오는 중…</p>`;
@@ -1207,22 +1229,7 @@
     } catch (e) { box.innerHTML = `<div class="empty"><strong>시세 자료를 불러오지 못했습니다.</strong>${esc(e.message)} 다음 자동 수집 뒤에 다시 열어 보세요.</div>`; return; }
     if (!$("#view")) return;
     if (!daily.length) { box.innerHTML = `<div class="empty"><strong>아직 일별 시세가 없습니다.</strong></div>`; return; }
-    // 오늘 일봉은 장 마감 뒤(15:50)에야 쌓이므로, 장중에는 실시간 1분봉으로 오늘 줄을 만들어 붙임 → 1일 탭 기본값이 오늘
-    try {
-      const lv = await api("/api/intraday"), lb = (lv && lv.bars) || [], last = daily[daily.length - 1];
-      if (lv && lv.date > last.date && lb.length) {
-        const close = lb[lb.length - 1].c, kc = lv.kosdaq && lv.kosdaq.length ? lv.kosdaq[lv.kosdaq.length - 1].c : null;
-        const base = lv.prev_close || last.close;
-        daily.push({ date: lv.date, close, open: lb[0].o, high: Math.max(...lb.map((b) => b.h)), low: Math.min(...lb.map((b) => b.l)),
-          volume: lb.reduce((s, b) => s + (b.v || 0), 0), change: base ? close / base - 1 : null,
-          kosdaq: kc && last.kosdaq_close ? kc / last.kosdaq_close - 1 : null, kosdaq_close: kc,
-          foreign: null, organ: null, individual: null, foreign_ratio: null, themes: lv.themes || null, theme_info: lv.theme_info || null,
-          foreign_est: lv.foreign_est || null, traders: lv.traders_live || null, live: true });
-        DAY_ROWS[lv.date] = daily[daily.length - 1];
-      } else if (lv && lv.date === last.date && lv.foreign_est && last.individual == null && last.foreign == null && last.organ == null) {
-        last.foreign_est = lv.foreign_est;       // 장 마감 뒤 일봉은 생겼지만 거래소 개인·외국인·기관 확정치는 아직 → 장중 추정을 이어서 보여 줌
-      }
-    } catch (_) {}
+    daily = await withLiveDay(daily);     // 장중: 오늘 줄 (1일 탭 기본값이 오늘)
     const byDay =(list, dayOf) => { const m = {}; list.forEach((x) => { const d = dayOf(x); if (d) (m[d] ||= []).push(x); }); return m; };
     const price = Object.fromEntries(daily.map((x) => [x.date, x]));
     const artDay = byDay(arts.filter((a) => !a.hidden && a.category !== "단순 언급" && a.ts), (a) => a.ts.slice(0, 10));
