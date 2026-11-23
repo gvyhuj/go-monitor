@@ -627,12 +627,15 @@ def main(argv) -> int:
     # 하루 한 번: 다 읽어 보고도 기자명이 빈 기사를 다시 열어 매체별 까닭만 남김 (주소·제목은 안 남김, 실행 기록이 공개)
     try:
         from core import reporters
-        if (get_state("articles:reporter_diag") or {}).get("value") != now.date().isoformat():
-            set_state("articles:reporter_diag", now.date().isoformat())
-            diag = reporters.diagnose(code)
+        if (get_state("articles:reporter_diag2") or {}).get("value") != now.date().isoformat():
+            set_state("articles:reporter_diag2", now.date().isoformat())
+            shapes = {}
+            diag = reporters.diagnose(code, samples=shapes)
             if diag:
                 annotate("notice", "기자명 빈 까닭(지금까지 모은 기사 전체, 다시 열어 봄): " + " / ".join(
                     f"{o} " + ", ".join(f"{w} {n}건" for w, n in ws.items()) for o, ws in diag.items()))
+            for o, snips in shapes.items():      # 매체마다 기자 칸 근처 페이지 모양 (글자는 가림: 가·a·0)
+                annotate("notice", f"기자 칸 모양 {o}: " + " ┃ ".join(snips))
         total, miss = reporters.office_missing(code)
         annotate("notice", f"매체 이름 빈 기사: 전체 {total}건 중 {sum(miss.values())}건"
                  + (" (" + ", ".join(f"{s} {n}" for s, n in miss.items()) + ")" if miss else ""))

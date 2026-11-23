@@ -251,3 +251,37 @@ def test_office_missing_count(tmp_path, monkeypatch):
             conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
                          (aid, "X", "2026-11-01T10:00", "t", "u", office, src))
     assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1})
+
+
+def test_mask_keeps_only_page_shape():
+    """공개 실행 기록용: 기사 글자는 가리고 태그·class·'기자'만 남김."""
+    html = ('<div class="art_writer" data-url="https://x.example/a?id=1"><a href="https://x.example/r/9">홍길동기자</a>'
+            ' gildong@x.example 입력 2026.11.16 07:31</div><meta name="author" content="Hong Kimm">')
+    got = reporters.mask(html)
+    assert got == ('<div class="art_writer" data-url="…"><a href="…">가가가기자</a>'
+                   ' aaaaaaa@a.aaaaaaa 입력 0000.00.00 00:00</div><meta name="author" content="aaaa aaaa">')
+
+
+def test_diagnose_collects_masked_shape_samples(tmp_path, monkeypatch):
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,reporter_tries) VALUES (?,?,?,?,?,?,?)",
+                     ("a0", "X", "2026-11-01T10:00", "t", "https://c.example/1", "다매체", 10))
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,reporter_tries) VALUES (?,?,?,?,?,?,?)",
+                     ("a1", "X", "2026-11-01T10:00", "t", "https://d.example/1", "라매체", 10))
+    body = "<p>" + "본문 " * 1500 + "</p>"
+    pages = {"https://c.example/1": body + '<span class="writer">홍길동 기자</span>',
+             "https://d.example/1": body + '<div class="byline">Hong</div>'}
+    samples = {}
+    reporters.diagnose("X", fetch=pages.get, samples=samples)
+    assert '<span class="writer">가가가 기자</span>' in samples["다매체"][0]
+    assert '<div class="byline">aaaa</div>' in samples["라매체"][0]
+    assert "본문" not in json.dumps(samples, ensure_ascii=False)
+
+
+def test_mask_keeps_json_author_keys():
+    assert reporters.mask('{"author":{"@type":"Person","name":"홍길동"}}') == '{"author":{"@type":"Person","name":"가가가"}}'

@@ -202,8 +202,46 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
     return found
 
 
-def diagnose(symbol: str, limit: int = 20, fetch=None) -> dict:
+KEEP_WORDS = ("기자", "특파원", "입력", "수정", "등록", "승인",
+              "author", "name", "writer", "byline", "reporter", "journalist", "Person", "@type")
+KEEP_ATTRS = {"class", "id", "name", "property", "itemprop", "rel", "type"}
+
+
+def _mask_text(t: str) -> str:
+    parts = re.split("(" + "|".join(KEEP_WORDS) + ")", t)
+    return "".join(p if p in KEEP_WORDS else re.sub(r"\d", "0", re.sub(r"[A-Za-z]", "a", re.sub(r"[가-힣]", "가", p)))
+                   for p in parts)
+
+
+def _mask_tag(tag: str) -> str:
+    def attr(m):
+        k, v = m.group(1), m.group(2)
+        if k.lower() in KEEP_ATTRS:
+            return f' {k}="{v}"'
+        return f' {k}="{_mask_text(v)}"' if k.lower() == "content" else f' {k}="…"'
+    return re.sub(r'\s([\w:-]+)="([^"]*)"', attr, tag)
+
+
+def mask(html: str) -> str:
+    """페이지 모양만 남김 (공개 실행 기록용): 글자는 가(한글)·a(영문)·0(숫자)로, 주소 같은 속성 값은 …로.
+    태그·class·id와 '기자' 같은 표시 단어만 그대로."""
+    return "".join(_mask_tag(p) if p.startswith("<") else _mask_text(p) for p in re.split(r"(<[^>]*>)", html))
+
+
+def _shape(page: str) -> list:
+    """기자명이 있을 만한 자리 근처 모양 (가린 것) 최대 3곳: 처음·마지막 '기자' 글자, 작성자 칸처럼 생긴 곳(author·writer 등)."""
+    hits = [m.start() for m in re.finditer(TITLE, page)]
+    auth = re.search(r"(?i)writer|author|byline|reporter|journalist", page)
+    picks = []
+    for i in ([hits[0], hits[-1]] if hits else []) + ([auth.start()] if auth else []):
+        if all(abs(i - j) > 250 for j in picks):
+            picks.append(i)
+    return [re.sub(r"\s+", " ", mask(page[max(0, i - 150):i + 100])) for i in picks]
+
+
+def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = None) -> dict:
     """다 읽어 보고도(MAX_TRIES번) 기자명이 빈 기사를 한 번씩 다시 열어 매체별 까닭을 셈. {매체: {까닭: 건수}}.
+    samples를 주면 '기자 칸 모양 모름'인 매체마다 한 건의 가린 페이지 모양을 담음.
 
     실행 기록이 공개라서 주소·제목은 돌려주지 않음. 기록(DB)은 바꾸지 않음."""
     if fetch is None:
@@ -231,6 +269,8 @@ def diagnose(symbol: str, limit: int = 20, fetch=None) -> dict:
                     why = "지금은 읽힘"
                 else:
                     why = "기자 칸 모양 모름(" + ("'기자' 글자 있음" if "기자" in text else "'기자' 글자 없음") + ")"
+                    if samples is not None and (office or "-") not in samples:
+                        samples[office or "-"] = _shape(page) or ["단서 없음"]
             _time.sleep(0.3)
         box = out.setdefault(office or "-", {})
         box[why] = box.get(why, 0) + 1
