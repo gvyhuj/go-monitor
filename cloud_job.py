@@ -413,7 +413,8 @@ def weekly_backup_due(now) -> str | None:
 def annotate(level: str, text: str):
     """GitHub 실행 화면 맨 위에 보이는 알림 (error / warning / notice)."""
     if os.environ.get("GITHUB_ACTIONS"):
-        msg = str(text).replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        from core.reporters import no_address      # 실행 기록은 공개: 기사·시세 주소로 종목이 드러나지 않게
+        msg = no_address(str(text)).replace("%", "%25").replace("\r", "").replace("\n", "%0A")
         print(f"::{level} title=주가 감시::{msg}", flush=True)
 
 
@@ -611,7 +612,7 @@ def main(argv) -> int:
                                 "AND COALESCE(reporter_tries, 0) < ?", (code, reporters.MAX_TRIES)).fetchone()[0]
         if todo:
             errs = []
-            got = reporters.fill(code, limit=150, log=lambda m: (errs.append(m), log.info(m)))
+            got = reporters.fill(code, limit=150, log=lambda m: (errs.append(m), log.info(reporters.no_address(m))))
             annotate("notice", f"기자명 읽기: {min(todo, 150)}건 중 {got}건 찾음 (남은 기사 {max(0, todo - 150)}건)"
                      + (f" · 못 연 기사 {len(errs)}건, 예: {errs[0][:160]}" if errs else ""))
     except Exception as e:      # noqa: BLE001

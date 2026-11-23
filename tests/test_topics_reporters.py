@@ -307,3 +307,9 @@ def test_mask_hides_cut_off_tag_at_edges():
 ])
 def test_reporter_shapes_seen_in_run_log(page, want):
     assert reporters.parse(page, "") == want
+
+
+def test_error_text_for_public_log_has_no_address():
+    """공개 실행 기록에 기사 주소가 남지 않게 (11/23 기록에 kjdaily.com 기사 주소가 그대로 남았던 것)."""
+    msg = "기자명 읽기 실패: 네이버 접속 실패: URLError: <urlopen error timed out>  (http://www.kjdaily.com/article.php?aid=1)"
+    assert reporters.no_address(msg) == "기자명 읽기 실패: 네이버 접속 실패: URLError: <urlopen error timed out>  (…)"
