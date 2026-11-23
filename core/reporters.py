@@ -287,3 +287,8 @@ def office_missing(symbol: str) -> tuple:
         rows = conn.execute("SELECT COALESCE(source, '-'), COUNT(*) FROM articles WHERE symbol=? "
                             "AND TRIM(COALESCE(office, '')) = '' GROUP BY 1", (symbol,)).fetchall()
     return total, dict(rows)
+
+
+def no_address(text: str) -> str:
+    """공개 실행 기록용: 글 속 인터넷 주소를 …로 (기사 주소로 종목이 드러나지 않게)."""
+    return re.sub(r"(?:https?://|www\.)[^\s)]+", "…", text)
