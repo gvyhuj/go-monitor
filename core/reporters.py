@@ -200,3 +200,47 @@ def fill(symbol: str, limit: int = BATCH, fetch=None, resolve=None, log=None, na
                 conn.execute("UPDATE articles SET reporter=?, reporter_at=? WHERE id=?", (name, now, aid))
         found += bool(name)
     return found
+
+
+def diagnose(symbol: str, limit: int = 20, fetch=None) -> dict:
+    """다 읽어 보고도(MAX_TRIES번) 기자명이 빈 기사를 한 번씩 다시 열어 매체별 까닭을 셈. {매체: {까닭: 건수}}.
+
+    실행 기록이 공개라서 주소·제목은 돌려주지 않음. 기록(DB)은 바꾸지 않음."""
+    if fetch is None:
+        from .naver import http_get
+        fetch = lambda u: http_get(u, timeout=10, retries=1).decode("utf-8", "ignore")
+    with connect() as conn:
+        rows = conn.execute("SELECT url, office FROM articles WHERE symbol=? AND reporter IS NULL "
+                            "AND COALESCE(reporter_tries, 0) >= ? ORDER BY ts DESC LIMIT ?",
+                            (symbol, MAX_TRIES, limit)).fetchall()
+    out: dict = {}
+    for url, office in rows:
+        if not fetchable(url):
+            why = "구글 주소를 못 풂" if "news.google.com" in (url or "") else "주소 없음"
+        else:
+            try:
+                page = fetch(url)
+            except Exception as e:      # noqa: BLE001 - 오류 글에 주소가 들어 있어 종류만 남김
+                m = re.search(r"HTTP Error \d+|timed out", str(e))
+                why = f"못 엶({m.group(0) if m else type(e).__name__})"
+            else:
+                text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()
+                if len(text) < 300:
+                    why = "빈 화면"
+                elif parse(page, office or ""):
+                    why = "지금은 읽힘"
+                else:
+                    why = "기자 칸 모양 모름(" + ("'기자' 글자 있음" if "기자" in text else "'기자' 글자 없음") + ")"
+            _time.sleep(0.3)
+        box = out.setdefault(office or "-", {})
+        box[why] = box.get(why, 0) + 1
+    return out
+
+
+def office_missing(symbol: str) -> tuple:
+    """(전체 기사 수, 매체 이름이 빈 기사의 출처별 건수)."""
+    with connect() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=?", (symbol,)).fetchone()[0]
+        rows = conn.execute("SELECT COALESCE(source, '-'), COUNT(*) FROM articles WHERE symbol=? "
+                            "AND TRIM(COALESCE(office, '')) = '' GROUP BY 1", (symbol,)).fetchall()
+    return total, dict(rows)

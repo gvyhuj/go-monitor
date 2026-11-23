@@ -210,3 +210,44 @@ def test_naver_page_without_name_falls_back_to_original(tmp_path, monkeypatch):
     assert reporters.fill("X", fetch=lambda u: pages[u], resolve=lambda u: None) == 1
     with db.connect() as conn:
         assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "김나영"
+
+
+def test_diagnose_tells_why_names_are_still_missing(tmp_path, monkeypatch):
+    """10번 다 읽고도 기자명이 빈 기사: 매체별로 까닭만 (주소·제목은 돌려주지 않음, 실행 기록이 공개라서)."""
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    rows = [("a0", "가매체", "https://a.example/1", 10), ("a1", "가매체", "https://a.example/2", 10),
+            ("a2", "나매체", "https://b.example/1", 10), ("a3", "다매체", "https://c.example/1", 10),
+            ("a4", "라매체", "https://d.example/1", 2)]          # 아직 다시 읽는 중 → 진단하지 않음
+    with db.connect() as conn:
+        for aid, office, url, tries in rows:
+            conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,reporter_tries) VALUES (?,?,?,?,?,?,?)",
+                         (aid, "X", "2026-11-01T10:00", "t", url, office, tries))
+    long_page = "<html>" + "본문 " * 1500 + "</html>"
+
+    def fetch(u):
+        if u.startswith("https://a."):
+            raise reporters_error()
+        return {"https://b.example/1": "<html></html>", "https://c.example/1": long_page + "홍길동기자"}[u]
+
+    def reporters_error():
+        from core.naver import DataSourceError
+        return DataSourceError("네이버 접속 실패: HTTPError: HTTP Error 403: Forbidden  (https://a.example/1)")
+    got = reporters.diagnose("X", fetch=fetch)
+    assert got == {"가매체": {"못 엶(HTTP Error 403)": 2}, "나매체": {"빈 화면": 1}, "다매체": {"기자 칸 모양 모름('기자' 글자 있음)": 1}}
+    assert "example" not in json.dumps(got, ensure_ascii=False)
+
+
+def test_office_missing_count(tmp_path, monkeypatch):
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    with db.connect() as conn:
+        for aid, office, src in [("a0", "가매체", "naver"), ("a1", None, "google"), ("a2", " ", "naver"), ("a3", "나매체", "google")]:
+            conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
+                         (aid, "X", "2026-11-01T10:00", "t", "u", office, src))
+    assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1})
