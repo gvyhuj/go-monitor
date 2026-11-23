@@ -285,3 +285,25 @@ def test_diagnose_collects_masked_shape_samples(tmp_path, monkeypatch):
 
 def test_mask_keeps_json_author_keys():
     assert reporters.mask('{"author":{"@type":"Person","name":"홍길동"}}') == '{"author":{"@type":"Person","name":"가가가"}}'
+
+
+def test_mask_hides_cut_off_tag_at_edges():
+    """잘린 자리에 걸친 태그 조각의 주소도 가림 (실행 기록에 'https://www.donga.c'가 남았던 것)."""
+    assert reporters.mask('<li class="x"><a href="https://www.donga.c') == '<li class="x"><a aaaa="aaaaa://aaa.aaaaa.a'
+    assert reporters.mask('com/123">홍길동 기자</a>') == 'aaa/000">가가가 기자</a>'
+
+
+@pytest.mark.parametrize("page,want", [
+    # 한국의약통신: og:article:author 칸, '대기자' 직함 (실행 기록의 가린 모양: content="가가가 가기자", class="name")
+    ('<meta property="og:article:author" content="홍길동 대기자"/>', "홍길동"),
+    # 버핏연구소: 본문 첫머리 [매체=이름 기자]
+    ('<p>[버핏연구소=홍길동 기자] 본문 첫 문장</p>', "홍길동"),
+    # 기자명 표시 뒤 작성자 (와이드경제·디지털투데이 같은 모양)
+    ('<li> <span class="show-for-sr">기자명</span> 홍길동 </li>', "홍길동"),
+    ('<li> <i class="icon-user-o"><span class="show-for-sr">기자명</span></i> 홍길동 기자 </li>', "홍길동"),
+    # 사람 이름이 아닌 작성자는 비워 둠
+    ('<li> <span class="show-for-sr">기자명</span> AI리포터 </li>', None),
+    ('<li> <span class="show-for-sr">기자명</span> 와이드경제편집국 </li>', None),
+])
+def test_reporter_shapes_seen_in_run_log(page, want):
+    assert reporters.parse(page, "") == want
