@@ -92,16 +92,27 @@ def _fetch_name(host: str) -> str | None:
     text = raw.decode("utf-8", "replace")
     if text[:5000].count("�") > 5:
         text = raw.decode("euc-kr", "replace")
-    m = (re.search(r"""property=["']og:site_name["'][^>]*content=["']([^"']+)""", text)
-         or re.search(r"""content=["']([^"']+)["'][^>]*property=["']og:site_name""", text))
-    name = m.group(1) if m else None
-    if not name:
-        t = re.search(r"<title[^>]*>([^<]+)", text)
-        name = _TAIL.sub("", t.group(1)).strip() if t else None
-    name = re.sub(r"\s+", " ", name or "").strip()
+    return name_from_page(text)
+
+
+def _clean(name: str | None) -> str | None:
+    name = re.sub(r"\s*\([^()]*\)\s*$", "", _TAIL.sub("", re.sub(r"\s+", " ", name or "").strip())).strip()
     if not name or len(name) > 20 or not re.search(r"[가-힣]", name):      # 한글 이름이 아니면 쓰지 않음
         return None
     return ALIASES.get(name, name)
+
+
+def name_from_page(text: str) -> str | None:
+    """사이트 첫 화면의 매체 이름: og:site_name, 그게 영문이면 <title> 앞부분 ('디지털투데이 (DigitalToday)' → 디지털투데이)."""
+    m = (re.search(r"""property=["']og:site_name["'][^>]*content=["']([^"']+)""", text)
+         or re.search(r"""content=["']([^"']+)["'][^>]*property=["']og:site_name""", text))
+    t = re.search(r"<title[^>]*>([^<]+)", text)
+    return (m and _clean(m.group(1))) or (t and _clean(t.group(1))) or None
+
+
+def _today() -> str:
+    from datetime import date
+    return date.today().isoformat()
 
 
 def normalize(code: str, limit: int = 15) -> int:
@@ -109,7 +120,7 @@ def normalize(code: str, limit: int = 15) -> int:
     known = _known()
     with connect() as conn:
         rows = conn.execute("SELECT id, office FROM articles WHERE symbol=?", (code,)).fetchall()
-    tried = set(known.get("_failed", []))
+    tried = set(known.get("_failed", [])) if known.get("_failed_on") == _today() else set()     # 못 읽은 곳은 다음 날 다시
     todo = sorted({_host(o) for _, o in rows if o and _looks_like_host(o.replace(" (외신)", ""))
                    and not _by_host(_host(o), known) and _host(o) not in tried})
     for h in todo[:limit]:
@@ -119,7 +130,7 @@ def normalize(code: str, limit: int = 15) -> int:
         else:
             tried.add(h)
     if todo:
-        known["_failed"] = sorted(tried)
+        known["_failed"], known["_failed_on"] = sorted(tried), _today()
         set_state(_KEY, json.dumps(known, ensure_ascii=False))
     changes = [(canonical(o, known), i) for i, o in rows if o and canonical(o, known) != o]
     if changes:

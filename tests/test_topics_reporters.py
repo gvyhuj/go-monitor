@@ -250,7 +250,7 @@ def test_office_missing_count(tmp_path, monkeypatch):
         for aid, office, src in [("a0", "가매체", "naver"), ("a1", None, "google"), ("a2", " ", "naver"), ("a3", "나매체", "google")]:
             conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
                          (aid, "X", "2026-11-01T10:00", "t", "u", office, src))
-    assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1})
+    assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1}, 0)
 
 
 def test_mask_keeps_only_page_shape():
@@ -313,3 +313,19 @@ def test_error_text_for_public_log_has_no_address():
     """공개 실행 기록에 기사 주소가 남지 않게 (11/23 기록에 kjdaily.com 기사 주소가 그대로 남았던 것)."""
     msg = "기자명 읽기 실패: 네이버 접속 실패: URLError: <urlopen error timed out>  (http://www.kjdaily.com/article.php?aid=1)"
     assert reporters.no_address(msg) == "기자명 읽기 실패: 네이버 접속 실패: URLError: <urlopen error timed out>  (…)"
+
+
+def test_diagnose_saves_name_when_page_now_reads(tmp_path, monkeypatch):
+    """10번 다 실패해 멈춘 기사(응답이 늦던 사이트 등)도 하루 한 번 다시 열 때 이름이 읽히면 저장."""
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:
+        conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,reporter_tries) VALUES "
+                     "('a0','X','2026-11-01T10:00','t','https://k.example/1','가매체',10)")
+    page = "<p>" + "본문 " * 200 + "</p>[가매체 홍길동 기자]"
+    assert reporters.diagnose("X", fetch=lambda u: page) == {"가매체": {"지금은 읽힘(저장함)": 1}}
+    with db.connect() as conn:
+        assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "홍길동"

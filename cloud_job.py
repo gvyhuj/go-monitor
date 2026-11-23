@@ -644,9 +644,10 @@ def main(argv) -> int:
                     f"{o} " + ", ".join(f"{w} {n}건" for w, n in ws.items()) for o, ws in diag.items()))
             for o, snips in shapes.items():      # 매체마다 기자 칸 근처 페이지 모양 (글자는 가림: 가·a·0)
                 annotate("notice", f"기자 칸 모양 {o}: " + " ┃ ".join(snips))
-        total, miss = reporters.office_missing(code)
+        total, miss, as_host = reporters.office_missing(code)
         annotate("notice", f"매체 이름 빈 기사: 전체 {total}건 중 {sum(miss.values())}건"
-                 + (" (" + ", ".join(f"{s} {n}" for s, n in miss.items()) + ")" if miss else ""))
+                 + (" (" + ", ".join(f"{s} {n}" for s, n in miss.items()) + ")" if miss else "")
+                 + f" · 한글 이름 대신 주소로 남은 기사 {as_host}건")
     except Exception as e:      # noqa: BLE001
         annotate("warning", f"기자명 까닭·매체 이름 점검 실패: {type(e).__name__}")
 
