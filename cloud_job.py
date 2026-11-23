@@ -624,6 +624,21 @@ def main(argv) -> int:
     except Exception as e:      # noqa: BLE001
         annotate("warning", f"기자명 점검 실패: {type(e).__name__}")
 
+    # 하루 한 번: 다 읽어 보고도 기자명이 빈 기사를 다시 열어 매체별 까닭만 남김 (주소·제목은 안 남김, 실행 기록이 공개)
+    try:
+        from core import reporters
+        if (get_state("articles:reporter_diag") or {}).get("value") != now.date().isoformat():
+            set_state("articles:reporter_diag", now.date().isoformat())
+            diag = reporters.diagnose(code)
+            if diag:
+                annotate("notice", "기자명 빈 까닭(지금까지 모은 기사 전체, 다시 열어 봄): " + " / ".join(
+                    f"{o} " + ", ".join(f"{w} {n}건" for w, n in ws.items()) for o, ws in diag.items()))
+        total, miss = reporters.office_missing(code)
+        annotate("notice", f"매체 이름 빈 기사: 전체 {total}건 중 {sum(miss.values())}건"
+                 + (" (" + ", ".join(f"{s} {n}" for s, n in miss.items()) + ")" if miss else ""))
+    except Exception as e:      # noqa: BLE001
+        annotate("warning", f"기자명 까닭·매체 이름 점검 실패: {type(e).__name__}")
+
     # 매번: 막은 매체(핀포인트뉴스) 기사, 단순 언급·시황 기사, 회사 이름만 스쳐 지나가는 기사를 지움 (지운 기사는 다시 모으지 않음)
     try:
         from core import relevance
