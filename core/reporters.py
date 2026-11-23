@@ -17,21 +17,22 @@ from datetime import datetime, timedelta, timezone
 from .db import connect
 
 NAME = r"([가-힣]{2,4})"
-TITLE = r"(?:기자|특파원|선임기자|객원기자)"
+TITLE = r"(?:기자|특파원|선임기자|객원기자|대기자|전문기자|수습기자)"
 PATTERNS = [
     # 언론사 페이지 머리의 작성자 정보: <meta name="author" content="박기영 기자"> (dable:author, article:author도)
-    re.compile(r'<meta[^>]+(?:name|property)="(?:author|article:author|dable:author)"[^>]*content="\s*' + NAME + r'(?:\s?' + TITLE + r')?\s*"'),
+    re.compile(r'<meta[^>]+(?:name|property)="(?:author|article:author|og:article:author|dable:author)"[^>]*content="\s*' + NAME + r'(?:\s?' + TITLE + r')?\s*"'),
     re.compile(r'media_end_head_journalist_name[^>]*>\s*' + NAME),
     re.compile(r'byline_s[^>]*>\s*' + NAME),
     re.compile(r"\[[^\[\]=]{0,24}?\s" + NAME + r"\s?" + TITLE + r"\]"),
     re.compile(r"\([^()]{1,20}=[^()]{1,20}\)\s*" + NAME + r"\s?" + TITLE + r"\s*="),
     re.compile(r"\[[^\[\]]{1,20}=[^\[\]]{1,20}\]\s*" + NAME + r"\s?" + TITLE + r"\s*="),   # [서울=뉴시스] 김경택 기자 =
+    re.compile(r"\[[^\[\]=]{1,20}=\s*" + NAME + r"\s?" + TITLE + r"\]"),                       # [버핏연구소=홍길동 기자]
     re.compile(NAME + r"\s?" + TITLE + r"\s*\(?[\w.+-]+@[\w-]+\.[\w.]+"),
     re.compile(NAME + r"\s?" + TITLE + r"(?:가|이) 보도합니다"),
     re.compile(r"(?:Biz|뉴스|TV|YTN|KBS|MBC|SBS|MBN|JTBC|채널A|연합뉴스TV)\s+" + NAME + r"입니다"),
 ]
 STOP = {"이번", "관련", "해당", "담당", "전문", "증권", "취재", "사진", "영상", "편집", "그래픽", "기자", "본지", "온라인", "디지털",
-        "편집국", "편집부", "뉴스팀", "취재팀", "관리자", "운영자", "뉴스룸", "데스크"}
+        "편집국", "편집부", "리포터", "뉴스팀", "취재팀", "관리자", "운영자", "뉴스룸", "데스크"}
 # 작성자 칸 원문 그대로 (앞에 부서명이 붙거나 성·이름이 띄어 있어도 읽음 → _person으로 이름만)
 #   이투데이: "author":{"@type":"Person","name":"대구경북취재본부 이종팔"} · <meta property="dd:author" content="…">
 #   벤처스퀘어(워드프레스): "author":{"@type":"Person","name":"한 혜선"} (= "한 혜선")
@@ -39,6 +40,7 @@ AUTHOR_RAW = [
     re.compile(r'"author"\s*:\s*\[?\s*\{[^{}]*?"name"\s*:\s*"([^"]{1,60})"'),
     re.compile(r'<meta[^>]+(?:name|property)="dd:author"[^>]*content="([^"]{1,60})"'),
     re.compile(r'class="reporter_name"[^>]*>(?:\s*<[^>]+>)*\s*([^<]{1,60})<'),
+    re.compile(r'class="show-for-sr">기자명</span>\s*(?:</i>\s*)?([^<]{1,60})<'),    # 와이드경제·디지털투데이 같은 모양
 ]
 
 
@@ -225,7 +227,8 @@ def _mask_tag(tag: str) -> str:
 def mask(html: str) -> str:
     """페이지 모양만 남김 (공개 실행 기록용): 글자는 가(한글)·a(영문)·0(숫자)로, 주소 같은 속성 값은 …로.
     태그·class·id와 '기자' 같은 표시 단어만 그대로."""
-    return "".join(_mask_tag(p) if p.startswith("<") else _mask_text(p) for p in re.split(r"(<[^>]*>)", html))
+    return "".join(_mask_tag(p) if p.startswith("<") and p.endswith(">") else _mask_text(p)      # 잘린 태그 조각은 글처럼 가림
+                   for p in re.split(r"(<[^>]*>)", html))
 
 
 def _shape(page: str) -> list:
