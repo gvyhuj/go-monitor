@@ -246,16 +246,16 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
     """다 읽어 보고도(MAX_TRIES번) 기자명이 빈 기사를 한 번씩 다시 열어 매체별 까닭을 셈. {매체: {까닭: 건수}}.
     samples를 주면 '기자 칸 모양 모름'인 매체마다 한 건의 가린 페이지 모양을 담음.
 
-    실행 기록이 공개라서 주소·제목은 돌려주지 않음. 기록(DB)은 바꾸지 않음."""
+    실행 기록이 공개라서 주소·제목은 돌려주지 않음. 다시 열어 이름이 읽히면 그 이름은 저장함."""
     if fetch is None:
         from .naver import http_get
         fetch = lambda u: http_get(u, timeout=10, retries=1).decode("utf-8", "ignore")
     with connect() as conn:
-        rows = conn.execute("SELECT url, office FROM articles WHERE symbol=? AND reporter IS NULL "
+        rows = conn.execute("SELECT id, url, office FROM articles WHERE symbol=? AND reporter IS NULL "
                             "AND COALESCE(reporter_tries, 0) >= ? ORDER BY ts DESC LIMIT ?",
                             (symbol, MAX_TRIES, limit)).fetchall()
     out: dict = {}
-    for url, office in rows:
+    for aid, url, office in rows:
         if not fetchable(url):
             why = "구글 주소를 못 풂" if "news.google.com" in (url or "") else "주소 없음"
         else:
@@ -268,8 +268,11 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
                 text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()
                 if len(text) < 300:
                     why = "빈 화면"
-                elif parse(page, office or ""):
-                    why = "지금은 읽힘"
+                elif name := parse(page, office or ""):      # 그때는 못 열었지만 지금은 읽힘 → 저장
+                    with connect() as conn:
+                        conn.execute("UPDATE articles SET reporter=?, reporter_at=? WHERE id=?",
+                                     (name, datetime.now().isoformat(timespec="minutes"), aid))
+                    why = "지금은 읽힘(저장함)"
                 else:
                     why = "기자 칸 모양 모름(" + ("'기자' 글자 있음" if "기자" in text else "'기자' 글자 없음") + ")"
                     if samples is not None and (office or "-") not in samples:
@@ -281,12 +284,14 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
 
 
 def office_missing(symbol: str) -> tuple:
-    """(전체 기사 수, 매체 이름이 빈 기사의 출처별 건수)."""
+    """(전체 기사 수, 매체 이름이 빈 기사의 출처별 건수, 매체 이름이 한글 대신 주소로 남은 기사 수)."""
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=?", (symbol,)).fetchone()[0]
         rows = conn.execute("SELECT COALESCE(source, '-'), COUNT(*) FROM articles WHERE symbol=? "
                             "AND TRIM(COALESCE(office, '')) = '' GROUP BY 1", (symbol,)).fetchall()
-    return total, dict(rows)
+        offices_ = [r[0] for r in conn.execute("SELECT office FROM articles WHERE symbol=? AND office LIKE '%.%'", (symbol,))]
+    from .offices import _looks_like_host
+    return total, dict(rows), sum(_looks_like_host(o.replace(" (외신)", "")) for o in offices_)
 
 
 def no_address(text: str) -> str:
