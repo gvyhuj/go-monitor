@@ -624,19 +624,25 @@ def main(argv) -> int:
             rows = conn.execute(
                 "SELECT office, SUM(url LIKE '%news.naver.com%'), SUM(url NOT LIKE '%news.naver.com%'), "
                 "SUM(COALESCE(reporter_tries, 0) >= 3), SUM(reporter_at IS NULL), COUNT(*) FROM articles "
-                "WHERE symbol=? AND reporter IS NULL GROUP BY office ORDER BY COUNT(*) DESC LIMIT 6", (code,)).fetchall()
+                "WHERE symbol=? AND reporter IS NULL AND COALESCE(reporter_none, 0) = 0 "
+                "GROUP BY office ORDER BY COUNT(*) DESC LIMIT 6", (code,)).fetchall()
+            none = conn.execute("SELECT office, COUNT(*) FROM articles WHERE symbol=? AND reporter_none=1 "
+                                "GROUP BY office ORDER BY COUNT(*) DESC", (code,)).fetchall()
         if rows:
-            annotate("notice", "기자명 빈 기사: " + " / ".join(
+            annotate("notice", "기자명 아직 못 읽은 기사: " + " / ".join(
                 f"{o or '-'} {n}건(네이버 {nv or 0}·원문 {orig or 0}·못 엶 {bad or 0}·아직 {todo or 0})"
                 for o, nv, orig, bad, todo, n in rows))
+        if none:
+            annotate("notice", f"기자명 없음(원문에 없음, 확정) {sum(n for _, n in none)}건: "
+                     + ", ".join(f"{o or '-'} {n}" for o, n in none))
     except Exception as e:      # noqa: BLE001
         annotate("warning", f"기자명 점검 실패: {type(e).__name__}")
 
     # 하루 한 번: 다 읽어 보고도 기자명이 빈 기사를 다시 열어 매체별 까닭만 남김 (주소·제목은 안 남김, 실행 기록이 공개)
     try:
         from core import reporters
-        if (get_state("articles:reporter_diag2") or {}).get("value") != now.date().isoformat():
-            set_state("articles:reporter_diag2", now.date().isoformat())
+        if (get_state("articles:reporter_diag3") or {}).get("value") != now.date().isoformat():
+            set_state("articles:reporter_diag3", now.date().isoformat())
             shapes = {}
             diag = reporters.diagnose(code, samples=shapes)
             if diag:

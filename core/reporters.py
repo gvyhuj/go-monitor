@@ -252,6 +252,7 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
         fetch = lambda u: http_get(u, timeout=10, retries=1).decode("utf-8", "ignore")
     with connect() as conn:
         rows = conn.execute("SELECT id, url, office FROM articles WHERE symbol=? AND reporter IS NULL "
+                            "AND COALESCE(reporter_none, 0) = 0 "
                             "AND COALESCE(reporter_tries, 0) >= ? ORDER BY ts DESC LIMIT ?",
                             (symbol, MAX_TRIES, limit)).fetchall()
     out: dict = {}
@@ -275,6 +276,8 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
                     why = "지금은 읽힘(저장함)"
                 else:
                     why = "기자 칸 모양 모름(" + ("'기자' 글자 있음" if "기자" in text else "'기자' 글자 없음") + ")"
+                    with connect() as conn:          # 열렸는데 이름이 없음 → '기자명 없음'으로 확정 (못 연 기사는 계속 다시 시도)
+                        conn.execute("UPDATE articles SET reporter_none=1 WHERE id=?", (aid,))
                     if samples is not None and (office or "-") not in samples:
                         samples[office or "-"] = _shape(page) or ["단서 없음"]
             _time.sleep(0.3)
@@ -288,7 +291,7 @@ def office_missing(symbol: str) -> tuple:
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=?", (symbol,)).fetchone()[0]
         rows = conn.execute("SELECT COALESCE(source, '-'), COUNT(*) FROM articles WHERE symbol=? "
-                            "AND TRIM(COALESCE(office, '')) = '' GROUP BY 1", (symbol,)).fetchall()
+                            "AND TRIM(COALESCE(office, '')) IN ('', '-') GROUP BY 1", (symbol,)).fetchall()
         offices_ = [r[0] for r in conn.execute("SELECT office FROM articles WHERE symbol=? AND office LIKE '%.%'", (symbol,))]
     from .offices import _host, _looks_like_host
     hosts: dict = {}

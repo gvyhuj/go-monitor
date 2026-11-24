@@ -282,6 +282,7 @@ _ARTICLE_MIGRATIONS = {"source": "TEXT", "kind_override": "TEXT", "tone_override
                        "resolved_at": "TEXT",   # 구글 뉴스 연결 주소를 원래 주소로 바꿔 본 시각
                        "time_from": "TEXT",
                        "reporter_tries": "INTEGER",
+                       "reporter_none": "INTEGER",      # 1 = 원문은 열렸는데 기자명이 없음 (확정, 화면에 '기자명 없음')
                        "mention_checked_at": "TEXT",
                        "story_with": "TEXT",
                        "ts_auto": "TEXT", "time_from_auto": "TEXT"}  # 사이트에서 공개 시각을 직접 고치기 전의 시각·출처 (time_from='manual')  # 사이트에서 '같은 내용'으로 직접 묶은 대상 기사 id (자동 묶음보다 우선)  # '이름만 언급' 기사인지 살펴본 시각  # 기사 페이지를 못 열어 다시 시도한 횟수     # ts를 어디서 읽었나: 비어 있으면 수집 출처, page = 원문 페이지의 게시 시각

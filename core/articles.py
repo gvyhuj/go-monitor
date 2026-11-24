@@ -834,6 +834,7 @@ def article_rows(symbol: str, include_hidden: bool = False) -> list[dict]:
         lead["related_titles"] = [{"id": g["id"], "manual": bool(g.get("manual")), "merged": bool(g.get("story_with")),
                                    "ts": g["ts"], "office": g["office"], "time_source": time_source(g),
                                    "title": g["title"], "url": g["url"], "reporter": g.get("reporter"),
+                                   "reporter_none": g.get("reporter_none"),
                                    "topic": topics.classify(g["title"], g.get("body") or "", table)[0]}
                                   for g in group[1:]]
         lead["kind_override"] = next((g.get("kind_override") for g in group if g.get("kind_override")), None)
