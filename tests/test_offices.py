@@ -40,4 +40,4 @@ def test_office_check_counts_names_left_as_addresses(tmp_path, monkeypatch):
         for aid, office in [("a0", "뉴시스"), ("a1", "kjdaily.com"), ("a2", None)]:
             conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
                          (aid, "X", "2026-11-01T10:00", "t", "u", office, "naver"))
-    assert reporters.office_missing("X") == (3, {"naver": 1}, 1)
+    assert reporters.office_missing("X") == (3, {"naver": 1}, {"kjdaily.com": 1})      # 어느 매체 주소인지 (사이트 주소만)

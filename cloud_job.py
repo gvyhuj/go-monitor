@@ -647,7 +647,8 @@ def main(argv) -> int:
         total, miss, as_host = reporters.office_missing(code)
         annotate("notice", f"매체 이름 빈 기사: 전체 {total}건 중 {sum(miss.values())}건"
                  + (" (" + ", ".join(f"{s} {n}" for s, n in miss.items()) + ")" if miss else "")
-                 + f" · 한글 이름 대신 주소로 남은 기사 {as_host}건")
+                 + f" · 한글 이름 대신 주소로 남은 기사 {sum(as_host.values())}건"
+                 + (" (" + ", ".join(f"{h} {n}" for h, n in as_host.items()) + ")" if as_host else ""))
     except Exception as e:      # noqa: BLE001
         annotate("warning", f"기자명 까닭·매체 이름 점검 실패: {type(e).__name__}")
 
