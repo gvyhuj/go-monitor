@@ -284,14 +284,19 @@ def diagnose(symbol: str, limit: int = 20, fetch=None, samples: dict | None = No
 
 
 def office_missing(symbol: str) -> tuple:
-    """(전체 기사 수, 매체 이름이 빈 기사의 출처별 건수, 매체 이름이 한글 대신 주소로 남은 기사 수)."""
+    """(전체 기사 수, 매체 이름이 빈 기사의 출처별 건수, 한글 이름 대신 주소로 남은 매체 {사이트 주소: 기사 수})."""
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM articles WHERE symbol=?", (symbol,)).fetchone()[0]
         rows = conn.execute("SELECT COALESCE(source, '-'), COUNT(*) FROM articles WHERE symbol=? "
                             "AND TRIM(COALESCE(office, '')) = '' GROUP BY 1", (symbol,)).fetchall()
         offices_ = [r[0] for r in conn.execute("SELECT office FROM articles WHERE symbol=? AND office LIKE '%.%'", (symbol,))]
-    from .offices import _looks_like_host
-    return total, dict(rows), sum(_looks_like_host(o.replace(" (외신)", "")) for o in offices_)
+    from .offices import _host, _looks_like_host
+    hosts: dict = {}
+    for o in offices_:
+        if _looks_like_host(o.replace(" (외신)", "")):
+            h = _host(o.replace(" (외신)", ""))
+            hosts[h] = hosts.get(h, 0) + 1
+    return total, dict(rows), hosts
 
 
 def no_address(text: str) -> str:

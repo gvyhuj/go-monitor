@@ -250,7 +250,7 @@ def test_office_missing_count(tmp_path, monkeypatch):
         for aid, office, src in [("a0", "가매체", "naver"), ("a1", None, "google"), ("a2", " ", "naver"), ("a3", "나매체", "google")]:
             conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
                          (aid, "X", "2026-11-01T10:00", "t", "u", office, src))
-    assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1}, 0)
+    assert reporters.office_missing("X") == (4, {"google": 1, "naver": 1}, {})
 
 
 def test_mask_keeps_only_page_shape():
