@@ -119,7 +119,14 @@ def normalize(code: str, limit: int = 15) -> int:
     """모은 기사의 언론사 이름을 맞춤. 주소로만 남은 매체는 한 번에 limit곳까지 이름을 찾아 둠. 바꾼 기사 수."""
     known = _known()
     with connect() as conn:
-        rows = conn.execute("SELECT id, office FROM articles WHERE symbol=?", (code,)).fetchall()
+        rows = conn.execute("SELECT id, office, url FROM articles WHERE symbol=?", (code,)).fetchall()
+        # 매체 이름은 늘 적음: 비었거나 '-'이면 기사 주소의 사이트로 (아래에서 한글 이름으로 바뀜). 구글 연결 주소는 원래 주소를 찾은 뒤
+        fill = [(_host(u), i) for i, o, u in rows
+                if (o or "").strip() in ("", "-") and (u or "").startswith("http") and "news.google.com" not in u]
+        if fill:
+            conn.executemany("UPDATE articles SET office=? WHERE id=?", fill)
+    filled = {i: h for h, i in fill}
+    rows = [(i, filled.get(i, o)) for i, o, _ in rows]
     tried = set(known.get("_failed", [])) if known.get("_failed_on") == _today() else set()     # 못 읽은 곳은 다음 날 다시
     todo = sorted({_host(o) for _, o in rows if o and _looks_like_host(o.replace(" (외신)", ""))
                    and not _by_host(_host(o), known) and _host(o) not in tried})

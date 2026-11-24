@@ -329,3 +329,27 @@ def test_diagnose_saves_name_when_page_now_reads(tmp_path, monkeypatch):
     assert reporters.diagnose("X", fetch=lambda u: page) == {"가매체": {"지금은 읽힘(저장함)": 1}}
     with db.connect() as conn:
         assert conn.execute("SELECT reporter FROM articles").fetchone()[0] == "홍길동"
+
+
+def test_diagnose_marks_no_reporter_when_page_opens_without_name(tmp_path, monkeypatch):
+    """원문이 열렸는데 기자명이 없으면 '기자명 없음'으로 확정 (못 연 기사는 확정하지 않고 계속 다시 시도)."""
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    monkeypatch.setattr(reporters._time, "sleep", lambda s: None)
+    with db.connect() as conn:
+        for aid, url in [("a0", "https://a.example/1"), ("a1", "https://b.example/1")]:
+            conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,reporter_tries) VALUES (?,?,?,?,?,?,?)",
+                         (aid, "X", "2026-11-01T10:00", "t", url, "가매체", 10))
+    page = "<p>" + "본문 " * 200 + "</p>"
+
+    def fetch(u):
+        if u.startswith("https://b."):
+            raise OSError("timed out")
+        return page
+    reporters.diagnose("X", fetch=fetch)
+    with db.connect() as conn:
+        got = dict(conn.execute("SELECT id, reporter_none FROM articles").fetchall())
+    assert got == {"a0": 1, "a1": None}
+    assert reporters.diagnose("X", fetch=fetch) == {"가매체": {"못 엶(timed out)": 1}}      # 확정한 기사는 다시 보지 않음

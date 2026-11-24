@@ -48,3 +48,22 @@ def test_known_hosts_left_as_addresses():
     assert offices.canonical("kjdaily.com", {}) == "광주매일신문"
     assert offices.canonical("www.businesspost.co.kr", {}) == "비즈니스포스트"
     assert offices.canonical("ppss.kr", {}) == "ㅍㅍㅅㅅ"
+
+
+def test_empty_office_is_filled_from_article_address(tmp_path, monkeypatch):
+    """매체 이름은 늘 적음: 비었거나 '-'이면 기사 주소의 사이트로 채워 한글 이름으로 (구글 연결 주소는 원래 주소를 찾은 뒤)."""
+    from core import db
+    monkeypatch.setattr(db, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.db")
+    db.init_db()
+    with db.connect() as conn:
+        for aid, office, url in [("a0", "-", "https://www.donga.com/news/1"), ("a1", None, "https://www.kjdaily.com/a?x=1"),
+                                 ("a2", "-", "https://news.google.com/rss/articles/x")]:
+            conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office) VALUES (?,?,?,?,?,?)",
+                         (aid, "X", "2026-11-01T10:00", "t", url, office))
+    monkeypatch.setattr(offices, "_fetch_name", lambda h: None)
+    offices.normalize("X")
+    with db.connect() as conn:
+        got = dict(conn.execute("SELECT id, office FROM articles").fetchall())
+    assert got == {"a0": "동아일보", "a1": "광주매일신문", "a2": "-"}
+    assert reporters.office_missing("X")[1] == {"-": 1}          # '-'도 빈 이름으로 셈

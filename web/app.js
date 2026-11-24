@@ -2565,10 +2565,10 @@ async function observationExtras(host, eid) {
       if (a.hidden) continue;
       const kind = a.kind === "pr" || a.kind === "company" || a.manual ? "자사 보도자료" : "외부 기사";
       const base = { kind, category: a.category || "-", lead: a.id };
-      out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", title: a.title,
+      out.push({ ...base, id: a.id, ts: a.ts || "", office: a.office || "-", reporter: a.reporter || "", noRep: !!a.reporter_none, title: a.title,
         url: a.url || "", topic: a.topic || "기타", topics: (a.topics || []).join(", ") });
       if (unit === "outlet") for (const r of a.related || []) out.push({ ...base, id: r.id, ts: r.ts || a.ts || "",
-        office: r.office || "-", reporter: r.reporter || "", title: r.title, url: r.url || "", topic: r.topic || a.topic || "기타", topics: r.topic || "" });
+        office: r.office || "-", reporter: r.reporter || "", noRep: !!r.reporter_none, title: r.title, url: r.url || "", topic: r.topic || a.topic || "기타", topics: r.topic || "" });
     }
     return out;
   }
@@ -2577,7 +2577,7 @@ async function observationExtras(host, eid) {
     if (dim === "month") return r.ts.slice(0, 7) || "-";
     if (dim === "quarter") return y ? `${y} ${Math.ceil(m / 3)}분기` : "-";
     if (dim === "year") return y || "-";
-    if (dim === "reporter") return r.reporter || "(미확인)";
+    if (dim === "reporter") return r.reporter || (r.noRep ? "기자명 없음" : "(미확인)");     // 기자명 없음 = 원문에 없음(확정)
     return r[dim] || "-";
   };
   // 한 기준(dim)으로 세기: [{key, n, by: {구분: 건수}}] 많은 순 (시간 기준은 시간 순)
@@ -2663,7 +2663,7 @@ async function observationExtras(host, eid) {
     const DIMS = { month: "월", topic: "주제", office: "언론사", reporter: "기자" };
     let base = [], shown = [];
     const csv = (name, list) => csvDownloadRows(name, ["날짜", "시각", "구분", "분류", "대표 주제", "걸린 주제 전부", "언론사", "기자", "제목", "주소"],
-      list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter, r.title, r.url]));
+      list.map((r) => [r.ts.slice(0, 10), r.ts.slice(11, 16), r.kind, r.category, r.topic, r.topics, r.office, r.reporter || (r.noRep ? "기자명 없음" : ""), r.title, r.url]));
     const pass = (r, skip) => Object.entries(F).every(([d, v]) => d === skip || dashKey(r, d) === v);
     const boardKeys = {};
     function board(el, dim) {
@@ -2691,11 +2691,11 @@ async function observationExtras(host, eid) {
       // 막대가 위에서부터 차례로 왼쪽→오른쪽으로 자라고 건수는 올라감 (조건·쪽·찾기가 바뀔 때만, 창 크기만 바뀌면 안 함)
       const bk = JSON.stringify([pivotState.range, pivotState.unit, pivotState.kind, F, pages[dim], pivotState.q[dim]]);
       if (bk !== boardKeys[dim]) { boardKeys[dim] = bk; drawOnce(el, "mv-grow", 1400); countUp(el); }
-      if (dim === "reporter") {               // 기자 이름을 못 읽은 기사도 숫자로 (언론사별)
-        const miss = all.filter((r) => !r.reporter);
-        if (miss.length) {
+      if (dim === "reporter") {               // 기자 이름이 없는 기사도 숫자로 (언론사별): 원문에 없음(확정) / 아직 못 읽음
+        for (const [label, miss] of [["기자명 없음", all.filter((r) => !r.reporter && r.noRep)], ["기자 미확인", all.filter((r) => !r.reporter && !r.noRep)]]) {
+          if (!miss.length) continue;
           const by = dashAgg(miss, "office").slice(0, 5).map((x) => `${esc(x.key)} ${x.n}`).join(" · ");
-          el.insertAdjacentHTML("beforeend", `<p class="dash-miss muted">기자 미확인 <b>${miss.length}건</b> (${by})</p>`);
+          el.insertAdjacentHTML("beforeend", `<p class="dash-miss muted">${label} <b>${miss.length}건</b> (${by})</p>`);
         }
       }
     }
@@ -2749,7 +2749,7 @@ async function observationExtras(host, eid) {
       $("#dash-list").innerHTML = shown.slice(pg.feed * DASH_PER, (pg.feed + 1) * DASH_PER).map((r) => `<li><div>
         <a href="#/pr/${esc(r.lead)}" class="t">${esc(r.title)}</a>
         <div class="meta"><span class="ktag ${r.kind === "자사 보도자료" ? "k-pr" : "k-ext"}">${r.kind === "자사 보도자료" ? "보도자료" : "외부"}</span>
-          <span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : ""} · ${esc(r.topic)}</span>
+          <span class="muted">${r.ts.slice(0, 10)} ${hhmm(r.ts)} · ${esc(r.office)}${r.reporter ? ` · ${esc(r.reporter)} 기자` : r.noRep ? " · 기자명 없음" : ""} · ${esc(r.topic)}</span>
           ${r.url ? `<a class="muted" href="${esc(r.url)}" target="_blank" rel="noopener">원문</a>` : ""}</div></div></li>`).join("")
         || `<li class="empty"><strong>조건에 맞는 기사가 없습니다.</strong></li>`;
     }
