@@ -40,6 +40,7 @@ DEFAULT_QUERIES = [
 
 OFFICES = {
     "yna.co.kr": "연합뉴스", "yonhapnewstv.co.kr": "연합뉴스TV", "hankookilbo.com": "한국일보", "chosun.com": "조선일보",
+    "kjdaily.com": "광주매일신문", "businesspost.co.kr": "비즈니스포스트", "ppss.kr": "ㅍㅍㅅㅅ",      # 첫 화면에서 이름을 못 읽던 곳
     "joongang.co.kr": "중앙일보", "donga.com": "동아일보", "hani.co.kr": "한겨레", "khan.co.kr": "경향신문",
     "mk.co.kr": "매일경제", "hankyung.com": "한국경제", "sedaily.com": "서울경제", "edaily.co.kr": "이데일리",
     "mt.co.kr": "머니투데이", "fnnews.com": "파이낸셜뉴스", "asiae.co.kr": "아시아경제", "heraldcorp.com": "헤럴드경제",
