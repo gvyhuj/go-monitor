@@ -41,3 +41,10 @@ def test_office_check_counts_names_left_as_addresses(tmp_path, monkeypatch):
             conn.execute("INSERT INTO articles(id,symbol,ts,title,url,office,source) VALUES (?,?,?,?,?,?,?)",
                          (aid, "X", "2026-11-01T10:00", "t", "u", office, "naver"))
     assert reporters.office_missing("X") == (3, {"naver": 1}, {"kjdaily.com": 1})      # 어느 매체 주소인지 (사이트 주소만)
+
+
+def test_known_hosts_left_as_addresses():
+    """11/24 실행 기록에서 주소로 남은 3곳: 첫 화면에서 한글 이름을 못 읽음 (느림·영문·'ㅍㅍㅅㅅ'처럼 자모만인 이름)."""
+    assert offices.canonical("kjdaily.com", {}) == "광주매일신문"
+    assert offices.canonical("www.businesspost.co.kr", {}) == "비즈니스포스트"
+    assert offices.canonical("ppss.kr", {}) == "ㅍㅍㅅㅅ"
