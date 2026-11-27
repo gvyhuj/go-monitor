@@ -1322,7 +1322,9 @@
       const ds = calState.sel, px = price[ds];
       if (!px) return "";
       const live = ds === latest ? liveFor(ds) : null;
-      const close = live ? live.price : px.close, chg = live ? live.chg : px.change, kq = px.kosdaq;
+      // KOSDAQ도 가격과 같은 실시간 시세(중계 15초·정기 갱신)에서. 그날 시세가 없으면 일봉 값
+      const kl = live && STATUS.kosdaq, kq = kl && kl.change_pct != null && kl.traded_at?.slice(0, 10) === ds ? kl.change_pct / 100 : px.kosdaq;
+      const close = live ? live.price : px.close, chg = live ? live.chg : px.change;
       const base = (live && STATUS.quote.regular_close && STATUS.quote.regular_close.base) || px.base || (live && STATUS.quote.change != null ? STATUS.quote.price - STATUS.quote.change : null);
       const after = overtimeFor(ds), shownPrice = close, shownChg = chg;
       const ev = events.filter((e) => isDaily(e) && e.start_ts.slice(0, 10) === ds && e.tier !== "일일").slice(-1)[0] || null;

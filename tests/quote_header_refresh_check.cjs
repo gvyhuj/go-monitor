@@ -33,6 +33,8 @@ const { chromium } = require("playwright");
         delete data.status.relay;
         data.status.quote = { price: 10500 + revision * 100, change: 150 + revision * 100, change_pct: 1.45 + revision,
           market_status: "OPEN", traded_at: `2026-10-28T10:${40 + revision * 6}:00`, high: 10700, low: 10350, volume: 1000 };
+        data.status.kosdaq = { price: 800 + revision * 8, change: 4 + revision * 8, change_pct: 0.5 + revision,
+          market_status: "OPEN", traded_at: `2026-10-28T10:${40 + revision * 6}:00` };
         const nonce = crypto.randomBytes(12), enc = crypto.createCipheriv("aes-256-gcm", key, nonce);
         body = Buffer.concat([nonce, enc.update(zlib.gzipSync(JSON.stringify(data))), enc.final(), enc.getAuthTag()]);
       }
@@ -54,6 +56,7 @@ const { chromium } = require("playwright");
       await page.getByRole("button", { name: "들어가기", exact: true }).click();
       await page.locator("#rec-head .rh-box").waitFor();
       assert.match(await page.locator("#rec-head").innerText(), /10:40 현재/);
+      assert.match(await page.locator("#rec-head .rh-kq").innerText(), /\+0\.50%/, "KOSDAQ은 실시간 시세 값");
       revision = 1;
       await page.clock.fastForward(62000);
       await page.waitForFunction(() => document.querySelector("#q-price").textContent.includes("10,600"));
@@ -61,6 +64,8 @@ const { chromium } = require("playwright");
       assert.match(await page.locator("#engine").innerText(), /10:47/);
       assert.match(await page.locator("#rec-head").innerText(), /10:46 현재/, "정기 갱신 시 차트 머리의 시각도 반영");
       assert.match(await page.locator("#rec-head .rh-p").innerText(), /10,600/);
+      await page.clock.runFor(700);
+      assert.match(await page.locator("#rec-head .rh-kq").innerText(), /\+1\.50%/, "KOSDAQ도 가격과 같은 갱신으로 반영");
       // Equal data should not rebuild the header; background updates must not replace a selected past day.
       await page.locator("#rec-head").evaluate((el) => { el.firstElementChild.dataset.marker = "kept"; });
       await page.clock.fastForward(62000);
